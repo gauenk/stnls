@@ -7,8 +7,8 @@ setup(name='dnls',
       packages=["dnls"],
       ext_modules=[
           CUDAExtension('dnls_cuda', [
-              'dnls_cuda.cpp',
-              'dnls_cuda_kernel.cu',
+              'csrc/dnls_cuda.cpp',
+              'csrc/dnls_cuda_kernel.cu',
           ])
       ],
       cmdclass={'build_ext': BuildExtension})
