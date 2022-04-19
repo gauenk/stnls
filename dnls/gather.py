@@ -19,12 +19,13 @@ class GatherNlFunction(th.autograd.Function):
     def backward(ctx, grad_vid):
         nlInds = ctx.saved_tensors
         grad_vid = grad_vid.contiguous()
-        outputs = dnls_cuda.gather_backward(grad_vid,nlInds)
+        patches = allocate_patches(nlInds,ps,pt)
+        dnls_cuda.gather_backward(grad_vid,patches,nlInds)
         return patches
 
     @staticmethod
-    def allocate_patches(vid,nlInds,ps,pt):
-        device = vid.device
+    def allocate_patches(nlInds,ps,pt):
+        device = nlInds.device
         nq,k,c = nlInds.shape[:2],vid.shape[1]
         assert c in [1,3],"Must be the color channel."
         patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
@@ -41,6 +42,6 @@ class GatherNL(th.nn.Module):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)
         return vid
 
-    def forward(self, vid, patches, nlInds):
-        return GatherNlFunction.apply(vid,patches,nlInds)
+    def forward(self, patches, nlInds):
+        return GatherNlFunction.apply(self.vid,patches,nlInds)
 

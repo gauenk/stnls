@@ -17,7 +17,7 @@ class ScatterNlFunction(th.autograd.Function):
         ps = patchsize
         pt = patchsize_time (forward only)
         """
-        patches = allocate_patches(vid,nlInds,ps,pt)
+        patches = allocate_patches(nlInds,ps,pt)
         dnls_cuda.scatter_forward(vid, nlInds, patches)
         ctx.save_for_backward([nlInds,ps,pt])
         return patches
@@ -36,8 +36,8 @@ class ScatterNlFunction(th.autograd.Function):
         return vid
 
     @staticmethod
-    def allocate_patches(vid,nlInds,ps,pt):
-        device = vid.device
+    def allocate_patches(nlInds,ps,pt):
+        device = nlInds.device
         nq,k,c = nlInds.shape[:2],vid.shape[1]
         assert c in [1,3],"Must be the color channel."
         patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)

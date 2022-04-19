@@ -1,6 +1,10 @@
-#include <torch/extension.h>
 
+
+// imports
+#include <torch/extension.h>
+// #include <torch/types.h>
 #include <vector>
+// #include "pybind.hpp"
 
 // CUDA forward declarations
 
@@ -40,7 +44,7 @@ std::vector<torch::Tensor> dnls_forward(
   CHECK_INPUT(old_h);
   CHECK_INPUT(old_cell);
 
-  return dnls_cuda_forward(input, weights, bias, old_h, old_cell);
+  // return dnls_cuda_forward(input, weights, bias, old_h, old_cell);
 }
 
 std::vector<torch::Tensor> dnls_backward(
@@ -62,19 +66,22 @@ std::vector<torch::Tensor> dnls_backward(
   CHECK_INPUT(gate_weights);
   CHECK_INPUT(weights);
 
-  return dnls_cuda_backward(
-      grad_h,
-      grad_cell,
-      new_cell,
-      input_gate,
-      output_gate,
-      candidate_cell,
-      X,
-      gate_weights,
-      weights);
+  // return dnls_cuda_backward(
+  //     grad_h,
+  //     grad_cell,
+  //     new_cell,
+  //     input_gate,
+  //     output_gate,
+  //     candidate_cell,
+  //     X,
+  //     gate_weights,
+  //     weights);
 }
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+
+// python bindings
+void init_basic(py::module &m){
   m.def("forward", &dnls_forward, "DNLS forward (CUDA)");
   m.def("backward", &dnls_backward, "DNLS backward (CUDA)");
 }
+

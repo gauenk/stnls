@@ -7,8 +7,15 @@ setup(name='dnls',
       packages=["dnls"],
       ext_modules=[
           CUDAExtension('dnls_cuda', [
+              'csrc/dnls_gather_cuda.cpp',
+              'csrc/dnls_gather_kernel.cu',
+              'csrc/dnls_scatter_cuda.cpp',
+              'csrc/dnls_scatter_kernel.cu',
+              'csrc/dnls_search_cuda.cpp',
+              'csrc/dnls_search_kernel.cu',
               'csrc/dnls_cuda.cpp',
               'csrc/dnls_cuda_kernel.cu',
+              'csrc/pybind.cpp',
           ])
       ],
       cmdclass={'build_ext': BuildExtension})

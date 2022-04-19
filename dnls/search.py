@@ -9,7 +9,7 @@ import dnls_cuda
 class SearchNlFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid, queryInds, k, ps, pt, ws, wt):
+    def forward(ctx, vid, queryInds, fflow, bflow, k, ps, pt, ws, wt):
         """
         vid = [T,C,H,W]
         patches = [NumQueries,K,pt,C,ps,ps]
@@ -19,7 +19,8 @@ class SearchNlFunction(th.autograd.Function):
         """
         patches = allocate_patches(vid,queryInds,k,ps,pt)
         nlInds,nlDists = allocate_bufs(patches)
-        dnls_cuda.search_forward(vid, patches, queryInds, nlInds, nlDists, ws, wt)
+        dnls_cuda.search_forward(vid, patches, queryInds, fflow, bflow,
+                                 nlInds, nlDists, ws, wt)
         ctx.save_for_backward([nlInds,nlDists,vid.shape])
         return patches
 
@@ -55,14 +56,18 @@ class SearchNlFunction(th.autograd.Function):
 class SearchNl(th.nn.Module):
     # [patches -> video] @ queryInds
 
-    def __init__(self, k, ps, pt, ws, wt):
+    def __init__(self, fflow, bflow, k, ps, pt, ws, wt):
         super(SearchNl, self).__init__()
         self.k = k
         self.ps = ps
         self.pt = pt
         self.ws = ws
         self.wt = wt
+        self.fflow = fflow
+        self.bflow = bflow
 
     def forward(self, vid, patches, queryInds):
-        return SearchNlFunction.apply(vid,patches,queryInds,self.ws,self.wt)
+        return SearchNlFunction.apply(vid,queryInds,
+                                      self.fflow,self.bflow,
+                                      self.k,self.ps,self.pt,self.ws,self.wt)
 
