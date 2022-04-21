@@ -7,7 +7,11 @@ import dnls_cuda
 
 
 class GatherNlFunction(th.autograd.Function):
-    # [patches -> video] @ nlInds
+    """
+    [patches -> video] @ nlInds
+
+    nlInds.shape = [NumQueries,K,3]
+    """
 
     @staticmethod
     def forward(ctx, vid, patches, nlInds):
