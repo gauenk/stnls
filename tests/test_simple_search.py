@@ -71,8 +71,9 @@ class TestSimpleSearch(unittest.TestCase):
         # -- get patches with search --
         index = 0
         queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
-        patches,nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
-                                                        flow,k,ps,pt,ws,wt,chnls)
+        nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
+                                                flow,k,ps,pt,ws,wt,chnls)
+        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
         patches = rearrange(patches[:,0,0],'(t q) c h w -> t (c h w) q',t=t)
 
         # -- get patches with unfold --
@@ -141,8 +142,9 @@ class TestSimpleSearch(unittest.TestCase):
         # -- get patches with search --
         index = 0
         queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
-        patches,nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
-                                                        flow,k,ps,pt,ws,wt,chnls)
+        nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
+                                                flow,k,ps,pt,ws,wt,chnls)
+        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
 
         # -- test topk index --
         dinds = th.sum((nlInds[:,0] - queryInds)**2).item()
@@ -168,6 +170,7 @@ class TestSimpleSearch(unittest.TestCase):
         pt = args.pt
         ws = args.ws
         wt = args.wt
+        chnls = args.chnls
 
         # -- batcing info --
         device = noisy.device
@@ -183,9 +186,10 @@ class TestSimpleSearch(unittest.TestCase):
         for index in range(nbatches):
 
             # -- get [patches & nlInds] --
-            queryInds = dnls.utils.get_query_batch(index,qSize,qStride,h,w,device)
-            patches,nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
-                                                            flow,k,ps,pt,ws,wt)
+            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
+            nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
+                                                    flow,k,ps,pt,ws,wt,chnls)
+            patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
 
             # -- torch mean --
             patches = rearrange(patches,'q k t c h w -> q k (t c h w)')
@@ -222,4 +226,4 @@ class TestSimpleSearch(unittest.TestCase):
         flow_args = edict({'comp_flow':False,'clean_flow':False})
         self.exec_folding_test(dname,sigma,flow_args,args)
         self.exec_topk_inds_test(dname,sigma,flow_args,args)
-        # self.exec_nonincreasing_test(dname,sigma,flow_args,args)
+        self.exec_nonincreasing_test(dname,sigma,flow_args,args)

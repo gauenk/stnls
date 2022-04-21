@@ -6,7 +6,7 @@ def get_query_batch(index,qSize,qStride,h,w,device):
     ti32 = th.int32
     start = index * qSize
     stop = ( index + 1 ) * qSize
-    srch_inds = th.arange(start,stop,dtype=ti32,device=device)[:,None]
+    srch_inds = th.arange(start,stop,qStride,dtype=ti32,device=device)[:,None]
     srch_inds = get_3d_inds(srch_inds,h,w)
     srch_inds = srch_inds.contiguous()
     return srch_inds
