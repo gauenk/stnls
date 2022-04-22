@@ -62,15 +62,16 @@ class TestSimpleSearch(unittest.TestCase):
         device = noisy.device
         shape = noisy.shape
         t,c,h,w = shape
-        npix = t * h * w
+        npix_t = h * w
         qStride = 1
-        qSize = npix
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
+        qSearchTotal_t = npix_t // qStride # _not_ a DivUp
+        qSearchTotal = t * qSearchTotal_t
+        qSearch = qSearchTotal
+        nbatches = (qSearchTotal - 1) // qSearch + 1
 
         # -- get patches with search --
         index = 0
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
+        queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
@@ -133,15 +134,16 @@ class TestSimpleSearch(unittest.TestCase):
         device = noisy.device
         shape = noisy.shape
         t,c,h,w = shape
-        npix = t * h * w
+        npix_t = h * w
         qStride = 1
-        qSize = npix
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
+        qSearchTotal_t = npix_t // qStride # _not_ a DivUp
+        qSearchTotal = t * qSearchTotal_t
+        qSearch = qSearchTotal
+        nbatches = (qSearchTotal - 1) // qSearch + 1
 
         # -- get patches with search --
         index = 0
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
+        queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
@@ -176,17 +178,19 @@ class TestSimpleSearch(unittest.TestCase):
         device = noisy.device
         shape = noisy.shape
         t,c,h,w = shape
-        npix = t * h * w
+        npix_t = h * w
         qStride = 1
-        qSize = npix
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
+        qSearchTotal_t = npix_t // qStride # _not_ a DivUp
+        qSearchTotal = t * qSearchTotal_t
+        qSearch = qSearchTotal
+        nbatches = (qSearchTotal - 1) // qSearch + 1
 
         # -- nbatches --
         for index in range(nbatches):
 
             # -- get [patches & nlInds] --
-            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
+            queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,
+                                                        t,h,w,device)
             nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                     flow,k,ps,pt,ws,wt,chnls)
             patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
