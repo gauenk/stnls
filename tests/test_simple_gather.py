@@ -70,7 +70,7 @@ class TestSimpleGather(unittest.TestCase):
 
         # -- get patches with search --
         index = 0
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
+        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
@@ -141,7 +141,7 @@ class TestSimpleGather(unittest.TestCase):
 
         # -- get patches with search --
         index = 0
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
+        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
@@ -186,7 +186,8 @@ class TestSimpleGather(unittest.TestCase):
         for index in range(nbatches):
 
             # -- get [patches & nlInds] --
-            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,h,w,device)
+            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+                                                        t,h,w,device)
             nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                     flow,k,ps,pt,ws,wt,chnls)
             patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)

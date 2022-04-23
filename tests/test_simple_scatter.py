@@ -100,12 +100,8 @@ class TestSimpleScatter(unittest.TestCase):
         hp,wp = h+2*pad,w+2*pad
         ones = th.ones_like(patches_uf)
         Z = fold(ones,(hp,wp),(ps,ps))
-        vid,wvid = dnls.simple.gather.run(patches,nlDists,nlInds,ps,pt,shape=shape)
+        vid,wvid = dnls.simple.gather.run(patches,nlDists,nlInds,shape=shape)
         vid_ss = vid / wvid
-        print(vid)
-        print(vid_ss)
-        print(vid_ss.max(),vid_ss.min())
-        # vid_ss = fold(patches,(hp,wp),(ps,ps),stride=qStride) / Z
         vid_uf = fold(patches_uf,(hp,wp),(ps,ps)) / Z
 
         # -- crop to center --
@@ -121,6 +117,10 @@ class TestSimpleScatter(unittest.TestCase):
             dnls.testing.data.save_burst(delta,SAVE_DIR,"delta")
 
         # -- testing --
+        error = th.mean((vid_uf - clean)**2).item()
+        assert error < 1e-10
+        error = th.mean((vid_ss - clean)**2).item()
+        assert error < 1e-10
         error = th.mean((vid_ss - vid_uf)**2).item()
         assert error < 1e-10
         error = th.max((vid_ss - vid_uf)**2).item()

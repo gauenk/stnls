@@ -15,7 +15,7 @@ import numpy as np
 from einops import rearrange,repeat
 
 
-def run(patches,nlDists,nlInds,ps,pt,vid=None,wvid=None,shape=None):
+def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None):
 
     # -- allocate videos --
     if vid is None:
