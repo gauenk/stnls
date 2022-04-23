@@ -26,6 +26,7 @@ def run(vid,queryInds,flow,k,ps,pt,ws,wt,chnls):
 
     # -- patches of topk --
     get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
+    nlDists[:,0] = 0. # fix the "-100" hack to 0.
 
     return nlDists,nlInds
 

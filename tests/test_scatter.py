@@ -69,8 +69,8 @@ class TestScatter(unittest.TestCase):
 
             # -- get [patches & nlInds] --
             queryInds = dnls.utils.get_query_batch(index,qSize,qStride,h,w,device)
-            patches,nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                            flow,k,ps,pt,ws,wt)
+            nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+                                                    flow,k,ps,pt,ws,wt)
 
             # -- exec scatter fxns --
             scatter_nl = dnls.scatter.ScatterNL(ps,pt)

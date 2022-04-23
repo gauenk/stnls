@@ -46,7 +46,7 @@ def save_image(image,path):
     # -- to uint8 --
     if image.max() < 100:
         image = image*255.
-    image = np.clip(image.astype(np.uint8),0,255)
+    image = np.clip(image,0,255).astype(np.uint8)
 
     # -- save --
     image = rearrange(image,'c h w -> h w c')

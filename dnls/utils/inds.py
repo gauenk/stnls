@@ -6,7 +6,7 @@ from einops import rearrange,repeat
 
 # -- numba --
 import numba
-from numba import jit,prange
+from numba import njit,prange
 
 def get_query_batch(index,qSearch,qStride,t,h,w,device):
     srch_inds = numba_query_launcher(index,qSearch,qStride,t,h,w,device)
@@ -25,7 +25,7 @@ def numba_query_launcher(index,qSearch,qStride,t,h,w,device):
     srch_inds = th.from_numpy(srch_inds).to(device).contiguous()
     return srch_inds
 
-@jit
+@njit
 def numba_query_batch(srch_inds,index,qSearch,qStride,t,h,w):
     qSearchTotal_t = h*w//qStride
     qStride_sr = np.sqrt(qStride)
