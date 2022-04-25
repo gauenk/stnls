@@ -8,7 +8,7 @@ from einops import rearrange
 import math
 from numba import njit,cuda
 
-def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None):
+def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None,lam=1.,dilation=1):
 
     # -- misc --
     device = patches.device
@@ -18,7 +18,7 @@ def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None):
     if wvid is None: wvid = allocate_vid(shape,device)
 
     # -- exec gather --
-    numba_launcher(vid,wvid,patches,nlDists,nlInds)
+    numba_launcher(vid,wvid,patches,nlDists,nlInds,lam,dilation)
 
     return vid,wvid
 
@@ -26,17 +26,17 @@ def allocate_vid(shape,device):
     vid = th.zeros(shape,device=device,dtype=th.float32)
     return vid
 
-def numba_launcher(vid,wvid,patches,nlDists,nlInds):
+def numba_launcher(vid,wvid,patches,nlDists,nlInds,lam,dilation):
 
     # -- numbify the torch tensors --
-    vid_nba = vid.cpu().numpy()
-    wvid_nba = wvid.cpu().numpy()
-    patches_nba = patches.cpu().numpy()
-    nlDists_nba = nlDists.cpu().numpy()
-    nlInds_nba = nlInds.cpu().numpy()
+    vid_nba = vid.cpu().detach().numpy()
+    wvid_nba = wvid.cpu().detach().numpy()
+    patches_nba = patches.cpu().detach().numpy()
+    nlDists_nba = nlDists.cpu().detach().numpy()
+    nlInds_nba = nlInds.cpu().detach().numpy()
 
     # -- exec --
-    numba_gather(vid_nba,wvid_nba,patches_nba,nlDists_nba,nlInds_nba)
+    numba_gather(vid_nba,wvid_nba,patches_nba,nlDists_nba,nlInds_nba,lam,dilation)
 
     # -- to device --
     device = vid.device
@@ -48,7 +48,7 @@ def numba_launcher(vid,wvid,patches,nlDists,nlInds):
     wvid[...] = wvid_nba[...]
 
 @njit
-def numba_gather(vid,wvid,patches,vals,inds):
+def numba_gather(vid,wvid,patches,vals,inds,lam,dilation):
 
     # -- valid index --
     def valid_ind(ti,hi,wi):
@@ -80,9 +80,15 @@ def numba_gather(vid,wvid,patches,vals,inds):
             for pk in range(pt):
                 for pi in range(ps):
                     for pj in range(ps):
+
+                        # -- vid inds --
                         t1 = (t0+pk)# % nframes
-                        h1 = (h0+pi-psHalf)# % height
-                        w1 = (w0+pj-psHalf)# % width
+                        h1 = h0+dilation*(pi-psHalf)# % height
+                        w1 = w0+dilation*(pj-psHalf)# % width
+
+                        # -- rescaled --
+                        h1 = int(h1)
+                        w1 = int(w1)
 
                         # -- boundary --
                         if t1 < 0 or t1 >= nframes: continue
@@ -90,10 +96,11 @@ def numba_gather(vid,wvid,patches,vals,inds):
                         if w1 < 0 or w1 >= width: continue
 
                         # -- weight --
-                        pleft = (pi - psHalf)**2/psHalf2
-                        pright = (pj - psHalf)**2/psHalf2
-                        pdist = pleft + pright
-                        weight = 1.#math.exp(-10000.*pdist)
+                        # pleft = (pi - psHalf)**2/psHalf2
+                        # pright = (pj - psHalf)**2/psHalf2
+                        # pdist = pleft + pright
+                        # weight = 1.#math.exp(-10000.*pdist)
+                        weight = math.exp(-lam*vals[bi,ni])
 
                         # -- fill --
                         for ci in range(color):

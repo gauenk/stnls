@@ -7,22 +7,21 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-def run(vid,queryInds,flow,k,ps,pt,ws,wt,chnls):
+def run(vid,queryInds,flow,k,ps,pt,ws,wt,chnls,dilation=1):
 
     # -- allocate --
     device = queryInds.device
     nq = queryInds.shape[0]
-    ns = ws * ws * (2 * wt + 1)
-    nlDists,nlInds = allocate(nq,k,device)
-    nlDists_exh,nlInds_exh = allocate(nq,ns,device)
+    nlDists,nlInds = allocate_k(nq,k,device)
+    nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
+    stride = 1
 
     # -- unpack --
-    fflow = flow.fflow
-    bflow = flow.bflow
+    fflow,bflow = unpack_flow(flow,vid.shape,device)
 
     # -- exec --
     numba_search_launcher(vid,queryInds,nlDists_exh,nlInds_exh,
-                          fflow,bflow,k,ps,pt,ws,wt,chnls)
+                          fflow,bflow,k,ps,pt,ws,wt,chnls,dilation,stride)
 
     # -- patches of topk --
     get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
@@ -30,14 +29,37 @@ def run(vid,queryInds,flow,k,ps,pt,ws,wt,chnls):
 
     return nlDists,nlInds
 
-def allocate(nq,ns,device):
-    dists = th.zeros((nq,ns),device=device,dtype=th.float32)
+def unpack_flow(flow,shape,device):
+    t,c,h,w = shape
+    if flow is None:
+        zflow = th.zeros((t,2,h,w),device=device,dtype=th.float32)
+        fflow = zflow
+        bflow = zflow
+    else:
+        fflow = flow.fflow
+        bflow = flow.bflow
+    return fflow,bflow
+
+def allocate_k(nq,k,device):
+    dists = th.zeros((nq,k),device=device,dtype=th.float32)
     dists[...] = float("inf")
-    inds = th.zeros((nq,ns,3),device=device,dtype=th.int32)
+    inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
+    inds[...] = -1
+    return dists,inds
+
+def allocate_exh(nq,ws,wt,device):
+    dists = th.zeros((nq,2*wt+1,ws,ws),device=device,dtype=th.float32)
+    dists[...] = float("inf")
+    inds = th.zeros((nq,2*wt+1,ws,ws,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
 
 def get_topk(l2_vals,l2_inds,vals,inds):
+
+    # -- reshape exh --
+    nq,ws,ws,st = l2_vals.shape
+    l2_vals = l2_vals.view(nq,-1)
+    l2_inds = l2_inds.view(nq,-1,3)
 
     # -- shape info --
     b,_ = l2_vals.shape
@@ -45,6 +67,12 @@ def get_topk(l2_vals,l2_inds,vals,inds):
 
     # -- take mins --
     order = th.argsort(l2_vals,dim=1,descending=False)
+    print("-- search --")
+    print(order[-1,:k])
+    print(l2_vals[-1][order[-1,:k]])
+    print(l2_inds[-1][order[-1,:k],:])
+    print("-"*30)
+
     vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
@@ -89,13 +117,7 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     return tranges,n_tranges,min_tranges
 
 def numba_search_launcher(vid,queryInds,nlDists,nlInds,
-                          fflow,bflow,k,ps,pt,ws,wt,chnls):
-
-    # -- reshape for easy indexing --
-    nlDists = rearrange(nlDists,'q (sx sy st) -> q sx sy st',sx=ws,sy=ws)
-    nlInds = rearrange(nlInds,'q (sx sy st) a -> q sx sy st a',sx=ws,sy=ws)
-    nlDists = nlDists.contiguous()
-    nlInds = nlInds.contiguous()
+                          fflow,bflow,k,ps,pt,ws,wt,chnls,dilation,stride):
 
     # -- buffer for searching --
     t = vid.shape[0]
@@ -132,7 +154,7 @@ def numba_search_launcher(vid,queryInds,nlDists,nlInds,
 
     # -- exec kernel --
     numba_search[nblocks,nthreads](vid_nba,queryInds_nba,nlDists_nba,nlInds_nba,
-                                   fflow_nba,bflow_nba,ps,pt,chnls,
+                                   fflow_nba,bflow_nba,ps,pt,chnls,dilation,stride,
                                    bufs_nba,tranges_nba,n_tranges_nba,
                                    min_tranges_nba,ws_iters,bpb)
 
@@ -140,22 +162,22 @@ def numba_search_launcher(vid,queryInds,nlDists,nlInds,
 # @cuda.jit(debug=True,max_registers=64,opt=False)
 @cuda.jit(debug=False,max_registers=64)
 def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
-                 bufs,tranges,n_tranges,min_tranges,ws_iters,bpb):
+                 dilation,stride,bufs,tranges,n_tranges,min_tranges,ws_iters,bpb):
 
     # -- reflective boundary --
     def bounds(val,lim):
-        if val < 0: val = (-val-1)
-        if val >= lim: val = (2*lim - val - 1)
-        return val
+        if val < 0: val = (-val-2)
+        if val >= lim: val = (2*lim - val-2)
+        return int(val)
 
     # -- shapes --
     nframes,color,h,w = vid.shape
-    bsize,st,sx,sy = dists.shape
-    bsize,st,sx,sy,_ = inds.shape
+    bsize,st,ws,ws = dists.shape
+    bsize,st,ws,ws,_ = inds.shape
     height,width = h,w
     Z = ps*ps*pt*chnls
-    ws = sx
     psHalf = int(ps//2)
+    wsHalf = (ws-1)//2
 
     # -- cuda threads --
     cu_tidX = cuda.threadIdx.x
@@ -184,11 +206,16 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
         bidx = block_start + _bidx
         if bidx >= queryInds.shape[0]: continue
 
+        # -- unpack pixel locs --
         ti = queryInds[bidx,0]
         hi = queryInds[bidx,1]
         wi = queryInds[bidx,2]
-        # ti,hi,wi = 0,0,0
         top,left = hi-psHalf,wi-psHalf
+
+        # -- [debug bool] --
+        print_b = hi == 31
+        print_b = (wi == 31) and print_b
+        print_b = (ti == 9) and print_b
 
         # ---------------------------
         #     valid (anchor pixel)
@@ -257,9 +284,9 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                     #     update
                     # ----------------
                     # if dt >= bufs.shape[2]: continue
-                    bufs[bidx,0,dt,tidX,tidY] = cw#cw_vals[ti-direction]
-                    bufs[bidx,1,dt,tidX,tidY] = ch#ch_vals[t_idx-direction]
-                    bufs[bidx,2,dt,tidX,tidY] = ct#ct_vals[t_idx-direction]
+                    bufs[bidx,0,dt,tidX,tidY] = cw
+                    bufs[bidx,1,dt,tidX,tidY] = ch
+                    bufs[bidx,2,dt,tidX,tidY] = ct
 
                     # --------------------
                     #      init dists
@@ -286,16 +313,27 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                     shift_h = 0
 
                     # -- spatial endpoints --
-                    sh_start = ch - (ws-1)//2#max(0,ch - (ws-1)//2 - shift_h)
+                    # sh_start = ch - (ws-1)//2#max(0,ch - (ws-1)//2 - shift_h)
                     # sh_end = min(h-psHalf,ch + (ws-1)//2 - shift_h)+1
 
-                    sw_start = cw - (ws-1)//2#max(0,cw - (ws-1)//2 - shift_w)
+                    # sw_start = cw - (ws-1)//2#max(0,cw - (ws-1)//2 - shift_w)
                     # sw_end = min(w-ps,cw + (ws-1)//2 - shift_w)+1
 
-                    n_top = sh_start + tidX
-                    n_left = sw_start + tidY
-                    n_hi = n_top + psHalf
-                    n_wi = n_left + psHalf
+                    ws_i,ws_j = tidX,tidY
+                    n_hi = ch + stride * (ws_i - wsHalf)
+                    n_wi = cw + stride * (ws_j - wsHalf)
+                    n_top = n_hi - psHalf
+                    n_left = n_wi - psHalf
+
+                    # n_top = sh_start + tidX
+                    # n_left = sw_start + tidY
+                    # n_hi = n_top + psHalf
+                    # n_wi = n_left + psHalf
+
+                    # -- print message --
+                    print_b1 = (n_hi == 31)
+                    print_b1 = print_b1 and (n_wi == 30)
+                    print_b1 = print_b1 and (n_ti == 3)
 
                     # ---------------------------
                     #      valid (search "n")
@@ -321,28 +359,54 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                             for pj in range(ps):
 
                                 # -- inside entire image --
-                                vH = bounds(top+pi,h)
-                                vW = bounds(left+pj,w)
+                                cH,cW = top+psHalf,left+psHalf
+                                vH = bounds(cH + dilation*(pi - psHalf),h)
+                                vW = bounds(cW + dilation*(pj - psHalf),w)
                                 vT = ti + pk
 
-                                nH = bounds(n_top+pi,h)
-                                nW = bounds(n_left+pj,w)
+                                cH,cW = n_top+psHalf,n_left+psHalf
+                                nH = bounds(cH + dilation*(pi - psHalf),h)
+                                nW = bounds(cW + dilation*(pj - psHalf),w)
                                 nT = n_ti + pk
+
+                                # -- valid checks [for testing w/ zero pads] --
+                                # vvalid = (vH < h and vH >= 0)
+                                # vvalid = vvalid and (vW < w and vW >= 0)
+                                # vvalid = vvalid and (vT < nframes and vT >= 0)
+
+                                # nvalid = (nH < h and nH >= 0)
+                                # nvalid = nvalid and (nW < w and nW >= 0)
+                                # nvalid = nvalid and (nT < nframes and nT >= 0)
 
                                 # -- all channels --
                                 for ci in range(chnls):
 
                                     # -- get data --
+                                    # if vvalid:
+                                    #     v_pix = vid[vT][ci][vH][vW]/255.
+                                    # else:
+                                    #     v_pix = 0.
+                                    # if nvalid:
+                                    #     n_pix = vid[nT][ci][nH][nW]/255.
+                                    # else:
+                                    #     n_pix = 0.
                                     v_pix = vid[vT][ci][vH][vW]/255.
                                     n_pix = vid[nT][ci][nH][nW]/255.
+
+                                    # if print_b and print_b1:
+                                    #     print(ci,v_pix,n_pix,ps)
+                                    #     print(top,left,n_top,n_left)
+                                    #     print(vT,vH,vW)
+                                    #     print(nT,nH,nW)
+                                    #     print(ti,hi,wi)
 
                                     # -- compute dist --
                                     if dist < np.infty:
                                         dist += (v_pix - n_pix)**2
 
                     # -- dists --
-                    dist /= Z
-                    dist = dist if dist > 0 else 0
+                    # dist /= Z
+                    # dist = dist if dist > 0 else 0
                     dists[bidx,tidZ,tidX,tidY] = dist
 
                     # -- inds --
