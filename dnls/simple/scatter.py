@@ -56,7 +56,7 @@ def numba_launcher(patches,vid,nlInds,dilation):
     nthreads = (n_kthreads,ps,ps)
 
     # -- exec kernel --
-    numba_scatter[nblocks,nthreads](patches_nba,vid_nba,nlInds_nba,dilation,kpt,qpb)
+    numba_scatter_zp[nblocks,nthreads](patches_nba,vid_nba,nlInds_nba,dilation,kpt,qpb)
 
 # -- reflect padding --
 @cuda.jit(debug=False,max_registers=64)
@@ -133,9 +133,6 @@ def numba_scatter_zp(patches,vid,nlInds,dilation,kpt,qpb):
     def bounds(val,lim):
         val = int(val)
         return val
-        # if val < 0: val = (-val-1)
-        # if val >= lim: val = (2*lim - val - 1)
-        # return int(val)
 
     # -- shapes --
     t,c,h,w = vid.shape

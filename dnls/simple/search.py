@@ -166,9 +166,10 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
 
     # -- reflective boundary --
     def bounds(val,lim):
-        if val < 0: val = (-val-1)
-        if val >= lim: val = (2*lim - val-2)
         return int(val)
+        # if val < 0: val = (-val-1)
+        # if val >= lim: val = (2*lim - val-2)
+        # return int(val)
 
     # -- shapes --
     nframes,color,h,w = vid.shape
@@ -370,28 +371,28 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                                 nT = n_ti + pk
 
                                 # -- valid checks [for testing w/ zero pads] --
-                                # vvalid = (vH < h and vH >= 0)
-                                # vvalid = vvalid and (vW < w and vW >= 0)
-                                # vvalid = vvalid and (vT < nframes and vT >= 0)
+                                vvalid = (vH < h and vH >= 0)
+                                vvalid = vvalid and (vW < w and vW >= 0)
+                                vvalid = vvalid and (vT < nframes and vT >= 0)
 
-                                # nvalid = (nH < h and nH >= 0)
-                                # nvalid = nvalid and (nW < w and nW >= 0)
-                                # nvalid = nvalid and (nT < nframes and nT >= 0)
+                                nvalid = (nH < h and nH >= 0)
+                                nvalid = nvalid and (nW < w and nW >= 0)
+                                nvalid = nvalid and (nT < nframes and nT >= 0)
 
                                 # -- all channels --
                                 for ci in range(chnls):
 
                                     # -- get data --
-                                    # if vvalid:
-                                    #     v_pix = vid[vT][ci][vH][vW]/255.
-                                    # else:
-                                    #     v_pix = 0.
-                                    # if nvalid:
-                                    #     n_pix = vid[nT][ci][nH][nW]/255.
-                                    # else:
-                                    #     n_pix = 0.
-                                    v_pix = vid[vT][ci][vH][vW]/255.
-                                    n_pix = vid[nT][ci][nH][nW]/255.
+                                    if vvalid:
+                                        v_pix = vid[vT][ci][vH][vW]/255.
+                                    else:
+                                        v_pix = 0.
+                                    if nvalid:
+                                        n_pix = vid[nT][ci][nH][nW]/255.
+                                    else:
+                                        n_pix = 0.
+                                    # v_pix = vid[vT][ci][vH][vW]/255.
+                                    # n_pix = vid[nT][ci][nH][nW]/255.
 
                                     # if print_b and print_b1:
                                     #     print(ci,v_pix,n_pix,ps)
