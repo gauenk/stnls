@@ -307,8 +307,32 @@ class TestSimpleSearch(unittest.TestCase):
         print("nlDists")
         print(nlDists[-3:])
 
+        # -- insepct dist diffs -
+        # error = (pDists - nlDists)**2
+        # imax = th.max(error).item()
+        # arg = th.where((error - imax)**2 < 1e-10)
+        # print(arg)
+        # print(nlInds[arg])
+        # print(pDists[arg])
+        # print(nlDists[arg])
+        # for i in arg[0]:
+        #     print("-"*10)
+        #     print(pDists[i])
+        #     print(nlDists[i])
+        # print("-"*10)
+        # print(pDists[100])
+        # print(nlDists[100])
+        # print("-"*10)
+        # print(pDists[-1])
+        # print(nlDists[-1])
+
+
         # -- compute error -
-        error = th.sum((pDists - nlDists)**2).item()
+        print((pDists - nlDists)**2)
+        error = th.max((pDists - nlDists)**2).item()
+        print("error: ",error)
+        assert error < 1e-10
+        error = th.mean((pDists - nlDists)**2).item()
         print("error: ",error)
         assert error < 1e-10
 
