@@ -56,7 +56,7 @@ def numba_launcher(patches,vid,nlInds,dilation):
     nthreads = (n_kthreads,ps,ps)
 
     # -- exec kernel --
-    numba_scatter_zp[nblocks,nthreads](patches_nba,vid_nba,nlInds_nba,dilation,kpt,qpb)
+    numba_scatter[nblocks,nthreads](patches_nba,vid_nba,nlInds_nba,dilation,kpt,qpb)
 
 # -- reflect padding --
 @cuda.jit(debug=False,max_registers=64)

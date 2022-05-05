@@ -14,16 +14,18 @@ def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None,lam=1.,dilation=1):
     device = patches.device
 
     # -- allocate videos --
-    if vid is None: vid = allocate_vid(shape,device)
-    if wvid is None: wvid = allocate_vid(shape,device)
+    if vid is None: vid = allocate_vid(shape,dilation,device)
+    if wvid is None: wvid = allocate_vid(shape,dilation,device)
 
     # -- exec gather --
     numba_launcher(vid,wvid,patches,nlDists,nlInds,lam,dilation)
 
     return vid,wvid
 
-def allocate_vid(shape,device):
-    vid = th.zeros(shape,device=device,dtype=th.float32)
+def allocate_vid(shape,dil,device):
+    t,c,h,w = shape
+    vshape = (t,c,h,w)
+    vid = th.zeros(vshape,device=device,dtype=th.float32)
     return vid
 
 def numba_launcher(vid,wvid,patches,nlDists,nlInds,lam,dilation):
@@ -52,9 +54,9 @@ def numba_gather(vid,wvid,patches,vals,inds,lam,dilation):
 
     # -- valid index --
     def valid_ind(ti,hi,wi):
-        if ti == -1: return False
-        if hi == -1: return False
-        if wi == -1: return False
+        # if ti == -1: return False
+        # if hi == -1: return False
+        # if wi == -1: return False
         return True
 
     # -- shape --
@@ -66,6 +68,7 @@ def numba_gather(vid,wvid,patches,vals,inds,lam,dilation):
     npatches_f = 1.*npatches
     psHalf = ps//2
     psHalf2 = psHalf * psHalf
+    dil = dilation
 
     for bi in range(bsize):
         for ni in range(npatches):
@@ -83,8 +86,15 @@ def numba_gather(vid,wvid,patches,vals,inds,lam,dilation):
 
                         # -- vid inds --
                         t1 = (t0+pk)# % nframes
-                        h1 = h0+dilation*(pi-psHalf)# % height
-                        w1 = w0+dilation*(pj-psHalf)# % width
+                        h1 = (h0)+dil*(pi-psHalf)# % height
+                        w1 = (w0)+dil*(pj-psHalf)# % width
+
+                        """
+                        "h0 + dil"
+                        Since any dilation => output vid.shape has padding
+                        AND
+                        the original "inds" corresponds to INPUT vid.shape
+                        """
 
                         # -- rescaled --
                         h1 = int(h1)

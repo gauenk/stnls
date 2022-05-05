@@ -7,14 +7,13 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-def run(vid,queryInds,flow,k,ps,pt,ws,wt,chnls,dilation=1):
+def run(vid,queryInds,flow,k,ps,pt,ws,wt,chnls,dilation=1,stride=1):
 
     # -- allocate --
     device = queryInds.device
     nq = queryInds.shape[0]
     nlDists,nlInds = allocate_k(nq,k,device)
     nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
-    stride = 1
 
     # -- unpack --
     fflow,bflow = unpack_flow(flow,vid.shape,device)
@@ -67,12 +66,6 @@ def get_topk(l2_vals,l2_inds,vals,inds):
 
     # -- take mins --
     order = th.argsort(l2_vals,dim=1,descending=False)
-    print("-- search --")
-    print(order[-1,:k])
-    print(l2_vals[-1][order[-1,:k]])
-    print(l2_inds[-1][order[-1,:k],:])
-    print("-"*30)
-
     vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
@@ -164,12 +157,19 @@ def numba_search_launcher(vid,queryInds,nlDists,nlInds,
 def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                  dilation,stride,bufs,tranges,n_tranges,min_tranges,ws_iters,bpb):
 
-    # -- reflective boundary --
+    # -- reflective boundary [weird to match lidia] --
     def bounds(val,lim):
-        return int(val)
-        # if val < 0: val = (-val-1)
-        # if val >= lim: val = (2*lim - val-2)
         # return int(val)
+        if val < 0: val = (-val-1)
+        if val >= lim: val = (2*lim - val-2)
+        return int(val)
+
+    # -- reflective boundary --
+    def bounds2(val,lim):
+        # return int(val)
+        if val < 0: val = (-val-1)
+        if val >= lim: val = (2*lim - val)
+        return int(val)
 
     # -- shapes --
     nframes,color,h,w = vid.shape
@@ -262,20 +262,30 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
 
                     direction = max(-1,min(1,n_ti - ti))
                     if direction != 0:
+
+                        # -- get offset at index --
                         dtd = dt-direction
-                        # if dtd >= bufs.shape[2]: continue
                         cw0 = bufs[bidx,0,dt-direction,tidX,tidY]
                         ch0 = bufs[bidx,1,dt-direction,tidX,tidY]
                         ct0 = bufs[bidx,2,dt-direction,tidX,tidY]
 
+                        # -- legalize access --
+                        l_cw0 = bounds2(cw0,w)
+                        l_ch0 = bounds2(ch0,h)
+                        l_ct0 = ct0
+
+                        # -- pick flow --
                         flow = fflow if direction > 0 else bflow
 
-                        cw_f = cw0 + flow[ct0,0,ch0,cw0]
-                        ch_f = ch0 + flow[ct0,1,ch0,cw0]
+                        # -- access flows --
+                        cw_f = cw0 + flow[l_ct0,0,l_ch0,l_cw0]
+                        ch_f = ch0 + flow[l_ct0,1,l_ch0,l_cw0]
 
+                        # -- rounding --
                         cw = max(0,min(w-1,round(cw_f)))
                         ch = max(0,min(h-1,round(ch_f)))
                         ct = n_ti
+
                     else:
                         cw = wi
                         ch = hi
@@ -284,7 +294,6 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                     # ----------------
                     #     update
                     # ----------------
-                    # if dt >= bufs.shape[2]: continue
                     bufs[bidx,0,dt,tidX,tidY] = cw
                     bufs[bidx,1,dt,tidX,tidY] = ch
                     bufs[bidx,2,dt,tidX,tidY] = ct
@@ -384,15 +393,15 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
 
                                     # -- get data --
                                     if vvalid:
-                                        v_pix = vid[vT][ci][vH][vW]/255.
+                                        v_pix = vid[vT][ci][vH][vW]
                                     else:
                                         v_pix = 0.
                                     if nvalid:
-                                        n_pix = vid[nT][ci][nH][nW]/255.
+                                        n_pix = vid[nT][ci][nH][nW]
                                     else:
                                         n_pix = 0.
-                                    # v_pix = vid[vT][ci][vH][vW]/255.
-                                    # n_pix = vid[nT][ci][nH][nW]/255.
+                                    # v_pix = vid[vT][ci][vH][vW]
+                                    # n_pix = vid[nT][ci][nH][nW]
 
                                     # if print_b and print_b1:
                                     #     print(ci,v_pix,n_pix,ps)
