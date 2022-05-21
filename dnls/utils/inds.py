@@ -8,6 +8,11 @@ from einops import rearrange,repeat
 import numba
 from numba import njit,prange
 
+def get_exh_inds(vid,stride=1):
+    t,c,h,w = vid.shape
+    qSearch = t*h*w // stride
+    return get_query_batch(0,qSearch,stride,t,h,w,vid.device)
+
 def get_query_batch(index,qSearch,qStride,t,h,w,device):
     srch_inds = numba_query_launcher(index,qSearch,qStride,t,h,w,device)
     return srch_inds
@@ -31,6 +36,7 @@ def numba_query_batch(srch_inds,index,qSearch,qStride,t,h,w):
     qStride_sr = np.sqrt(qStride)
     nT = qSearchTotal_t
     wf = w*1.
+    # How to evenly distribution points in a grid? I.E. how to use "stride"
     nX = np.sqrt((wf/h)*nT + (wf-h)**2/(4.*h**2)) - (wf-h)/(2.*h)
     nX = int(nX)
     start = index * qSearch

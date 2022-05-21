@@ -213,11 +213,6 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
         wi = queryInds[bidx,2]
         top,left = hi-psHalf,wi-psHalf
 
-        # -- [debug bool] --
-        print_b = hi == 31
-        print_b = (wi == 31) and print_b
-        print_b = (ti == 9) and print_b
-
         # ---------------------------
         #     valid (anchor pixel)
         # ---------------------------
@@ -264,15 +259,15 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                     if direction != 0:
 
                         # -- get offset at index --
-                        dtd = dt-direction
-                        cw0 = bufs[bidx,0,dt-direction,tidX,tidY]
-                        ch0 = bufs[bidx,1,dt-direction,tidX,tidY]
-                        ct0 = bufs[bidx,2,dt-direction,tidX,tidY]
+                        dtd = int(dt-direction)
+                        cw0 = bufs[bidx,0,dtd,tidX,tidY]
+                        ch0 = bufs[bidx,1,dtd,tidX,tidY]
+                        ct0 = bufs[bidx,2,dtd,tidX,tidY]
 
                         # -- legalize access --
-                        l_cw0 = bounds2(cw0,w)
-                        l_ch0 = bounds2(ch0,h)
-                        l_ct0 = ct0
+                        l_cw0 = int(max(0,min(w-1,cw0)))
+                        l_ch0 = int(max(0,min(h-1,ch0)))
+                        l_ct0 = int(max(0,min(ct0,nframes-1)))
 
                         # -- pick flow --
                         flow = fflow if direction > 0 else bflow
@@ -340,11 +335,6 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                     # n_hi = n_top + psHalf
                     # n_wi = n_left + psHalf
 
-                    # -- print message --
-                    print_b1 = (n_hi == 31)
-                    print_b1 = print_b1 and (n_wi == 30)
-                    print_b1 = print_b1 and (n_ti == 3)
-
                     # ---------------------------
                     #      valid (search "n")
                     # ---------------------------
@@ -402,13 +392,6 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                                         n_pix = 0.
                                     # v_pix = vid[vT][ci][vH][vW]
                                     # n_pix = vid[nT][ci][nH][nW]
-
-                                    # if print_b and print_b1:
-                                    #     print(ci,v_pix,n_pix,ps)
-                                    #     print(top,left,n_top,n_left)
-                                    #     print(vT,vH,vW)
-                                    #     print(nT,nH,nW)
-                                    #     print(ti,hi,wi)
 
                                     # -- compute dist --
                                     if dist < np.infty:
