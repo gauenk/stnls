@@ -8,7 +8,7 @@ from einops import rearrange
 import math
 from numba import njit,cuda
 
-def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None,lam=1.,dilation=1):
+def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None,lam=0.,dilation=1):
 
     # -- misc --
     device = patches.device

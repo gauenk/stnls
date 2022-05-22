@@ -14,12 +14,15 @@
 template <typename scalar_t>
 __global__ void dnls_gather_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds) {
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
+    float lam, int dilation) {
 
   // column index
   const int n = blockIdx.y;
   const int c = blockIdx.x * blockDim.x + threadIdx.x;
+  
 
 }
 

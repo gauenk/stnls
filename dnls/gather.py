@@ -31,7 +31,6 @@ class GatherNlFunction(th.autograd.Function):
     def allocate_patches(nlInds,ps,pt):
         device = nlInds.device
         nq,k,c = nlInds.shape[:2],vid.shape[1]
-        assert c in [1,3],"Must be the color channel."
         patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
         return patches
 
