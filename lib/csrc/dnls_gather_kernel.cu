@@ -29,6 +29,13 @@ __global__ void dnls_gather_forward_kernel(
 void dnls_cuda_gather_forward(
     torch::Tensor vid,torch::Tensor patches,torch::Tensor nlInds) {
 
+  // tmp
+  float lam;
+  int dilation;
+  lam = 0.;
+  dilation = 0;
+  fprintf(stdout,"hi!\n");
+
   // launch params
   int numQueries = 10;//nlInds.size(0);
   const int threads = 1024;
@@ -38,8 +45,10 @@ void dnls_cuda_gather_forward(
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel", ([&] {
     dnls_gather_forward_kernel<scalar_t><<<blocks, threads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>());
+        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        lam,dilation);
       }));
 }
 

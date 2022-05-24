@@ -18,4 +18,5 @@ setup(name='dnls',
               'csrc/pybind.cpp',
           ])
       ],
-      cmdclass={'build_ext': BuildExtension})
+      cmdclass={'build_ext': BuildExtension}
+)
