@@ -5,7 +5,6 @@ import numpy as np
 import unittest
 import tempfile
 import sys
-from einops import rearrange
 import shutil
 from pathlib import Path
 from easydict import EasyDict as edict
@@ -13,8 +12,10 @@ from easydict import EasyDict as edict
 # -- linalg --
 import torch as th
 import numpy as np
+from einops import rearrange,repeat
 
 # -- package helper imports --
+import dnls
 import vpss
 import vnlb
 from faiss.contrib import kn3
@@ -151,7 +152,7 @@ class TestTopKSearch(unittest.TestCase):
     # -- [Exec] Sim Search --
     #
 
-    def run_comparison(self,noisy,clean,sigma,flows,args):
+    def run_vpss_comparison(self,noisy,clean,sigma,flows,args):
 
         # -- fixed testing params --
         K = 15
@@ -183,7 +184,8 @@ class TestTopKSearch(unittest.TestCase):
             clean = 255.*th.rand_like(clean).type(th.float32)
 
             # -- search using python code --
-            vpss_vals,vpss_inds,srch_inds = self.exec_vpss_search(K,clean,flows,sigma,args)
+            vpss_vals,vpss_inds,srch_inds = self.exec_vpss_search(K,clean,flows,
+                                                                  sigma,args)
 
             # -- search using faiss code --
             kn3_vals,kn3_inds = self.exec_kn3_search(K,clean,flows,sigma,args,bufs)
@@ -211,10 +213,125 @@ class TestTopKSearch(unittest.TestCase):
             # -- allow for swapping of "close" values --
             np.testing.assert_array_almost_equal(kn3_vals,vpss_vals)
 
-    def run_single_test(self,dname,sigma,comp_flow,pyargs):
+    def run_single_vpss_test(self,dname,sigma,comp_flow,pyargs):
         noisy,clean = self.do_load_data(dname,sigma)
         flows = self.do_load_flow(False,clean,sigma,noisy.device)
-        self.run_comparison(noisy,clean,sigma,flows,pyargs)
+        self.run_vpss_comparison(noisy,clean,sigma,flows,pyargs)
+
+    # def test_vpss_sim_search(self):
+
+    #     # -- init save path --
+    #     np.random.seed(123)
+    #     save_dir = SAVE_DIR
+    #     if not save_dir.exists():
+    #         save_dir.mkdir(parents=True)
+
+    #     # -- test 1 --
+    #     sigma = 25.
+    #     dname = "text_tourbus_64"
+    #     comp_flow = False
+    #     args = edict({'ps':7,'pt':1})
+    #     self.run_single_vpss_test(dname,sigma,comp_flow,args)
+
+    #
+    # -- [Exec] Sim Search --
+    #
+
+    def run_comparison(self,noisy,clean,sigma,args):
+
+        # -- fixed testing params --
+        k = 15
+        BSIZE = 50
+        NBATCHES = 3
+        shape = noisy.shape
+        device = noisy.device
+        t,c,h,w = noisy.shape
+        npix = h*w
+
+        # -- create empty bufs --
+        bufs = edict()
+        bufs.patches = None
+        bufs.dists = None
+        bufs.inds = None
+
+        # -- batching info --
+        device = noisy.device
+        shape = noisy.shape
+        t,c,h,w = shape
+        npix_t = h * w
+        qStride = 1
+        qSearchTotal_t = npix_t // qStride # _not_ a DivUp
+        qSearchTotal = t * qSearchTotal_t
+        qSearch = qSearchTotal
+        nbatches = (qSearchTotal - 1) // qSearch + 1
+
+        # -- unpack --
+        ps = args.ps
+        pt = args.pt
+        ws = args.ws
+        wt = args.wt
+        chnls = args.chnls
+
+        # -- flows --
+        comp_flow = True
+        clean_flow = True
+        flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,
+                                           noisy,clean,sigma)
+
+        # -- final args --
+        args.c = c
+        args['stype'] = "faiss"
+        args['vpss_mode'] = "exh"
+        args['queryStride'] = 7
+        args['bstride'] = args['queryStride']
+        # args['vpss_mode'] = "vnlb"
+
+        # -- exec over batches --
+        for index in range(NBATCHES):
+
+            # -- new image --
+            clean = th.rand_like(clean).type(th.float32)
+
+            # -- queries --
+            index = 0
+            queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,
+                                                        t,h,w,device)
+
+            # -- search using python code --
+            nlDists_simp,nlInds_simp = dnls.simple.search.run(clean,queryInds,
+                                                              flows,k,ps,pt,ws,wt,chnls)
+
+            # -- search using CUDA code --
+            dnls_search = dnls.search.SearchNl(flows.fflow, flows.bflow, k, ps, pt,
+                                               ws, wt, dilation=1, stride=1)
+            nlDists_cu,nlInds_cu = dnls_search(clean,queryInds)
+
+            # -- to numpy --
+            nlDists_cu = nlDists_cu.cpu().numpy()
+            nlDists_simp = nlDists_simp.cpu().numpy()
+            nlInds_cu = nlInds_cu.cpu().numpy()
+            nlInds_simp = nlInds_simp.cpu().numpy()
+
+            # -- save mask --
+            dists = (nlDists_cu - nlDists_simp)**2
+            print(t,h,w)
+            dists = rearrange(dists,'(t h w) k -> t k h w ',t=t,h=h,w=w)
+            dists = repeat(dists[0,:,:,:],'t h w -> t c h w ',c=3)
+            if dists.max() > 1e-3: dists /= dists.max()
+            dnls.testing.data.save_burst(dists,SAVE_DIR,"dists")
+            print(nlDists_cu.shape)
+            print(nlDists_cu[0,-1],nlDists_simp[0,-1])
+            print(nlDists_cu[0,10],nlDists_simp[0,10])
+            print(nlDists_cu[0,-5:],nlDists_simp[0,-5:])
+
+            # -- allow for swapping of "close" values --
+            np.testing.assert_array_almost_equal(nlDists_cu,nlDists_simp,5)
+            np.testing.assert_array_almost_equal(nlInds_cu,nlInds_simp)
+
+
+    def run_single_test(self,dname,sigma,pyargs):
+        noisy,clean = self.do_load_data(dname,sigma)
+        self.run_comparison(noisy,clean,sigma,pyargs)
 
     def test_sim_search(self):
 
@@ -227,6 +344,6 @@ class TestTopKSearch(unittest.TestCase):
         # -- test 1 --
         sigma = 25.
         dname = "text_tourbus_64"
-        comp_flow = False
-        args = edict({'ps':7,'pt':1})
-        self.run_single_test(dname,sigma,comp_flow,args)
+        args = edict({'ps':7,'pt':1,"ws":10,"wt":10,"chnls":1})
+        self.run_single_test(dname,sigma,args)
+

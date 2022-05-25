@@ -1,9 +1,7 @@
 
 // imports
 #include <torch/extension.h>
-// #include <torch/types.h>
 #include <vector>
-// #include "pybind.hpp"
 
 // CUDA forward declarations
 

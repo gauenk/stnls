@@ -56,7 +56,7 @@ def allocate_exh(nq,ws,wt,device):
 def get_topk(l2_vals,l2_inds,vals,inds):
 
     # -- reshape exh --
-    nq,ws,ws,st = l2_vals.shape
+    nq,st,ws,ws = l2_vals.shape
     l2_vals = l2_vals.view(nq,-1)
     l2_inds = l2_inds.view(nq,-1,3)
 
@@ -281,8 +281,8 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                         ch_f = ch0 + flow[l_ct0,1,l_ch0,l_cw0]
 
                         # -- rounding --
-                        cw = max(0,min(w-1,round(cw_f)))
-                        ch = max(0,min(h-1,round(ch_f)))
+                        cw = max(0,min(width-1,round(cw_f)))
+                        ch = max(0,min(height-1,round(ch_f)))
                         ct = n_ti
 
                     else:
@@ -305,7 +305,6 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                     # -----------------
                     #    spatial dir
                     # -----------------
-
                     ws_i,ws_j = tidX,tidY
                     n_hi = ch + stride * (ws_i - wsHalf)
                     n_wi = cw + stride * (ws_j - wsHalf)
@@ -333,8 +332,8 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                             for pj in range(ps):
 
                                 # -- inside entire image --
-                                vH = bounds3(ch + dilation*(pi - psHalf),height)
-                                vW = bounds3(cw + dilation*(pj - psHalf),width)
+                                vH = bounds3(hi + dilation*(pi - psHalf),height)
+                                vW = bounds3(wi + dilation*(pj - psHalf),width)
                                 vT = ti + pk
 
                                 nH = bounds3(n_hi + dilation*(pi - psHalf),height)

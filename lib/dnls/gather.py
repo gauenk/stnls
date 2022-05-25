@@ -14,10 +14,10 @@ class GatherNlFunction(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, vid, patches, nlInds):
-        dnls_cuda.gather_forward(vid, patches, nlInds)
+    def forward(ctx, vid, wvid, patches, nlDists, nlInds, lam, dilation):
+        dnls_cuda.gather_forward(vid, wvid, patches, nlDists, nlInds, lam, dilation)
         ctx.save_for_backward([nlInds])
-        return vid
+        return vid,wvid
 
     @staticmethod
     def backward(ctx, grad_vid):
@@ -37,14 +37,19 @@ class GatherNlFunction(th.autograd.Function):
 class GatherNL(th.nn.Module):
     # [patches -> video] @ nlInds
 
-    def __init__(self, vid_shape):
-        super(GatherNl, self).__init__()
-        self.vid = self.allocate_vid(vid_shape,device)
+    def __init__(self, vid_shape, lam=1., dilation=1, device="cuda:0"):
+        super(GatherNL, self).__init__()
+        self.vid,self.wvid = self.allocate_vid(vid_shape,device)
+        self.lam = lam
+        self.dilation = dilation
 
-    def allocate_vid(vid_shape,device):
+    def allocate_vid(self,vid_shape,device):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)
-        return vid
+        wvid = th.zeros(vid_shape,device=device,dtype=th.float32)
+        return vid,wvid
 
-    def forward(self, patches, nlInds):
-        return GatherNlFunction.apply(self.vid,patches,nlInds)
+    def forward(self, patches, nlDists, nlInds, shape=None):
+        return GatherNlFunction.apply(self.vid,self.wvid,
+                                      patches,nlDists,nlInds,
+                                      self.lam,self.dilation)
 

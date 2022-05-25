@@ -16,6 +16,7 @@ __global__ void dnls_gather_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
     float lam, int dilation) {
 
@@ -27,13 +28,10 @@ __global__ void dnls_gather_forward_kernel(
 }
 
 void dnls_cuda_gather_forward(
-    torch::Tensor vid,torch::Tensor patches,torch::Tensor nlInds) {
+    torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
+    torch::Tensor nlDists,torch::Tensor nlInds, float lam, int dilation) {
 
   // tmp
-  float lam;
-  int dilation;
-  lam = 0.;
-  dilation = 0;
   fprintf(stdout,"hi!\n");
 
   // launch params
@@ -45,8 +43,9 @@ void dnls_cuda_gather_forward(
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel", ([&] {
     dnls_gather_forward_kernel<scalar_t><<<blocks, threads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
         lam,dilation);
       }));

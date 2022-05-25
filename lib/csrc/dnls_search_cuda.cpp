@@ -4,21 +4,21 @@
 
 // CUDA forward declarations
 
-std::vector<torch::Tensor> dnls_cuda_search_forward(
-    torch::Tensor vid,
-    torch::Tensor patches,
-    torch::Tensor queryInds,
-    torch::Tensor fflow,
-    torch::Tensor bflow,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds,
-    int ws, int wt, int ps, int pt, int chnls);
+void dnls_cuda_search_forward(
+    torch::Tensor vid,torch::Tensor queryInds,
+    torch::Tensor fflow,torch::Tensor bflow,
+    torch::Tensor nlDists,torch::Tensor nlInds,
+    int ps, int pt, int ws, int wt,
+    int chnls, int dilation, int stride,
+    torch::Tensor bufs,torch::Tensor tranges,
+    torch::Tensor n_tranges,torch::Tensor min_tranges);
 
-std::vector<torch::Tensor> dnls_cuda_search_backward(
-    torch::Tensor grad_patches,
-    torch::Tensor vid,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds);
+
+// std::vector<torch::Tensor> dnls_cuda_search_backward(
+//     torch::Tensor grad_patches,
+//     torch::Tensor vid,
+//     torch::Tensor nlDists,
+//     torch::Tensor nlInds);
 
 // C++ interface
 
@@ -27,23 +27,26 @@ std::vector<torch::Tensor> dnls_cuda_search_backward(
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 void dnls_search_forward(
-    torch::Tensor vid,
-    torch::Tensor patches,
-    torch::Tensor queryInds,
-    torch::Tensor fflow,
-    torch::Tensor bflow,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds,
-    int ws, int wt, int ps, int pt, int chnls){
+    torch::Tensor vid,torch::Tensor queryInds,
+    torch::Tensor fflow,torch::Tensor bflow,
+    torch::Tensor nlDists,torch::Tensor nlInds,
+    int ps, int pt, int ws, int wt,
+    int chnls, int dilation, int stride,
+    torch::Tensor bufs,torch::Tensor tranges,
+    torch::Tensor n_tranges,torch::Tensor min_tranges){
   CHECK_INPUT(vid);
-  CHECK_INPUT(patches);
   CHECK_INPUT(queryInds);
   CHECK_INPUT(fflow);
   CHECK_INPUT(bflow);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_search_forward(vid,patches,queryInds,fflow,bflow,
-                           nlDists,nlInds,ws,wt,ps,pt,chnls);
+  CHECK_INPUT(bufs);
+  CHECK_INPUT(tranges);
+  CHECK_INPUT(n_tranges);
+  CHECK_INPUT(min_tranges);
+  dnls_cuda_search_forward(vid,queryInds,fflow,bflow,nlDists,nlInds,
+                           ps,pt,ws,wt,chnls,dilation,stride,
+                           bufs,tranges,n_tranges,min_tranges);
 }
 
 void dnls_search_backward(
@@ -55,7 +58,7 @@ void dnls_search_backward(
   CHECK_INPUT(vid);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_search_backward(grad_patches,vid,nlDists,nlInds);
+  // dnls_cuda_search_backward(grad_patches,vid,nlDists,nlInds);
 }
 
 // python bindings
