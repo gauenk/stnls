@@ -312,37 +312,66 @@ void dnls_cuda_search_forward(
 
 ****************************/
 
-// template <typename scalar_t>
-// __global__ void dnls_search_backward_kernel(
-//     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_patches,
-//     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-//     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
-//     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds) {
+template <typename scalar_t>
+__global__ void dnls_search_backward_kernel(
+    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
+    int ps, int pt, float lam, int bpb) {
 
-//   //batch index
-//   const int n = blockIdx.y;
+  // shape
+  int nq = nlDists.size(0);
+  int k =  nlDists.size(1);
+  int color = vid.size(1);
+  int ti,hi,wi;
+  float weight;
 
-//   // column index
-//   const int c = blockIdx.x * blockDim.x + threadIdx.x;
+  // get indices
+  int tidx = threadIdx.x;
+  int bidx = blockIdx.x;
+  int index = tidx + bidx * blockDim.x;
 
-// }
+  if (bidx < nq){
+    // iterate
+    for (int ki = 0; ki < k; ki++){
+      for (int pk = 0; pk < ps; pk++){
+        for (int pi = 0; pi < ps; pi++){
+          for (int pj = 0; pj < ps; pj++){
+            ti = nlInds[bidx][ki][0];
+            hi = nlInds[bidx][ki][1];
+            wi = nlInds[bidx][ki][2];
+            for (int ci = 0; ci < color; ci++){
+              vid[ti][ci][hi][wi] += nlDists[bidx][ki];
+            }
+          }
+        }
+      }
+    }
+  }
 
-// void dnls_cuda_search_backward(
-//     torch::Tensor grad_patches,torch::Tensor vid,
-//     torch::Tensor nlDists, torch::Tensor nlInds) {
+}
 
-//   // launch params
-//   int numQueries = 10;//nlInds.size(0);
-//   const int threads = 1024;
-//   const dim3 blocks((numQueries - 1) / threads + 1);
+void dnls_cuda_search_backward(
+    torch::Tensor vid, torch::Tensor nlDists, torch::Tensor nlInds,
+    int ps, int pt, float lam) {
 
-//   // launch kernel
-//   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_search_backward_kernel", ([&] {
-//     dnls_search_backward_kernel<scalar_t><<<blocks, threads>>>(
-//         grad_patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-//         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-//         nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>());
-//   }));
+  // launch params
+  int numQueries = nlInds.size(0);
+  int k = nlDists.size(1);
+  assert(pt == 1);
 
-// }
+  int bpb = 10;
+  int nthreads = 512;
+  int num_per_block = nthreads * bpb;
+  int nblocks = ((numQueries - 1) / num_per_block) + 1;
+
+  // launch kernel
+  AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_search_backward_kernel", ([&] {
+    dnls_search_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        ps,pt,lam,bpb);
+  }));
+
+}

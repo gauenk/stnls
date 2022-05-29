@@ -147,7 +147,6 @@ class TestTopKSearch(unittest.TestCase):
 
         return kn3_vals,kn3_inds
 
-
     #
     # -- [Exec] Sim Search --
     #
@@ -237,7 +236,10 @@ class TestTopKSearch(unittest.TestCase):
     # -- [Exec] Sim Search --
     #
 
-    def run_comparison(self,noisy,clean,sigma,args):
+    def run_comparison(self,dname,sigma,args):
+
+        # -- get data --
+        noisy,clean = self.do_load_data(dname,sigma)
 
         # -- fixed testing params --
         k = 15
@@ -328,11 +330,6 @@ class TestTopKSearch(unittest.TestCase):
             np.testing.assert_array_almost_equal(nlDists_cu,nlDists_simp,5)
             np.testing.assert_array_almost_equal(nlInds_cu,nlInds_simp)
 
-
-    def run_single_test(self,dname,sigma,pyargs):
-        noisy,clean = self.do_load_data(dname,sigma)
-        self.run_comparison(noisy,clean,sigma,pyargs)
-
     def test_sim_search(self):
 
         # -- init save path --
@@ -345,5 +342,81 @@ class TestTopKSearch(unittest.TestCase):
         sigma = 25.
         dname = "text_tourbus_64"
         args = edict({'ps':7,'pt':1,"ws":10,"wt":10,"chnls":1})
-        self.run_single_test(dname,sigma,args)
+        # self.run_comparison(dname,sigma,args)
+
+    def test_sim_search_fwd_bwd(self):
+
+        # -- init save path --
+        np.random.seed(123)
+        save_dir = SAVE_DIR
+        if not save_dir.exists():
+            save_dir.mkdir(parents=True)
+
+        # -- test 1 --
+        sigma = 25.
+        dname = "text_tourbus_64"
+
+        # -- get data --
+        noisy,clean = self.do_load_data(dname,sigma)
+
+        # -- fixed testing params --
+        k = 15
+        BSIZE = 50
+        NBATCHES = 3
+        shape = noisy.shape
+        device = noisy.device
+        t,c,h,w = noisy.shape
+        npix = h*w
+
+        # -- create empty bufs --
+        bufs = edict()
+        bufs.patches = None
+        bufs.dists = None
+        bufs.inds = None
+
+        # -- batching info --
+        device = noisy.device
+        shape = noisy.shape
+        t,c,h,w = shape
+        npix_t = h * w
+        qStride = 1
+        qSearchTotal_t = npix_t // qStride # _not_ a DivUp
+        qSearchTotal = t * qSearchTotal_t
+        qSearch = qSearchTotal
+        nbatches = (qSearchTotal - 1) // qSearch + 1
+
+        # -- unpack --
+        ps = 5
+        pt = 1
+        ws = 10
+        wt = 10
+        chnls = 1
+
+        # -- flows --
+        comp_flow = True
+        clean_flow = True
+        flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,
+                                           noisy,clean,sigma)
+        # -- new image --
+        clean = th.rand_like(clean).type(th.float32)
+        clean.requires_grad_(True)
+
+        # -- queries --
+        index = 0
+        queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,
+                                                    t,h,w,device)
+
+        # -- search using CUDA code --
+        dnls_search = dnls.search.SearchNl(flows.fflow, flows.bflow, k, ps, pt,
+                                           ws, wt, dilation=1, stride=1)
+        nlDists,nlInds = dnls_search(clean,queryInds)
+        ones = th.rand_like(nlDists)
+        loss = th.sum((nlDists - ones)**2)
+        loss.backward()
+
+        print("-"*30)
+        print("nlDists.shape: ",nlDists.shape)
+        print("nlInds.shape: ",nlInds.shape)
+        print("-"*30)
+
 

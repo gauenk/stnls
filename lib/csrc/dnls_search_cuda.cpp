@@ -14,11 +14,9 @@ void dnls_cuda_search_forward(
     torch::Tensor n_tranges,torch::Tensor min_tranges);
 
 
-// std::vector<torch::Tensor> dnls_cuda_search_backward(
-//     torch::Tensor grad_patches,
-//     torch::Tensor vid,
-//     torch::Tensor nlDists,
-//     torch::Tensor nlInds);
+void dnls_cuda_search_backward(
+    torch::Tensor vid, torch::Tensor nlDists, torch::Tensor nlInds,
+    int ps, int pt, float lam);
 
 // C++ interface
 
@@ -50,15 +48,14 @@ void dnls_search_forward(
 }
 
 void dnls_search_backward(
-    torch::Tensor grad_patches,
     torch::Tensor vid,
     torch::Tensor nlDists,
-    torch::Tensor nlInds) {
-  CHECK_INPUT(grad_patches);
+    torch::Tensor nlInds,
+    int ps,int pt,float lam) {
   CHECK_INPUT(vid);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  // dnls_cuda_search_backward(grad_patches,vid,nlDists,nlInds);
+  dnls_cuda_search_backward(vid,nlDists,nlInds,ps,pt,lam);
 }
 
 // python bindings

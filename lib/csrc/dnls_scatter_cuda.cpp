@@ -5,15 +5,19 @@
 
 // CUDA forward declarations
 
-std::vector<torch::Tensor> dnls_cuda_scatter_forward(
+void dnls_cuda_scatter_forward(
     torch::Tensor vid,
     torch::Tensor patches,
-    torch::Tensor nlInds);
+    torch::Tensor nlInds,
+    int dilation);
 
-std::vector<torch::Tensor> dnls_cuda_scatter_backward(
-    torch::Tensor grad_vid,
-    torch::Tensor patches,
-    torch::Tensor nlInds);
+void dnls_cuda_scatter_backward(
+    torch::Tensor grad_patches,
+    torch::Tensor vid,
+    torch::Tensor nlDists,
+    torch::Tensor nlInds,
+    int dilation, float lam, bool exact);
+
 
 // C++ interface
 
@@ -24,21 +28,25 @@ std::vector<torch::Tensor> dnls_cuda_scatter_backward(
 void dnls_scatter_forward(
     torch::Tensor vid,
     torch::Tensor patches,
-    torch::Tensor nlInds) {
+    torch::Tensor nlInds,
+    int dilation) {
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
   CHECK_INPUT(nlInds);
-  dnls_cuda_scatter_forward(vid,patches,nlInds);
+  dnls_cuda_scatter_forward(vid,patches,nlInds,dilation);
 }
 
 void dnls_scatter_backward(
     torch::Tensor grad_patches,
     torch::Tensor vid,
-    torch::Tensor nlInds) {
+    torch::Tensor nlDists,
+    torch::Tensor nlInds,
+    int dilation, float lam, bool exact) {
   CHECK_INPUT(grad_patches);
   CHECK_INPUT(vid);
+  CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_scatter_backward(grad_patches,vid,nlInds);
+  dnls_cuda_scatter_backward(grad_patches,vid,nlDists,nlInds,dilation,lam,exact);
 }
 
 // python bindings

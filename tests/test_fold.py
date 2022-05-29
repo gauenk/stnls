@@ -18,8 +18,7 @@ from einops import rearrange,repeat
 import dnls
 
 # -- test func --
-import torch.nn.functional as nnf
-from torch.nn.functional import fold,unfold,pad
+from torch.nn.functional import fold,unfold
 from torchvision.transforms.functional import center_crop
 
 # -- paths --
@@ -29,81 +28,13 @@ SAVE_DIR = Path("./output/tests/")
 # -- Primary Testing Class --
 #
 
-class TestGather(unittest.TestCase):
+class TestFold(unittest.TestCase):
 
     #
-    # -- Test Simple Scatter --
+    # -- Test v.s. NN --
     #
 
-    def test_simple_gather(self):
-
-        # -- get args --
-        dname,sigma,comp_flow,args = self.setup()
-
-        # -- init vars --
-        device = "cuda:0"
-        clean_flow = True
-        comp_flow = False
-
-        # -- load data --
-        vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-        vid = th.from_numpy(vid).to(device)
-        noisy = vid + sigma * th.randn_like(vid)
-        flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
-
-        # -- unpack params --
-        k,ps,pt = args.k,args.ps,args.pt
-        ws,wt,chnls = args.ws,args.wt,1
-
-        # -- gather/scatter decl --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=True)
-        gather_nl = dnls.gather.GatherNl(vid.shape)
-
-        # -- batching info --
-        device = noisy.device
-        shape = noisy.shape
-        t,c,h,w = shape
-        npix = t * h * w
-        qStride,qSize = 1,64
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
-        vid = vid.contiguous()
-        th.cuda.synchronize()
-
-        # -- nbatches --
-        for index in range(nbatches):
-
-            # -- get [patches & nlInds] --
-            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
-                                                        t,h,w,device)
-            nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                    flow,k,ps,pt,ws,wt,chnls)
-            patches = scatter_nl(vid,nlInds)
-
-            # -- reset gather --
-            gather_nl.vid[...] = 0
-            gather_nl.wvid[...] = 0
-
-            # -- testing forward --
-            vid_nl,wvid_nl = gather_nl(patches,nlDists,nlInds)
-            vid_simp,wvid_simp = dnls.simple.gather.run(patches,nlDists,
-                                                        nlInds,shape=shape)
-            error = th.mean((vid_nl - vid_simp)**2).item()
-            assert error < 1e-10
-
-            # -- save --
-            # vid_nl /= vid_nl.max()
-            # vid_simp /= vid_simp.max()
-            # dnls.testing.data.save_burst(vid_nl[[0]],SAVE_DIR,"nl_%d" % index)
-            # dnls.testing.data.save_burst(vid_simp[[0]],SAVE_DIR,"simp_%d" % index)
-
-        th.cuda.synchronize()
-
-    #
-    # -- Test Gather & Unfold --
-    #
-
-    def test_nn_gather(self):
+    def test_nn_fold(self):
 
         # -- get args --
         dname,sigma,comp_flow,args = self.setup()
@@ -134,9 +65,9 @@ class TestGather(unittest.TestCase):
         nbatches = (nsearch-1) // qSize + 1
         vid = vid.contiguous()
 
-        # -- exec gather fxns --
+        # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=True)
-        gather_nl = dnls.gather.GatherNl((t,c,h,w),exact=exact)
+        fold_nl = dnls.fold.Fold((t,c,h,w))
 
         # -- get [patches & nlInds] --
         index = 0
@@ -157,13 +88,8 @@ class TestGather(unittest.TestCase):
         patches_nl.requires_grad_(True)
 
         # -- run forward --
-        vid_nn_raw,wvid_nn = self.run_fold(patches_nn,t,h,w)
-        vid_nl_raw,wvid_nl = gather_nl(patches_nl,nlDists,nlInds)
-
-        # -- reweight --
-        args = th.where(wvid_nl>0)
-        vid_nl = vid_nl_raw  / wvid_nl
-        vid_nn = vid_nn_raw  / wvid_nn
+        vid_nn,_ = self.run_fold(patches_nn,t,h,w)
+        vid_nl = fold_nl(patches_nl,0)
 
         # -- run backward --
         vid_grad = th.randn_like(vid)
@@ -171,7 +97,6 @@ class TestGather(unittest.TestCase):
         th.autograd.backward(vid_nl,vid_grad)
 
         # -- check forward --
-        diff = th.abs(vid_nn - vid_nl)
         error = th.mean((vid_nn - vid_nl)**2).item()
         assert error < 1e-10
 

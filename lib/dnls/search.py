@@ -84,7 +84,7 @@ class SearchNlFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid, queryInds, fflow, bflow,
                 k, ps, pt, ws, wt, chnls,
-                dilation=1,stride=1):
+                dilation=1,stride=1,lam=1.):
         """
         vid = [T,C,H,W]
         queryInds = [NumQueries,K,3]
@@ -116,22 +116,27 @@ class SearchNlFunction(th.autograd.Function):
         nlDists[:,0] = 0. # fix the "-100" hack to 0.
 
         # -- for backward --
-        ctx.save_for_backward([nlInds,nlDists,vid.shape])
+        ctx.save_for_backward(nlDists,nlInds)
+        ctx.vid_shape = vid.shape
+        ctx.ps,ctx.pt = ps,pt
+        ctx.lam = lam
 
         return nlDists,nlInds
 
     @staticmethod
     def backward(ctx, grad_nlDists, grad_nlInds):
-        nlInds,nlDists,vid_shape = ctx.saved_tensors
-        # vid = allocate_vid(vid_shape,grad_nlDists.device)
-        # dnls_cuda.gather_backward(grad_patches.contiguous(),
-        #                           vid,nlInds,nlDists)
-        # return vid
-
+        nlDists,nlInds = ctx.saved_tensors
+        bkwd_nlDists = nlDists * grad_nlDists
+        vid_shape = ctx.vid_shape
+        lam,ps,pt = ctx.lam,ctx.ps,ctx.pt
+        vid = allocate_vid(vid_shape,grad_nlDists.device)
+        dnls_cuda.search_backward(vid,bkwd_nlDists,nlInds,ps,pt,lam)
+        return vid,None,None,None,None,None,None,None,None,None,None,None,None,None
 
 class SearchNl(th.nn.Module):
 
-    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, chnls=1, dilation=1, stride=1):
+    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, chnls=1,
+                 dilation=1, stride=1, lam = 1.):
         super(SearchNl, self).__init__()
         self.k = k
         self.ps = ps
@@ -143,9 +148,10 @@ class SearchNl(th.nn.Module):
         self.chnls = chnls
         self.dilation = dilation
         self.stride = stride
+        self.lam = lam
 
     def forward(self, vid, queryInds):
         return SearchNlFunction.apply(vid,queryInds,self.fflow,self.bflow,
                                       self.k,self.ps,self.pt,self.ws,self.wt,
-                                      self.chnls,self.dilation,self.stride)
+                                      self.chnls,self.dilation,self.stride,self.lam)
 

@@ -17,11 +17,10 @@ from einops import rearrange,repeat
 # -- dnls --
 import dnls
 
-# -- testing --
+# -- test func --
 import torch.nn.functional as nnf
 from torch.nn.functional import fold,unfold,pad
 from torchvision.transforms.functional import center_crop
-
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/")
@@ -30,13 +29,13 @@ SAVE_DIR = Path("./output/tests/")
 # -- Primary Testing Class --
 #
 
-class TestScatter(unittest.TestCase):
+class TestUnfold(unittest.TestCase):
 
     #
-    # -- Test Simple Scatter --
+    # -- Test v.s. NN --
     #
 
-    def test_simple_scatter(self):
+    def test_nn_unfold(self):
 
         # -- get args --
         dname,sigma,comp_flow,args = self.setup()
@@ -45,61 +44,7 @@ class TestScatter(unittest.TestCase):
         device = "cuda:0"
         clean_flow = True
         comp_flow = False
-
-        # -- load data --
-        vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-        vid = th.from_numpy(vid).to(device)
-        noisy = vid + sigma * th.randn_like(vid)
-        flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
-
-        # -- unpack params --
-        k,ps,pt = args.k,args.ps,args.pt
-        ws,wt,chnls = args.ws,args.wt,1
-
-        # -- batching info --
-        device = noisy.device
-        shape = noisy.shape
-        t,c,h,w = shape
-        npix = t * h * w
-        qStride,qSize = 1,100
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
-        vid = vid.contiguous()
-        th.cuda.synchronize()
-
-        # -- nbatches --
-        for index in range(nbatches):
-
-            # -- get [patches & nlInds] --
-            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
-                                                        t,h,w,device)
-            nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                    flow,k,ps,pt,ws,wt,chnls)
-
-            # -- exec scatter fxns --
-            scatter_nl = dnls.scatter.ScatterNl(ps,pt)
-
-            # -- testing forward --
-            patches_nl_fwd = scatter_nl(vid,nlInds)
-            patches_simp_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
-            error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
-            assert error < 1e-10
-        th.cuda.synchronize()
-
-    #
-    # -- Test Scatter & Unfold --
-    #
-
-    def test_nn_scatter(self):
-
-        # -- get args --
-        dname,sigma,comp_flow,args = self.setup()
-
-        # -- init vars --
-        device = "cuda:0"
-        clean_flow = True
-        comp_flow = False
-        exact = False
+        exact = True
 
         # -- load data --
         vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
@@ -121,28 +66,23 @@ class TestScatter(unittest.TestCase):
         nbatches = (nsearch-1) // qSize + 1
         vid = vid.contiguous()
 
-        # -- exec scatter fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact)
+        # -- exec unfold fxns --
+        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=True)
+        unfold_nl = dnls.unfold.Unfold(ps)
 
-        # -- get [patches & nlInds] --
-        index = 0
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
-                                                    t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                flow,k,ps,pt,ws,wt,chnls)
         #
         # -- test logic --
         #
 
         # -- prepare videos --
-        vid_nn = vid
+        vid_nn = vid.clone()
         vid_nl = vid.clone()
         vid_nn.requires_grad_(True)
         vid_nl.requires_grad_(True)
 
         # -- run forward --
         patches_nn = self.run_unfold(vid_nn,ps)
-        patches_nl = scatter_nl(vid_nl,nlInds[:,[0]])
+        patches_nl = unfold_nl(vid_nl,0,npix)
 
         # -- run backward --
         patches_grad = th.randn_like(patches_nn)
@@ -151,7 +91,6 @@ class TestScatter(unittest.TestCase):
 
         # -- check forward --
         diff = th.abs(patches_nn - patches_nl)
-        diff = rearrange(diff,'nq k t c h w -> nq (k t c h w)')
         error = th.mean((patches_nn - patches_nl)**2).item()
         assert error < 1e-10
 
@@ -186,8 +125,23 @@ class TestScatter(unittest.TestCase):
         sigma = 50.
         dname = "text_tourbus_64"
         dname = "davis_baseball_64x64"
-        args = edict({'ps':7,'pt':1,'k':10,'ws':10,'wt':5})
+        args = edict({'ps':7,'pt':1,'k':1,'ws':10,'wt':5})
         return dname,sigma,comp_flow,args
+
+    def run_fold(self,patches,t,h,w):
+        ps = patches.shape[-1]
+        psHalf = ps//2
+        hp,wp = h+2*psHalf,w+2*psHalf
+        shape_str = '(t np) 1 1 c h w -> t (c h w) np'
+        patches = rearrange(patches,shape_str,t=t)
+        ones = th.ones_like(patches)
+
+        vid_pad = fold(patches,(hp,wp),(ps,ps))
+        vid = center_crop(vid_pad,(h,w))
+        wvid_pad = fold(ones,(hp,wp),(ps,ps))
+        wvid = center_crop(wvid_pad,(h,w))
+
+        return vid,wvid
 
     def run_unfold(self,vid,ps):
         psHalf = ps//2
@@ -196,3 +150,4 @@ class TestScatter(unittest.TestCase):
         patches = unfold(vid_pad,(ps,ps))
         patches = rearrange(patches,shape_str,h=ps,w=ps)
         return patches
+
