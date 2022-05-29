@@ -83,6 +83,8 @@ class TestUnfold(unittest.TestCase):
         # -- run forward --
         patches_nn = self.run_unfold(vid_nn,ps)
         patches_nl = unfold_nl(vid_nl,0,npix)
+        print("patches_nn.shape: ",patches_nn.shape)
+        print("patches_nl.shape: ",patches_nl.shape)
 
         # -- run backward --
         patches_grad = th.randn_like(patches_nn)
@@ -90,7 +92,6 @@ class TestUnfold(unittest.TestCase):
         th.autograd.backward(patches_nl,patches_grad)
 
         # -- check forward --
-        diff = th.abs(patches_nn - patches_nl)
         error = th.mean((patches_nn - patches_nl)**2).item()
         assert error < 1e-10
 
@@ -99,6 +100,23 @@ class TestUnfold(unittest.TestCase):
         grad_nl = vid_nl.grad
         if exact: tol = 1e-10
         else: tol = 1.
+
+        diff = th.abs(grad_nn - grad_nl)
+        diff /= diff.max()
+        dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+
+        print("-"*20)
+        print(grad_nn[0,0,:3,:3])
+        print(grad_nl[0,0,:3,:3])
+        print("-"*20)
+        print(grad_nn[0,0,-3:,-3:])
+        print(grad_nl[0,0,-3:,-3:])
+        print("-"*20)
+        print(grad_nn[1,0,:3,:3])
+        print(grad_nl[1,0,:3,:3])
+        print("-"*20)
+
+
         error = th.mean((grad_nn - grad_nl)**2).item()
         assert error < tol
 
