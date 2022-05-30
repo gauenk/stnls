@@ -282,8 +282,6 @@ void dnls_cuda_search_forward(
    int numQueries = queryInds.size(0);
    int w_threads = min(ws,32);
    int ws_iters = ((ws-1)/w_threads) + 1;
-   fprintf(stdout,"w_threads: %d\n",w_threads);
-   fprintf(stdout,"ws_iters: %d\n",ws_iters);
    dim3 nthreads(w_threads,w_threads);
    int nblocks = ((numQueries - 1) / bpb) + 1;
     

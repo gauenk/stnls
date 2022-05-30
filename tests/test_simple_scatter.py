@@ -86,7 +86,7 @@ class TestSimpleScatter(unittest.TestCase):
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls,
                                                 stride=1)#args.stride)
-        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt,stride=1)#args.stride)
+        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
         patches = patches[:,[0]]
         nlDists = nlDists[:,[0]]
         nlInds = nlInds[:,[0]]

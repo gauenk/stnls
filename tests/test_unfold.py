@@ -91,10 +91,9 @@ class TestUnfold(unittest.TestCase):
         patches_nl = unfold_nl(vid_nl_cc,0,npix)
 
         # -- run backward --
-        patches_grad = th.ones_like(patches_nn)
+        patches_grad = th.rand_like(patches_nn).type(th.float32)
         th.autograd.backward(patches_nn,patches_grad)
         th.autograd.backward(patches_nl,patches_grad)
-        print("dil: ",dil)
 
         # -- check forward --
         error = th.sum((patches_nn - patches_nl)**2).item()
@@ -103,15 +102,25 @@ class TestUnfold(unittest.TestCase):
         # -- check backward --
         grad_nn = center_crop(vid_nn.grad,(h,w))
         grad_nl = center_crop(vid_nl.grad,(h,w))
-        if exact: tol = 1e-10
-        else: tol = 1.
 
+        # -- vis --
+        # print(grad_nn[0,0,:3,:3])
+        # print(grad_nl[0,0,:3,:3])
+        # print("-"*20)
+        # print(grad_nn[0,0,-3:,-3:])
+        # print(grad_nl[0,0,-3:,-3:])
+        # print("-"*20)
+        # print(grad_nn[0,0,8:14,8:14])
+        # print(grad_nl[0,0,8:14,8:14])
+
+        # -- compute error --
         diff = th.abs(grad_nn - grad_nl)
-        diff /= diff.max()
+        dmax = diff.max()
+        if dmax > 1e-3: diff /= dmax
         dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
         error = th.sum((grad_nn - grad_nl)**2).item()
-        assert error < tol
+        assert error < 1e-5
 
     #
     # -- Launcher --

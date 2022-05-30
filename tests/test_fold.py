@@ -77,13 +77,6 @@ class TestFold(unittest.TestCase):
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches = scatter_nl(vid,nlInds)
-        # patches = self.run_unfold(vid,ps,dil)
-
-        # -- testing mods --
-        # patches_cp = patches.clone()
-        # # patches_cp[...] = 1.
-        # # patches_cp[1:2] = patches[1:2]
-        # patches = patches_cp
 
         #
         # -- test logic --
@@ -114,13 +107,13 @@ class TestFold(unittest.TestCase):
         dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
         # -- vis --
-        print("\n")
-        print(patches[0,0,0,0])
-        print(patches[1,0,0,0])
-        print("-"*20)
-        print(vid_nn[0,0,:3,:3])
-        print("-"*20)
-        print(vid_nl[0,0,:3,:3])
+        # print("\n")
+        # print(patches[0,0,0,0])
+        # print(patches[1,0,0,0])
+        # print("-"*20)
+        # print(vid_nn[0,0,:3,:3])
+        # print("-"*20)
+        # print(vid_nl[0,0,:3,:3])
 
         # -- check forward --
         error = th.sum((vid_nn - vid_nl)**2).item()
@@ -133,18 +126,15 @@ class TestFold(unittest.TestCase):
         grad_nl = patches_nl.grad
 
         # -- inspect grads --
-        print("grad_nn.shape: ",grad_nn.shape)
-        print(grad_nn[0,0,0,0])
-        print(grad_nl[0,0,0,0])
-
-        print(grad_nn[100,0,0,0])
-        print(grad_nl[100,0,0,0])
+        # print("grad_nn.shape: ",grad_nn.shape)
+        # print(grad_nn[0,0,0,0])
+        # print(grad_nl[0,0,0,0])
+        # print(grad_nn[100,0,0,0])
+        # print(grad_nl[100,0,0,0])
 
         # -- check backward --
-        if exact: tol = 1e-10
-        else: tol = 1.
-        error = th.mean((grad_nn - grad_nl)**2).item()
-        assert error < tol
+        error = th.sum((grad_nn - grad_nl)**2).item()
+        assert error < 1e-10
 
     #
     # -- Launcher --
@@ -169,7 +159,7 @@ class TestFold(unittest.TestCase):
         sigma = 50.
         dname = "text_tourbus_64"
         dname = "davis_baseball_64x64"
-        args = edict({'ps':3,'pt':1,'k':1,'ws':10,'wt':5,'dilation':5})
+        args = edict({'ps':3,'pt':1,'k':1,'ws':10,'wt':5,'dilation':1})
         return dname,sigma,comp_flow,args
 
     def run_fold(self,patches,t,h,w,dil=1):

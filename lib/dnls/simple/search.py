@@ -173,8 +173,8 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
 
     # -- reflective boundary --
     def bounds3(val,lim):
-        if val < 0: val = -val-1
-        elif val >= lim: val = 2*lim-val-1
+        if val < 0: val = -val
+        elif val >= lim: val = 2*lim-val-2
         return int(val)
 
     # -- shapes --

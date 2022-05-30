@@ -194,20 +194,20 @@ class TestTopKSearch(unittest.TestCase):
             kn3_vals = kn3_vals.cpu().numpy()
 
 
-            neq = np.where(np.abs(kn3_vals - vpss_vals)>1)
-            if len(neq[0]) > 0:
-                bidx = neq[0][0]
-                print(bidx)
-                print(srch_inds.shape)
-                print(vpss_vals.shape)
-                print(srch_inds[-3:])
-                print(srch_inds[bidx])
-                bt,bh,bw = (bidx // npix),(bidx // npix)//w,(bidx // npix)%w
-                print(bt,bh,bw)
-                print(neq)
-                print(kn3_vals[neq])
-                print(vpss_vals[neq])
-                print(vpss_inds[bidx,0])
+            # neq = np.where(np.abs(kn3_vals - vpss_vals)>1)
+            # if len(neq[0]) > 0:
+            #     bidx = neq[0][0]
+            #     print(bidx)
+            #     print(srch_inds.shape)
+            #     print(vpss_vals.shape)
+            #     print(srch_inds[-3:])
+            #     print(srch_inds[bidx])
+            #     bt,bh,bw = (bidx // npix),(bidx // npix)//w,(bidx // npix)%w
+            #     print(bt,bh,bw)
+            #     print(neq)
+            #     print(kn3_vals[neq])
+            #     print(vpss_vals[neq])
+            #     print(vpss_inds[bidx,0])
 
             # -- allow for swapping of "close" values --
             np.testing.assert_array_almost_equal(kn3_vals,vpss_vals)
@@ -315,16 +315,16 @@ class TestTopKSearch(unittest.TestCase):
             nlInds_simp = nlInds_simp.cpu().numpy()
 
             # -- save mask --
-            dists = (nlDists_cu - nlDists_simp)**2
-            print(t,h,w)
-            dists = rearrange(dists,'(t h w) k -> t k h w ',t=t,h=h,w=w)
-            dists = repeat(dists[0,:,:,:],'t h w -> t c h w ',c=3)
-            if dists.max() > 1e-3: dists /= dists.max()
-            dnls.testing.data.save_burst(dists,SAVE_DIR,"dists")
-            print(nlDists_cu.shape)
-            print(nlDists_cu[0,-1],nlDists_simp[0,-1])
-            print(nlDists_cu[0,10],nlDists_simp[0,10])
-            print(nlDists_cu[0,-5:],nlDists_simp[0,-5:])
+            # dists = (nlDists_cu - nlDists_simp)**2
+            # print(t,h,w)
+            # dists = rearrange(dists,'(t h w) k -> t k h w ',t=t,h=h,w=w)
+            # dists = repeat(dists[0,:,:,:],'t h w -> t c h w ',c=3)
+            # if dists.max() > 1e-3: dists /= dists.max()
+            # dnls.testing.data.save_burst(dists,SAVE_DIR,"dists")
+            # print(nlDists_cu.shape)
+            # print(nlDists_cu[0,-1],nlDists_simp[0,-1])
+            # print(nlDists_cu[0,10],nlDists_simp[0,10])
+            # print(nlDists_cu[0,-5:],nlDists_simp[0,-5:])
 
             # -- allow for swapping of "close" values --
             np.testing.assert_array_almost_equal(nlDists_cu,nlDists_simp,5)
@@ -414,9 +414,9 @@ class TestTopKSearch(unittest.TestCase):
         loss = th.sum((nlDists - ones)**2)
         loss.backward()
 
-        print("-"*30)
-        print("nlDists.shape: ",nlDists.shape)
-        print("nlInds.shape: ",nlInds.shape)
-        print("-"*30)
+        # print("-"*30)
+        # print("nlDists.shape: ",nlDists.shape)
+        # print("nlInds.shape: ",nlInds.shape)
+        # print("-"*30)
 
 

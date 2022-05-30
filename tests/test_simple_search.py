@@ -252,60 +252,64 @@ class TestSimpleSearch(unittest.TestCase):
         # -- get patches with search --
         index = 0
         queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(clean,queryInds,flow,k,
+        nlDists,nlInds = dnls.simple.search.run(clean/255.,queryInds,flow,k,
                                                 ps,pt,ws,wt,3)
-        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)/255.
-        print("patches.shape: ",patches.shape)
+        patches = dnls.simple.scatter.run(clean/255.,nlInds,ps,pt)
 
         # -- unfold for comp --
         pad = ps//2
         clean_pad = pad_fxn(clean,(pad,pad,pad,pad),padding_mode="reflect")
-        patches_uf = unfold(clean_pad,(ps,ps))/255.
+        patches_uf = unfold(clean_pad,(ps,ps))#/255.
         patches_uf = rearrange(patches_uf,'t d (h w) -> t h w d',h=h)
-        print("patches_uf.shape: ",patches_uf.shape)
+        # print("patches_uf.shape: ",patches_uf.shape)
 
-        p1_og = patches[-1,1].view(3,7,7)
-        p0_og = patches[-1,0].view(3,7,7)
-        p0 = patches_uf[9,31,31].view(3,7,7)
+        # p1_og = patches[-1,1].view(3,7,7)
+        # p0_og = patches[-1,0].view(3,7,7)
+        # p0 = patches_uf[9,31,31].view(3,7,7)
         # p0 = patches_uf[queryInds[-1,0],queryInds[-1,1],queryInds[-1,2]]
         # p1 = patches_uf[nlInds[-1,1,0],nlInds[-1,1,1],nlInds[-1,1,2]]
-        p1 = patches_uf[3,31,30].view(3,7,7)
-        print("p0.shape: ",p0.shape)
-        dist = th.sum((p0 - p1)**2).item()
-        print("Dist: ",dist)
-        dist = th.sum((p0 - p0_og)**2).item()
-        print("Dist[p0-og]: ",dist)
-        dist = th.sum((p1 - p1_og)**2).item()
-        print("Dist[p1-og]: ",dist)
+        # p1 = patches_uf[3,31,30].view(3,7,7)
+        # print("p0.shape: ",p0.shape)
+        # dist = th.sum((p0 - p1)**2).item()
+        # print("Dist: ",dist)
+        # dist = th.sum((p0 - p0_og)**2).item()
+        # print("Dist[p0-og]: ",dist)
+        # dist = th.sum((p1 - p1_og)**2).item()
+        # print("Dist[p1-og]: ",dist)
 
-        print("-"*20)
-        print("-"*20)
+        # print("-"*20)
+        # print("-"*20)
         # print(clean[9,:,28,28]/255.)
         # print(clean[3,:,27,26]/255.)
-        print(nlInds[-1])
-        print(clean[9,:,27:,27:])
-        print(patches[-1,0].view(3,7,7)*255.)
-        print(clean[3,:,27:,26:])
-        print(patches[-1,1].view(3,7,7)*255.)
+        # print(nlInds[-1])
+        # print(clean[9,:,27:,27:])
+        # print(patches[-1,0].view(3,7,7)*255.)
+        # print(clean[3,:,27:,26:])
+        # print(patches[-1,1].view(3,7,7)*255.)
         # print(clean[9,:,27,27]/255.)
         # print(clean[3,:,27,26]/255.)
-        print("-"*20)
-        print("-"*20)
+        # print("-"*20)
+        # print("-"*20)
 
         # print(p0)
         # print(p0_og)
-        print(th.sum((p0 - p0_og)**2).item())
-        print(th.sum((p0_og - p1_og)**2).item())
+        # print(th.sum((p0 - p0_og)**2).item())
+        # print(th.sum((p0_og - p1_og)**2).item())
 
         # -- re-compute dists --
         np,k = patches.shape[:2]
         patches = patches.view(np,k,-1)
         pDists = th.sum((patches - patches[:,[0]])**2,dim=-1)
 
-        print("pDists")
-        print(pDists[-3:])
-        print("nlDists")
-        print(nlDists[-3:])
+        # print("pDists")
+        # print(pDists[:3])
+        # print("nlDists")
+        # print(nlDists[:3])
+
+        # print("pDists")
+        # print(pDists[-3:])
+        # print("nlDists")
+        # print(nlDists[-3:])
 
         # -- insepct dist diffs -
         # error = (pDists - nlDists)**2
@@ -328,14 +332,10 @@ class TestSimpleSearch(unittest.TestCase):
 
 
         # -- compute error -
-        print((pDists - nlDists)**2)
         error = th.max((pDists - nlDists)**2).item()
-        print("error: ",error)
         assert error < 1e-10
-        error = th.mean((pDists - nlDists)**2).item()
-        print("error: ",error)
+        error = th.sum((pDists - nlDists)**2).item()
         assert error < 1e-10
-
 
     def manual_patch(img,inds):
         patches = img[9,32-2:,32-2:]
