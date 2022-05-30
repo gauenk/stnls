@@ -19,7 +19,6 @@
 
 #define CUDA_KERNEL_LOOP(i, n) CUDA_KERNEL_LOOP_TYPE(i, n, int)
 
-
 __inline__ __device__ int bounds(int val, int lim ){
   if (val < 0){
     val = -val;
@@ -167,7 +166,7 @@ __global__ void dnls_unfold_backward_kernel(
     int pt = patches.size(2);
     int ps = patches.size(5);
     int numQueries = patches.size(0);
-    int psHalf = (ps-1)/2;
+    int psHalf = ps/2;
     int hw = height*width;
     bool valid;
 
@@ -184,22 +183,46 @@ __global__ void dnls_unfold_backward_kernel(
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
 
-              // -- select ni --
-              int wi = w_im + dilation*(pi - psHalf);
-              int hi = h_im + dilation*(pj - psHalf);
+              // -- offsets for ni --
+              int _wi = w_im + dilation*(pi - psHalf);
+              int _hi = h_im + dilation*(pj - psHalf);
               int ti = t_im + pk;
-              int ni = ti * hw + hi * width + wi; // maybe stride here?
 
               // -- check bounds --
-              // wi = bounds(wi,width);
-              // hi = bounds(hi,height);
-              valid = (wi >= 0) && (wi < width);
-              valid = valid && (hi >= 0) && (hi < height);
+              // NOTE; this will not work for dilation > 1
+              valid = (_wi >= -psHalf) && (_wi < (width+psHalf));
+              valid = valid && (_hi >= -psHalf) && (_hi < (height+psHalf));
+              int wi = bounds(_wi,width);
+              int hi = bounds(_hi,height);
+
+              // -- compute ni --
+              int ni = ti * hw + hi * width + wi; // maybe stride here?
+              // valid = valid && (ni >= 0) && (ni < numQueries);
 
               // -- patch indexing --
-              int w_ip = ps-pi-1;//(w_im - wi) / dilation;
-              int h_ip = ps-pj-1;//(h_im - hi) / dilation;
+              int w_ip = ps-1-pi;
+              int h_ip = ps-1-pj;
 
+              // -- reflect to match --
+              if (_wi > wi){
+                w_ip = pi;
+                valid = valid && (w_ip <= psHalf);
+              }
+              else if(_wi < wi){
+                w_ip = pi;
+                valid = valid && (w_ip >= psHalf);
+              }
+
+              if (_hi > hi){
+                h_ip = pj;
+                valid = valid && (h_ip <= psHalf);
+              }
+              else if(_hi < hi){
+                h_ip = pj;
+                valid = valid && (h_ip >= psHalf);
+              }
+
+              // -- accumulate --
               if (valid){
                 val += patches[ni][0][0][ci][h_ip][w_ip];
               }

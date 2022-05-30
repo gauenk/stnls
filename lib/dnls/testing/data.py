@@ -41,7 +41,7 @@ def save_image(image,path):
 
     # -- to numpy --
     if th.is_tensor(image):
-        image = image.cpu().numpy()
+        image = image.detach().cpu().numpy()
 
     # -- to uint8 --
     if image.max() < 100:

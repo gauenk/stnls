@@ -11,6 +11,13 @@
 
 ****************************/
 
+
+#define CUDA_KERNEL_LOOP_TYPE(i, n, index_type)                         \
+  int64_t _i_n_d_e_x = blockIdx.x * blockDim.x + threadIdx.x;           \
+  for (index_type i=_i_n_d_e_x; _i_n_d_e_x < (n); _i_n_d_e_x+=blockDim.x * gridDim.x, i=_i_n_d_e_x)
+
+#define CUDA_KERNEL_LOOP(i, n) CUDA_KERNEL_LOOP_TYPE(i, n, int)
+
 __inline__ __device__ int bounds(int val, int lim ){
   if (val < 0){
     val = -val;
@@ -30,7 +37,83 @@ template <typename scalar_t>
 __global__ void dnls_fold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    int qStart, int qStride, int dilation, int qpt) {
+    int iStart, int stride, int dilation, int num_kernels) {
+
+    // -- unpack --
+    int nframes = vid.size(0);
+    int colors = vid.size(1);
+    int height = vid.size(2);
+    int width = vid.size(3);
+    int pt = patches.size(2);
+    int ps = patches.size(5);
+    int numQueries = patches.size(0);
+    int psHalf = ps/2;
+    int hw = height*width;
+    bool valid;
+
+    CUDA_KERNEL_LOOP(_index, num_kernels) {
+
+      int index = (_index + iStart);
+      const int64_t w_im = index % width;
+      const int64_t h_im = (index / width) % height;
+      const int64_t t_im = index / hw;
+        
+      for(int ci = 0; ci < colors; ci++){
+        scalar_t val = 0;
+        for (int pk = 0; pk < pt; pk++){
+          for (int pi = 0; pi < ps; pi++){
+            for (int pj = 0; pj < ps; pj++){
+
+              // -- offsets for ni --
+              int _wi = w_im + dilation*(pi - psHalf);
+              int _hi = h_im + dilation*(pj - psHalf);
+              int ti = t_im + pk;
+
+              // -- check bounds --
+              // NOTE; this will not work for dilation > 1
+              valid = (_wi >= -psHalf) && (_wi < (width+psHalf));
+              valid = valid && (_hi >= -psHalf) && (_hi < (height+psHalf));
+              int wi = bounds(_wi,width);
+              int hi = bounds(_hi,height);
+
+              // -- compute ni --
+              int ni = ti * hw + hi * width + wi; // maybe stride here?
+              // valid = valid && (ni >= 0) && (ni < numQueries);
+
+              // -- patch indexing --
+              int w_ip = ps-1-pi;
+              int h_ip = ps-1-pj;
+
+              // -- reflect to match --
+              if (_wi > wi){
+                w_ip = pi;
+                valid = valid && (w_ip < psHalf);
+              }
+              else if(_wi < wi){
+                w_ip = pi;
+                valid = valid && (w_ip > psHalf);
+              }
+
+              if (_hi > hi){
+                h_ip = pj;
+                valid = valid && (h_ip < psHalf);
+              }
+              else if(_hi < hi){
+                h_ip = pj;
+                valid = valid && (h_ip > psHalf);
+              }
+
+              // -- accumulate --
+              if (valid){
+                val += patches[ni][0][0][ci][h_ip][w_ip];
+              }
+
+            }
+          } // for patch size
+        } // for patch size
+        vid[t_im][ci][h_im][w_im] = val;
+      } // for colors
+    }
 }
 
 void dnls_cuda_fold_forward(
@@ -38,24 +121,19 @@ void dnls_cuda_fold_forward(
     int qStart, int qStride, int dilation){
 
   // launch params
-  int numQueries = patches.size(0);
-  int k = 1;
-  int pt = patches.size(2);
-  int color = patches.size(3);
-  int ps = patches.size(4);
-  assert(pt == 1);
+  int nthreads = 512;
+  int num_kernels = patches.size(0);//nframes*height*width;
+  int nblocks = (num_kernels-1) / nthreads+1;
 
-  int qpt = 10;
-  int nthreads = 1024;
-  int queries_per_block = nthreads * qpt;
-  int nblocks = ((numQueries - 1) / queries_per_block) + 1;
+  // get starting pixel
+  int iStart = qStart; // some actual logic goes here; what is the "min" pixel (top-left)
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_fold_forward_kernel", ([&] {
     dnls_fold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        qStart,qStride,dilation,qpt);
+        iStart,qStride,dilation,num_kernels);
       }));
 }
 
@@ -68,11 +146,86 @@ void dnls_cuda_fold_forward(
 
 template <typename scalar_t>
 __global__ void dnls_fold_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid,
+    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid, // grad
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     int qStart, int qStride, int dilation, int qpt, int kpt) {
 
-  
+    // -- shapes --
+    int nframes = vid.size(0);
+    int colors = vid.size(1);
+    int height = vid.size(2);
+    int width = vid.size(3);
+    int nq = patches.size(0);
+    int k = patches.size(1);
+    int pt = patches.size(2);
+    int ps = patches.size(4);
+    int psHalf = (int)ps/2;
+    int heigh_width = height*width;
+
+    // -- cuda threads --
+    int pi = threadIdx.y;
+    int pj = threadIdx.z;
+
+    // -- batching --
+    int query_start_block = blockIdx.x*qpt;
+    int k_start = threadIdx.x*kpt;
+
+    // inits
+    int qIndex;
+    int qi,ki,ti,hi,wi;
+    int vi_h,vi_w,vi_t;
+    bool valid_hw,valid_t,valid;
+    scalar_t pix;
+
+    // -- range --
+    for(int _qi = 0; _qi < qpt; _qi++){
+
+      // -- query index --
+      qi = _qi + query_start_block + qStart;
+      if (qi >= nq){ continue; }
+
+      for(int _ki = 0; _ki < kpt; _ki++){
+
+        // -- k index --
+        ki = k_start + _ki;
+        if (ki >= k){ continue; }
+
+        // -- fill --
+        qIndex = qi*qStride;
+        wi = qIndex % width;
+        hi = (qIndex/width) % height;
+        ti = (qIndex/heigh_width) % nframes;
+
+        // -- fill across cuda threads --
+        // vi_h = bounds(hi+dilation*(pi - psHalf),height);
+        // vi_w = bounds(wi+dilation*(pj - psHalf),width);
+        vi_h = hi+dilation*(pi - psHalf);
+        vi_w = wi+dilation*(pj - psHalf);
+
+        // -- spatially valid --
+        valid_hw = (vi_h >= 0) && (vi_h < height);
+        valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
+
+        // -- iterate over loop --
+        for(int pk = 0; pk < pt; pk++){
+
+          // -- check valid --
+          vi_t = bounds(ti + pk,nframes);
+          valid_t = (vi_t >= 0) && (vi_t < nframes);
+          valid = valid_hw && valid_t;
+
+          // -- colors --
+          for(int ci = 0; ci < colors; ci++){
+            if (valid){
+              pix = vid[vi_t][ci][vi_h][vi_w];
+            }else{
+              pix = 0.;
+            }
+            patches[qi][ki][pk][ci][pi][pj] = pix;
+          }
+        }
+      }
+    }
 }
 
 void dnls_cuda_fold_backward(
@@ -84,6 +237,8 @@ void dnls_cuda_fold_backward(
   int k = 1;
   int qpt = 10;
   int nblocks = (numQueries-1)/qpt+1;
+  int pt = patches.size(2);
+  assert(pt == 1);
 
   // -- kernel threads --
   int ps = patches.size(5);
