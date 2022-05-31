@@ -37,7 +37,7 @@ template <typename scalar_t>
 __global__ void dnls_fold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    int iStart, int stride, int dilation, int num_kernels) {
+    int iStart, int qStart, int stride, int dilation, int num_kernels) {
 
     // -- unpack --
     int nframes = vid.size(0);
@@ -49,16 +49,25 @@ __global__ void dnls_fold_forward_kernel(
     int numQueries = patches.size(0);
     int psHalf = ps/2;
     int hw = height*width;
-    bool valid;
+    bool valid,valid_q,is_edge;
+    int nhits,nhits_q;
+    // int ndim = ps*ps*pt;
 
     CUDA_KERNEL_LOOP(_index, num_kernels) {
 
-      int index = (_index + iStart);
+      int index = (_index);// + iStart);
       const int64_t w_im = index % width;
       const int64_t h_im = (index / width) % height;
-      const int64_t t_im = index / hw;
+      const int64_t t_im = (index / hw);
+
+      // -- allow partial nhits if edge --
+      // int padf = dilation*ps;
+      // bool is_edge = (w_im < padf) || (w_im > (width-padf));
+      // is_edge = is_edge || (h_im < padf) || (h_im > (height-padf));
         
       for(int ci = 0; ci < colors; ci++){
+        nhits = 0;
+        nhits_q = 0;
         scalar_t val = 0;
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
@@ -77,8 +86,8 @@ __global__ void dnls_fold_forward_kernel(
               int hi = bounds(_hi,height);
 
               // -- compute ni --
-              int ni = ti * hw + hi * width + wi; // maybe stride here?
-              // valid = valid && (ni >= 0) && (ni < numQueries);
+              int qi = ti * hw + hi * width + wi; // maybe stride here?
+              qi -= qStart;
 
               // -- patch indexing --
               int w_ip = ps-1-pi;
@@ -104,14 +113,23 @@ __global__ void dnls_fold_forward_kernel(
               }
 
               // -- accumulate --
-              if (valid){
-                val += patches[ni][0][0][ci][h_ip][w_ip];
+              valid_q = valid && (qi >= 0) && (qi < numQueries);
+              if (valid_q){
+                val += patches[qi][0][0][ci][h_ip][w_ip];
+                nhits_q += 1;
+              }
+              if(valid){
+                nhits += 1;
               }
 
             }
           } // for patch size
         } // for patch size
-        vid[t_im][ci][h_im][w_im] = val;
+        bool eq_hits = nhits == nhits_q;
+        // bool hit_req = true;//((not is_edge) && (nhits == ndim)) || is_edge;
+        if (eq_hits){
+          vid[t_im][ci][h_im][w_im] =  val;
+        }
       } // for colors
     }
 }
@@ -120,9 +138,16 @@ void dnls_cuda_fold_forward(
     torch::Tensor vid, torch::Tensor patches,
     int qStart, int qStride, int dilation){
 
+  // batching entire image always
+  int nframes = vid.size(0);
+  int colors = vid.size(1);
+  int height = vid.size(2);
+  int width = vid.size(3);
+
   // launch params
   int nthreads = 512;
-  int num_kernels = patches.size(0);//nframes*height*width;
+  // int num_kernels = patches.size(0);
+  int num_kernels = nframes*height*width;
   int nblocks = (num_kernels-1) / nthreads+1;
 
   // get starting pixel
@@ -133,7 +158,7 @@ void dnls_cuda_fold_forward(
     dnls_fold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        iStart,qStride,dilation,num_kernels);
+        iStart,qStart,qStride,dilation,num_kernels);
       }));
 }
 
@@ -181,7 +206,7 @@ __global__ void dnls_fold_backward_kernel(
     for(int _qi = 0; _qi < qpt; _qi++){
 
       // -- query index --
-      qi = _qi + query_start_block + qStart;
+      qi = _qi + query_start_block;
       if (qi >= nq){ continue; }
 
       for(int _ki = 0; _ki < kpt; _ki++){
@@ -191,7 +216,7 @@ __global__ void dnls_fold_backward_kernel(
         if (ki >= k){ continue; }
 
         // -- fill --
-        qIndex = qi*qStride;
+        qIndex = qi + qStart;//*qStride;
         wi = qIndex % width;
         hi = (qIndex/width) % height;
         ti = (qIndex/heigh_width) % nframes;

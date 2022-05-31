@@ -43,7 +43,7 @@ def numba_query_batch(srch_inds,index,qSearch,qStride,t,h,w):
     for qi in prange(qSearch):
 
         # -- ind -> ti --
-        ind = start + qi
+        ind = qi + start
         ti = ind // qSearchTotal_t
         ind = ind %  qSearchTotal_t
 
