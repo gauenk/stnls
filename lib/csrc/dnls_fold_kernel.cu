@@ -49,6 +49,8 @@ __global__ void dnls_fold_forward_kernel(
     int numQueries = patches.size(0);
     int psHalf = ps/2;
     int hw = height*width;
+    int width_s = width/stride;
+    int hw_s = (height/stride)*(width/stride);
     bool valid,valid_q;
     // bool is_edge;
     // int nhits,nhits_q;
@@ -57,9 +59,9 @@ __global__ void dnls_fold_forward_kernel(
     CUDA_KERNEL_LOOP(_index, num_kernels) {
 
       int index = (_index);// + iStart);
+      const int64_t t_im = (index / hw);
       const int64_t w_im = index % width;
       const int64_t h_im = (index / width) % height;
-      const int64_t t_im = (index / hw);
 
       // -- allow partial nhits if edge --
       // int padf = dilation*ps;
@@ -85,8 +87,14 @@ __global__ void dnls_fold_forward_kernel(
               int hi = bounds(_hi,height);
 
               // -- compute ni --
-              int qi = ti * hw + hi * width + wi; // maybe stride here?
+              // int qi = ti * hw + hi * width + wi; // maybe stride here?
+              // qi = (int) (qi / (1.*stride));
+              // qi -= qStart;
+              int qi = ti * hw_s + (hi * width_s)/stride + (wi/stride);
               qi -= qStart;
+
+              // -- only if qi is aligned with center --
+              valid = valid && (hi % stride == 0) && (wi % stride == 0);
 
               // -- patch indexing --
               int w_ip = ps-1-pi;
@@ -127,7 +135,7 @@ __global__ void dnls_fold_forward_kernel(
 
 void dnls_cuda_fold_forward(
     torch::Tensor vid, torch::Tensor patches,
-    int qStart, int qStride, int dilation){
+    int qStart, int stride, int dilation){
 
   // batching entire image always
   int nframes = vid.size(0);
@@ -149,7 +157,7 @@ void dnls_cuda_fold_forward(
     dnls_fold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        iStart,qStart,qStride,dilation,num_kernels);
+        iStart,qStart,stride,dilation,num_kernels);
       }));
 }
 
@@ -164,7 +172,7 @@ template <typename scalar_t>
 __global__ void dnls_fold_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid, // grad
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    int qStart, int qStride, int dilation, int qpt, int kpt) {
+    int qStart, int stride, int dilation, int qpt, int kpt) {
 
     // -- shapes --
     int nframes = vid.size(0);
@@ -176,7 +184,7 @@ __global__ void dnls_fold_backward_kernel(
     int pt = patches.size(2);
     int ps = patches.size(4);
     int psHalf = (int)ps/2;
-    int heigh_width = height*width;
+    int height_width = height*width;
 
     // -- cuda threads --
     int pi = threadIdx.y;
@@ -187,11 +195,12 @@ __global__ void dnls_fold_backward_kernel(
     int k_start = threadIdx.x*kpt;
 
     // inits
-    int qIndex;
+    int qIndex,_qIndex;
     int qi,ki,ti,hi,wi;
     int vi_h,vi_w,vi_t;
     bool valid_hw,valid_t,valid;
     scalar_t pix;
+    int stride2 = stride*stride;
 
     // -- range --
     for(int _qi = 0; _qi < qpt; _qi++){
@@ -206,11 +215,14 @@ __global__ void dnls_fold_backward_kernel(
         ki = k_start + _ki;
         if (ki >= k){ continue; }
 
-        // -- fill --
-        qIndex = qi + qStart;//*qStride;
-        wi = qIndex % width;
-        hi = (qIndex/width) % height;
-        ti = (qIndex/heigh_width) % nframes;
+        // -- indices --
+        qIndex = stride2*(qi + qStart);
+        ti = (qIndex/height_width) % nframes;
+        _qIndex = qIndex % height_width;
+        hi = (stride)*(_qIndex / (stride*width)) % height;
+        wi = (_qIndex/stride) % width;
+        // hi = (_qIndex/width) % height;
+        // wi = _qIndex % width;
 
         // -- fill across cuda threads --
         // vi_h = bounds(hi+dilation*(pi - psHalf),height);
@@ -246,7 +258,7 @@ __global__ void dnls_fold_backward_kernel(
 
 void dnls_cuda_fold_backward(
   torch::Tensor grad_vid,torch::Tensor patches,
-  int qStart, int qStride, int dilation) {
+  int qStart, int stride, int dilation) {
 
   // -- kernel blocks --
   int numQueries = patches.size(0);
@@ -269,7 +281,7 @@ void dnls_cuda_fold_backward(
     dnls_fold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        qStart,qStride,dilation,qpt,kpt);
+        qStart,stride,dilation,qpt,kpt);
   }));
 
 }

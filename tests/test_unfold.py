@@ -184,10 +184,6 @@ class TestUnfold(unittest.TestCase):
             patches_nl_i = unfold_nl(vid_nl_cc,qindex,qSize)
             th.cuda.synchronize()
 
-            # # -- save --
-            # vid_nl_p = vid_nl / (ps*ps)
-            # dnls.testing.data.save_burst(vid_nl_p,SAVE_DIR,"vid_nl_%d" % index)
-
             # -- agg for testing --
             patches_nl.append(patches_nl_i)
 

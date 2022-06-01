@@ -13,27 +13,45 @@ def get_exh_inds(vid,stride=1):
     qSearch = t*h*w // stride
     return get_query_batch(0,qSearch,stride,t,h,w,vid.device)
 
-def get_query_batch(index,qSearch,qStride,t,h,w,device):
-    srch_inds = numba_query_launcher(index,qSearch,qStride,t,h,w,device)
+def get_query_batch(index,qSearch,stride,t,h,w,device):
+    srch_inds = numba_query_launcher(index,qSearch,stride,t,h,w,device)
     return srch_inds
-    # ti32 = th.int32
-    # start = index * qSearch
-    # stop = ( index + 1 ) * qSearch
-    # srch_inds = th.arange(start,stop,dtype=ti32,device=device)[:,None]
-    # srch_inds = get_3d_inds(srch_inds,qStride,t,h,w)
-    # srch_inds = srch_inds.contiguous()
-    # return srch_inds
 
-def numba_query_launcher(index,qSearch,qStride,t,h,w,device):
+def numba_query_launcher(index,qSearch,stride,t,h,w,device):
     srch_inds = np.zeros((qSearch,3),dtype=np.int64)
-    numba_query_batch(srch_inds,index,qSearch,qStride,t,h,w)
+    assert (h % stride == 0) and (w % stride == 0)
+    numba_query_raster(srch_inds,index,qSearch,stride,t,h,w)
+    # numba_query_equal(srch_inds,index,qSearch,stride,t,h,w)
     srch_inds = th.from_numpy(srch_inds).to(device).contiguous()
     return srch_inds
 
 @njit
-def numba_query_batch(srch_inds,index,qSearch,qStride,t,h,w):
-    qSearchTotal_t = h*w//qStride
-    qStride_sr = np.sqrt(qStride)
+def numba_query_raster(srch_inds,index,qSearch,stride,t,h,w):
+    hs = h // stride
+    ws = w // stride
+    npf = hs*ws
+    hw = h*w
+    stride2 = stride**2
+    for qi in prange(qSearch):
+
+        # -- ind -> ti --
+        ind = stride2 * (qi + index)
+        ti = (ind // hw) % t
+
+        ind_f = ind % hw
+        hi = (stride)*(ind_f // (stride*w))
+        wi = (ind_f/stride) % w
+
+        # -- fill --
+        srch_inds[qi,0] = ti
+        srch_inds[qi,1] = hi
+        srch_inds[qi,2] = wi
+
+
+@njit
+def numba_query_equal(srch_inds,index,qSearch,stride,t,h,w):
+    qSearchTotal_t = h*w//stride
+    stride_sr = np.sqrt(stride)
     nT = qSearchTotal_t
     wf = w*1.
     # How to evenly distribution points in a grid? I.E. how to use "stride"
@@ -48,13 +66,13 @@ def numba_query_batch(srch_inds,index,qSearch,qStride,t,h,w):
         ind = ind %  qSearchTotal_t
 
         # -- ind -> hi --
-        hi = qStride_sr*(ind // nX)
+        hi = stride_sr*(ind // nX)
         hi = int(hi)
         if hi >= h:
             hi = h-1
 
         # -- ind -> hi --
-        wi = qStride_sr*(ind % nX)
+        wi = stride_sr*(ind % nX)
         wi = int(wi)
         if wi >= w:
             wi = w-1

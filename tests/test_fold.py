@@ -34,7 +34,7 @@ class TestFold(unittest.TestCase):
     # -- Test v.s. NN --
     #
 
-    def test_nn_fold(self):
+    def skip_test_nn_fold(self):
 
         # -- get args --
         dname,ext,sigma,comp_flow,args = self.setup()
@@ -55,28 +55,41 @@ class TestFold(unittest.TestCase):
         k,ps,pt = args.k,args.ps,args.pt
         ws,wt,chnls = args.ws,args.wt,1
         dil = args.dilation
+        stride = args.stride
 
         # -- batching info --
         device = noisy.device
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qStride,qSize = 1,npix
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
+        qSize = t * (h//stride) * (w//stride)
+        qTotal = t * (h//stride) * (w//stride)
+        nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
 
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),dilation=dil)
+        fold_nl = dnls.fold.Fold((t,c,h,w),stride=stride,dilation=dil)
 
         # -- get [patches & nlInds] --
         index = 0
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+        queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = scatter_nl(vid,nlInds)
+        # patches = scatter_nl(vid,nlInds)
+        patches = self.run_unfold(vid,ps,stride=stride,dil=dil)
+        th.cuda.synchronize()
+
+
+        # -- save query mask --
+        # mask = th.zeros((t,h,w),dtype=np.bool,device=device)
+        # start = h*w
+        # mask[queryInds[:,0],queryInds[:,1],queryInds[:,2]] = 1
+        # mask = repeat(mask,'t h w -> t c h w',c=3)
+        # dnls.testing.data.save_burst(mask,SAVE_DIR,"mask")
+        # print(queryInds[-3:])
+        assert th.sum(queryInds - nlInds[:,0]) < 1e-10
 
         #
         # -- test logic --
@@ -89,7 +102,7 @@ class TestFold(unittest.TestCase):
         patches_nl.requires_grad_(True)
 
         # -- run forward --
-        vid_nn,_ = self.run_fold(patches_nn,t,h,w,dil)
+        vid_nn,_ = self.run_fold(patches_nn,t,h,w,stride,dil)
         vid_nl = fold_nl(patches_nl,0)
 
         # -- run backward --
@@ -129,8 +142,15 @@ class TestFold(unittest.TestCase):
         # print("grad_nn.shape: ",grad_nn.shape)
         # print(grad_nn[0,0,0,0])
         # print(grad_nl[0,0,0,0])
+        # print("-"*10)
+        # print(grad_nn[1,0,0,0])
+        # print(grad_nl[1,0,0,0])
+        # print("-"*10)
         # print(grad_nn[100,0,0,0])
         # print(grad_nl[100,0,0,0])
+        # print("-"*10)
+        # print(grad_nn[200,0,0,0])
+        # print(grad_nl[200,0,0,0])
 
         # -- check backward --
         error = th.sum((grad_nn - grad_nl)**2).item()
@@ -164,15 +184,16 @@ class TestFold(unittest.TestCase):
         k,ps,pt = args.k,args.ps,args.pt
         ws,wt,chnls = args.ws,args.wt,1
         dil = args.dilation
+        stride = args.stride
 
         # -- batching info --
         device = noisy.device
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qStride,qSize = 1,32#npix//2
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
+        stride,qSize = stride,32#npix//2
+        qTotal = t * (h//stride) * (w//stride)
+        nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
         if gpu_stats:
             print("nbatches: ",nbatches)
@@ -184,7 +205,7 @@ class TestFold(unittest.TestCase):
 
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),ps,dilation=dil)
+        fold_nl = dnls.fold.Fold((t,c,h,w),stride=stride,dilation=dil)
         agg_patches = []
         # vid_nl = th.zeros((t,c,h,w),device=device)
 
@@ -197,7 +218,7 @@ class TestFold(unittest.TestCase):
 
             # -- get [patches & nlInds] --
             qindex = min(qSize * index,npix)
-            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+            queryInds = dnls.utils.inds.get_query_batch(qindex,qSize,stride,
                                                         t,h,w,device)
             nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                     flow,k,ps,pt,ws,wt,chnls)
@@ -225,8 +246,8 @@ class TestFold(unittest.TestCase):
             # vid_nl += vid_nl_i
 
             # -- save --
-            vid_nl_p = vid_nl / (ps*ps)
-            dnls.testing.data.save_burst(vid_nl_p,SAVE_DIR,"vid_nl_%d" % index)
+            # vid_nl_p = vid_nl / (ps*ps)
+            # dnls.testing.data.save_burst(vid_nl_p,SAVE_DIR,"vid_nl_%d" % index)
 
             # -- agg for testing --
             agg_patches.append(patches_nl)
@@ -248,8 +269,9 @@ class TestFold(unittest.TestCase):
             print("[post-loop] GPU Max: %2.4f" % (gpu_max))
 
         # -- run fold with entire image --
-        index,qSize = 0,npix
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+        index = 0
+        qSize = t * (h//stride) * (w//stride)
+        queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
@@ -263,6 +285,7 @@ class TestFold(unittest.TestCase):
 
         # -- scatter --
         patches = scatter_nl(vid,nlInds)
+        th.cuda.synchronize()
 
         # -- vis --
         if gpu_stats:
@@ -273,7 +296,7 @@ class TestFold(unittest.TestCase):
         # -- run nn --
         patches_nn = patches.clone()
         patches_nn.requires_grad_(True)
-        vid_nn,_ = self.run_fold(patches_nn,t,h,w,dil)
+        vid_nn,_ = self.run_fold(patches_nn,t,h,w,stride,dil)
 
         # -- vis --
         if gpu_stats:
@@ -378,10 +401,13 @@ class TestFold(unittest.TestCase):
         dname,ext = "text_tourbus_64","jpg"
         dname,ext = "davis_baseball_64x64","jpg"
         # dname,ext = "text_bus","png"
-        args = edict({'ps':11,'pt':1,'k':1,'ws':10,'wt':5,'dilation':1})
+        args = edict({"ps":3,"pt":1,"k":1,
+                      "ws":10,"wt":5,
+                      "stride":1,"dilation":1})
         return dname,ext,sigma,comp_flow,args
 
-    def run_fold(self,patches,t,h,w,dil=1):
+    def run_fold(self,patches,t,h,w,stride=1,dil=1):
+        th.cuda.synchronize()
         ps = patches.shape[-1]
         psHalf = ps//2
         padf = dil * psHalf
@@ -390,19 +416,20 @@ class TestFold(unittest.TestCase):
         patches = rearrange(patches,shape_str,t=t)
         ones = th.ones_like(patches)
 
-        vid_pad = fold(patches,(hp,wp),(ps,ps),dilation=dil)
+        vid_pad = fold(patches,(hp,wp),(ps,ps),stride=stride,dilation=dil)
         vid = center_crop(vid_pad,(h,w))
-        wvid_pad = fold(ones,(hp,wp),(ps,ps),dilation=dil)
+        wvid_pad = fold(ones,(hp,wp),(ps,ps),stride=stride,dilation=dil)
         wvid = center_crop(wvid_pad,(h,w))
+        th.cuda.synchronize()
 
         return vid,wvid
 
-    def run_unfold(self,vid,ps,dil=1):
+    def run_unfold(self,vid,ps,stride=1,dil=1):
         psHalf = ps//2
         padf = dil * psHalf
         shape_str = 't (c h w) np -> (t np) 1 1 c h w'
         vid_pad = pad(vid,4*[padf,],mode="reflect")
-        patches = unfold(vid_pad,(ps,ps),dilation=dil)
+        patches = unfold(vid_pad,(ps,ps),stride=stride,dilation=dil)
         patches = rearrange(patches,shape_str,h=ps,w=ps)
         return patches
 
