@@ -29,12 +29,11 @@ class UnfoldFunction(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, vid, qStart, qNum, qStride, ps, pt, dilation):
+    def forward(ctx, patches, vid, qStart, qStride, qCut, dilation):
 
         # -- allocate --
         colors = vid.shape[1]
         device = vid.device
-        patches = allocate_patches(qNum,1,ps,pt,colors,device)
 
         # -- forward --
         dnls_cuda.unfold_forward(vid, patches, qStart, qStride, dilation)
@@ -44,6 +43,7 @@ class UnfoldFunction(th.autograd.Function):
         ctx.dilation = dilation
         ctx.vid_shape = vid.shape
         ctx.qStride = qStride
+        ctx.qCut = qCut
 
         return patches
 
@@ -63,7 +63,7 @@ class UnfoldFunction(th.autograd.Function):
         # -- forward --
         dnls_cuda.unfold_backward(grad_vid,grad_patches,qStart,qStride,dilation)
 
-        return grad_vid,None,None,None,None,None,None
+        return grad_vid,None,None,None,None
 
 class Unfold(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
@@ -74,9 +74,57 @@ class Unfold(th.nn.Module):
         self.pt = pt
         self.qStride = qStride
         self.dilation = dilation
+        self.patches = th.empty(0).to(device)
+
+
+    def update_buffer(self,patches):
+        # -- skip no bacthing --
+        if patches.shape[0] == self.npix: return
+
+        # -- compute buffer size --
+        bs = patches.shape[0]
+        padf = self.dilation*(self.ps-1)
+        t,c,h,w = self.vid.shape
+        buf_size = w*padf
+
+        # -- curr vidx --
+        ti = self.curr_vidx // (h*w)
+        hi = (self.curr_vidx // w) % h
+        wi = self.curr_vidx % w
+        if ti > 0 and hi == 0 and wi == 0:
+            buf_size = 0
+
+        # -- assign --
+        if buf_size > 0:
+            self.patch_batch_buffer = patches[-buf_size:].detach()
+        else:
+            self.patch_batch_buffer = None
+
+    def batched_patches(self,patches,qStart):
+        self.curr_vidx += patches.shape[0]
+        if patches.shape[0] == self.npix:
+            return patches,qStart,0
+        elif self.patch_batch_buffer is None:
+            self.update_buffer(patches)
+            return patches,qStart,0
+        else:
+            b_patches = th.cat([self.patch_batch_buffer,patches])
+            qCut = len(self.patch_batch_buffer)
+            qStart -= qCut
+            assert qStart >= 0
+            self.update_buffer(patches)
+            return b_patches,qStart,qCut
+
+    def update_patches(patches):
+        self.patches = th.stack([self.patches,patches],0)
 
     def forward(self, vid, qStart, qNum):
-        return UnfoldFunction.apply(vid,qStart,qNum,self.qStride,
-                                    self.ps,self.pt,self.dilation)
+
+        patches = allocate_patches(qNum,1,ps,pt,colors,device)
+        qCut = 0
+        UnfoldFunction.apply(patches,vid,qStart,self.qStride,
+                             qCut,self.dilation)
+        self.update_patches(patches)
+        return patches
 
 

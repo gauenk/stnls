@@ -127,9 +127,10 @@ __global__ void dnls_fold_forward_kernel(
         } // for patch size
         bool eq_hits = nhits == nhits_q;
         // bool hit_req = true;//((not is_edge) && (nhits == ndim)) || is_edge;
-        if (eq_hits){
-          vid[t_im][ci][h_im][w_im] =  val;
-        }
+        vid[t_im][ci][h_im][w_im] = val;
+        // if (eq_hits){
+        //   vid[t_im][ci][h_im][w_im] = val;
+        // }
       } // for colors
     }
 }

@@ -122,6 +122,127 @@ class TestUnfold(unittest.TestCase):
         error = th.sum((grad_nn - grad_nl)**2).item()
         assert error < 1e-5
 
+    def test_batched_unfold(self):
+
+        # -- get args --
+        dname,sigma,comp_flow,args = self.setup()
+
+        # -- init vars --
+        device = "cuda:0"
+        clean_flow = True
+        comp_flow = False
+        exact = True
+
+        # -- load data --
+        vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+        vid = th.from_numpy(vid).to(device)
+        noisy = vid + sigma * th.randn_like(vid)
+        flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+
+        # -- unpack params --
+        k,ps,pt = args.k,args.ps,args.pt
+        ws,wt,chnls = args.ws,args.wt,1
+        dil = args.dilation
+
+        # -- batching info --
+        device = noisy.device
+        shape = noisy.shape
+        t,c,h,w = shape
+        npix = t * h * w
+        qStride,qSize = 1,npix//2
+        nsearch = (npix-1) // qStride + 1
+        nbatches = (nsearch-1) // qSize + 1
+        vid = vid.contiguous()
+
+        # -- exec fold fxns --
+        vid_nl = vid.clone().requires_grad_(True)
+        # scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
+        # unfold_nl = dnls.unfold.Unfold(ps,dilation=dil)
+        unfold_nl = dnls.unfold.Unfold((t,c,h,w),ps,dilation=dil)
+        patches_nl = []
+        for index in range(nbatches):
+
+            # -- get [patches & nlInds] --
+            qindex = min(qSize * index,npix)
+            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+                                                        t,h,w,device)
+            # nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+            #                                         flow,k,ps,pt,ws,wt,chnls)
+
+            # -- run forward --
+            th.cuda.synchronize()
+            patches_nl_i = unfold_nl(vid_nl,qindex)
+            th.cuda.synchronize()
+
+            # # -- save --
+            # vid_nl_p = vid_nl / (ps*ps)
+            # dnls.testing.data.save_burst(vid_nl_p,SAVE_DIR,"vid_nl_%d" % index)
+
+            # -- agg for testing --
+            patches_nl.append(patches_nl_i)
+
+        # -- cat for testing --
+        patches_nl = th.cat(patches_nl,0)
+
+        # -- run fold with entire image --
+        index,qSize = 0,npix
+        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+                                                    t,h,w,device)
+        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+                                                flow,k,ps,pt,ws,wt,chnls)
+        vid_nn = vid.clone().requires_grad_(True)
+        patches_nn = self.run_unfold(vid_nn)
+
+        # -- run backward --
+        patches_grad = th.randn_like(patches_nn)
+        th.autograd.backward(patches_nn,patches_grad)
+        th.autograd.backward(patches_nl,patches_grad)
+
+        # -- save ex --
+        # vid_nl = fold_nl.vid
+        # vid_nn_s = vid_nn / vid_nn.max()
+        # vid_nl_s = vid_nl / vid_nn.max()
+        # dnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
+        # dnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
+        # psHalf = ps//2
+        # diff = th.abs(vid_nn_s - vid_nl_s)
+        # diff /= diff.max()
+        # dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+
+        # -- vis --
+        # print("\n")
+        # print(patches[0,0,0,0])
+        # print(patches[1,0,0,0])
+        # print("-"*20)
+        # print(vid_nn[0,0,:3,:3])
+        # print("-"*20)
+        # print(vid_nl[0,0,:3,:3])
+
+        # -- check forward --
+        error = th.sum((patches_nn - patches_nl)**2).item()
+        assert error < 1e-10
+
+        # -- unpack grads --
+        grad_nn = vid_nn.grad
+        grad_nl = vid_nl.grad
+
+        # -- reshape --
+        shape_str = '(t h w) 1 1 c ph pw -> t c h w ( ph pw)'
+        grad_nn = rearrange(grad_nn,shape_str,t=t,h=h)
+        grad_nl = rearrange(grad_nl,shape_str,t=t,h=h)
+        errors = th.mean((grad_nn - grad_nl)**2,dim=-1)
+        errors /= errors.max()
+        # dnls.testing.data.save_burst(errors,SAVE_DIR,"errors")
+
+        # -- view errors --
+        # args = th.where(errors > 0)
+        # print(grad_nn[args][:3])
+        # print(grad_nl[args][:3])
+
+        # -- check backward --
+        error = th.sum((grad_nn - grad_nl)**2).item()
+        assert error < 1e-10
+
     #
     # -- Launcher --
     #

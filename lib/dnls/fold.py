@@ -56,7 +56,7 @@ class FoldFunction(th.autograd.Function):
         grad_patches = allocate_patches(qNum,1,ps,pt,colors,device)
 
         # -- clear at qcut --
-        grad_patches[:qCut] = 0.
+        # grad_patches[:qCut] = 0.
 
         # -- backward --
         dnls_cuda.fold_backward(grad_vid,grad_patches,qStart,qStride,dilation)
@@ -119,14 +119,12 @@ class Fold(th.nn.Module):
             qCut = len(self.patch_batch_buffer)
             qStart -= qCut
             assert qStart >= 0
-            print("qCut: ",qCut)
-
             self.update_buffer(patches)
-
             return b_patches,qStart,qCut
 
     def forward(self, patches, qStart):
-        bpatches,qStart,qCut = self.batched_patches(patches,qStart)
+        # bpatches,qStart,qCut = self.batched_patches(patches,qStart)
+        bpatches,qStart,qCut = patches,qStart,0
         vid = self.allocate_vid(self.vid_shape,self.device)
         vid = FoldFunction.apply(bpatches, vid, qStart, qCut,
                                  self.qStride,self.dilation)

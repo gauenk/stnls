@@ -34,10 +34,10 @@ class TestFold(unittest.TestCase):
     # -- Test v.s. NN --
     #
 
-    def skip_test_nn_fold(self):
+    def test_nn_fold(self):
 
         # -- get args --
-        dname,sigma,comp_flow,args = self.setup()
+        dname,ext,sigma,comp_flow,args = self.setup()
 
         # -- init vars --
         device = "cuda:0"
@@ -46,7 +46,7 @@ class TestFold(unittest.TestCase):
         exact = True
 
         # -- load data --
-        vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+        vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
         vid = th.from_numpy(vid).to(device)
         noisy = vid + sigma * th.randn_like(vid)
         flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
@@ -68,7 +68,7 @@ class TestFold(unittest.TestCase):
 
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),dilation=dil)
+        fold_nl = dnls.fold.Fold((t,c,h,w),ps,dilation=dil)
 
         # -- get [patches & nlInds] --
         index = 0
@@ -135,6 +135,7 @@ class TestFold(unittest.TestCase):
         # -- check backward --
         error = th.sum((grad_nn - grad_nl)**2).item()
         assert error < 1e-10
+        # print("GPU Max: ",th.cuda.memory_allocated()/(1024**3))
 
     #
     # -- Test v.s. NN --
@@ -144,16 +145,17 @@ class TestFold(unittest.TestCase):
     def test_batched_fold(self):
 
         # -- get args --
-        dname,sigma,comp_flow,args = self.setup()
+        dname,ext,sigma,comp_flow,args = self.setup()
 
         # -- init vars --
         device = "cuda:0"
         clean_flow = True
         comp_flow = False
         exact = True
+        gpu_stats = True
 
         # -- load data --
-        vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+        vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
         vid = th.from_numpy(vid).to(device)
         noisy = vid + sigma * th.randn_like(vid)
         flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
@@ -172,11 +174,24 @@ class TestFold(unittest.TestCase):
         nsearch = (npix-1) // qStride + 1
         nbatches = (nsearch-1) // qSize + 1
         vid = vid.contiguous()
+        print("nbatches: ",nbatches)
+
+        # -- vis --
+        if gpu_stats:
+            gpu_max = th.cuda.memory_allocated()/(1024**3)
+            print("[pre-def] GPU Max: %2.4f" % (gpu_max))
 
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
         fold_nl = dnls.fold.Fold((t,c,h,w),ps,dilation=dil)
         agg_patches = []
+        # vid_nl = th.zeros((t,c,h,w),device=device)
+
+        # -- vis --
+        if gpu_stats:
+            gpu_max = th.cuda.memory_allocated()/(1024**3)
+            print("[pre-loop] GPU Max: %2.4f" % (gpu_max))
+
         for index in range(nbatches):
 
             # -- get [patches & nlInds] --
@@ -185,10 +200,11 @@ class TestFold(unittest.TestCase):
                                                         t,h,w,device)
             nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                     flow,k,ps,pt,ws,wt,chnls)
-            patches = scatter_nl(vid,nlInds)
+            patches_nl = scatter_nl(vid,nlInds)
+            del queryInds,nlDists,nlInds
+            th.cuda.empty_cache()
 
             # -- prepare videos --
-            patches_nl = patches.clone()
             patches_nl.requires_grad_(True)
 
             # -- print infos --
@@ -201,9 +217,11 @@ class TestFold(unittest.TestCase):
             # print("ti,hi,wi: ",ti,hi,wi)
 
             # -- run forward --
-            th.cuda.synchronize()
+            # th.cuda.synchronize()
             vid_nl = fold_nl(patches_nl,qindex)
-            th.cuda.synchronize()
+            # vid_nl_i = vid_nl
+            # th.cuda.synchronize()
+            # vid_nl += vid_nl_i
 
             # -- save --
             vid_nl_p = vid_nl / (ps*ps)
@@ -212,8 +230,21 @@ class TestFold(unittest.TestCase):
             # -- agg for testing --
             agg_patches.append(patches_nl)
 
+            # -- vis --
+            # if gpu_stats:
+            #     th.cuda.synchronize()
+            #     gpu_max = th.cuda.memory_allocated()/(1024**3)
+            #     print("[%d]GPU Max: %2.4f" % (index,gpu_max))
+
         # -- cat for testing --
         # agg_patches = th.cat(agg_patches,0)
+
+        # -- vis --
+        if gpu_stats:
+            th.cuda.synchronize()
+            th.cuda.empty_cache()
+            gpu_max = th.cuda.memory_allocated()/(1024**3)
+            print("[post-loop] GPU Max: %2.4f" % (gpu_max))
 
         # -- run fold with entire image --
         index,qSize = 0,npix
@@ -221,18 +252,45 @@ class TestFold(unittest.TestCase):
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
+        # -- vis --
+        del queryInds,nlDists
+        if gpu_stats:
+            th.cuda.synchronize()
+            th.cuda.empty_cache()
+            gpu_max = th.cuda.memory_allocated()/(1024**3)
+            print("[post-search] GPU Max: %2.4f" % (gpu_max))
+
+        # -- scatter --
         patches = scatter_nl(vid,nlInds)
+
+        # -- vis --
+        if gpu_stats:
+            th.cuda.empty_cache()
+            gpu_max = th.cuda.memory_allocated()/(1024**3)
+            print("[post-scatter] GPU Max: %2.4f" % (gpu_max))
+
+        # -- run nn --
         patches_nn = patches.clone()
         patches_nn.requires_grad_(True)
         vid_nn,_ = self.run_fold(patches_nn,t,h,w,dil)
 
+        # -- vis --
+        if gpu_stats:
+            gpu_max = th.cuda.memory_allocated()/(1024**3)
+            print("[pre-bkwd] GPU Max: %2.4f" % (gpu_max))
+
         # -- run backward --
+        # vid_nl = fold_nl.vid
         vid_grad = th.randn_like(vid)
         th.autograd.backward(vid_nn,vid_grad)
         th.autograd.backward(vid_nl,vid_grad)
 
+        # -- vis --
+        if gpu_stats:
+            gpu_max = th.cuda.memory_allocated()/(1024**3)
+            print("[post-bkwd] GPU Max: %2.4f" % (gpu_max))
+
         # -- save ex --
-        vid_nl = fold_nl.vid
         vid_nn_s = vid_nn / vid_nn.max()
         vid_nl_s = vid_nl / vid_nn.max()
         dnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
@@ -264,35 +322,36 @@ class TestFold(unittest.TestCase):
         grad_nl = th.cat([p_nl.grad for p_nl in agg_patches])
 
         # -- inspect grads --
-        print("grad_nn.shape: ",grad_nn.shape)
-        print("grad_nl.shape: ",grad_nl.shape)
-        print(grad_nn[0,0,0,0])
-        print(grad_nl[0,0,0,0])
-        print(grad_nn[100,0,0,0])
-        print(grad_nl[100,0,0,0])
-        print(grad_nn[-1,0,0,0])
-        print(grad_nl[-1,0,0,0])
-        print(grad_nn[-3,0,0,0])
-        print(grad_nl[-3,0,0,0])
+        # print("grad_nn.shape: ",grad_nn.shape)
+        # print("grad_nl.shape: ",grad_nl.shape)
+        # print(grad_nn[0,0,0,0])
+        # print(grad_nl[0,0,0,0])
+        # print(grad_nn[100,0,0,0])
+        # print(grad_nl[100,0,0,0])
+        # print(grad_nn[-1,0,0,0])
+        # print(grad_nl[-1,0,0,0])
+        # print(grad_nn[-3,0,0,0])
+        # print(grad_nl[-3,0,0,0])
 
         # -- reshape --
         shape_str = '(t h w) 1 1 c ph pw -> t c h w ( ph pw)'
         grad_nn = rearrange(grad_nn,shape_str,t=t,h=h)
         grad_nl = rearrange(grad_nl,shape_str,t=t,h=h)
-        print("grad_nn.shape: ",grad_nn.shape)
+        # print("grad_nn.shape: ",grad_nn.shape)
         errors = th.mean((grad_nn - grad_nl)**2,dim=-1)
-        print("errors.shape: ",errors.shape)
+        # print("errors.shape: ",errors.shape)
         errors /= errors.max()
-        dnls.testing.data.save_burst(errors,SAVE_DIR,"errors")
+        # dnls.testing.data.save_burst(errors,SAVE_DIR,"errors")
 
         # -- view errors --
-        args = th.where(errors > 0)
-        print(grad_nn[args][:3])
-        print(grad_nl[args][:3])
+        # args = th.where(errors > 0)
+        # print(grad_nn[args][:3])
+        # print(grad_nl[args][:3])
 
         # -- check backward --
         error = th.sum((grad_nn - grad_nl)**2).item()
         assert error < 1e-10
+        print("GPU Max: ",th.cuda.max_memory_reserved()/(1024**3))
 
     #
     # -- Launcher --
@@ -315,10 +374,11 @@ class TestFold(unittest.TestCase):
 
         # -- exec test 1 --
         sigma = 50.
-        dname = "text_tourbus_64"
-        dname = "davis_baseball_64x64"
+        dname,ext = "text_tourbus_64","jpg"
+        dname,ext = "davis_baseball_64x64","jpg"
+        dname,ext = "text_bus","png"
         args = edict({'ps':11,'pt':1,'k':1,'ws':10,'wt':5,'dilation':1})
-        return dname,sigma,comp_flow,args
+        return dname,ext,sigma,comp_flow,args
 
     def run_fold(self,patches,t,h,w,dil=1):
         ps = patches.shape[-1]
