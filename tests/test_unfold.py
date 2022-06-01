@@ -154,16 +154,26 @@ class TestUnfold(unittest.TestCase):
         nbatches = (nsearch-1) // qSize + 1
         vid = vid.contiguous()
 
+        # -- prepare videos --
+        psHalf = ps//2
+        padf = psHalf*dil
+        vid = pad(vid,4*[padf,],mode="reflect")
+        vid_nn = vid.clone()
+        vid_nl = vid.clone()
+        vid_nn.requires_grad_(True)
+        vid_nl.requires_grad_(True)
+        vid_nl_cc = center_crop(vid_nl,(h,w)).contiguous()
+
         # -- exec fold fxns --
-        vid_nl = vid.clone().requires_grad_(True)
+        # vid_nl = vid.clone().requires_grad_(True)
         # scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        # unfold_nl = dnls.unfold.Unfold(ps,dilation=dil)
-        unfold_nl = dnls.unfold.Unfold((t,c,h,w),ps,dilation=dil)
+        unfold_nl = dnls.unfold.Unfold(ps,dilation=dil)
         patches_nl = []
         for index in range(nbatches):
 
             # -- get [patches & nlInds] --
             qindex = min(qSize * index,npix)
+            qSize = min(npix,npix-qindex)
             queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
                                                         t,h,w,device)
             # nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
@@ -171,7 +181,7 @@ class TestUnfold(unittest.TestCase):
 
             # -- run forward --
             th.cuda.synchronize()
-            patches_nl_i = unfold_nl(vid_nl,qindex)
+            patches_nl_i = unfold_nl(vid_nl_cc,qindex,qSize)
             th.cuda.synchronize()
 
             # # -- save --
@@ -191,7 +201,7 @@ class TestUnfold(unittest.TestCase):
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         vid_nn = vid.clone().requires_grad_(True)
-        patches_nn = self.run_unfold(vid_nn)
+        patches_nn = self.run_unfold(vid_nn,ps,dil)
 
         # -- run backward --
         patches_grad = th.randn_like(patches_nn)
@@ -223,16 +233,8 @@ class TestUnfold(unittest.TestCase):
         assert error < 1e-10
 
         # -- unpack grads --
-        grad_nn = vid_nn.grad
-        grad_nl = vid_nl.grad
-
-        # -- reshape --
-        shape_str = '(t h w) 1 1 c ph pw -> t c h w ( ph pw)'
-        grad_nn = rearrange(grad_nn,shape_str,t=t,h=h)
-        grad_nl = rearrange(grad_nl,shape_str,t=t,h=h)
-        errors = th.mean((grad_nn - grad_nl)**2,dim=-1)
-        errors /= errors.max()
-        # dnls.testing.data.save_burst(errors,SAVE_DIR,"errors")
+        grad_nn = center_crop(vid_nn.grad,(h,w))
+        grad_nl = center_crop(vid_nl.grad,(h,w))
 
         # -- view errors --
         # args = th.where(errors > 0)
@@ -241,7 +243,7 @@ class TestUnfold(unittest.TestCase):
 
         # -- check backward --
         error = th.sum((grad_nn - grad_nl)**2).item()
-        assert error < 1e-10
+        assert error < 1e-6
 
     #
     # -- Launcher --
@@ -266,7 +268,7 @@ class TestUnfold(unittest.TestCase):
         sigma = 50.
         dname = "text_tourbus_64"
         dname = "davis_baseball_64x64"
-        args = edict({'ps':5,'pt':1,'k':1,'ws':10,'wt':5,'dilation':1})
+        args = edict({'ps':5,'pt':1,'k':1,'ws':10,'wt':5,'dilation':3})
         return dname,sigma,comp_flow,args
 
     def run_fold(self,patches,t,h,w,dil=1):

@@ -68,7 +68,7 @@ class TestFold(unittest.TestCase):
 
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),ps,dilation=dil)
+        fold_nl = dnls.fold.Fold((t,c,h,w),dilation=dil)
 
         # -- get [patches & nlInds] --
         index = 0
@@ -152,7 +152,7 @@ class TestFold(unittest.TestCase):
         clean_flow = True
         comp_flow = False
         exact = True
-        gpu_stats = True
+        gpu_stats = False
 
         # -- load data --
         vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
@@ -170,11 +170,12 @@ class TestFold(unittest.TestCase):
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qStride,qSize = 1,npix//2
+        qStride,qSize = 1,32#npix//2
         nsearch = (npix-1) // qStride + 1
         nbatches = (nsearch-1) // qSize + 1
         vid = vid.contiguous()
-        print("nbatches: ",nbatches)
+        if gpu_stats:
+            print("nbatches: ",nbatches)
 
         # -- vis --
         if gpu_stats:
@@ -351,7 +352,7 @@ class TestFold(unittest.TestCase):
         # -- check backward --
         error = th.sum((grad_nn - grad_nl)**2).item()
         assert error < 1e-10
-        print("GPU Max: ",th.cuda.max_memory_reserved()/(1024**3))
+        # print("GPU Max: ",th.cuda.max_memory_reserved()/(1024**3))
 
     #
     # -- Launcher --
@@ -376,7 +377,7 @@ class TestFold(unittest.TestCase):
         sigma = 50.
         dname,ext = "text_tourbus_64","jpg"
         dname,ext = "davis_baseball_64x64","jpg"
-        dname,ext = "text_bus","png"
+        # dname,ext = "text_bus","png"
         args = edict({'ps':11,'pt':1,'k':1,'ws':10,'wt':5,'dilation':1})
         return dname,ext,sigma,comp_flow,args
 

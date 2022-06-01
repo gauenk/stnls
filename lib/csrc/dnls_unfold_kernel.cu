@@ -87,8 +87,11 @@ __global__ void dnls_unfold_forward_kernel(
         ti = (qIndex/heigh_width) % nframes;
 
         // -- fill across cuda threads --
+        // vi_h = hi+dilation*(pi - psHalf);
+        // vi_w = wi+dilation*(pj - psHalf);
         vi_h = bounds(hi+dilation*(pi - psHalf),height);
         vi_w = bounds(wi+dilation*(pj - psHalf),width);
+
 
         // -- spatially valid --
         valid_hw = (vi_h >= 0) && (vi_h < height);

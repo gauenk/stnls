@@ -49,8 +49,9 @@ __global__ void dnls_fold_forward_kernel(
     int numQueries = patches.size(0);
     int psHalf = ps/2;
     int hw = height*width;
-    bool valid,valid_q,is_edge;
-    int nhits,nhits_q;
+    bool valid,valid_q;
+    // bool is_edge;
+    // int nhits,nhits_q;
     // int ndim = ps*ps*pt;
 
     CUDA_KERNEL_LOOP(_index, num_kernels) {
@@ -66,8 +67,6 @@ __global__ void dnls_fold_forward_kernel(
       // is_edge = is_edge || (h_im < padf) || (h_im > (height-padf));
         
       for(int ci = 0; ci < colors; ci++){
-        nhits = 0;
-        nhits_q = 0;
         scalar_t val = 0;
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
@@ -116,23 +115,14 @@ __global__ void dnls_fold_forward_kernel(
               valid_q = valid && (qi >= 0) && (qi < numQueries);
               if (valid_q){
                 val += patches[qi][0][0][ci][h_ip][w_ip];
-                nhits_q += 1;
-              }
-              if(valid){
-                nhits += 1;
               }
 
             }
           } // for patch size
         } // for patch size
-        bool eq_hits = nhits == nhits_q;
-        // bool hit_req = true;//((not is_edge) && (nhits == ndim)) || is_edge;
         vid[t_im][ci][h_im][w_im] = val;
-        // if (eq_hits){
-        //   vid[t_im][ci][h_im][w_im] = val;
-        // }
       } // for colors
-    }
+    } // for each pixel (with stride)
 }
 
 void dnls_cuda_fold_forward(
