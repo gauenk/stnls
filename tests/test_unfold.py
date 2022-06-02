@@ -56,21 +56,22 @@ class TestUnfold(unittest.TestCase):
         k,ps,pt = args.k,args.ps,args.pt
         ws,wt,chnls = args.ws,args.wt,1
         dil = args.dilation
+        stride = args.stride
 
         # -- batching info --
         device = noisy.device
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qStride,qSize = 1,npix
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
+        qTotal = t * (h//stride) * (w//stride)
+        qSize = qTotal
+        nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
         vid = th.randn_like(vid)
 
         # -- exec unfold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        unfold_nl = dnls.unfold.Unfold(ps,dilation=dil)
+        unfold_nl = dnls.unfold.Unfold(ps,stride=stride,dilation=dil)
 
         #
         # -- test logic --
@@ -86,9 +87,9 @@ class TestUnfold(unittest.TestCase):
         vid_nl.requires_grad_(True)
 
         # -- run forward --
-        patches_nn = self.run_unfold(vid_nn,ps,dil)
+        patches_nn = self.run_unfold(vid_nn,ps,stride,dil)
         vid_nl_cc = center_crop(vid_nl,(h,w)).contiguous()
-        patches_nl = unfold_nl(vid_nl_cc,0,npix)
+        patches_nl = unfold_nl(vid_nl_cc,0,qTotal)
 
         # -- run backward --
         patches_grad = th.rand_like(patches_nn).type(th.float32)
@@ -104,6 +105,7 @@ class TestUnfold(unittest.TestCase):
         grad_nl = center_crop(vid_nl.grad,(h,w))
 
         # -- vis --
+        # print("\n")
         # print(grad_nn[0,0,:3,:3])
         # print(grad_nl[0,0,:3,:3])
         # print("-"*20)
@@ -120,7 +122,7 @@ class TestUnfold(unittest.TestCase):
         dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
         error = th.sum((grad_nn - grad_nl)**2).item()
-        assert error < 1e-5
+        assert error < 1e-6
 
     def test_batched_unfold(self):
 
@@ -143,15 +145,16 @@ class TestUnfold(unittest.TestCase):
         k,ps,pt = args.k,args.ps,args.pt
         ws,wt,chnls = args.ws,args.wt,1
         dil = args.dilation
+        stride = args.stride
 
         # -- batching info --
         device = noisy.device
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qStride,qSize = 1,npix//2
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
+        qTotal = t * (h//stride) * (w//stride)
+        qSize = 128
+        nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
 
         # -- prepare videos --
@@ -167,14 +170,14 @@ class TestUnfold(unittest.TestCase):
         # -- exec fold fxns --
         # vid_nl = vid.clone().requires_grad_(True)
         # scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        unfold_nl = dnls.unfold.Unfold(ps,dilation=dil)
+        unfold_nl = dnls.unfold.Unfold(ps,stride=stride,dilation=dil)
         patches_nl = []
         for index in range(nbatches):
 
             # -- get [patches & nlInds] --
-            qindex = min(qSize * index,npix)
-            qSize = min(npix,npix-qindex)
-            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+            qindex = min(qSize * index,qTotal)
+            qSize = min(qSize,qTotal-qindex)
+            queryInds = dnls.utils.inds.get_query_batch(qindex,qSize,stride,
                                                         t,h,w,device)
             # nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
             #                                         flow,k,ps,pt,ws,wt,chnls)
@@ -191,13 +194,13 @@ class TestUnfold(unittest.TestCase):
         patches_nl = th.cat(patches_nl,0)
 
         # -- run fold with entire image --
-        index,qSize = 0,npix
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
-                                                    t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                flow,k,ps,pt,ws,wt,chnls)
+        # index,qSize = 0,npix
+        # queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+        #                                             t,h,w,device)
+        # nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+        #                                         flow,k,ps,pt,ws,wt,chnls)
         vid_nn = vid.clone().requires_grad_(True)
-        patches_nn = self.run_unfold(vid_nn,ps,dil)
+        patches_nn = self.run_unfold(vid_nn,ps,stride,dil)
 
         # -- run backward --
         patches_grad = th.randn_like(patches_nn)
@@ -233,9 +236,8 @@ class TestUnfold(unittest.TestCase):
         grad_nl = center_crop(vid_nl.grad,(h,w))
 
         # -- view errors --
-        # args = th.where(errors > 0)
-        # print(grad_nn[args][:3])
-        # print(grad_nl[args][:3])
+        # print(grad_nn[0,0,:7,:7])
+        # print(grad_nl[0,0,:7,:7])
 
         # -- check backward --
         error = th.sum((grad_nn - grad_nl)**2).item()
@@ -264,10 +266,11 @@ class TestUnfold(unittest.TestCase):
         sigma = 50.
         dname = "text_tourbus_64"
         dname = "davis_baseball_64x64"
-        args = edict({'ps':5,'pt':1,'k':1,'ws':10,'wt':5,'dilation':3})
+        args = edict({"ps":5,"pt":1,"k":1,"ws":10,"wt":5,
+                      "stride":1,"dilation":1})
         return dname,sigma,comp_flow,args
 
-    def run_fold(self,patches,t,h,w,dil=1):
+    def run_fold(self,patches,t,h,w,stride=1,dil=1):
         ps = patches.shape[-1]
         psHalf = ps//2
         padf = dil * psHalf
@@ -283,11 +286,11 @@ class TestUnfold(unittest.TestCase):
 
         return vid,wvid
 
-    def run_unfold(self,vid_pad,ps,dil=1):
+    def run_unfold(self,vid_pad,ps,stride=1,dil=1):
         # psHalf = ps//2
         # vid_pad = pad(vid,4*[psHalf,],mode="reflect")
         shape_str = 't (c h w) np -> (t np) 1 1 c h w'
-        patches = unfold(vid_pad,(ps,ps),dilation=dil)
+        patches = unfold(vid_pad,(ps,ps),stride=stride,dilation=dil)
         patches = rearrange(patches,shape_str,h=ps,w=ps)
         return patches
 

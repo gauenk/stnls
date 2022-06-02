@@ -34,7 +34,7 @@ class TestFold(unittest.TestCase):
     # -- Test v.s. NN --
     #
 
-    def skip_test_nn_fold(self):
+    def test_nn_fold(self):
 
         # -- get args --
         dname,ext,sigma,comp_flow,args = self.setup()
@@ -77,9 +77,10 @@ class TestFold(unittest.TestCase):
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        # patches = scatter_nl(vid,nlInds)
-        patches = self.run_unfold(vid,ps,stride=stride,dil=dil)
-        th.cuda.synchronize()
+        patches = scatter_nl(vid,nlInds)
+        # patches_uf = self.run_unfold(vid,ps,stride=stride,dil=dil)
+        # assert th.sum((patches-patches_uf)**2).item() < 1e-10
+        # th.cuda.synchronize()
 
 
         # -- save query mask --
@@ -191,7 +192,7 @@ class TestFold(unittest.TestCase):
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        stride,qSize = stride,32#npix//2
+        qSize = 32
         qTotal = t * (h//stride) * (w//stride)
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()

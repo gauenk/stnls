@@ -38,7 +38,7 @@ template <typename scalar_t>
 __global__ void dnls_unfold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    int qStart, int qStride, int dilation, int qpt, int kpt) {
+    int qStart, int stride, int dilation, int qpt, int kpt) {
 
     // -- shapes --
     int nframes = vid.size(0);
@@ -50,7 +50,7 @@ __global__ void dnls_unfold_forward_kernel(
     int pt = patches.size(2);
     int ps = patches.size(4);
     int psHalf = (int)ps/2;
-    int heigh_width = height*width;
+    int height_width = height*width;
 
     // -- cuda threads --
     int pi = threadIdx.y;
@@ -61,17 +61,18 @@ __global__ void dnls_unfold_forward_kernel(
     int k_start = threadIdx.x*kpt;
 
     // inits
-    int qIndex;
+    int qIndex,_qIndex;
     int qi,ki,ti,hi,wi;
     int vi_h,vi_w,vi_t;
     bool valid_hw,valid_t,valid;
     scalar_t pix;
+    int stride2 = stride * stride;
 
     // -- range --
     for(int _qi = 0; _qi < qpt; _qi++){
 
       // -- query index --
-      qi = _qi + query_start_block + qStart;
+      qi = _qi + query_start_block;
       if (qi >= nq){ continue; }
 
       for(int _ki = 0; _ki < kpt; _ki++){
@@ -81,10 +82,17 @@ __global__ void dnls_unfold_forward_kernel(
         if (ki >= k){ continue; }
 
         // -- fill --
-        qIndex = qi*qStride;
-        wi = qIndex % width;
-        hi = (qIndex/width) % height;
-        ti = (qIndex/heigh_width) % nframes;
+        // qIndex = qi*stride;
+        // wi = qIndex % width;
+        // hi = (qIndex/width) % height;
+        // ti = (qIndex/heigh_width) % nframes;
+
+        // -- ind with stride --
+        qIndex = stride2*(qi + qStart);
+        ti = (qIndex/height_width) % nframes;
+        _qIndex = qIndex % height_width;
+        hi = (stride)*(_qIndex / (stride*width)) % height;
+        wi = (_qIndex/stride) % width;
 
         // -- fill across cuda threads --
         // vi_h = hi+dilation*(pi - psHalf);
@@ -121,7 +129,7 @@ __global__ void dnls_unfold_forward_kernel(
 
 void dnls_cuda_unfold_forward(
     torch::Tensor vid, torch::Tensor patches,
-    int qStart, int qStride, int dilation){
+    int qStart, int stride, int dilation){
 
   // -- kernel blocks --
   int numQueries = patches.size(0);
@@ -144,7 +152,7 @@ void dnls_cuda_unfold_forward(
     dnls_unfold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        qStart,qStride,dilation,qpt,kpt);
+        qStart,stride,dilation,qpt,kpt);
       }));
 }
 
@@ -171,8 +179,10 @@ __global__ void dnls_unfold_backward_kernel(
     int numQueries = patches.size(0);
     int psHalf = ps/2;
     int hw = height*width;
+    int width_s = width/stride;
+    int hw_s = (height/stride)*(width/stride);
     bool valid,valid_q,is_edge;
-    int nhits,nhits_q;
+    // int nhits,nhits_q;
     // int ndim = ps*ps*pt;
 
     CUDA_KERNEL_LOOP(_index, num_kernels) {
@@ -188,8 +198,8 @@ __global__ void dnls_unfold_backward_kernel(
       // is_edge = is_edge || (h_im < padf) || (h_im > (height-padf));
         
       for(int ci = 0; ci < colors; ci++){
-        nhits = 0;
-        nhits_q = 0;
+        // nhits = 0;
+        // nhits_q = 0;
         scalar_t val = 0;
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
@@ -201,15 +211,19 @@ __global__ void dnls_unfold_backward_kernel(
               int ti = t_im + pk;
 
               // -- check bounds --
-              // NOTE; this will not work for dilation > 1
               valid = (_wi >= -psHalf) && (_wi < (width+psHalf));
               valid = valid && (_hi >= -psHalf) && (_hi < (height+psHalf));
               int wi = bounds(_wi,width);
               int hi = bounds(_hi,height);
 
               // -- compute ni --
-              int qi = ti * hw + hi * width + wi; // maybe stride here?
+              // int qi = ti * hw + hi * width + wi; // maybe stride here?
+              // qi -= qStart;
+              int qi = ti * hw_s + (hi * width_s)/stride + (wi/stride);
               qi -= qStart;
+
+              // -- only if qi is aligned with center --
+              valid = valid && (hi % stride == 0) && (wi % stride == 0);
 
               // -- patch indexing --
               int w_ip = ps-1-pi;
@@ -238,36 +252,38 @@ __global__ void dnls_unfold_backward_kernel(
               valid_q = valid && (qi >= 0) && (qi < numQueries);
               if (valid_q){
                 val += patches[qi][0][0][ci][h_ip][w_ip];
-                nhits_q += 1;
+                // nhits_q += 1;
               }
-              if(valid){
-                nhits += 1;
-              }
-
+              // if(valid){
+              //   nhits += 1;
+              // }
             }
           } // for patch size
         } // for patch size
-        bool eq_hits = nhits == nhits_q;
+        // bool eq_hits = nhits == nhits_q;
         // bool hit_req = true;//((not is_edge) && (nhits == ndim)) || is_edge;
-        if (eq_hits){
-          vid[t_im][ci][h_im][w_im] =  val;
-        }
+        // if (eq_hits){
+        //   vid[t_im][ci][h_im][w_im] =  val;
+        // }
+        vid[t_im][ci][h_im][w_im] = val;
+        // vid[t_im][ci][h_im][w_im] += val;
       } // for colors
     }
 }
 
 void dnls_cuda_unfold_backward(
   torch::Tensor grad_vid,torch::Tensor patches,
-  int qStart, int qStride, int dilation) {
+  int qStart, int stride, int dilation) {
 
   // -- kernel blocks --
   // int numQueries = patches.size(0);
   // int k = 1;
-  // int nframes = grad_vid.size(0);
-  // int height = grad_vid.size(0);
-  // int width = grad_vid.size(0);
+  int nframes = grad_vid.size(0);
+  int height = grad_vid.size(2);
+  int width = grad_vid.size(3);
   int nthreads = 512;
-  int num_kernels = patches.size(0);//nframes*height*width;
+  // int num_kernels = patches.size(0);//nframes*height*width;
+  int num_kernels = nframes*height*width;
   int nblocks = (num_kernels-1) / nthreads+1;
 
   // get starting pixel
@@ -287,7 +303,7 @@ void dnls_cuda_unfold_backward(
       <<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        iStart,qStart,qStride,dilation,num_kernels);
+        iStart,qStart,stride,dilation,num_kernels);
   }));
 
 }
