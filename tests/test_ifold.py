@@ -67,9 +67,13 @@ class TestFold(unittest.TestCase):
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
 
+        # -- sub square --
+        coords = [2,2,h-2,w-2]
+        sq_h = coords[2] - coords[0]
+        sq_w = coords[3] - coords[1]
+
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        coords = [2,2,h-2,w-2]
         fold_nl = dnls.ifold.iFold((t,c,h,w),coords,stride=stride,dilation=dil)
 
         # -- get [patches & nlInds] --
@@ -109,10 +113,12 @@ class TestFold(unittest.TestCase):
 
         # -- run backward --
         vid_grad = th.randn_like(vid)
-        vid_nn_cc = center_crop(vid_nn,(h-2,w-2))
-        vid_grad_cc = center_crop(vid_nn,(h-2,w-2))
+        vid_grad_cc = center_crop(vid_grad,(sq_h,sq_w))
+        vid_nn_cc = center_crop(vid_nn,(sq_h,sq_w))
+        vid_nl_cc = center_crop(vid_nl,(sq_h,sq_w))
         th.autograd.backward(vid_nn_cc,vid_grad_cc)
-        th.autograd.backward(vid_nl,vid_grad)
+        # th.autograd.backward(vid_nl,vid_grad)
+        th.autograd.backward(vid_nl_cc,vid_grad_cc)
 
         # -- save ex --
         vid_nn_s = vid_nn / vid_nn.max()
@@ -133,10 +139,7 @@ class TestFold(unittest.TestCase):
         # print(vid_nl[0,0,:3,:3])
 
         # -- check forward --
-        print("coords: ",coords)
-        hp = coords[2] - coords[0]
-        wp = coords[3] - coords[1]
-        delta = center_crop(vid_nn - vid_nl,(hp,wp))
+        delta = center_crop(vid_nn - vid_nl,(sq_h,sq_w))
         error = th.sum(delta**2).item()
         assert error < 1e-10
 
@@ -146,21 +149,28 @@ class TestFold(unittest.TestCase):
 
         # -- inspect grads --
         # print("grad_nn.shape: ",grad_nn.shape)
+        # print("grad_nl.shape: ",grad_nl.shape)
         # print(grad_nn[0,0,0,0])
         # print(grad_nl[0,0,0,0])
         # print("-"*10)
-        # print(grad_nn[1,0,0,0])
-        # print(grad_nl[1,0,0,0])
+        # print(grad_nn[20,0,0,0])
+        # print(grad_nl[20,0,0,0])
         # print("-"*10)
         # print(grad_nn[100,0,0,0])
         # print(grad_nl[100,0,0,0])
         # print("-"*10)
-        # print(grad_nn[200,0,0,0])
-        # print(grad_nl[200,0,0,0])
+        # print(grad_nn[64+1,0,0,0])
+        # print(grad_nl[64+1,0,0,0])
+        # print("-"*10)
+        # print(grad_nn[2*64+1,0,0,0])
+        # print(grad_nl[2*64+1,0,0,0])
+        # print("-"*10)
+        # print(grad_nn[1056,0,0,0])
+        # print(grad_nl[1056,0,0,0])
 
         # -- check backward --
         error = th.sum((grad_nn - grad_nl)**2).item()
-        # assert error < 1e-10
+        assert error < 1e-10
         # print("GPU Max: ",th.cuda.memory_allocated()/(1024**3))
 
     #

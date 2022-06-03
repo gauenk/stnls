@@ -194,6 +194,7 @@ __global__ void dnls_ifold_backward_kernel(
     int ps = patches.size(4);
     int psHalf = (int)ps/2;
     int height_width = height*width;
+    int hw = height*width;
 
     // -- cuda threads --
     int pi = threadIdx.y;
@@ -231,10 +232,10 @@ __global__ void dnls_ifold_backward_kernel(
 
         // -- indices --
         qIndex = stride2*(qi + start);
-        ti = (qIndex/sq_hw) % nframes;
-        _qIndex = qIndex % sq_hw;
-        hi = (stride)*(_qIndex / (stride*sq_w)) % height + top;
-        wi = (_qIndex/stride) % width + left;
+        ti = (qIndex/hw);
+        _qIndex = qIndex % hw;
+        hi = (stride)*(_qIndex / (stride*width)) % height;
+        wi = (_qIndex/stride) % width;
         // hi = (_qIndex/width) % height;
         // wi = _qIndex % width;
 
@@ -245,8 +246,12 @@ __global__ void dnls_ifold_backward_kernel(
         vi_w = wi+dilation*(pj - psHalf);
 
         // -- spatially valid --
-        valid_hw = (vi_h >= 0) && (vi_h < height);
-        valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
+        // valid_hw = (vi_h >= 0) && (vi_h < height);
+        // valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
+        // valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
+        valid_hw = (vi_h >= left) && (vi_h < right);
+        valid_hw = valid_hw && (vi_w >= top) && (vi_w < btm);
+        valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- iterate over loop --
         for(int pk = 0; pk < pt; pk++){
