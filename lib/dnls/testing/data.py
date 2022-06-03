@@ -30,6 +30,7 @@ def load_burst(root,name,nframes=-1,ext="png"):
     return burst
 
 def save_burst(burst,root,name):
+    root = Path(str(root))
     assert root.exists()
     nframes = burst.shape[0]
     for t in range(nframes):
