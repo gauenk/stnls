@@ -60,21 +60,33 @@ class TestFold(unittest.TestCase):
         # -- batching info --
         device = noisy.device
         shape = noisy.shape
-        t,c,h,w = shape
+        t,color,h,w = shape
         npix = t * h * w
-        qSize = t * (h//stride) * (w//stride)
-        qTotal = t * (h//stride) * (w//stride)
+        nh = (h-1)//stride+1
+        nw = (w-1)//stride+1
+        qTotal = t * nh * nw
+        qSize = qTotal
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
 
         # -- sub square --
-        coords = [2,2,h-2,w-2]
+        # coords = [2,2,h-2,w-2]
+        # coords = [12,12,h-12,w-12]
+        coords = [2,4,h-6,w-12]
         sq_h = coords[2] - coords[0]
         sq_w = coords[3] - coords[1]
 
+        # -- get check bounds --
+        psHalf = ps//2
+        a,b,c,d = coords # top,left,btm,right
+        a = (a+psHalf-1)//stride+1
+        b = (b+psHalf-1)//stride+1
+        c = (c-psHalf-1)//stride+1
+        d = (d-psHalf-1)//stride+1
+
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.ifold.iFold((t,c,h,w),coords,stride=stride,dilation=dil)
+        fold_nl = dnls.ifold.iFold((t,color,h,w),coords,stride=stride,dilation=dil)
 
         # -- get [patches & nlInds] --
         index = 0
@@ -110,6 +122,9 @@ class TestFold(unittest.TestCase):
         # -- run forward --
         vid_nn,_ = self.run_fold(patches_nn,t,h,w,stride,dil)
         vid_nl = fold_nl(patches_nl,0)
+        # print("vid.shape: ",vid.shape)
+        # print("vid_nn.shape: ",vid_nn.shape)
+        # print("vid_nl.shape: ",vid_nl.shape)
 
         # -- run backward --
         vid_grad = th.randn_like(vid)
@@ -139,37 +154,48 @@ class TestFold(unittest.TestCase):
         # print(vid_nl[0,0,:3,:3])
 
         # -- check forward --
-        delta = center_crop(vid_nn - vid_nl,(sq_h,sq_w))
+        delta = vid_nn[:,:,a:c,b:d] - vid_nl[:,:,a:c,b:d]
+        # delta = center_crop(vid_nn - vid_nl,(sq_h,sq_w))
         error = th.sum(delta**2).item()
         assert error < 1e-10
 
         # -- check backward --
         grad_nn = patches_nn.grad
         grad_nl = patches_nl.grad
-
-        # -- inspect grads --
         # print("grad_nn.shape: ",grad_nn.shape)
         # print("grad_nl.shape: ",grad_nl.shape)
+
+        # -- rearrange --
+        shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
+        grad_nn = rearrange(grad_nn,shape_str,t=t,h=h)
+        grad_nl = rearrange(grad_nl,shape_str,t=t,h=h)
+        # print("grad_nn.shape: ",grad_nn.shape)
+        # print("grad_nl.shape: ",grad_nl.shape)
+
+        # -- inspect grads --
+        # print("-"*10)
         # print(grad_nn[0,0,0,0])
         # print(grad_nl[0,0,0,0])
         # print("-"*10)
-        # print(grad_nn[20,0,0,0])
-        # print(grad_nl[20,0,0,0])
+        # print(grad_nn[0,0,16,16])
+        # print(grad_nl[0,0,16,16])
         # print("-"*10)
-        # print(grad_nn[100,0,0,0])
-        # print(grad_nl[100,0,0,0])
+        # print(grad_nn[0,0,-1,-1])
+        # print(grad_nl[0,0,-1,-1])
         # print("-"*10)
-        # print(grad_nn[64+1,0,0,0])
-        # print(grad_nl[64+1,0,0,0])
-        # print("-"*10)
-        # print(grad_nn[2*64+1,0,0,0])
-        # print(grad_nl[2*64+1,0,0,0])
-        # print("-"*10)
-        # print(grad_nn[1056,0,0,0])
-        # print(grad_nl[1056,0,0,0])
+        # for i in range(5):
+        #     print("-"*10)
+        #     print(grad_nn[0,0,i,i])
+        #     print(grad_nl[0,0,i,i])
+
+        # for i in range(5):
+        #     print("-"*10)
+        #     print(grad_nn[0,0,-i,-i])
+        #     print(grad_nl[0,0,-i,-i])
+
 
         # -- check backward --
-        error = th.sum((grad_nn - grad_nl)**2).item()
+        error = th.sum((grad_nn[:,a:c,b:d] - grad_nl[:,a:c,b:d])**2).item()
         assert error < 1e-10
         # print("GPU Max: ",th.cuda.memory_allocated()/(1024**3))
 
@@ -178,7 +204,7 @@ class TestFold(unittest.TestCase):
     #
 
     # @pytest.mark.parametrize("a,b,expected", testdata)
-    def skip_test_batched_fold(self):
+    def test_batched_fold(self):
 
         # -- get args --
         dname,ext,sigma,comp_flow,args = self.setup()
@@ -205,14 +231,31 @@ class TestFold(unittest.TestCase):
         # -- batching info --
         device = noisy.device
         shape = noisy.shape
-        t,c,h,w = shape
+        t,color,h,w = shape
         npix = t * h * w
         qSize = 32
-        qTotal = t * (h//stride) * (w//stride)
+        nh = (h-1)//stride+1
+        nw = (w-1)//stride+1
+        qTotal = t * nh * nw
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
         if gpu_stats:
             print("nbatches: ",nbatches)
+
+        # -- sub square --
+        coords = [2,2,h-2,w-2]
+        coords = [12,12,h-12,w-12]
+        coords = [2,2,h-12,w-12]
+        sq_h = coords[2] - coords[0]
+        sq_w = coords[3] - coords[1]
+
+        # -- get check bounds --
+        psHalf = ps//2
+        a,b,c,d = coords # top,left,btm,right
+        a = (a+psHalf-1)//stride+1
+        b = (b+psHalf-1)//stride+1
+        c = (c-psHalf-1)//stride+1
+        d = (d-psHalf-1)//stride+1
 
         # -- vis --
         if gpu_stats:
@@ -221,8 +264,7 @@ class TestFold(unittest.TestCase):
 
         # -- exec fold fxns --
         scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        coords = np.array([2,2,h-2,w-2])
-        fold_nl = dnls.ifold.iFold((t,c,h,w),coords,stride=stride,dilation=dil)
+        fold_nl = dnls.ifold.iFold((t,color,h,w),coords,stride=stride,dilation=dil)
         agg_patches = []
         # vid_nl = th.zeros((t,c,h,w),device=device)
 
@@ -323,8 +365,12 @@ class TestFold(unittest.TestCase):
         # -- run backward --
         # vid_nl = fold_nl.vid
         vid_grad = th.randn_like(vid)
-        th.autograd.backward(vid_nn,vid_grad)
-        th.autograd.backward(vid_nl,vid_grad)
+        vid_grad_cc = center_crop(vid_grad,(sq_h,sq_w))
+        vid_nn_cc = center_crop(vid_nn,(sq_h,sq_w))
+        vid_nl_cc = center_crop(vid_nl,(sq_h,sq_w))
+        th.autograd.backward(vid_nn_cc,vid_grad_cc)
+        # th.autograd.backward(vid_nl,vid_grad)
+        th.autograd.backward(vid_nl_cc,vid_grad_cc)
 
         # -- vis --
         if gpu_stats:
@@ -351,7 +397,7 @@ class TestFold(unittest.TestCase):
         # print(vid_nl[0,0,:3,:3])
 
         # -- check forward --
-        error = th.sum((vid_nn - vid_nl)**2).item()
+        error = th.sum((vid_nn[:,:,a:c,b:d] - vid_nl[:,:,a:c,b:d])**2).item()
         # hm,wm = h-2*dil*psHalf,w-2*dil*psHalf
         # error = th.mean((center_crop(vid_nn - vid_nl,(hm,wm)))**2).item()
         assert error < 1e-10
@@ -375,7 +421,7 @@ class TestFold(unittest.TestCase):
         # print(grad_nl[-3,0,0,0])
 
         # -- reshape --
-        shape_str = '(t h w) 1 1 c ph pw -> t c h w ( ph pw)'
+        shape_str = '(t h w) 1 1 c ph pw -> t c h w (ph pw)'
         grad_nn = rearrange(grad_nn,shape_str,t=t,h=h)
         grad_nl = rearrange(grad_nl,shape_str,t=t,h=h)
         # print("grad_nn.shape: ",grad_nn.shape)
@@ -390,7 +436,7 @@ class TestFold(unittest.TestCase):
         # print(grad_nl[args][:3])
 
         # -- check backward --
-        error = th.sum((grad_nn - grad_nl)**2).item()
+        error = th.sum((grad_nn[:,a:c,b:d] - grad_nl[:,a:c,b:d])**2).item()
         assert error < 1e-10
         # print("GPU Max: ",th.cuda.max_memory_reserved()/(1024**3))
 

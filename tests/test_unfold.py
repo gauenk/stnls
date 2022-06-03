@@ -63,8 +63,10 @@ class TestUnfold(unittest.TestCase):
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qTotal = t * (h//stride) * (w//stride)
-        qSize = qTotal
+        nh = int((h-1) // stride) + 1
+        nw = int((w-1) // stride) + 1
+        qSize = t * nh * nw
+        qTotal = t * nh * nw
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
         vid = th.randn_like(vid)
@@ -152,7 +154,9 @@ class TestUnfold(unittest.TestCase):
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qTotal = t * (h//stride) * (w//stride)
+        nh = int((h-1) // stride) + 1
+        nw = int((w-1) // stride) + 1
+        qTotal = t * nh * nw
         qSize = 128
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
@@ -177,10 +181,6 @@ class TestUnfold(unittest.TestCase):
             # -- get [patches & nlInds] --
             qindex = min(qSize * index,qTotal)
             qSize = min(qSize,qTotal-qindex)
-            queryInds = dnls.utils.inds.get_query_batch(qindex,qSize,stride,
-                                                        t,h,w,device)
-            # nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-            #                                         flow,k,ps,pt,ws,wt,chnls)
 
             # -- run forward --
             th.cuda.synchronize()
@@ -208,11 +208,12 @@ class TestUnfold(unittest.TestCase):
         th.autograd.backward(patches_nl,patches_grad)
 
         # -- save ex --
-        # vid_nl = fold_nl.vid
-        # vid_nn_s = vid_nn / vid_nn.max()
-        # vid_nl_s = vid_nl / vid_nn.max()
-        # dnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
-        # dnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
+        # viz_nn,w_nn = self.run_fold(patches_nn,t,h,w,stride,dil)
+        # viz_nl,w_nl = self.run_fold(patches_nl,t,h,w,stride,dil)
+        # viz_nn /= w_nn
+        # viz_nl /= w_nn
+        # dnls.testing.data.save_burst(viz_nn,SAVE_DIR,"vid_nn")
+        # dnls.testing.data.save_burst(viz_nl,SAVE_DIR,"vid_nl")
         # psHalf = ps//2
         # diff = th.abs(vid_nn_s - vid_nl_s)
         # diff /= diff.max()
@@ -266,8 +267,8 @@ class TestUnfold(unittest.TestCase):
         sigma = 50.
         dname = "text_tourbus_64"
         dname = "davis_baseball_64x64"
-        args = edict({"ps":5,"pt":1,"k":1,"ws":10,"wt":5,
-                      "stride":1,"dilation":1})
+        args = edict({"ps":3,"pt":1,"k":1,"ws":10,"wt":5,
+                      "stride":3,"dilation":2})
         return dname,sigma,comp_flow,args
 
     def run_fold(self,patches,t,h,w,stride=1,dil=1):
@@ -279,9 +280,9 @@ class TestUnfold(unittest.TestCase):
         patches = rearrange(patches,shape_str,t=t)
         ones = th.ones_like(patches)
 
-        vid_pad = fold(patches,(hp,wp),(ps,ps),dilation=dil)
+        vid_pad = fold(patches,(hp,wp),(ps,ps),stride=stride,dilation=dil)
         vid = center_crop(vid_pad,(h,w))
-        wvid_pad = fold(ones,(hp,wp),(ps,ps),dilation=dil)
+        wvid_pad = fold(ones,(hp,wp),(ps,ps),stride=stride,dilation=dil)
         wvid = center_crop(wvid_pad,(h,w))
 
         return vid,wvid

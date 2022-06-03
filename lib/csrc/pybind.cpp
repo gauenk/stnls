@@ -7,6 +7,7 @@ void init_scatter(py::module &);
 void init_search(py::module &);
 void init_fold(py::module &);
 void init_unfold(py::module &);
+void init_iunfold(py::module &);
 
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -15,6 +16,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_search(m);
   init_fold(m);
   init_unfold(m);
+  init_iunfold(m);
 }
 
 

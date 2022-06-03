@@ -62,8 +62,10 @@ class TestFold(unittest.TestCase):
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qSize = t * (h//stride) * (w//stride)
-        qTotal = t * (h//stride) * (w//stride)
+        nh = int((h-1) // stride) + 1
+        nw = int((w-1) // stride) + 1
+        qSize = t * nh * nw
+        qTotal = t * nh * nw
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
 
@@ -84,12 +86,11 @@ class TestFold(unittest.TestCase):
 
 
         # -- save query mask --
-        # mask = th.zeros((t,h,w),dtype=np.bool,device=device)
-        # start = h*w
-        # mask[queryInds[:,0],queryInds[:,1],queryInds[:,2]] = 1
-        # mask = repeat(mask,'t h w -> t c h w',c=3)
-        # dnls.testing.data.save_burst(mask,SAVE_DIR,"mask")
-        # print(queryInds[-3:])
+        mask = th.zeros((t,h,w),dtype=np.bool,device=device)
+        start = h*w
+        mask[queryInds[:,0],queryInds[:,1],queryInds[:,2]] = 1
+        mask = repeat(mask,'t h w -> t c h w',c=3)
+        dnls.testing.data.save_burst(mask,SAVE_DIR,"mask")
         assert th.sum(queryInds - nlInds[:,0]) < 1e-10
 
         #
@@ -113,7 +114,9 @@ class TestFold(unittest.TestCase):
 
         # -- save ex --
         vid_nn_s = vid_nn / vid_nn.max()
-        vid_nl_s = vid_nl / vid_nn.max()
+        vid_nl_s = vid_nl / vid_nl.max()
+        # print("vid_nl.max().item(): ",vid_nl.max().item())
+        # print("vid_nn.max().item(): ",vid_nn.max().item())
         dnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
         dnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
         diff = th.abs(vid_nn_s - vid_nl_s)
@@ -192,8 +195,10 @@ class TestFold(unittest.TestCase):
         shape = noisy.shape
         t,c,h,w = shape
         npix = t * h * w
-        qSize = 32
-        qTotal = t * (h//stride) * (w//stride)
+        nh = int((h-1) // stride) + 1
+        nw = int((w-1) // stride) + 1
+        qTotal = t * nh * nw
+        qSize = qTotal//2
         nbatches = (qTotal-1) // qSize + 1
         vid = vid.contiguous()
         if gpu_stats:
@@ -218,7 +223,8 @@ class TestFold(unittest.TestCase):
         for index in range(nbatches):
 
             # -- get [patches & nlInds] --
-            qindex = min(qSize * index,npix)
+            qindex = min(qSize * index,qTotal)
+            qSize = min(qSize,qTotal - qindex)
             queryInds = dnls.utils.inds.get_query_batch(qindex,qSize,stride,
                                                         t,h,w,device)
             nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
@@ -271,7 +277,10 @@ class TestFold(unittest.TestCase):
 
         # -- run fold with entire image --
         index = 0
-        qSize = t * (h//stride) * (w//stride)
+        nh = int((h-1) // stride) + 1
+        nw = int((w-1) // stride) + 1
+        qSize = t * (nh) * (nh)
+        # qSize = t * (h//stride) * (w//stride)
         queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
@@ -316,8 +325,10 @@ class TestFold(unittest.TestCase):
             print("[post-bkwd] GPU Max: %2.4f" % (gpu_max))
 
         # -- save ex --
+        # print("vid_nn.max(): ",vid_nn.max())
+        # print("vid_nl.max(): ",vid_nl.max())
         vid_nn_s = vid_nn / vid_nn.max()
-        vid_nl_s = vid_nl / vid_nn.max()
+        vid_nl_s = vid_nl / vid_nl.max()
         dnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
         dnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
         psHalf = ps//2
@@ -402,9 +413,9 @@ class TestFold(unittest.TestCase):
         dname,ext = "text_tourbus_64","jpg"
         dname,ext = "davis_baseball_64x64","jpg"
         # dname,ext = "text_bus","png"
-        args = edict({"ps":3,"pt":1,"k":1,
+        args = edict({"ps":5,"pt":1,"k":1,
                       "ws":10,"wt":5,
-                      "stride":1,"dilation":1})
+                      "stride":4,"dilation":2})
         return dname,ext,sigma,comp_flow,args
 
     def run_fold(self,patches,t,h,w,stride=1,dil=1):

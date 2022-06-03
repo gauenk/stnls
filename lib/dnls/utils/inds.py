@@ -19,7 +19,7 @@ def get_query_batch(index,qSearch,stride,t,h,w,device):
 
 def numba_query_launcher(index,qSearch,stride,t,h,w,device):
     srch_inds = np.zeros((qSearch,3),dtype=np.int64)
-    assert (h % stride == 0) and (w % stride == 0)
+    # assert (h % stride == 0) and (w % stride == 0)
     numba_query_raster(srch_inds,index,qSearch,stride,t,h,w)
     # numba_query_equal(srch_inds,index,qSearch,stride,t,h,w)
     srch_inds = th.from_numpy(srch_inds).to(device).contiguous()
@@ -27,25 +27,34 @@ def numba_query_launcher(index,qSearch,stride,t,h,w,device):
 
 @njit
 def numba_query_raster(srch_inds,index,qSearch,stride,t,h,w):
-    hs = h // stride
-    ws = w // stride
-    npf = hs*ws
+    # hs = (h-1) // (stride-1) + 1
+    # ws = (w-1) // (stride-1) + 1
+    nh = int((h-1) // stride) + 1
+    nw = int((w-1) // stride) + 1
+    npf = nh*nw
     hw = h*w
     stride2 = stride**2
-    for qi in prange(qSearch):
+    for raw_qi in prange(qSearch):
 
         # -- ind -> ti --
-        ind = stride2 * (qi + index)
-        ti = (ind // hw) % t
-
-        ind_f = ind % hw
-        hi = (stride)*(ind_f // (stride*w))
-        wi = (ind_f/stride) % w
+        # ind = stride2 * (qi + index)
+        # ti = ((qi * strid2) // hw) % t
+        qi = raw_qi + index
+        ti = qi // (nh*nw)
+        _qi = qi % (nh*nw)
+        # ind_f = (stride2*qi) % hw
+        # hi = (stride)*((stride*ind_f) // w)
+        hi = ((_qi // nw) * stride) % h
+        wi = ((_qi % nw) * stride) % w
+        # wi = ((stride-1)*ind_f) % w
+        # wi = (ind_f/stride) % w
+        # hi = (stride)*(ind_f // (stride*w))
+        # wi = (ind_f/stride) % w
 
         # -- fill --
-        srch_inds[qi,0] = ti
-        srch_inds[qi,1] = hi
-        srch_inds[qi,2] = wi
+        srch_inds[raw_qi,0] = ti
+        srch_inds[raw_qi,1] = hi
+        srch_inds[raw_qi,2] = wi
 
 
 @njit

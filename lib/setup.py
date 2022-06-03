@@ -18,6 +18,8 @@ setup(name='dnls',
               'csrc/dnls_ifold_kernel.cu',
               'csrc/dnls_unfold_cuda.cpp',
               'csrc/dnls_unfold_kernel.cu',
+              'csrc/dnls_iunfold_cuda.cpp',
+              'csrc/dnls_iunfold_kernel.cu',
               'csrc/pybind.cpp',
           ])
       ],

@@ -51,14 +51,22 @@ __global__ void dnls_ifold_forward_kernel(
     int numQueries = patches.size(0);
     int psHalf = ps/2;
     int hw = height*width;
-    int width_s = width/stride;
-    int hw_s = (height/stride)*(width/stride);
+    int fill_pad = psHalf * dilation;
+    // int width_s = width/stride;
+    // int hw_s = (height/stride)*(width/stride);
     // int num_kernels = inds.size(0);
     bool valid,valid_q;
     // bool is_edge;
     // int nhits,nhits_q;
     // int ndim = ps*ps*pt;
 
+    // -- strided size --
+    int nh = int((height-1) / stride) + 1;
+    int nw = int((width-1) / stride) + 1;
+    int width_s = nw;
+    int hw_s = nh * nw;
+
+    // -- make square --
     int sq_h = btm - top;
     int sq_w = right - left;
     int sq_hw = sq_h * sq_w;
@@ -88,8 +96,8 @@ __global__ void dnls_ifold_forward_kernel(
 
               // -- check bounds --
               // NOTE; this will not work for dilation > 1
-              valid = (_wi >= -psHalf) && (_wi < (width+psHalf));
-              valid = valid && (_hi >= -psHalf) && (_hi < (height+psHalf));
+              valid = (_wi >= -fill_pad) && (_wi < (width+fill_pad));
+              valid = valid && (_hi >= -fill_pad) && (_hi < (height+fill_pad));
               int wi = bounds(_wi,width);
               int hi = bounds(_hi,height);
 
@@ -97,7 +105,7 @@ __global__ void dnls_ifold_forward_kernel(
               // int qi = ti * hw + hi * width + wi; // maybe stride here?
               // qi = (int) (qi / (1.*stride));
               // qi -= start;
-              int qi = ti * hw_s + (hi * width_s)/stride + (wi/stride);
+              int qi = ti * hw_s + ((hi/stride) * width_s)+ (wi/stride);
               qi -= start;
 
               // -- only if qi is aligned with center --
@@ -200,6 +208,10 @@ __global__ void dnls_ifold_backward_kernel(
     int pi = threadIdx.y;
     int pj = threadIdx.z;
 
+    // -- strided size --
+    int nh = int((height-1) / stride) + 1;
+    int nw = int((width-1) / stride) + 1;
+
     // -- batching --
     int query_start_block = blockIdx.x*qpt;
     int k_start = threadIdx.x*kpt;
@@ -211,7 +223,7 @@ __global__ void dnls_ifold_backward_kernel(
 
     // inits
     int qIndex,_qIndex;
-    int qi,ki,ti,hi,wi;
+    int qi,ki,ti,hi,wi,_qi,qi_mod;
     int vi_h,vi_w,vi_t;
     bool valid_hw,valid_t,valid;
     scalar_t pix;
@@ -231,13 +243,25 @@ __global__ void dnls_ifold_backward_kernel(
         if (ki >= k){ continue; }
 
         // -- indices --
-        qIndex = stride2*(qi + start);
-        ti = (qIndex/hw);
-        _qIndex = qIndex % hw;
-        hi = (stride)*(_qIndex / (stride*width)) % height;
-        wi = (_qIndex/stride) % width;
+        // qIndex = stride2*(qi + start);
+        // ti = (qIndex/hw);
+        // _qIndex = qIndex % hw;
+        // hi = (stride)*(_qIndex / (stride*width)) % height;
+        // wi = (_qIndex/stride) % width;
         // hi = (_qIndex/width) % height;
         // wi = _qIndex % width;
+
+        // -- new inds --
+        qIndex = qi + start;
+        ti = qIndex / (nh*nw);
+        qi_mod = qIndex % (nh*nw);
+        hi = ((qi_mod / nw) * stride) % height;
+        wi = ((qi_mod % nw) * stride) % width;
+
+        // -- valid ind --
+        valid_hw = (hi >= left) && (hi < right);
+        valid_hw = valid_hw && (wi >= top) && (wi < btm);
+        valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- fill across cuda threads --
         // vi_h = bounds(hi+dilation*(pi - psHalf),height);
@@ -246,12 +270,12 @@ __global__ void dnls_ifold_backward_kernel(
         vi_w = wi+dilation*(pj - psHalf);
 
         // -- spatially valid --
-        // valid_hw = (vi_h >= 0) && (vi_h < height);
-        // valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
+        valid_hw = valid_hw && (vi_h >= 0) && (vi_h < height);
+        valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
         // valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
-        valid_hw = (vi_h >= left) && (vi_h < right);
-        valid_hw = valid_hw && (vi_w >= top) && (vi_w < btm);
-        valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
+        // valid_hw = (vi_h >= left) && (vi_h < right);
+        // valid_hw = valid_hw && (vi_w >= top) && (vi_w < btm);
+        // valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- iterate over loop --
         for(int pk = 0; pk < pt; pk++){

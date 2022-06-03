@@ -5,5 +5,6 @@ from . import testing
 from . import utils
 from . import simple
 from . import fold
-from . import ifold
 from . import unfold
+from . import ifold
+from . import iunfold
