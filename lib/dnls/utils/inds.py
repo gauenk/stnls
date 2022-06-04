@@ -17,6 +17,14 @@ def get_query_batch(index,qSearch,stride,t,h,w,device):
     srch_inds = numba_query_launcher(index,qSearch,stride,t,h,w,device)
     return srch_inds
 
+def get_iquery_batch(index,qSearch,stride,coords,t,h,w,device):
+    sq_h = coords[2] - coords[0]
+    sq_w = coords[3] - coords[1]
+    srch_inds = numba_query_launcher(index,qSearch,stride,t,sq_h,sq_w,device)
+    srch_inds[:,1] += coords[0] # top
+    srch_inds[:,2] += coords[1] # left
+    return srch_inds
+
 def numba_query_launcher(index,qSearch,stride,t,h,w,device):
     srch_inds = np.zeros((qSearch,3),dtype=np.int64)
     # assert (h % stride == 0) and (w % stride == 0)
