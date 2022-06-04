@@ -7,7 +7,7 @@ from pathlib import Path
 from easydict import EasyDict as edict
 
 # -- testing --
-import unittest
+import unittest,pytest
 
 # -- linalg --
 import torch as th
@@ -36,6 +36,8 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
+    # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
+    #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[3,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
                   "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
     for key,val in test_lists.items():
@@ -45,6 +47,7 @@ def pytest_generate_tests(metafunc):
 # -- Test Against Pytorch.nn.fold --
 #
 
+# @pytest.mark.skip(reason="too long right now")
 def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- get args --
@@ -92,8 +95,9 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     index = 0
     queryInds = dnls.utils.inds.get_iquery_batch(index,qSize,stride,
                                                  coords,t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                            flow,k,ps,pt,ws,wt,chnls)
+    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
+                                            ps,pt,ws,wt,chnls,
+                                            stride=stride,dilation=dil)
     assert th.sum(queryInds - nlInds[:,0]) < 1e-10
     patches_nl = scatter_nl(vid,nlInds)
     patches_nn = patches_nl.clone()
@@ -145,6 +149,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 # -- Test a Batched Ours Against Pytorch.nn.fold --
 #
 
+# @pytest.mark.skip(reason="too long right now")
 def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- get args --
@@ -201,8 +206,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
         # -- get patches --
         queryInds = dnls.utils.inds.get_iquery_batch(qindex,qSize,stride,
                                                      coords,t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                flow,k,ps,pt,ws,wt,chnls)
+        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
+                                                ps,pt,ws,wt,chnls,
+                                                stride=stride,dilation=dil)
         patches_nl_i = scatter_nl(vid,nlInds)
         del queryInds,nlDists,nlInds
         th.cuda.empty_cache()
@@ -220,8 +226,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     index,qSize = 0,qTotal
     queryInds = dnls.utils.inds.get_iquery_batch(index,qSize,stride,
                                                  coords,t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                            flow,k,ps,pt,ws,wt,chnls)
+    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
+                                            ps,pt,ws,wt,chnls,
+                                            stride=stride,dilation=dil)
     patches_nn = scatter_nl(vid,nlInds)
     patches_nn.requires_grad_(True)
     print_gpu_stats(gpu_stats,"post-search")
@@ -263,6 +270,80 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     del queryInds,nlDists,nlInds
     th.cuda.empty_cache()
 
+def test_shrink_search():
+
+    # -- get args --
+    ps,stride,dilation = 5,2,1
+    dil = dilation
+    dname,ext = "davis_baseball_64x64","jpg"
+    chnls,k,pt = 1,1,1
+    ws,wt = 10,0
+
+    # -- init vars --
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    exact = True
+    exact = True
+    gpu_stats = False
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = th.from_numpy(vid).to(device).contiguous()
+    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    print_gpu_stats(gpu_stats,"post-io")
+
+    # -- unpack image --
+    device = vid.device
+    shape = vid.shape
+    t,color,h,w = shape
+    vshape = vid.shape
+
+    # -- sub square --
+    top,left,btm,right = 0,0,h,w
+    coords = [top,left,btm,right]
+    sq_h = coords[2] - coords[0]
+    sq_w = coords[3] - coords[1]
+
+    # -- batching info --
+    npix = t * h * w
+    n_h = (sq_h-1)//stride+1
+    n_w = (sq_w-1)//stride+1
+    qTotal = t * n_h * n_w
+    qSize = qTotal
+    nbatches = (qTotal-1) // qSize + 1
+
+    # -- padded video --
+    # padf = 14 # something big
+    # vid_pad = pad(vid,[padf,]*4,mode="reflect")
+
+    # -- get folds --
+    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil)
+    wfold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil)
+
+    # -- get patches with dilation --
+    qindex,k,pt,chnls = 0,1,1,1
+    queryInds = dnls.utils.inds.get_iquery_batch(qindex,qSize,stride,
+                                                 coords,t,h,w,device)
+    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,
+                                            k,ps,pt,ws,wt,chnls,
+                                            stride=stride,dilation=dil)
+    patches = scatter_nl(vid,nlInds[:,[0]])
+    ones = th.ones_like(patches)
+    vid_f = fold_nl(patches,0)
+    wvid_f = wfold_nl(ones,0)
+    vid_f /= wvid_f
+
+    # -- inspect --
+    # dnls.testing.data.save_burst(vid_f,"./output/tests/","vid_f")
+    # diff = th.abs(vid-vid_f)
+    # if diff.max() > 1e-3: diff /= diff.max()
+    # dnls.testing.data.save_burst(diff,"./output/tests/","diff_f")
+
+    # -- misc --
+    error = th.sum((vid_f - vid)**2).item()
+    assert error < 1e-10
 
 def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1):
     # -- avoid pytest fixtures --
