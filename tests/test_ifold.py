@@ -36,10 +36,8 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    # test_lists = {"ps":[3],"stride":[3],"dilation":[2],
-    #               "top":[11],"btm":[50],"left":[7],"right":[57]}
-    test_lists = {"ps":[3,5,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
-                  "top":[0,11],"btm":[64,50],"left":[0,7],"right":[64,57]}
+    test_lists = {"ps":[3,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
+                  "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
