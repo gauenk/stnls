@@ -18,14 +18,16 @@
 
 #define CUDA_KERNEL_LOOP(i, n) CUDA_KERNEL_LOOP_TYPE(i, n, int)
 
-__inline__ __device__ int bounds(int val, int lim ){
-  if (val < 0){
-    val = -val;
-  }else if (val >= lim){
-    val = 2*lim - val - 2;
+__inline__ __device__ int bounds(int val, int lb, int ub ){
+  int vval = val;
+  if (val < lb){
+    vval = 2*lb - val;
+  }else if (val >= ub){
+    vval = 2*(ub-1) - val;
   }
-  return val;
+  return vval;
 }
+
 
 /**************************************
 
@@ -60,29 +62,39 @@ __global__ void dnls_ifold_forward_kernel(
     // int nhits,nhits_q;
     // int ndim = ps*ps*pt;
 
-    // -- strided size --
-    int nh = int((height-1) / stride) + 1;
-    int nw = int((width-1) / stride) + 1;
-    int width_s = nw;
-    int hw_s = nh * nw;
-
     // -- make square --
     int sq_h = btm - top;
     int sq_w = right - left;
     int sq_hw = sq_h * sq_w;
 
+    // -- strided size --
+    int n_h = int((sq_h-1) / stride) + 1;
+    int n_w = int((sq_w-1) / stride) + 1;
+    int n_hw = n_h * n_w;
+
     CUDA_KERNEL_LOOP(_index, num_kernels) {
 
       int index = (_index);
       const int64_t t_im = (index / sq_hw);
-      const int64_t w_im = index % sq_w + left;
-      const int64_t h_im = (index / sq_w) % sq_h + top;
+      const int64_t i_mod = index % sq_hw;
+      const int64_t w_im = (i_mod % sq_w) + left;
+      const int64_t h_im = ((i_mod / sq_w) % sq_h) + top;
+
+      // const int64_t t_im = (index / n_hw);
+      // const int64_t w_im = (index % n_w) + left;
+      // const int64_t h_im = ((index / n_w) % n_h) + top;
+
+
+      // const int64_t t_im = (index / n_hw);
+      // int i_mod = index % (n_hw);
+      // const int64_t h_im = (stride*(i_mod / n_w) + top);// % height;
+      // const int64_t w_im = (stride*(i_mod % n_w) + left);// % width;
 
       // -- allow partial nhits if edge --
       // int padf = dilation*ps;
       // bool is_edge = (w_im < padf) || (w_im > (width-padf));
       // is_edge = is_edge || (h_im < padf) || (h_im > (height-padf));
-        
+
       for(int ci = 0; ci < colors; ci++){
         scalar_t val = 0;
         for (int pk = 0; pk < pt; pk++){
@@ -96,20 +108,26 @@ __global__ void dnls_ifold_forward_kernel(
 
               // -- check bounds --
               // NOTE; this will not work for dilation > 1
-              valid = (_wi >= -fill_pad) && (_wi < (width+fill_pad));
-              valid = valid && (_hi >= -fill_pad) && (_hi < (height+fill_pad));
-              int wi = bounds(_wi,width);
-              int hi = bounds(_hi,height);
+              // valid = (_wi >= -fill_pad) && (_wi < (width+fill_pad));
+              // valid = valid && (_hi >= -fill_pad) && (_hi < (height+fill_pad));
+              valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
+              valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));
+              // valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
+              // valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));
+              int wi = bounds(_wi,left,right);
+              int hi = bounds(_hi,top,btm);
+
+              // -- only if proposed index is aligned with stride --
+              valid = valid && ((hi-top) % stride == 0) && ((wi-left) % stride == 0);
 
               // -- compute ni --
               // int qi = ti * hw + hi * width + wi; // maybe stride here?
               // qi = (int) (qi / (1.*stride));
               // qi -= start;
-              int qi = ti * hw_s + ((hi/stride) * width_s)+ (wi/stride);
+              int qi = ti * n_hw;
+              qi += (((hi-top)/stride) * n_w);
+              qi += ((wi-left)/stride);
               qi -= start;
-
-              // -- only if qi is aligned with center --
-              valid = valid && (hi % stride == 0) && (wi % stride == 0);
 
               // -- patch indexing --
               int w_ip = ps-1-pi;
@@ -208,10 +226,6 @@ __global__ void dnls_ifold_backward_kernel(
     int pi = threadIdx.y;
     int pj = threadIdx.z;
 
-    // -- strided size --
-    int nh = int((height-1) / stride) + 1;
-    int nw = int((width-1) / stride) + 1;
-
     // -- batching --
     int query_start_block = blockIdx.x*qpt;
     int k_start = threadIdx.x*kpt;
@@ -220,6 +234,11 @@ __global__ void dnls_ifold_backward_kernel(
     int sq_h = btm - top;
     int sq_w = right - left;
     int sq_hw = sq_h * sq_w;
+
+    // -- strided size --
+    int n_h = int((sq_h-1) / stride) + 1;
+    int n_w = int((sq_w-1) / stride) + 1;
+    int n_hw = n_h*n_w;
 
     // inits
     int qIndex,_qIndex;
@@ -253,14 +272,14 @@ __global__ void dnls_ifold_backward_kernel(
 
         // -- new inds --
         qIndex = qi + start;
-        ti = qIndex / (nh*nw);
-        qi_mod = qIndex % (nh*nw);
-        hi = ((qi_mod / nw) * stride) % height;
-        wi = ((qi_mod % nw) * stride) % width;
+        ti = qIndex / (n_hw);
+        qi_mod = qIndex % (n_hw);
+        hi = (qi_mod / n_w) * stride + top;
+        wi = (qi_mod % n_w) * stride + left;
 
         // -- valid ind --
-        valid_hw = (hi >= left) && (hi < right);
-        valid_hw = valid_hw && (wi >= top) && (wi < btm);
+        valid_hw = (hi >= top) && (hi < btm);
+        valid_hw = valid_hw && (wi >= left) && (wi < right);
         valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- fill across cuda threads --
@@ -270,8 +289,10 @@ __global__ void dnls_ifold_backward_kernel(
         vi_w = wi+dilation*(pj - psHalf);
 
         // -- spatially valid --
-        valid_hw = valid_hw && (vi_h >= 0) && (vi_h < height);
-        valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
+        valid_hw = valid_hw && (vi_h >= top) && (vi_h < btm);
+        valid_hw = valid_hw && (vi_w >= left) && (vi_w < right);
+        // valid_hw = valid_hw && (vi_h >= 0) && (vi_h < height);
+        // valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
         // valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
         // valid_hw = (vi_h >= left) && (vi_h < right);
         // valid_hw = valid_hw && (vi_w >= top) && (vi_w < btm);
@@ -281,7 +302,7 @@ __global__ void dnls_ifold_backward_kernel(
         for(int pk = 0; pk < pt; pk++){
 
           // -- check valid --
-          vi_t = bounds(ti + pk,nframes);
+          vi_t = bounds(ti + pk,0,nframes);
           valid_t = (vi_t >= 0) && (vi_t < nframes);
           valid = valid_hw && valid_t;
 
