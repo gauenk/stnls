@@ -43,7 +43,7 @@ nbatches = (npixels-1)//batch_size + 1
 for batch in range(nbatches):
     patch_batch = unfold(batched_images,batch)
     patch_batch_mod = model(patch_batch)
-    batched_images_mod = fold(patch_batch_mod,batch)
+    batched_images_mod += fold(patch_batch_mod,batch)
 ```
 
 ## The Memory Cost of [Fold](https://pytorch.org/docs/stable/generated/torch.nn.Fold.html) and [Unfold](https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html)
