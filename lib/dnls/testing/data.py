@@ -27,10 +27,14 @@ def load_burst(root,name,nframes=-1,ext="png"):
         img_t = np.array(img_t).transpose(2,0,1)
         burst.append(img_t)
     burst = np.stack(burst).astype(np.float32)
+    burst = np.ascontiguousarray(burst)
     return burst
 
 def save_burst(burst,root,name):
     root = Path(str(root))
+    if not root.exists():
+        print(f"Making dir for save_burst [{str(root)}]")
+        root.mkdir(parents=True)
     assert root.exists()
     nframes = burst.shape[0]
     for t in range(nframes):

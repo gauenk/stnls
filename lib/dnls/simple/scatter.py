@@ -69,7 +69,7 @@ def numba_scatter(patches,vid,nlInds,dilation,kpt,qpb):
     #     return int(val)
     def bounds(val,lim):
         if val < 0: val = -val
-        if val >= lim: val = 2*lim - val - 2
+        if val >= lim: val = 2*(lim-1) - val
         return int(val)
 
     # -- shapes --

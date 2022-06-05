@@ -123,12 +123,14 @@ __global__ void dnls_ifold_forward_kernel(
               int _hi = h_im + dilation*(pj - psHalf);
               int ti = t_im + pk;
 
-              // -- check bounds --
+              // -- check bounds (we need the patch for the pixel!) --
               // NOTE; this will not work for dilation > 1
               // valid = (_wi >= -fill_pad) && (_wi < (width+fill_pad));
               // valid = valid && (_hi >= -fill_pad) && (_hi < (height+fill_pad));
-              valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
-              valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));
+              valid = (_wi >= left) && (_wi < right);
+              valid = valid && (_hi >= top) && (_hi < btm);
+              // valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
+              // valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));
               // valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
               // valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));
               int wi = bounds(_wi,left,right);

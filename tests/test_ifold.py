@@ -39,7 +39,7 @@ def pytest_generate_tests(metafunc):
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[3,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
-                  "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
+                  "top":[0,1,3,11],"btm":[50,57],"left":[1,2,3,7],"right":[57,50]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
