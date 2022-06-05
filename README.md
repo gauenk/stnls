@@ -16,6 +16,15 @@ Operating on arbitrary rectangular regions enables methods to be applied
 to fixed or dynamically chosen regions.
 Examples of fixed regions include hard mining examples for training a network -- since many patches are "flat" (in terms of content) training on more interesting regions such as textures may improve training statistics. Examples of dynamically chosen regions include using a deep networks to propose the coordinates itself. Such a network can specify regions (i) for more processing or (ii) to skip regions that don't need extra computation.
 
+## Install & Usage
+
+```bash
+>$ git clone https://github.com/gauenk/dnls
+>$ cd dnls
+>$ python -m pip install -e ./lib --user
+```
+
+See [`scripts/example_folds.py`]() and [`scripts/example_nls.py`]() for an example usages.
 
 ## Patch-based Processing: Attention and Non-Local Denoising
 
