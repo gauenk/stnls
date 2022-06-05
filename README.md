@@ -10,7 +10,7 @@ This package provides three primary functions: `search`, `ifold`, and `iunfold`.
 
 Batching across patches places an upper-bound on the 
 memory consumption of any patch-based method. This allows patch-based methods
-to scale to huge image resolutions (from 256x256 to 5000x5000) and to large batches (from 4 to 128). 
+to scale to huge image resolutions (from 256x256 to 5000x5000) and to long videos (from 4 to 128). 
 
 Operating on arbitrary rectangular regions enables methods to be applied
 to fixed or dynamically chosen regions.
