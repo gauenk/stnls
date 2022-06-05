@@ -70,7 +70,7 @@ any patch-based method.
 In this section, we distinguish this code-based from similar code:
 
 [_NAT_](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer): This paper proposes using a neighborhood window for the attention map, rather than the entire image. A core CUDA kernel, [linked here](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer/blob/main/natten/src/nattenqkrpb_cuda_kernel.cu), efficiently computes a neighborhood dot-product between Q and V. The `dnls` code base's `search`
-function is similar, but computes patch similarity (i) with an optional optical flow
+function is similar, but we compute patch similarity (i) using an optional optical flow
 and (ii) using the L2-norm instead of the dot product.
  
 
