@@ -67,13 +67,6 @@ This memory expansion of x1694 (originally only ~3MB) for *only the data* (no de
 - Limited Batch Size for Image Processing: The memory cost implies a $2,4000 GPU (a Titan RTX has 24 GB) is limited to only a batch size of 4, while standard training procedures use batch sizes of 32 (small), 64, 128. 
 Transformers commonly use larger batch sizes such as 1024 or 2048.
 
-## Batched Fold and Unfold: iFold and iUnfold
-
-The fold and unfold operations require transforming the entire image at once. 
-We propose spatially batching the fold and unfold across any fixed subset
-of the original image (or video). This upper-bounds the memory consumption of 
-any patch-based method.
-
 ## Related Code
 
 In this section, we distinguish this code-based from similar code:
