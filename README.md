@@ -12,8 +12,9 @@ Batching across patches places an upper-bound on the
 memory consumption of any patch-based method, allowing patch-based methods
 to scale to huge image resolutions (from 256x256 to 5000x5000) and to large batches (from 4 to 128). 
 
-Operating on arbitrary rectangular regions enable methods to be applied
-to regions pre-specified, such sampling hard patches more frequently for training, or used within a network itself, such as using networks to specify regions for more processing or reducing redudant computation across the entire image.
+Operating on arbitrary rectangular regions enables methods to be applied
+to fixed or dynamically chosen regions.
+Examples of fixed regions include hard mining examples for training a network -- since many patches are "flat" (in terms of content) training on more interesting regions such as textures may improve training statistics. Examples of dynamically chosen regions include using a deep networks to propose the coordinates itself. Such a network can specify regions (i) for more processing or (ii) to skip regions that don't need extra computation.
 
 
 ## Patch-based Processing: Attention and Non-Local Denoising
@@ -63,3 +64,13 @@ The fold and unfold operations require transforming the entire image at once.
 We propose spatially batching the fold and unfold across any fixed subset
 of the original image (or video). This upper-bounds the memory consumption of 
 any patch-based method.
+
+## Related Code
+
+In this section, we distinguish this code-based from similar code:
+
+[_NAT_](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer): This paper proposes using a neighborhood window for the attention map, rather than the entire image. A core CUDA kernel, [linked here](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer/blob/main/natten/src/nattenqkrpb_cuda_kernel.cu), efficiently computes a neighborhood dot-product between Q and V. The `dnls` code base's `search`
+function is similar, but computes patch similarity (i) with an optional optical flow
+and (ii) using the L2-norm instead of the dot product.
+ 
+
