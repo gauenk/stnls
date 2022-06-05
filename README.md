@@ -19,9 +19,9 @@ Examples of fixed regions include hard mining examples for training a network --
 ## Install & Usage
 
 ```bash
-~$ git clone https://github.com/gauenk/dnls
-~$ cd dnls
-~$ python -m pip install -e ./lib --user
+git clone https://github.com/gauenk/dnls
+cd dnls
+python -m pip install -e ./lib --user
 ```
 
 See [`scripts/example_folds.py`]() and [`scripts/example_nls.py`]() for an example usages.
