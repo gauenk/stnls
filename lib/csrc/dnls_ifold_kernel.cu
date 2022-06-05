@@ -62,6 +62,18 @@ __global__ void dnls_ifold_forward_kernel(
     // int nhits,nhits_q;
     // int ndim = ps*ps*pt;
 
+    // -- coords with pads --
+    int pad = dilation*(ps/2);
+    int top_p = std::max(top-pad,0);
+    int left_p = std::max(left-pad,0);
+    int btm_p = std::min(btm+pad,height);
+    int right_p = std::min(right+pad,width);
+  
+    // coords
+    int sq_hp = btm_p - top_p;
+    int sq_wp = right_p - left_p;
+    int sq_hwp = sq_hp * sq_wp;
+  
     // -- make square --
     int sq_h = btm - top;
     int sq_w = right - left;
@@ -75,10 +87,15 @@ __global__ void dnls_ifold_forward_kernel(
     CUDA_KERNEL_LOOP(_index, num_kernels) {
 
       int index = (_index);
-      const int64_t t_im = (index / sq_hw);
-      const int64_t i_mod = index % sq_hw;
-      const int64_t w_im = (i_mod % sq_w) + left;
-      const int64_t h_im = ((i_mod / sq_w) % sq_h) + top;
+      const int64_t t_im = (index / sq_hwp);
+      const int64_t i_mod = index % sq_hwp;
+      const int64_t w_im = (i_mod % sq_wp) + left_p;
+      const int64_t h_im = ((i_mod / sq_wp) % sq_hp) + top_p;
+
+      // const int64_t t_im = (index / sq_hw);
+      // const int64_t i_mod = index % sq_hw;
+      // const int64_t w_im = (i_mod % sq_w) + left;
+      // const int64_t h_im = ((i_mod / sq_w) % sq_h) + top;
 
       // const int64_t t_im = (index / n_hw);
       // const int64_t w_im = (index % n_w) + left;
@@ -176,15 +193,24 @@ void dnls_cuda_ifold_forward(
   int colors = vid.size(1);
   int height = vid.size(2);
   int width = vid.size(3);
+  int ps = patches.size(5);
+
+  // -- coords with pads --
+  int pad = dilation*(ps/2);
+  int top_p = std::max(top-pad,0);
+  int left_p = std::max(left-pad,0);
+  int btm_p = std::min(btm+pad,height);
+  int right_p = std::min(right+pad,width);
 
   // coords
-  int sq_h = btm - top;
-  int sq_w = right - left;
-  int sq_hw = sq_h * sq_w;
+  int sq_hp = btm_p - top_p;
+  int sq_wp = right_p - left_p;
+  int sq_hwp = sq_hp * sq_wp;
 
   // launch params
   int nthreads = 512;
-  int num_kernels = nframes*sq_hw;
+  // int num_kernels = nframes*sq_hw;
+  int num_kernels = nframes*sq_hwp;
   int nblocks = (num_kernels-1) / nthreads+1;
 
   // launch kernel
