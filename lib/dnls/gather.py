@@ -46,6 +46,8 @@ class GatherNl(th.nn.Module):
 
     def __init__(self, vid_shape, dilation=1, lam=1., exact=False, device="cuda:0"):
         super(GatherNl, self).__init__()
+        self.vid_shape = vid_shape
+        self.device = device
         self.vid,self.wvid = self.allocate_vid(vid_shape,device)
         self.dilation = dilation
         self.lam = lam
@@ -57,7 +59,11 @@ class GatherNl(th.nn.Module):
         return vid,wvid
 
     def forward(self, patches, nlDists, nlInds):
-        return GatherNlFunction.apply(patches,nlDists,nlInds,
-                                      self.vid,self.wvid,
-                                      self.dilation,self.lam,self.exact)
+        vid,wvid = self.allocate_vid(self.vid_shape,self.device)
+        vid,wvid = GatherNlFunction.apply(patches,nlDists,nlInds,vid,wvid,
+                                          self.dilation,self.lam,self.exact)
+        self.vid += vid
+        self.wvid += wvid
+        return self.vid,self.wvid
+
 

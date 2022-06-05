@@ -1,6 +1,9 @@
 
 # -- python-only kernel --
 from numba import cuda,jit
+from numba.core.errors import NumbaPerformanceWarning
+import warnings
+warnings.simplefilter('ignore', category=NumbaPerformanceWarning)
 
 # -- linalg --
 import torch as th

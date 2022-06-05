@@ -5,8 +5,9 @@ import dnls
 from einops import rearrange
 
 # -- load video --
+device = "cuda:0"
 vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
-vid = th.from_numpy(vid).to("cuda:0")
+vid = th.from_numpy(vid).to(device)
 
 # -- params --
 ps = 5
@@ -54,6 +55,5 @@ for batch in range(nbatches):
 # -- save modded video --
 vid = fold_nl.vid
 vid /= vid.max()
-vid = dnls.testing.data.save_burst(vid,"./output/","example")
-
+dnls.testing.data.save_burst(vid,"./output/","example")
 
