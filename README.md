@@ -9,7 +9,7 @@ This package provides three primary functions: `search`, `ifold`, and `iunfold`.
 - `iufold` is a batched version of Pytorch `unfold` that can operate on arbitrary rectangular regions. 
 
 Batching across patches places an upper-bound on the 
-memory consumption of any patch-based method, allowing patch-based methods
+memory consumption of any patch-based method. This allows patch-based methods
 to scale to huge image resolutions (from 256x256 to 5000x5000) and to large batches (from 4 to 128). 
 
 Operating on arbitrary rectangular regions enables methods to be applied
