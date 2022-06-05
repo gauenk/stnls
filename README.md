@@ -10,7 +10,10 @@ This package provides three primary functions: `search`, `ifold`, and `iunfold`.
 
 Batching across patches places an upper-bound on the 
 memory consumption of any patch-based method, allowing patch-based methods
-to scale to huge image resolutions (from 256x256 to 5000x5000) and to large batches (from 4 to 128).
+to scale to huge image resolutions (from 256x256 to 5000x5000) and to large batches (from 4 to 128). 
+
+Operating on arbitrary rectangular regions enable methods to be applied
+to regions pre-specified, such sampling hard patches more frequently for training, or used within a network itself, such as using networks to specify regions for more processing or reducing redudant computation across the entire image.
 
 
 ## Patch-based Processing: Attention and Non-Local Denoising
