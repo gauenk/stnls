@@ -3,10 +3,12 @@ Differentiable Non-Local Search: A suite of patch-based and batch-friendly CUDA 
 
 ## Summary
 
-This package provides three primary functions: `search`, `ifold`, and `iunfold`.
+This package provides five primary functions: `search`, `ifold`, `iunfold`, `scatter`, and `gather`.
 - `search` function provides a differentiable patch based search using the L2-norm
 - `ifold` is a batched version of Pytorch `fold` that can operate on arbitrary rectangular regions. 
-- `iufold` is a batched version of Pytorch `unfold` that can operate on arbitrary rectangular regions. 
+- `iufold` is a batched version of Pytorch `unfold` that can operate on arbitrary rectangular regions.
+- `scatter` is a patch-based version of Pytorch `scatter`, allowing the K nearest-neighbor patches to be indexed (NxKx3)
+- `gather` is a patch-based version of Pytorch `gather`, allowing the grouping of K nearest-neighbor patches with indices (NxKx3)
 
 Batching across patches places an upper-bound on the 
 memory consumption of any patch-based method. This allows patch-based methods
@@ -59,7 +61,7 @@ for batch in range(nbatches):
 
 The fold and unfold operations native to Pytorch handle the transformation between (i) a batch (B) of images (sized HxWxC) to (ii) a batch (B) of image patches (sized PxPxC). 
 The total memory cost for a unfolding a single image is HxWxPxPxC. We would like to also separately tile and process each patch's K neareset neighbors, requiring
-a memory cost of HxWxKxPxPxC. An example color image (C=3) of size HxW = 256x256 with patch size P = 11 and K = 14 neighbors requires about 4.96 GB using float32. 
+a memory cost of HxWxKxPxPxC (see `scatter`). An example color image (C=3) of size HxW = 256x256 with patch size P = 11 and K = 14 neighbors requires about 4.96 GB using float32. 
 This memory expansion of x1694 (originally only ~3MB) for *only the data* (no deep networks yet) limits the use of patch-based networks.
 
 - Limited Resolution: The example image of 512x512 is small compared to standard native image resolution from cameras. For example, the iPhone 11 camera has 1792x828 pixels.
