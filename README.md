@@ -3,14 +3,16 @@ Differentiable Non-Local Search: A suite of patch-based and batch-friendly CUDA 
 
 ## Summary
 
-This package provides three primary functions: `search`, `ifold`, and `iunfold`.
+This package provides five primary functions: `search`, `ifold`, `iunfold`, `scatter`, and `gather`.
 - `search` function provides a differentiable patch based search using the L2-norm
 - `ifold` is a batched version of Pytorch `fold` that can operate on arbitrary rectangular regions. 
-- `iufold` is a batched version of Pytorch `unfold` that can operate on arbitrary rectangular regions. 
+- `iufold` is a batched version of Pytorch `unfold` that can operate on arbitrary rectangular regions.
+- `scatter` is a patch-based version of Pytorch `scatter`, allowing the K nearest-neighbor patches to be indexed (NxKx3)
+- `gather` is a patch-based version of Pytorch `gather`, allowing the grouping of K nearest-neighbor patches with indices (NxKx3)
 
 Batching across patches places an upper-bound on the 
 memory consumption of any patch-based method. This allows patch-based methods
-to scale to huge image resolutions (from 256x256 to 5000x5000) and to large batches (from 4 to 128). 
+to scale to huge image resolutions (from 256x256 to 5000x5000) and to long videos (from 4 to 128). 
 
 Operating on arbitrary rectangular regions enables methods to be applied
 to fixed or dynamically chosen regions.
@@ -19,9 +21,9 @@ Examples of fixed regions include hard mining examples for training a network --
 ## Install & Usage
 
 ```bash
->$ git clone https://github.com/gauenk/dnls
->$ cd dnls
->$ python -m pip install -e ./lib --user
+git clone https://github.com/gauenk/dnls
+cd dnls
+python -m pip install -e ./lib --user
 ```
 
 See [`scripts/example_folds.py`]() and [`scripts/example_nls.py`]() for an example usages.
@@ -59,20 +61,13 @@ for batch in range(nbatches):
 
 The fold and unfold operations native to Pytorch handle the transformation between (i) a batch (B) of images (sized HxWxC) to (ii) a batch (B) of image patches (sized PxPxC). 
 The total memory cost for a unfolding a single image is HxWxPxPxC. We would like to also separately tile and process each patch's K neareset neighbors, requiring
-a memory cost of HxWxKxPxPxC. An example color image (C=3) of size HxW = 256x256 with patch size P = 11 and K = 14 neighbors requires about 4.96 GB using float32. 
+a memory cost of HxWxKxPxPxC (see `scatter`). An example color image (C=3) of size HxW = 256x256 with patch size P = 11 and K = 14 neighbors requires about 4.96 GB using float32. 
 This memory expansion of x1694 (originally only ~3MB) for *only the data* (no deep networks yet) limits the use of patch-based networks.
 
 - Limited Resolution: The example image of 512x512 is small compared to standard native image resolution from cameras. For example, the iPhone 11 camera has 1792x828 pixels.
 - Limited Frames for Video Processing: Using multiple frames for video processing commonly increases the quality because of the shared information. In the current setting, 
 - Limited Batch Size for Image Processing: The memory cost implies a $2,4000 GPU (a Titan RTX has 24 GB) is limited to only a batch size of 4, while standard training procedures use batch sizes of 32 (small), 64, 128. 
 Transformers commonly use larger batch sizes such as 1024 or 2048.
-
-## Batched Fold and Unfold: iFold and iUnfold
-
-The fold and unfold operations require transforming the entire image at once. 
-We propose spatially batching the fold and unfold across any fixed subset
-of the original image (or video). This upper-bounds the memory consumption of 
-any patch-based method.
 
 ## Related Code
 
