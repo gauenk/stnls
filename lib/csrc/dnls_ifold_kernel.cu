@@ -112,6 +112,7 @@ __global__ void dnls_ifold_forward_kernel(
       // bool is_edge = (w_im < padf) || (w_im > (width-padf));
       // is_edge = is_edge || (h_im < padf) || (h_im > (height-padf));
 
+      // Which patches (qi) impact me (t_im,w_im,h_im)?
       for(int ci = 0; ci < colors; ci++){
         scalar_t val = 0;
         for (int pk = 0; pk < pt; pk++){

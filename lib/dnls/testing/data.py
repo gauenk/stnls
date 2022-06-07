@@ -31,11 +31,15 @@ def load_burst(root,name,nframes=-1,ext="png"):
     return burst
 
 def save_burst(burst,root,name):
+
+    # -- path --
     root = Path(str(root))
     if not root.exists():
         print(f"Making dir for save_burst [{str(root)}]")
         root.mkdir(parents=True)
     assert root.exists()
+
+    # -- save --
     nframes = burst.shape[0]
     for t in range(nframes):
         img_t = burst[t]
@@ -47,6 +51,10 @@ def save_image(image,path):
     # -- to numpy --
     if th.is_tensor(image):
         image = image.detach().cpu().numpy()
+
+    # -- rescale --
+    if image.max() > 300: # probably from a fold
+        image /= image.max()
 
     # -- to uint8 --
     if image.max() < 100:

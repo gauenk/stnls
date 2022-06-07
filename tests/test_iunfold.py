@@ -1,6 +1,6 @@
 
 # -- python --
-import sys
+import sys,pytest
 
 # -- data mgnmt --
 from pathlib import Path
@@ -33,6 +33,8 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
+    # test_lists = {"ps":[7,],"stride":[1],"dilation":[1],
+    #               "top":[3],"btm":[50],"left":[3],"right":[50]}
     test_lists = {"ps":[3,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
                   "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
     for key,val in test_lists.items():
@@ -65,7 +67,6 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     npix = t * h * w
 
     # -- sub square --
-    top,left,btm,right = 2,2,h-12,w-12
     coords = [top,left,btm,right]
     sq_h = coords[2] - coords[0]
     sq_w = coords[3] - coords[1]
@@ -86,18 +87,16 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     #
 
     # -- prepare videos --
-    vid_nn = vid.clone()
     vid_nl = vid.clone()
     vid_nl.requires_grad_(True)
 
-    # -- prepare video with boarder --
-    padp = dil*(ps//2)
-    vid_nn_cc = vid_nn[:,:,top:btm,left:right]#.contiguous()
-    vid_nn = pad(vid_nn_cc,[padp,]*4,mode="reflect")
+    # -- pad nn video to allow for non-refl boundary --
+    vid_nn = vid.clone()
+    vid_nn = pad_video(vid_nn,coords,ps,stride,dil)
     vid_nn.requires_grad_(True)
 
     # -- run forward --
-    patches_nn = run_unfold(vid_nn,ps,stride,dil)
+    patches_nn = run_unfold(vid_nn,None,ps,stride,dil)
     patches_nl = iunfold_nl(vid_nl,0,qTotal)
 
     # -- test cropped region v.s. our folded --
@@ -128,10 +127,10 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     assert error < 1e-10
 
     # -- compute error --
-    diff = th.abs(grad_nn - grad_nl)
-    dmax = diff.max()
-    if dmax > 1e-3: diff /= dmax
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    # diff = th.abs(grad_nn - grad_nl)
+    # dmax = diff.max()
+    # if dmax > 1e-3: diff /= dmax
+    # dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     # -- test backward --
     error = th.sum((grad_nn - grad_nl)**2).item()
@@ -146,6 +145,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     th.cuda.empty_cache()
 
 
+# @pytest.mark.skip(reason="too long right now")
 def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- get args --
@@ -172,7 +172,6 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     npix = t * h * w
 
     # -- sub square --
-    top,left,btm,right = 2,2,h-12,w-12
     coords = [top,left,btm,right]
     sq_h = coords[2] - coords[0]
     sq_w = coords[3] - coords[1]
@@ -192,12 +191,15 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     vid_nl = vid.clone()
     vid_nl = vid_nl.requires_grad_(True)
 
-    # -- prepare video with boarder --
-    padp = dil*(ps//2)
+    # -- pad nn video to allow for non-refl boundary --
     vid_nn = vid.clone()
-    vid_nn = vid_nn[:,:,top:btm,left:right]
-    vid_nn = pad(vid_nn,[padp,]*4,mode="reflect")
+    vid_nn = pad_video(vid_nn,coords,ps,stride,dil)
     vid_nn.requires_grad_(True)
+    # padp = dil*(ps//2)
+    # vid_nn = vid.clone()
+    # vid_nn = vid_nn[:,:,top:btm,left:right]
+    # vid_nn = pad(vid_nn,[padp,]*4,mode="reflect")
+    # vid_nn.requires_grad_(True)
 
     # -- exec forward nl --
     patches_nl = []
@@ -217,7 +219,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     patches_nl = th.cat(patches_nl,0)
 
     # -- exec forward nn --
-    patches_nn = run_unfold(vid_nn,ps,stride,dil)
+    patches_nn = run_unfold(vid_nn,None,ps,stride,dil)
 
     # -- exec backward --
     shape_str = '(t h w) 1 1 c ph pw -> t h w c ph pw'
@@ -272,18 +274,53 @@ def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1):
 
     return vid,wvid
 
-def run_unfold(_vid,_ps,_stride=1,_dil=1):
+def run_unfold(_vid,_pads,_ps,_stride=1,_dil=1):
 
     # -- avoid fixutres --
     vid,stride = _vid,_stride
-    ps,dil = _ps,_dil
+    pads,ps,dil = _pads,_ps,_dil
 
     # -- run --
-    shape_str = 't (c h w) np -> (t np) 1 1 c h w'
+    shape_str = 't (c ph pw) hw -> (t hw) 1 1 c ph pw'
     patches = unfold(vid,(ps,ps),stride=stride,dilation=dil)
-    patches = rearrange(patches,shape_str,h=ps,w=ps)
+    patches = rearrange(patches,shape_str,ph=ps,pw=ps)
     return patches
 
+def pad_video(vid,coords,ps,stride,dil):
+    #
+    # -- add video boarder for no edge effects from coords --
+    #
+
+    # -- compute pads --
+    padp = dil*(ps//2)
+    t,c,h,w = vid.shape
+    pcoords = padded_coords(coords,h,w,padp)
+    pads = padded_boarder(coords,pcoords,padp)
+    top,left,btm,right = pcoords
+    # -- include non-refl. boundary if possible --
+    vid_cc = vid[:,:,top:btm,left:right]
+    # -- reflect to include ps//2 around edges if needed --
+    vid_pad = pad(vid_cc,pads,mode="reflect")
+    return vid_pad
+
+def padded_coords(coords,h,w,padp):
+    top,left,btm,right = coords
+    top_p = max(top-padp,0)
+    left_p = max(left-padp,0)
+    btm_p = min(btm+padp,h)
+    right_p = min(right+padp,w)
+    pcoords = [top_p,left_p,btm_p,right_p]
+    return pcoords
+
+def padded_boarder(coords,pcoords,padp):
+    top,left,btm,right = coords
+    top_p,left_p,btm_p,right_p = pcoords
+    top_b = padp - (top - top_p)
+    left_b = padp - (left - left_p)
+    btm_b = padp - (btm_p - btm)
+    right_b = padp - (right_p - right)
+    pads = [left_b,right_b,top_b,btm_b]
+    return pads
 
 # def run_fold(patches,t,h,w,stride=1,dil=1,ones=None):
 #     ps = patches.shape[-1]

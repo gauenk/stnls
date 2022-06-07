@@ -115,27 +115,25 @@ __global__ void dnls_iunfold_forward_kernel(
         wi = (qi_mod % n_w) * stride + left;
 
         // -- valid ind --
-        valid_hw = (hi >= (top-fill_pad)) && (hi < (btm+fill_pad));
-        valid_hw = valid_hw && (wi >= (left-fill_pad)) && (wi < (right+fill_pad));
+        valid_hw = (hi >= -fill_pad) && (hi < (height+fill_pad));
+        valid_hw = valid_hw && (wi >= -fill_pad) && (wi < (width+fill_pad));
+        // valid_hw = (hi >= (top-fill_pad)) && (hi < (btm+fill_pad));
+        // valid_hw = valid_hw && (wi >= (left-fill_pad)) && (wi < (right+fill_pad));
         valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- fill across cuda threads --
         // vi_h = hi+dilation*(pi - psHalf);
         // vi_w = wi+dilation*(pj - psHalf);
-        vi_h = bounds(hi+dilation*(pi - psHalf),top,btm);
-        vi_w = bounds(wi+dilation*(pj - psHalf),left,right);
-        // vi_h = bounds(hi+dilation*(pi - psHalf),left,right);
-        // vi_w = bounds(wi+dilation*(pj - psHalf),top,btm);
-
+        vi_h = bounds(hi+dilation*(pi - psHalf),0.,height);
+        vi_w = bounds(wi+dilation*(pj - psHalf),0.,width);
+        // vi_h = bounds(hi+dilation*(pi - psHalf),top,btm);
+        // vi_w = bounds(wi+dilation*(pj - psHalf),left,right);
 
         // -- spatially valid --
-        valid_hw = valid_hw && (vi_h >= top) && (vi_h < btm);
-        valid_hw = valid_hw && (vi_w >= left) && (vi_w < right);
-        // valid_hw = valid_hw && (vi_h >= 0) && (vi_h < height);
-        // valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
-        // valid_hw = valid_hw && (vi_h >= left) && (vi_h < right);
-        // valid_hw = valid_hw && (vi_w >= top) && (vi_w < btm);
-        // valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
+        valid_hw = valid_hw && (vi_h >= 0) && (vi_h < height);
+        valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
+        // valid_hw = valid_hw && (vi_h >= top) && (vi_h < btm);
+        // valid_hw = valid_hw && (vi_w >= left) && (vi_w < right);
 
 
         // -- iterate over loop --
