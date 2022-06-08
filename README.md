@@ -65,7 +65,7 @@ a memory cost of HxWxKxPxPxC (see `scatter`). An example color image (C=3) of si
 This memory expansion of x1694 (originally only ~3MB) for *only the data* (no deep networks yet) limits the use of patch-based networks.
 
 - Limited Resolution: The example image of 512x512 is small compared to standard native image resolution from cameras. For example, the iPhone 11 camera has 1792x828 pixels.
-- Limited Frames for Video Processing: Using multiple frames for video processing commonly increases the quality because of the shared information. In the current setting, 
+- Limited Frames for Video Processing: Using multiple frames for video processing increases the quality of many algorithms because of the shared information between frames. However, the resolution of each frame dramatically contrains the number of frames as all T frames are unfolded at once. 
 - Limited Batch Size for Image Processing: The memory cost implies a $2,4000 GPU (a Titan RTX has 24 GB) is limited to only a batch size of 4, while standard training procedures use batch sizes of 32 (small), 64, 128. 
 Transformers commonly use larger batch sizes such as 1024 or 2048.
 
