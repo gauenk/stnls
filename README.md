@@ -7,8 +7,8 @@ This package provides five primary functions: `search`, `ifold`, `iunfold`, `sca
 - `search` function provides a differentiable patch based search using the L2-norm
 - `ifold` is a batched version of Pytorch `fold` that can operate on arbitrary rectangular regions. 
 - `iufold` is a batched version of Pytorch `unfold` that can operate on arbitrary rectangular regions.
-- `scatter` is a patch-based version of Pytorch `scatter`, allowing the K nearest-neighbor patches to be indexed (NxKx3)
-- `gather` is a patch-based version of Pytorch `gather`, allowing the grouping of K nearest-neighbor patches with indices (NxKx3)
+- `scatter` is a patch-based version of Pytorch `scatter`, allowing the K nearest-neighbor patches to be indexed (NxKx3). This is a patch-based version of Pytorch's `scatter`.
+- `gather` is a patch-based version of Pytorch `gather`, allowing the grouping of K nearest-neighbor patches with indices (NxKx3). This is a patch-based version of Pytorch's `gather`.
 
 Batching across patches places an upper-bound on the 
 memory consumption of any patch-based method. This allows patch-based methods
