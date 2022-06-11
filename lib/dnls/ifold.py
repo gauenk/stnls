@@ -71,6 +71,7 @@ class iFold(th.nn.Module):
     def __init__(self, vid_shape, coords, stride=1, dilation=1, device="cuda:0"):
         super(iFold, self).__init__()
         self.device = device
+        self.vshape = vid_shape
         self.vid_shape = vid_shape
         self.vid = self.allocate_vid(vid_shape,device)
         self.stride = stride
