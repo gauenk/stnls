@@ -42,7 +42,7 @@ class TestScatter(unittest.TestCase):
         dname,sigma,comp_flow,args = self.setup()
 
         # -- init vars --
-        device = "cuda:0"
+        device = args.device
         clean_flow = True
         comp_flow = False
 
@@ -77,7 +77,7 @@ class TestScatter(unittest.TestCase):
                                                     flow,k,ps,pt,ws,wt,chnls)
 
             # -- exec scatter fxns --
-            scatter_nl = dnls.scatter.ScatterNl(ps,pt)
+            scatter_nl = dnls.scatter.ScatterNl(ps,pt,device=device)
 
             # -- testing forward --
             patches_nl_fwd = scatter_nl(vid,nlInds)
@@ -96,7 +96,7 @@ class TestScatter(unittest.TestCase):
         dname,sigma,comp_flow,args = self.setup()
 
         # -- init vars --
-        device = "cuda:0"
+        device = args.device
         clean_flow = True
         comp_flow = False
         exact = False
@@ -122,7 +122,7 @@ class TestScatter(unittest.TestCase):
         vid = vid.contiguous()
 
         # -- exec scatter fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact)
+        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact,device=device)
 
         # -- get [patches & nlInds] --
         index = 0
@@ -169,8 +169,13 @@ class TestScatter(unittest.TestCase):
 
     def setup(self):
 
+        # -- set device --
+        device = "cuda:1"
+        th.cuda.set_device(device)
+
         # -- set seed --
         seed = 123
+        th.cuda.set_device(device)
         th.manual_seed(seed)
         np.random.seed(seed)
 
@@ -187,6 +192,7 @@ class TestScatter(unittest.TestCase):
         dname = "text_tourbus_64"
         dname = "davis_baseball_64x64"
         args = edict({'ps':7,'pt':1,'k':10,'ws':10,'wt':5})
+        args.device = device
         return dname,sigma,comp_flow,args
 
     def run_unfold(self,vid,ps):

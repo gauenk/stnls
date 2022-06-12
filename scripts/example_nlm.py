@@ -2,14 +2,12 @@
 
 An example script for a non-local means.
 
-Still in progress... scatter/gather coming soon.
-
 """
 
 # -- imports --
 import torch as th
 import dnls
-from einops import rearrange
+from einops import rearrange,repeat
 
 # -- load video --
 sigma = 30.
@@ -30,7 +28,7 @@ t,c,h,w = vid.shape
 
 # -- search params --
 flow = None # no flow
-k = 25 # number of neighbors
+k = 5 # number of neighbors
 ws = 10 # spatial-search space in each 2-dim direction
 wt = 3 # time-search space across in each fwd-bwd direction
 chnls = 3 # number of channels to use for search
@@ -41,8 +39,8 @@ sq_w = coords[3] - coords[1]
 sq_hw = sq_h * sq_w
 
 # -- init iunfold and ifold --
-scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation)
-gather_nl = dnls.gather.GatherNl(vid.shape)
+scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,device=device)
+gather_nl = dnls.gather.GatherNl(vid.shape,device=device)
 
 # -- compute number of batches --
 n_h = (sq_h-1)//stride+1
@@ -50,7 +48,6 @@ n_w = (sq_w-1)//stride+1
 n_total = t * n_h * n_w
 nbatches = (n_total-1) // batch_size + 1
 
-# -- example function --
 def apply_fxn(patches_nl_i,dists):
     """
     patches_i.shape = (batch_size,k,pt,c,ps,ps)
@@ -87,7 +84,8 @@ for batch in range(nbatches):
     patches_mod_i = apply_fxn(patches_nl_i,dists)
 
     # -- regroup --
-    gather_nl(patches_mod_i,dists,inds)
+    zeros = th.zeros_like(dists)
+    gather_nl(patches_mod_i,zeros,inds)
 
 # -- save modded video --
 deno,weights = gather_nl.vid,gather_nl.wvid

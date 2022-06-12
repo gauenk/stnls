@@ -41,7 +41,7 @@ class TestGather(unittest.TestCase):
         dname,sigma,comp_flow,args = self.setup()
 
         # -- init vars --
-        device = "cuda:0"
+        device = args.device
         clean_flow = True
         comp_flow = False
 
@@ -56,8 +56,8 @@ class TestGather(unittest.TestCase):
         ws,wt,chnls = args.ws,args.wt,1
 
         # -- gather/scatter decl --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=True)
-        gather_nl = dnls.gather.GatherNl(vid.shape)
+        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=True,device=device)
+        gather_nl = dnls.gather.GatherNl(vid.shape,device=device)
 
         # -- batching info --
         device = noisy.device
@@ -109,7 +109,7 @@ class TestGather(unittest.TestCase):
         dname,sigma,comp_flow,args = self.setup()
 
         # -- init vars --
-        device = "cuda:0"
+        device = args.device
         clean_flow = True
         comp_flow = False
         exact = True
@@ -135,8 +135,8 @@ class TestGather(unittest.TestCase):
         vid = vid.contiguous()
 
         # -- exec gather fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=True)
-        gather_nl = dnls.gather.GatherNl((t,c,h,w),exact=exact)
+        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=True,device=device)
+        gather_nl = dnls.gather.GatherNl((t,c,h,w),exact=exact,device=device)
 
         # -- get [patches & nlInds] --
         index = 0
@@ -189,6 +189,10 @@ class TestGather(unittest.TestCase):
 
     def setup(self):
 
+        # -- set device --
+        device = "cuda:1"
+        th.cuda.set_device(device)
+
         # -- set seed --
         seed = 123
         th.manual_seed(seed)
@@ -207,6 +211,7 @@ class TestGather(unittest.TestCase):
         dname = "text_tourbus_64"
         dname = "davis_baseball_64x64"
         args = edict({'ps':7,'pt':1,'k':1,'ws':10,'wt':5})
+        args.device = device
         return dname,sigma,comp_flow,args
 
     def run_fold(self,patches,t,h,w):

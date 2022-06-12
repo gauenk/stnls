@@ -11,13 +11,14 @@
 
 ****************************/
 
-__inline__ __device__ int bounds(int val, int lim ){
-  if (val < 0){
-    val = -val;
-  }else if (val >= lim){
-    val = 2*lim - val - 2;
+__inline__ __device__ int bounds(int val, int lb, int ub ){
+  int vval = val;
+  if (val < lb){
+    vval = 2*lb - val;
+  }else if (val >= ub){
+    vval = 2*(ub-1) - val;
   }
-  return val;
+  return vval;
 }
 
 /****************************
@@ -49,7 +50,7 @@ __global__ void dnls_gather_forward_kernel(
 
   // only valid 
   bool valid;
-  float pix,wpix;
+  float pix;
 
   // get indices
   int tidx = threadIdx.x;
@@ -61,30 +62,24 @@ __global__ void dnls_gather_forward_kernel(
     if (qi < nq){
       // iterate
       for (int ki = 0; ki < k; ki++){
+        weight = __expf(-lam * nlDists[qi][ki]);
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
               ti = nlInds[qi][ki][0] + pk;
               hi = nlInds[qi][ki][1] + dilation*(pi - psHalf);
               wi = nlInds[qi][ki][2] + dilation*(pj - psHalf);
-              // hi = bounds(hi,height);
-              // wi = bounds(wi,width);
-
-              weight = __expf(-lam * nlDists[qi][ki]);
-
+              hi = bounds(hi,0,height);
+              wi = bounds(wi,0,width);
               valid = (hi >= 0) && (hi < height);
               valid = valid && (wi >= 0) && (wi < width);
 
               for (int ci = 0; ci < colors; ci++){
+                pix = patches[qi][ki][pk][ci][pi][pj];
                 if (valid){
-                  pix = patches[qi][ki][pk][ci][pi][pj];
-                  wpix = weight;
-                }else{
-                  pix = 0.;
-                  wpix = 0.;
+                  vid[ti][ci][hi][wi] += weight * pix;
+                  wvid[ti][ci][hi][wi] += weight;
                 }
-                vid[ti][ci][hi][wi] += pix;
-                wvid[ti][ci][hi][wi] += wpix;
               }
             }
           }

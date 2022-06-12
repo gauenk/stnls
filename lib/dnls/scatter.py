@@ -6,7 +6,6 @@ import torch as th
 import dnls_cuda
 
 
-
 def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
@@ -56,12 +55,13 @@ class ScatterNlFunction(th.autograd.Function):
 class ScatterNl(th.nn.Module):
     # [video -> patches] @ nlInds
 
-    def __init__(self, ps, pt=1, dilation=1, exact=False):
+    def __init__(self, ps, pt=1, dilation=1, exact=False, device="cuda:0"):
         super(ScatterNl, self).__init__()
         self.ps = ps
         self.pt = pt
         self.dilation = dilation
         self.exact = exact
+        self.device = device
 
     def forward(self, vid, nlInds):
         return ScatterNlFunction.apply(vid,nlInds,self.ps,self.pt,
