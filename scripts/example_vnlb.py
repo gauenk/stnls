@@ -195,10 +195,8 @@ for batch in tqdm.tqdm(range(nbatches)):
     patches_mod_i = apply_fxn(noisy_patches_i,basic_patches_i,dists,1)
 
     # -- regroup --
-    patches_2_agg = patches_mod_i[:,:nkeep].contiguous()
-    zeros_2_agg = th.zeros_like(dists)[:,:nkeep].contiguous()
-    inds_2_agg = inds[:,:nkeep].contiguous()
-    gather_nl(patches_2_agg,zeros_2_agg,inds_2_agg)
+    zeros = th.zeros_like(dists)
+    gather_nl(patches_mod_i,zeros,inds)
 
 
 # -- post processing --
@@ -236,10 +234,8 @@ for batch in tqdm.tqdm(range(nbatches)):
     patches_mod_i = apply_fxn(noisy_patches_i,basic_patches_i,dists,2)
 
     # -- regroup --
-    patches_2_agg = patches_mod_i[:,:nkeep].contiguous()
-    zeros_2_agg = th.zeros_like(dists)[:,:nkeep].contiguous()
-    inds_2_agg = inds[:,:nkeep].contiguous()
-    gather_nl(patches_2_agg,zeros_2_agg,inds_2_agg)
+    zeros = th.zeros_like(dists)
+    gather_nl(patches_mod_i,zeros,inds)
 
 # -- format final image --
 deno,weights = gather_nl.vid,gather_nl.wvid
