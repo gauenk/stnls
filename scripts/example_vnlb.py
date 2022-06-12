@@ -29,7 +29,6 @@ pt = 1 # patch size across time
 stride = 1 # spacing between patch centers
 dilation = 1 # spacing between kernels
 batch_size = 1024 # num of patches per batch
-nkeep = -1
 coords = [0,0,h,w] # full image
 # coords = [4,8,60,50] # interior rectangle to processes (top,left,btm,right)
 
@@ -207,7 +206,6 @@ basic[zargs] = noisy[zargs]
 
 # -- setup for 2nd step --
 k = 60
-nkeep = 60
 gather_nl = dnls.gather.GatherNl(vid.shape,device=device)
 
 #
