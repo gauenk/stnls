@@ -49,7 +49,8 @@ Runnning `unfold` on the entire video at once
 requires tons of GPU memory.
 This code base provides differentiable, patch-based, 
 batch-friendly (or video friendly) CUDA operations 
-within Pytorch to allow for the following pseudo-code,
+within Pytorch to place a cap on the memory requirement
+using the following pseudo-code,
 
 
 ```python
