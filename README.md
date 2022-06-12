@@ -31,19 +31,22 @@ See [`scripts/example_folds.py`]() and [`scripts/example_nls.py`]() for an examp
 ## Patch-based Processing: Attention and Non-Local Denoising
 
 We would like to be able to operate on image patches, rather than the entire image. 
-This is motivated by recent research including [VIT](https://arxiv.org/pdf/2010.11929.pdf), [NAT](https://arxiv.org/abs/2204.07143), and [LIDIA](https://arxiv.org/pdf/1911.07167.pdf).
+This is motivated by research such as [Graph Neural Networks](https://arxiv.org/abs/1812.08434), [VIT](https://arxiv.org/pdf/2010.11929.pdf), [NAT](https://arxiv.org/abs/2204.07143), and [LIDIA](https://arxiv.org/pdf/1911.07167.pdf).
 Operating on image patches allows patch information to be transformed independently from it's neighbor.
-Said another way, operation on patches is analogous to operating on tokens from natural language processing.
-Patch-basd operations also structurally match non-local denoising methods, as pointed out
-[in this paper](https://openreview.net/pdf?id=MmujBClawFo). 
+Another motivation for operating on patches comes from operating on tokens from natural language processing.
+
+
+Since I am studying image denoising, notably non-local denoising methods are a type of [transformer](https://openreview.net/pdf?id=MmujBClawFo) and also a [graph neural networks](https://arxiv.org/abs/1905.12281) (since [transformers are a special case of graph nerual networks](https://graphdeeplearning.github.io/post/transformers-are-gnns/)). 
 These operations often look like the following code block,
 
 ```python
-patches = unfold(batched_images)
+patches = unfold(video)
 patches_mod = model(patches)
-batched_images_mod = fold(patches_mod)
+vide_mod = fold(patches_mod)
 ```
 
+Runnning `unfold` on the entire video at once
+requires tons of GPU memory.
 This code base provides differentiable, patch-based, 
 batch-friendly (or video friendly) CUDA operations 
 within Pytorch to allow for the following pseudo-code,
@@ -52,9 +55,9 @@ within Pytorch to allow for the following pseudo-code,
 ```python
 nbatches = (npixels-1)//batch_size + 1
 for batch in range(nbatches):
-    patch_batch = unfold(batched_images,batch)
+    patch_batch = unfold(video,batch)
     patch_batch_mod = model(patch_batch)
-    batched_images_mod += fold(patch_batch_mod,batch)
+    video_mod += fold(patch_batch_mod,batch)
 ```
 
 ## The Memory Cost of [Fold](https://pytorch.org/docs/stable/generated/torch.nn.Fold.html) and [Unfold](https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html)
