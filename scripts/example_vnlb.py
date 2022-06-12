@@ -21,13 +21,6 @@ vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
 vid = th.from_numpy(vid).to(device)
 noisy = vid + sigma * th.randn_like(vid)
 
-# import svnlb
-# noisy_np = noisy.cpu().numpy()
-# flows = svnlb.compute_flow(noisy_np,sigma)
-# results = svnlb.swig.runPyVnlb(noisy_np,sigma,flows)
-# deno = results['denoised']
-# dnls.testing.data.save_burst(deno,"./output/","svnlb_deno")
-
 # -- params --
 vshape = vid.shape
 t,c,h,w = vid.shape
