@@ -7,8 +7,8 @@ This package provides five primary functions: `search`, `ifold`, `iunfold`, `sca
 - `search` function provides a differentiable patch based search using the L2-norm
 - `ifold` is a batched version of Pytorch `fold` that can operate on arbitrary rectangular regions. 
 - `iufold` is a batched version of Pytorch `unfold` that can operate on arbitrary rectangular regions.
-- `scatter` is a patch-based version of Pytorch `scatter`, allowing the K nearest-neighbor patches to be indexed (NxKx3). This is a patch-based version of Pytorch's `scatter`.
-- `gather` is a patch-based version of Pytorch `gather`, allowing the grouping of K nearest-neighbor patches with indices (NxKx3). This is a patch-based version of Pytorch's `gather`.
+- `scatter` is a patch-based version of Pytorch `scatter`, extracting the K nearest-neighbor patches with an index tensor (NxKx3). This is a patch-based version of Pytorch's `scatter`.
+- `gather` is a patch-based version of Pytorch `gather`, grouping the K nearest-neighbor patches with an index tensor (NxKx3). This is a patch-based version of Pytorch's `gather`.
 
 Batching across patches places an upper-bound on the 
 memory consumption of any patch-based method. This allows patch-based methods
@@ -31,30 +31,34 @@ See [`scripts/example_folds.py`]() and [`scripts/example_nls.py`]() for an examp
 ## Patch-based Processing: Attention and Non-Local Denoising
 
 We would like to be able to operate on image patches, rather than the entire image. 
-This is motivated by recent research including [VIT](https://arxiv.org/pdf/2010.11929.pdf), [NAT](https://arxiv.org/abs/2204.07143), and [LIDIA](https://arxiv.org/pdf/1911.07167.pdf).
+This is motivated by research such as [Graph Neural Networks](https://arxiv.org/abs/1812.08434), [VIT](https://arxiv.org/pdf/2010.11929.pdf), [NAT](https://arxiv.org/abs/2204.07143), and [LIDIA](https://arxiv.org/pdf/1911.07167.pdf).
 Operating on image patches allows patch information to be transformed independently from it's neighbor.
-Said another way, operation on patches is analogous to operating on tokens from natural language processing.
-Patch-basd operations also structurally match non-local denoising methods, as pointed out
-[in this paper](https://openreview.net/pdf?id=MmujBClawFo). 
+Another motivation for operating on patches comes from operating on tokens from natural language processing.
+
+
+Since I am studying image denoising, I note non-local denoising methods are a type of [transformer](https://openreview.net/pdf?id=MmujBClawFo) and also a [graph neural networks](https://arxiv.org/abs/1905.12281) (since [transformers are a special case of graph nerual networks](https://graphdeeplearning.github.io/post/transformers-are-gnns/)). 
 These operations often look like the following code block,
 
 ```python
-patches = unfold(batched_images)
+patches = unfold(video)
 patches_mod = model(patches)
-batched_images_mod = fold(patches_mod)
+vide_mod = fold(patches_mod)
 ```
 
+Runnning `unfold` on the entire video at once
+requires tons of GPU memory.
 This code base provides differentiable, patch-based, 
 batch-friendly (or video friendly) CUDA operations 
-within Pytorch to allow for the following pseudo-code,
+within Pytorch to place a cap on the memory requirement
+using the following pseudo-code,
 
 
 ```python
 nbatches = (npixels-1)//batch_size + 1
 for batch in range(nbatches):
-    patch_batch = unfold(batched_images,batch)
+    patch_batch = unfold(video,batch)
     patch_batch_mod = model(patch_batch)
-    batched_images_mod += fold(patch_batch_mod,batch)
+    video_mod += fold(patch_batch_mod,batch)
 ```
 
 ## The Memory Cost of [Fold](https://pytorch.org/docs/stable/generated/torch.nn.Fold.html) and [Unfold](https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html)
@@ -62,7 +66,7 @@ for batch in range(nbatches):
 The fold and unfold operations native to Pytorch handle the transformation between (i) a batch (B) of images (sized HxWxC) to (ii) a batch (B) of image patches (sized PxPxC). 
 The total memory cost for a unfolding a single image is HxWxPxPxC. We would like to also separately tile and process each patch's K neareset neighbors, requiring
 a memory cost of HxWxKxPxPxC (see `scatter`). An example color image (C=3) of size HxW = 256x256 with patch size P = 11 and K = 14 neighbors requires about 4.96 GB using float32. 
-This memory expansion of x1694 (originally only ~3MB) for *only the data* (no deep networks yet) limits the use of patch-based networks.
+This memory expansion of x1694 (originally only ~3MB) for *only the data* (no deep networks yet) limits the use of patch-based networks. This memory requirement for data creates the following problems:
 
 - Limited Resolution: The example image of 512x512 is small compared to standard native image resolution from cameras. For example, the iPhone 11 camera has 1792x828 pixels.
 - Limited Frames for Video Processing: Using multiple frames for video processing increases the quality of many algorithms because of the shared information between frames. However, the resolution of each frame dramatically contrains the number of frames as all T frames are unfolded at once. 
