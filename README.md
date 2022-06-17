@@ -28,7 +28,7 @@ python -m pip install -e ./lib --user
 
 See [`scripts/example_folds.py`]() and [`scripts/example_nls.py`]() for an example usages.
 
-## Patch-based Processing: Attention and Non-Local Denoising
+## Patch-based Processing: Graph Neural Networks, Attention, and Non-Local Denoising
 
 We would like to be able to operate on image patches, rather than the entire image. 
 This is motivated by research such as [Graph Neural Networks](https://arxiv.org/abs/1812.08434), [VIT](https://arxiv.org/pdf/2010.11929.pdf), [NAT](https://arxiv.org/abs/2204.07143), and [LIDIA](https://arxiv.org/pdf/1911.07167.pdf).
@@ -60,6 +60,12 @@ for batch in range(nbatches):
     patch_batch_mod = model(patch_batch)
     video_mod += fold(patch_batch_mod,batch)
 ```
+
+## Current Batching Alternative for GNNs
+
+![img_desc](figs/block_diagram.png)
+
+This graphic compares methods for scaling GNNs. The top graphic depicts our proposed search that allows users to include optical flow and allows scaling to high-dimensional images and long videos. The middle graphic depicts processed batches of patches using cropped image regions, but limits the KNN search space. The bottom graphic depicts processing batches of patches after the entire image is unfolded, but yields out of memory errors when scaling the input data. This repo presents the differentiable functions named *Inpalace KNN*, *Patch Scatter*, and *Batched Fold* colored in yellow.
 
 ## The Memory Cost of [Fold](https://pytorch.org/docs/stable/generated/torch.nn.Fold.html) and [Unfold](https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html)
 
