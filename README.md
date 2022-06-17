@@ -63,7 +63,7 @@ for batch in range(nbatches):
 
 ## Current Batching Alternative for GNNs
 
-![img_desc](figs/block_diagram.png)
+![img_desc](figs/block_diagram.jpg)
 
 This graphic compares methods for scaling GNNs. The top graphic depicts our proposed search that allows users to include optical flow and allows scaling to high-dimensional images and long videos. The middle graphic depicts processed batches of patches using cropped image regions, but limits the KNN search space. The bottom graphic depicts processing batches of patches after the entire image is unfolded, but yields out of memory errors when scaling the input data. This repo presents the differentiable functions named *Inpalace KNN*, *Patch Scatter*, and *Batched Fold* colored in yellow.
 
