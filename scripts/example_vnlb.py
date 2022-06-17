@@ -24,7 +24,7 @@ noisy = vid + sigma * th.randn_like(vid)
 # -- params --
 vshape = vid.shape
 t,c,h,w = vid.shape
-ps = 5 # patch size
+ps = 7 # patch size
 pt = 1 # patch size across time
 stride = 1 # spacing between patch centers
 dilation = 1 # spacing between kernels

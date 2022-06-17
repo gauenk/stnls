@@ -1,0 +1,3 @@
+[submodule "externals/lidia"]
+	path = externals/lidia
+	url = git@github.com:gauenk/lidia.git
