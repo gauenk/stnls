@@ -4,9 +4,6 @@
 [submodule "externals/cola_net"]
 	path = externals/cola_net
 	url = git@github.com:gauenk/cola_net.git
-[submodule "externals/n3net"]
-	path = externals/n3net
-	url = git@github.com:gauenk/n3net.git
 [submodule "externals/uformer"]
     branch = main
 	path = externals/uformer
