@@ -21,3 +21,6 @@
 [submodule "externals/cran"]
 	path = externals/cran
 	url = git@github.com:gauenk/cran.git
+[submodule "externals/n3net"]
+	path = externals/n3net
+	url = git@github.com:gauenk/n3net.git
