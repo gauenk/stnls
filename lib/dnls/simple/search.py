@@ -168,17 +168,11 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
         return int(val)
 
     # -- reflective boundary --
-    def bounds2(val,lim):
-        # return int(val)
-        if val < 0: val = (-val-1)
-        elif val >= lim: val = (2*lim - val)
-        return int(val)
-
-    # -- reflective boundary --
     def bounds3(val,lim):
-        if val < 0: val = -val
-        elif val >= lim: val = 2*lim-val-2
-        return int(val)
+        nval = val
+        if val < 0: nval = -nval
+        elif val >= lim: nval = 2*(lim-1)-nval
+        return int(nval)
 
     # -- shapes --
     nframes,color,h,w = vid.shape

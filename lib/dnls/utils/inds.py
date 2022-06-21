@@ -17,12 +17,27 @@ def get_query_batch(index,qSearch,stride,t,h,w,device):
     srch_inds = numba_query_launcher(index,qSearch,stride,t,h,w,device)
     return srch_inds
 
-def get_iquery_batch(index,qSearch,stride,coords,t,h,w,device):
-    sq_h = coords[2] - coords[0]
-    sq_w = coords[3] - coords[1]
-    srch_inds = numba_query_launcher(index,qSearch,stride,t,sq_h,sq_w,device)
-    srch_inds[:,1] += coords[0] # top
-    srch_inds[:,2] += coords[1] # left
+def get_iquery_batch(index,qSearch,stride,_coords,t,device):
+
+    # -- add temporal if needed --
+    coords = list(_coords) # copy
+    if len(coords) == 4: # spatial only; add time
+        coords = [0,t,] + coords
+
+    # -- unpack --
+    sq_t = coords[1] - coords[0]
+    sq_h = coords[4] - coords[2]
+    sq_w = coords[5] - coords[3]
+    fstart,top,left = coords[0],coords[2],coords[3]
+
+    # -- get inds --
+    srch_inds = numba_query_launcher(index,qSearch,stride,sq_t,sq_h,sq_w,device)
+
+    # -- add offsets --
+    srch_inds[:,0] += fstart
+    srch_inds[:,1] += top
+    srch_inds[:,2] += left
+
     return srch_inds
 
 def numba_query_launcher(index,qSearch,stride,t,h,w,device):
