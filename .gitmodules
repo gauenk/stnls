@@ -8,11 +8,13 @@
 	path = externals/n3net
 	url = git@github.com:gauenk/n3net.git
 [submodule "externals/uformer"]
+    branch = main
 	path = externals/uformer
 	url = git@github.com:gauenk/uformer.git
 [submodule "externals/nlrn"]
 	path = externals/nlrn
 	url = git@github.com:gauenk/nlrn.git
 [submodule "externals/dagl"]
+    branch = main
 	path = externals/dagl
 	url = git@github.com:gauenk/dagl.git
