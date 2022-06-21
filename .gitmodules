@@ -13,3 +13,6 @@
 [submodule "externals/nlrn"]
 	path = externals/nlrn
 	url = git@github.com:gauenk/nlrn.git
+[submodule "externals/dagl"]
+	path = externals/dagl
+	url = git@github.com:gauenk/dagl.git
