@@ -21,9 +21,14 @@ class GatherNlFunction(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, patches, nlDists, nlInds, vid, wvid, dilation, lam, exact):
-        dnls_cuda.gather_forward(vid, wvid, patches, nlDists, nlInds,
-                                 dilation, lam, exact)
+    def forward(ctx, patches, nlDists, nlInds, vid, wvid,
+                dilation, lam, exact, use_race):
+        if use_race:
+            dnls_cuda.gather_forward_race(vid, wvid, patches, nlDists, nlInds,
+                                          dilation, lam, exact)
+        else:
+            dnls_cuda.gather_forward(vid, wvid, patches, nlDists, nlInds,
+                                     dilation, lam)
         ctx.save_for_backward(nlInds)
         ctx.dilation = dilation
         ctx.pt = patches.shape[2]
@@ -39,12 +44,13 @@ class GatherNlFunction(th.autograd.Function):
         patches = allocate_patches(nlInds,ps,pt,grad_vid.shape[1])
         ones = th.ones_like(nlInds[:,:,0]).type(th.float32)
         dnls_cuda.gather_backward(grad_vid,patches,ones,nlInds,dilation)
-        return patches,None,None,None,None,None,None,None
+        return patches,None,None,None,None,None,None,None,None
 
 class GatherNl(th.nn.Module):
     # [patches -> video] @ nlInds
 
-    def __init__(self, vid_shape, dilation=1, lam=1., exact=False, device="cuda:0"):
+    def __init__(self, vid_shape, dilation=1, lam=0., exact=False, use_race=True,
+                 device="cuda:0"):
         super(GatherNl, self).__init__()
         self.vid_shape = vid_shape
         self.device = device
@@ -52,6 +58,7 @@ class GatherNl(th.nn.Module):
         self.dilation = dilation
         self.lam = lam
         self.exact = exact
+        self.use_race = use_race
 
     def allocate_vid(self,vid_shape,device):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)
@@ -61,7 +68,8 @@ class GatherNl(th.nn.Module):
     def forward(self, patches, nlDists, nlInds):
         vid,wvid = self.allocate_vid(self.vid_shape,self.device)
         vid,wvid = GatherNlFunction.apply(patches,nlDists,nlInds,vid,wvid,
-                                          self.dilation,self.lam,self.exact)
+                                          self.dilation,self.lam,
+                                          self.exact,self.use_race)
         self.vid += vid
         self.wvid += wvid
         return self.vid,self.wvid

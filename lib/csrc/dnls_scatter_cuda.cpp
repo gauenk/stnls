@@ -18,6 +18,13 @@ void dnls_cuda_scatter_backward(
     torch::Tensor nlInds,
     int dilation, float lam, bool exact);
 
+void dnls_cuda_scatter_backward_simple(
+    torch::Tensor grad_patches,
+    torch::Tensor vid,
+    torch::Tensor nlDists,
+    torch::Tensor nlInds,
+    int dilation, float lam, bool exact);
+
 
 // C++ interface
 
@@ -36,6 +43,20 @@ void dnls_scatter_forward(
   dnls_cuda_scatter_forward(vid,patches,nlInds,dilation);
 }
 
+void dnls_scatter_backward_simple(
+    torch::Tensor grad_patches,
+    torch::Tensor vid,
+    torch::Tensor nlDists,
+    torch::Tensor nlInds,
+    int dilation, float lam, bool exact) {
+  CHECK_INPUT(grad_patches);
+  CHECK_INPUT(vid);
+  CHECK_INPUT(nlDists);
+  CHECK_INPUT(nlInds);
+  dnls_cuda_scatter_backward_simple(grad_patches,vid,nlDists,nlInds,
+                                    dilation,lam,exact);
+}
+
 void dnls_scatter_backward(
     torch::Tensor grad_patches,
     torch::Tensor vid,
@@ -46,12 +67,16 @@ void dnls_scatter_backward(
   CHECK_INPUT(vid);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_scatter_backward(grad_patches,vid,nlDists,nlInds,dilation,lam,exact);
+  dnls_cuda_scatter_backward(grad_patches,vid,nlDists,nlInds,
+                             dilation,lam,exact);
 }
+
 
 // python bindings
 void init_scatter(py::module &m){
   m.def("scatter_forward", &dnls_scatter_forward, "DNLS Scatter Forward (CUDA)");
   m.def("scatter_backward", &dnls_scatter_backward, "DNLS Scatter Backward (CUDA)");
+  m.def("scatter_backward_simple", &dnls_scatter_backward_simple,
+        "DNLS Scatter Backward (CUDA)");
 }
 

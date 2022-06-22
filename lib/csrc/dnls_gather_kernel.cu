@@ -21,11 +21,11 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
   return vval;
 }
 
-/****************************
+/************************************
 
        Forward Pass
 
-****************************/
+************************************/
 
 template <typename scalar_t>
 __global__ void dnls_gather_forward_kernel(
@@ -42,11 +42,16 @@ __global__ void dnls_gather_forward_kernel(
   int pt =    patches.size(2);
   int colors = patches.size(3);
   int ps =    patches.size(4);
-  int qi,ti,hi,wi;
-  float weight;
+
+  // vid shape
+  int nframes = vid.size(0);
   int height = vid.size(2);
   int width = vid.size(3);
-  int psHalf = ps/2;
+  int psHalf = (ps-1)/2;
+
+  // location
+  int qi,ti,hi,wi;
+  float weight;
 
   // only valid 
   bool valid;
@@ -56,7 +61,7 @@ __global__ void dnls_gather_forward_kernel(
   int tidx = threadIdx.x;
   int bidx = blockIdx.x;
   int q_start = qpt*(tidx + bidx * blockDim.x);
-  
+
   for (int _qi = 0; _qi < qpt; _qi++){
     qi = q_start + _qi;
     if (qi < nq){
@@ -66,14 +71,18 @@ __global__ void dnls_gather_forward_kernel(
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
+
+              // prop ind
               ti = nlInds[qi][ki][0] + pk;
               hi = nlInds[qi][ki][1] + dilation*(pi - psHalf);
               wi = nlInds[qi][ki][2] + dilation*(pj - psHalf);
-              hi = bounds(hi,0,height);
-              wi = bounds(wi,0,width);
-              valid = (hi >= 0) && (hi < height);
+
+              // valid
+              valid = (ti >= 0) && (ti < nframes);
+              valid = valid && (hi >= 0) && (hi < height);
               valid = valid && (wi >= 0) && (wi < width);
 
+              // fill
               for (int ci = 0; ci < colors; ci++){
                 pix = patches[qi][ki][pk][ci][pi][pj];
                 if (valid){
@@ -90,6 +99,114 @@ __global__ void dnls_gather_forward_kernel(
 }
 
 void dnls_cuda_gather_forward(
+    torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
+    torch::Tensor nlDists,torch::Tensor nlInds,
+    int dilation, float lam) {
+
+  // launch params
+  int numQueries = nlInds.size(0);
+  int k = nlDists.size(1);
+  int pt = patches.size(2);
+  int color = patches.size(3);
+  int ps = patches.size(4);
+  assert(pt == 1);
+
+  int qpt = 10;
+  int nthreads = 1024;
+  int queries_per_block = nthreads * qpt;
+  int nblocks = ((numQueries - 1) / queries_per_block) + 1;
+
+  // launch kernel
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel", ([&] {
+    dnls_gather_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        dilation,lam,qpt);
+      }));
+}
+
+
+/************************************
+
+   Forward Pass (with race cond)
+
+************************************/
+
+template <typename scalar_t>
+__global__ void dnls_gather_forward_kernel_race(
+    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
+    int dilation, float lam, int qpt) {
+
+  // shape
+  int nq =    patches.size(0);
+  int k =     patches.size(1);
+  int pt =    patches.size(2);
+  int colors = patches.size(3);
+  int ps =    patches.size(4);
+
+  // vid shape
+  int nframes = vid.size(0);
+  int height = vid.size(2);
+  int width = vid.size(3);
+  int psHalf = (ps-1)/2;
+
+  // location
+  int qi,ti,hi,wi;
+  float weight;
+
+  // only valid 
+  bool valid;
+  float pix;
+
+  // get indices
+  int tidx = threadIdx.x;
+  int bidx = blockIdx.x;
+  int q_start = qpt*(tidx + bidx * blockDim.x);
+
+  for (int _qi = 0; _qi < qpt; _qi++){
+    qi = q_start + _qi;
+    if (qi < nq){
+      // iterate
+      for (int ki = 0; ki < k; ki++){
+        weight = __expf(-lam * nlDists[qi][ki]);
+        for (int pk = 0; pk < pt; pk++){
+          for (int pi = 0; pi < ps; pi++){
+            for (int pj = 0; pj < ps; pj++){
+
+              // prop ind
+              ti = nlInds[qi][ki][0] + pk;
+              hi = nlInds[qi][ki][1] + dilation*(pi - psHalf);
+              wi = nlInds[qi][ki][2] + dilation*(pj - psHalf);
+
+              // valid
+              valid = (ti >= 0) && (ti < nframes);
+              valid = valid && (hi >= 0) && (hi < height);
+              valid = valid && (wi >= 0) && (wi < width);
+
+              // fill
+              for (int ci = 0; ci < colors; ci++){
+                pix = patches[qi][ki][pk][ci][pi][pj];
+                if (valid){
+                  vid[ti][ci][hi][wi] += weight * pix;
+                  wvid[ti][ci][hi][wi] += weight;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void dnls_cuda_gather_forward_race(
     torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
     torch::Tensor nlDists,torch::Tensor nlInds,
     int dilation, float lam, bool exact) {
@@ -114,7 +231,7 @@ void dnls_cuda_gather_forward(
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel", ([&] {
-    dnls_gather_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+    dnls_gather_forward_kernel_race<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
@@ -195,7 +312,7 @@ __global__ void dnls_gather_backward_kernel(
         for(int pk = 0; pk < pt; pk++){
 
           // -- check valid --
-          vi_t = bounds(ti + pk,nframes);
+          vi_t = bounds(ti + pk,0,nframes);
           valid_t = (vi_t >= 0) && (vi_t < nframes);
           valid = valid_hw && valid_t;
 

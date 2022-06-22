@@ -182,7 +182,7 @@ for batch in tqdm.tqdm(range(nbatches)):
 
     # -- get patches --
     queries = dnls.utils.inds.get_iquery_batch(index,batch_size_i,
-                                               stride,coords,t,h,w,device)
+                                               stride,coords,t,device)
     dists,inds = dnls.simple.search.run(noisy,queries,flow,k,
                                         ps,pt,ws,wt,chnls,
                                         stride=stride,dilation=dilation)

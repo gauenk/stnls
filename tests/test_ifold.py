@@ -36,14 +36,14 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ps":[3],"stride":[1],"dilation":[1],
-                  "top":[2],"btm":[62],"left":[2],"right":[62]}
+    # test_lists = {"ps":[3],"stride":[1],"dilation":[1],
+    #               "top":[2],"btm":[62],"left":[2],"right":[62]}
     # test_lists = {"ps":[3],"stride":[1],"dilation":[1],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    # test_lists = {"ps":[3,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
-    #               "top":[0,1,3,11],"btm":[50,57],"left":[1,2,3,7],"right":[57,50]}
+    test_lists = {"ps":[3,7],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
+                  "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -51,7 +51,7 @@ def pytest_generate_tests(metafunc):
 # -- Test Against Pytorch.nn.fold --
 #
 
-@pytest.mark.skip(reason="too long right now")
+# @pytest.mark.skip(reason="too long right now")
 def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- get args --
@@ -98,7 +98,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     # -- patches for ifold --
     index = 0
     queryInds = dnls.utils.inds.get_iquery_batch(index,qSize,stride,
-                                                 coords,t,h,w,device)
+                                                 coords,t,device)
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
                                             ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)
@@ -153,7 +153,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 # -- Test a Batched Ours Against Pytorch.nn.fold --
 #
 
-@pytest.mark.skip(reason="too long right now")
+# @pytest.mark.skip(reason="too long right now")
 def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- get args --
@@ -209,7 +209,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
 
         # -- get patches --
         queryInds = dnls.utils.inds.get_iquery_batch(qindex,qSize,stride,
-                                                     coords,t,h,w,device)
+                                                     coords,t,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
                                                 ps,pt,ws,wt,chnls,
                                                 stride=stride,dilation=dil)
@@ -229,7 +229,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     # -- forward all at once --
     index,qSize = 0,qTotal
     queryInds = dnls.utils.inds.get_iquery_batch(index,qSize,stride,
-                                                 coords,t,h,w,device)
+                                                 coords,t,device)
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
                                             ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)
@@ -330,7 +330,7 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     # -- patches for ifold --
     index = 0
     queryInds = dnls.utils.inds.get_iquery_batch(index,qSize,stride,
-                                                 coords,t,h,w,device)
+                                                 coords,t,device)
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
                                             ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)
@@ -441,7 +441,7 @@ def test_shrink_search():
     # -- get patches with dilation --
     qindex,k,pt,chnls = 0,1,1,1
     queryInds = dnls.utils.inds.get_iquery_batch(qindex,qSize,stride,
-                                                 coords,t,h,w,device)
+                                                 coords,t,device)
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,
                                             k,ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)

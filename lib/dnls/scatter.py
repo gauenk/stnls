@@ -22,7 +22,7 @@ class ScatterNlFunction(th.autograd.Function):
     # [video -> patches] @ nlInds
 
     @staticmethod
-    def forward(ctx, vid, nlInds, ps, pt=1, dilation=1, exact=False):
+    def forward(ctx, vid, nlInds, ps, pt=1, dilation=1, btype="eff", exact=False):
         """
         vid = [T,C,H,W]
         nlInds = [NumQueries,K,3]
@@ -36,6 +36,7 @@ class ScatterNlFunction(th.autograd.Function):
         ctx.vid_shape = vid.shape
         ctx.dilation = dilation
         ctx.exact = exact
+        ctx.btype = btype
         return patches
 
     @staticmethod
@@ -46,24 +47,33 @@ class ScatterNlFunction(th.autograd.Function):
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
         exact = ctx.exact
+        btype = ctx.btype
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         grad_patches = grad_patches.contiguous()
-        dnls_cuda.scatter_backward(grad_patches,grad_vid,ones,nlInds,
-                                   dilation,0.,exact)
+        if btype in "simple":
+            dnls_cuda.scatter_backward_simple(grad_patches,grad_vid,ones,nlInds,
+                                              dilation,0.,exact)
+        elif btype in "efficient":
+            dnls_cuda.scatter_backward(grad_patches,grad_vid,ones,nlInds,
+                                       dilation,0.,exact)
+        else:
+            raise ValueError(f"Uknown backward type for scatter [{btype}]")
         return grad_vid,None,None,None,None,None,None,None
 
 class ScatterNl(th.nn.Module):
     # [video -> patches] @ nlInds
 
-    def __init__(self, ps, pt=1, dilation=1, exact=False, device="cuda:0"):
+    def __init__(self, ps, pt=1, dilation=1, btype="eff", exact=False,
+                 device="cuda:0"):
         super(ScatterNl, self).__init__()
         self.ps = ps
         self.pt = pt
         self.dilation = dilation
         self.exact = exact
+        self.btype = btype
         self.device = device
 
     def forward(self, vid, nlInds):
         return ScatterNlFunction.apply(vid,nlInds,self.ps,self.pt,
-                                       self.dilation,self.exact)
+                                       self.dilation,self.btype,self.exact)
 

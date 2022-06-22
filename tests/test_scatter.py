@@ -30,175 +30,229 @@ SAVE_DIR = Path("./output/tests/")
 # -- Primary Testing Class --
 #
 
-class TestScatter(unittest.TestCase):
 
-    #
-    # -- Test Simple Scatter --
-    #
+#
+# -- Test Simple Scatter --
+#
 
-    def test_simple_scatter(self):
+def test_simple_scatter():
 
-        # -- get args --
-        dname,sigma,comp_flow,args = self.setup()
+    # -- get args --
+    dname,sigma,comp_flow,args = setup()
 
-        # -- init vars --
-        device = args.device
-        clean_flow = True
-        comp_flow = False
+    # -- init vars --
+    device = args.device
+    clean_flow = True
+    comp_flow = False
 
-        # -- load data --
-        vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-        vid = th.from_numpy(vid).to(device)
-        noisy = vid + sigma * th.randn_like(vid)
-        flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = th.from_numpy(vid).to(device)
+    noisy = vid + sigma * th.randn_like(vid)
+    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
-        # -- unpack params --
-        k,ps,pt = args.k,args.ps,args.pt
-        ws,wt,chnls = args.ws,args.wt,1
+    # -- unpack params --
+    k,ps,pt = args.k,args.ps,args.pt
+    ws,wt,chnls = args.ws,args.wt,1
 
-        # -- batching info --
-        device = noisy.device
-        shape = noisy.shape
-        t,c,h,w = shape
-        npix = t * h * w
-        qStride,qSize = 1,100
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
-        vid = vid.contiguous()
-        th.cuda.synchronize()
+    # -- batching info --
+    device = noisy.device
+    shape = noisy.shape
+    t,c,h,w = shape
+    npix = t * h * w
+    qStride,qSize = 1,100
+    nsearch = (npix-1) // qStride + 1
+    nbatches = (nsearch-1) // qSize + 1
+    vid = vid.contiguous()
+    th.cuda.synchronize()
 
-        # -- nbatches --
-        for index in range(nbatches):
-
-            # -- get [patches & nlInds] --
-            queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
-                                                        t,h,w,device)
-            nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                    flow,k,ps,pt,ws,wt,chnls)
-
-            # -- exec scatter fxns --
-            scatter_nl = dnls.scatter.ScatterNl(ps,pt,device=device)
-
-            # -- testing forward --
-            patches_nl_fwd = scatter_nl(vid,nlInds)
-            patches_simp_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
-            error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
-            assert error < 1e-10
-        th.cuda.synchronize()
-
-    #
-    # -- Test Scatter & Unfold --
-    #
-
-    def test_nn_scatter(self):
-
-        # -- get args --
-        dname,sigma,comp_flow,args = self.setup()
-
-        # -- init vars --
-        device = args.device
-        clean_flow = True
-        comp_flow = False
-        exact = False
-
-        # -- load data --
-        vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-        vid = th.from_numpy(vid).to(device)
-        noisy = vid + sigma * th.randn_like(vid)
-        flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
-
-        # -- unpack params --
-        k,ps,pt = args.k,args.ps,args.pt
-        ws,wt,chnls = args.ws,args.wt,1
-
-        # -- batching info --
-        device = noisy.device
-        shape = noisy.shape
-        t,c,h,w = shape
-        npix = t * h * w
-        qStride,qSize = 1,npix
-        nsearch = (npix-1) // qStride + 1
-        nbatches = (nsearch-1) // qSize + 1
-        vid = vid.contiguous()
-
-        # -- exec scatter fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact,device=device)
+    # -- nbatches --
+    for index in range(nbatches):
 
         # -- get [patches & nlInds] --
-        index = 0
         queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        #
-        # -- test logic --
-        #
 
-        # -- prepare videos --
-        vid_nn = vid
-        vid_nl = vid.clone()
-        vid_nn.requires_grad_(True)
-        vid_nl.requires_grad_(True)
+        # -- exec scatter fxns --
+        scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="simple",device=device)
 
-        # -- run forward --
-        patches_nn = self.run_unfold(vid_nn,ps)
-        patches_nl = scatter_nl(vid_nl,nlInds[:,[0]])
-
-        # -- run backward --
-        patches_grad = th.randn_like(patches_nn)
-        th.autograd.backward(patches_nn,patches_grad)
-        th.autograd.backward(patches_nl,patches_grad)
-
-        # -- check forward --
-        diff = th.abs(patches_nn - patches_nl)
-        diff = rearrange(diff,'nq k t c h w -> nq (k t c h w)')
-        error = th.mean((patches_nn - patches_nl)**2).item()
+        # -- testing forward --
+        patches_nl_fwd = scatter_nl(vid,nlInds)
+        patches_simp_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
+        error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
         assert error < 1e-10
+    th.cuda.synchronize()
 
-        # -- check backward --
-        grad_nn = vid_nn.grad
-        grad_nl = vid_nl.grad
-        if exact: tol = 1e-10
-        else: tol = 1.
-        error = th.mean((grad_nn - grad_nl)**2).item()
-        assert error < tol
+#
+# -- Test Simple Scatter --
+#
 
+def test_efficient_scatter():
+
+    # -- get args --
+    dname,sigma,comp_flow,args = setup()
+
+    # -- init vars --
+    device = args.device
+    clean_flow = True
+    comp_flow = False
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = th.from_numpy(vid).to(device)
+    noisy = vid + sigma * th.randn_like(vid)
+    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+
+    # -- unpack params --
+    k,ps,pt = args.k,args.ps,args.pt
+    ws,wt,chnls = args.ws,args.wt,1
+
+    # -- batching info --
+    device = noisy.device
+    shape = noisy.shape
+    t,c,h,w = shape
+    npix = t * h * w
+    qStride,qSize = 1,100
+    nsearch = (npix-1) // qStride + 1
+    nbatches = (nsearch-1) // qSize + 1
+    vid = vid.contiguous()
+    th.cuda.synchronize()
+
+    # -- nbatches --
+    for index in range(nbatches):
+
+        # -- get [patches & nlInds] --
+        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+                                                    t,h,w,device)
+        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+                                                flow,k,ps,pt,ws,wt,chnls)
+
+        # -- exec scatter fxns --
+        scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="eff",device=device)
+
+        # -- testing forward --
+        patches_nl_fwd = scatter_nl(vid,nlInds)
+        patches_simp_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
+        error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
+        assert error < 1e-10
+    th.cuda.synchronize()
+
+
+#
+# -- Test Scatter & Unfold --
+#
+
+def test_nn_scatter():
+
+    # -- get args --
+    dname,sigma,comp_flow,args = setup()
+
+    # -- init vars --
+    device = args.device
+    clean_flow = True
+    comp_flow = False
+    exact = False
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = th.from_numpy(vid).to(device)
+    noisy = vid + sigma * th.randn_like(vid)
+    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+
+    # -- unpack params --
+    k,ps,pt = args.k,args.ps,args.pt
+    ws,wt,chnls = args.ws,args.wt,1
+
+    # -- batching info --
+    device = noisy.device
+    shape = noisy.shape
+    t,c,h,w = shape
+    npix = t * h * w
+    qStride,qSize = 1,npix
+    nsearch = (npix-1) // qStride + 1
+    nbatches = (nsearch-1) // qSize + 1
+    vid = vid.contiguous()
+
+    # -- exec scatter fxns --
+    scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact,device=device)
+
+    # -- get [patches & nlInds] --
+    index = 0
+    queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+                                                t,h,w,device)
+    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+                                            flow,k,ps,pt,ws,wt,chnls)
     #
-    # -- Launcher --
+    # -- test logic --
     #
 
-    def setup(self):
+    # -- prepare videos --
+    vid_nn = vid
+    vid_nl = vid.clone()
+    vid_nn.requires_grad_(True)
+    vid_nl.requires_grad_(True)
 
-        # -- set device --
-        device = "cuda:1"
-        th.cuda.set_device(device)
+    # -- run forward --
+    patches_nn = run_unfold(vid_nn,ps)
+    patches_nl = scatter_nl(vid_nl,nlInds[:,[0]])
 
-        # -- set seed --
-        seed = 123
-        th.cuda.set_device(device)
-        th.manual_seed(seed)
-        np.random.seed(seed)
+    # -- run backward --
+    patches_grad = th.randn_like(patches_nn)
+    th.autograd.backward(patches_nn,patches_grad)
+    th.autograd.backward(patches_nl,patches_grad)
 
-        # -- options --
-        comp_flow = False
+    # -- check forward --
+    diff = th.abs(patches_nn - patches_nl)
+    diff = rearrange(diff,'nq k t c h w -> nq (k t c h w)')
+    error = th.mean((patches_nn - patches_nl)**2).item()
+    assert error < 1e-10
 
-        # -- init save path --
-        save_dir = SAVE_DIR
-        if not save_dir.exists():
-            save_dir.mkdir(parents=True)
+    # -- check backward --
+    grad_nn = vid_nn.grad
+    grad_nl = vid_nl.grad
+    if exact: tol = 1e-10
+    else: tol = 1.
+    error = th.mean((grad_nn - grad_nl)**2).item()
+    assert error < tol
 
-        # -- exec test 1 --
-        sigma = 50.
-        dname = "text_tourbus_64"
-        dname = "davis_baseball_64x64"
-        args = edict({'ps':7,'pt':1,'k':10,'ws':10,'wt':5})
-        args.device = device
-        return dname,sigma,comp_flow,args
+#
+# -- Misc --
+#
 
-    def run_unfold(self,vid,ps):
-        psHalf = ps//2
-        shape_str = 't (c h w) np -> (t np) 1 1 c h w'
-        vid_pad = pad(vid,4*[psHalf,],mode="reflect")
-        patches = unfold(vid_pad,(ps,ps))
-        patches = rearrange(patches,shape_str,h=ps,w=ps)
-        return patches
+def setup():
+
+    # -- set device --
+    device = "cuda:1"
+    th.cuda.set_device(device)
+
+    # -- set seed --
+    seed = 123
+    th.cuda.set_device(device)
+    th.manual_seed(seed)
+    np.random.seed(seed)
+
+    # -- options --
+    comp_flow = False
+
+    # -- init save path --
+    save_dir = SAVE_DIR
+    if not save_dir.exists():
+        save_dir.mkdir(parents=True)
+
+    # -- exec test 1 --
+    sigma = 50.
+    dname = "text_tourbus_64"
+    dname = "davis_baseball_64x64"
+    args = edict({'ps':7,'pt':1,'k':10,'ws':10,'wt':5})
+    args.device = device
+    return dname,sigma,comp_flow,args
+
+def run_unfold(vid,ps):
+    psHalf = ps//2
+    shape_str = 't (c h w) np -> (t np) 1 1 c h w'
+    vid_pad = pad(vid,4*[psHalf,],mode="reflect")
+    patches = unfold(vid_pad,(ps,ps))
+    patches = rearrange(patches,shape_str,h=ps,w=ps)
+    return patches

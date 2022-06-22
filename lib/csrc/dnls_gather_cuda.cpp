@@ -9,7 +9,16 @@
 
 // CUDA forward declarations
 
+
 void dnls_cuda_gather_forward(
+    torch::Tensor vid,
+    torch::Tensor wvid,
+    torch::Tensor patches,
+    torch::Tensor nlDists,
+    torch::Tensor nlInds,
+    int dilation, float lam);
+
+void dnls_cuda_gather_forward_race(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
@@ -35,13 +44,29 @@ void dnls_gather_forward(
     torch::Tensor patches,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
+    int dilation, float lam) {
+  CHECK_INPUT(vid);
+  CHECK_INPUT(wvid);
+  CHECK_INPUT(patches);
+  CHECK_INPUT(nlDists);
+  CHECK_INPUT(nlInds);
+  dnls_cuda_gather_forward(vid,wvid,patches,nlDists,nlInds,dilation,lam);
+}
+
+
+void dnls_gather_forward_race(
+    torch::Tensor vid,
+    torch::Tensor wvid,
+    torch::Tensor patches,
+    torch::Tensor nlDists,
+    torch::Tensor nlInds,
     int dilation, float lam, bool exact) {
   CHECK_INPUT(vid);
   CHECK_INPUT(wvid);
   CHECK_INPUT(patches);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_gather_forward(vid,wvid,patches,nlDists,nlInds,dilation,lam,exact);
+  dnls_cuda_gather_forward_race(vid,wvid,patches,nlDists,nlInds,dilation,lam,exact);
 }
 
 void dnls_gather_backward(
@@ -61,6 +86,8 @@ void dnls_gather_backward(
 // python bindings
 void init_gather(py::module &m){
   m.def("gather_forward", &dnls_gather_forward, "DNLS Gather Forward (CUDA)");
+  m.def("gather_forward_race", &dnls_gather_forward_race,
+        "DNLS Gather Forward with Race Condition (CUDA)");
   m.def("gather_backward", &dnls_gather_backward, "DNLS Gather Backward (CUDA)");
 }
 

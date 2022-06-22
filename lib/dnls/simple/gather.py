@@ -77,7 +77,7 @@ def numba_gather(vid,wvid,patches,vals,inds,lam,dilation):
             t0 = inds[bi,ni,0]
             h0 = inds[bi,ni,1]
             w0 = inds[bi,ni,2]
-            if not valid_ind(t0,h0,w0): continue
+            # if not valid_ind(t0,h0,w0): continue
 
             # -- fill --
             for pk in range(pt):
