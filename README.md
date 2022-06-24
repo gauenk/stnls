@@ -12,10 +12,9 @@ This package provides five primary functions: `search`, `ifold`, `iunfold`, `sca
 
 Batching across patches places an upper-bound on the 
 memory consumption of any patch-based method. This allows patch-based methods
-to scale to huge image resolutions (from 256x256 to 5000x5000) and to long videos (from 4 to 128). 
+to scale to huge image resolutions (from 256x256 to 5000x5000) and to long videos (from 4 to 128 frames). 
 
-Operating on arbitrary rectangular regions enables methods to be applied
-to fixed or dynamically chosen regions.
+Operating on arbitrary rectangular regions enables methods to be applied to fixed or dynamically chosen regions.
 Examples of fixed regions include hard mining examples for training a network -- since many patches are "flat" (in terms of content) training on more interesting regions such as textures may improve training statistics. Examples of dynamically chosen regions include using a deep networks to propose the coordinates itself. Such a network can specify regions (i) for more processing or (ii) to skip regions that don't need extra computation.
 
 ## Install & Usage
@@ -28,38 +27,9 @@ python -m pip install -e ./lib --user
 
 See [`scripts/example_folds.py`]() and [`scripts/example_nls.py`]() for an example usages.
 
-## Patch-based Processing: Graph Neural Networks, Attention, and Non-Local Denoising
+## Abstract
 
-We would like to be able to operate on image patches, rather than the entire image. 
-This is motivated by research such as [Graph Neural Networks](https://arxiv.org/abs/1812.08434), [VIT](https://arxiv.org/pdf/2010.11929.pdf), [NAT](https://arxiv.org/abs/2204.07143), and [LIDIA](https://arxiv.org/pdf/1911.07167.pdf).
-Operating on image patches allows patch information to be transformed independently from it's neighbor.
-Another motivation for operating on patches comes from operating on tokens from natural language processing.
-
-
-Since I am studying image denoising, I note non-local denoising methods are a type of [transformer](https://openreview.net/pdf?id=MmujBClawFo) and also a [graph neural networks](https://arxiv.org/abs/1905.12281) (since [transformers are a special case of graph nerual networks](https://graphdeeplearning.github.io/post/transformers-are-gnns/)). 
-These operations often look like the following code block,
-
-```python
-patches = unfold(video)
-patches_mod = model(patches)
-vide_mod = fold(patches_mod)
-```
-
-Runnning `unfold` on the entire video at once
-requires tons of GPU memory.
-This code base provides differentiable, patch-based, 
-batch-friendly (or video friendly) CUDA operations 
-within Pytorch to place a cap on the memory requirement
-using the following pseudo-code,
-
-
-```python
-nbatches = (npixels-1)//batch_size + 1
-for batch in range(nbatches):
-    patch_batch = unfold(video,batch)
-    patch_batch_mod = model(patch_batch)
-    video_mod += fold(patch_batch_mod,batch)
-```
+Graph neural networks (GNN), including transformers, are currently the best methods for video restoration. Many GNNs operate on non-local image patches retrieved from a K-nearest neighbors (KNN) search, which requires a large amount of GPU memory. Existing methods scale GNNs by operating on cropping images, reducing the quality of the KNN search space and making the use of optical flow unclear (or impossible). Even when scaled, the runtime of the KNN's backpropagation step increases dramatically with video length and resolution. This paper presents a computational method to decouple GPU memory consumption and the KNN search space, allowing methods to maintain the ideal KNN search while scaling to high-dimensional image data and long videos. Our method, named scaled non-local patches (SNOP), provides three major functions: (i) upper-bounds the total memory consumption of GNNs allowing them to scale, (ii) improves the quality of GNNs by allowing for optical flow, and (iii) provides efficient backpropagation of a patch-based KNN. Our functions require structural changes to GNN code-bases, and we demonstrate these changes by integrating our method into eight existing GNNs.  These models are used for video denoising, deblurring, and super-resolution. We show our method allows existing methods to extend to new datasets, improves the restoration quality of existing methods, and reduces the execution-time of patch-based KNN backpropagation.
 
 ## Current Batching Alternative for GNNs
 
@@ -79,14 +49,3 @@ This memory expansion of x1694 (originally only ~3MB) for *only the data* (no de
 - Limited Batch Size for Image Processing: The memory cost implies a $2,4000 GPU (a Titan RTX has 24 GB) is limited to only a batch size of 4, while standard training procedures use batch sizes of 32 (small), 64, 128. 
 Transformers commonly use larger batch sizes such as 1024 or 2048.
 
-## Related Code
-
-In this section, we distinguish this code-based from similar code:
-
-[NAT](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer): This paper proposes using a neighborhood window for the attention map, rather than the entire image. A core CUDA kernel, [linked here](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer/blob/main/natten/src/nattenqkrpb_cuda_kernel.cu), efficiently computes a neighborhood dot-product between Q and V. The `dnls` code base's `search`
-function is similar, but we compute patch similarity (i) using an optional optical flow
-and (ii) using the L2-norm instead of the dot product.
- 
-[N3Net](https://github.com/visinf/n3net): This paper proposes a differentiable non-local K nearest neighbors search. Core CUDA kernels are [linked here](https://github.com/visinf/n3net/blob/master/lib/matmul1_kernel.cu) and [here](https://github.com/visinf/n3net/blob/master/lib/matmul1_bwd_kernel.cu). These kernels allow for efficient multiplication using indices in 1d. However, this kernel is only used for testing. For training, they compute the nearest neighbors search by first expanding the entire search space of features, say 1,000 - 5,000 sets of features, for each search location in the batch. This duplicatation of data consumes large amounts of GPU memory. 
-
-[pyinn](https://github.com/szagoruyko/pyinn): This project combines Cupy and Pytorch functions. A core CUDA kernel, [linked here](https://github.com/szagoruyko/pyinn/blob/948388e4ee585b23ed41d352fc8863ea868874ad/pyinn/im2col.py#L48), computes the fold and unfold (im2col and col2im) functions. Their code does not allow for batching, so it is limited in the same way as standard fold and unfold.

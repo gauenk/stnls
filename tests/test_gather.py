@@ -34,10 +34,11 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    # test_lists = {"ps":[3],"stride":[1],"dilation":[1],
-    #               "k":[10],"ws":[10],"wt":[5],"pt":[1],"chnls":[1]}
-    test_lists = {"ps":[3,5],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
-                  "k":[1,10],"ws":[10],"wt":[5],"pt":[1],"chnls":[1]}
+    test_lists = {"ps":[3],"stride":[1],"dilation":[1],
+                  "k":[10],"ws":[7],"wt":[5],"pt":[1],"chnls":[1],
+                  "clear_each":[True],}
+    # test_lists = {"ps":[3,5],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
+    #               "k":[1,10],"ws":[10],"wt":[5],"pt":[1],"chnls":[1]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -48,15 +49,16 @@ def pytest_generate_tests(metafunc):
 #
 # -----------------------------------------
 
-@pytest.mark.skip()
-def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls):
+# @pytest.mark.skip()
+def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
 
     # -- set device --
     device = "cuda:0"
     th.cuda.set_device(device)
     sigma = 50.
     # dname = "text_tourbus_64"
-    dname = "davis_baseball_64x64"
+    # dname,ext = "davis_baseball_64x64","jpg"
+    dname,ext = "text_bus","png"
 
     # -- init vars --
     sigma = 30.
@@ -64,20 +66,30 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls):
     comp_flow = False
     if k > 1: exact = True
     else: exact = False
+    exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-    vid = th.from_numpy(vid).to(device)
+    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = th.from_numpy(vid).to(device)[:7]
+    vid = th.cat([vid,vid],-1)
+    vid = th.cat([vid,vid],-2)
+    vid = th.cat([vid,vid],-2)
+    vid = th.cat([vid,vid],-1)
+    vid = vid.contiguous().clone()
+    print(vid.shape)
     noisy = vid + sigma * th.randn_like(vid)
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- gather/scatter decl --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,
                                         exact=True,device=device)
-    gather_simp = dnls.gather.GatherNl(vid.shape,dilation=dilation,
+    gather_simp = dnls.gather.GatherNl(vid.shape,ws,wt,dilation=dilation,
                                      exact=exact,device=device)
-    gather_eff = dnls.gather.GatherNl(vid.shape,dilation=dilation,
+    gather_eff = dnls.gather.GatherNl(vid.shape,ws,wt,dilation=dilation,
                                       use_race=False,device=device)
+
+    # -- timer --
+    timer = dnls.utils.timer.ExpTimer()
 
     # -- batching info --
     device = noisy.device
@@ -86,10 +98,11 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls):
     nh = (h-1)//stride+1
     nw = (w-1)//stride+1
     ntotal = t * nh * nw
-    qSize = 64
+    qSize = ntotal
     nbatches = (ntotal-1) // qSize + 1
     vid = vid.contiguous()
     th.cuda.synchronize()
+    print(ntotal)
 
     # -- nbatches --
     for index in range(nbatches):
@@ -100,14 +113,55 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls):
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches = scatter_nl(vid,nlInds)
+        patches[...] = 1.
+        print(nlInds[64*64-1])
+        print(nlInds[64*64])
+        print(nlInds[64*64+1])
+
+        # -- find eq --
+        eq = th.all(nlInds==0,-1)
+        print(eq.shape)
+        args = th.where(eq)
+        print(args)
+        print(nlInds[...,0][args])
+        print(nlInds[...,1][args])
+        print(nlInds[...,2][args])
 
         # -- reset gather --
-        gather_nl.vid[...] = 0
-        gather_nl.wvid[...] = 0
+        if clear_each:
+            gather_simp.vid[...] = 0
+            gather_simp.wvid[...] = 0
+            gather_eff.vid[...] = 0
+            gather_eff.wvid[...] = 0
 
         # -- testing forward --
-        vid_simp,wvid_simp = gather_simp(patches,nlDists,nlInds)
+        timer.start("simp")
+        vid_simp,wvid_simp = dnls.simple.gather.run(patches,nlDists,
+                                                    nlInds,dilation=dilation,
+                                                    shape=shape)
+        # vid_simp,wvid_simp = gather_simp(patches,nlDists,nlInds)
+        th.cuda.synchronize()
+        timer.stop("simp")
+        timer.start("eff")
         vid_eff,wvid_eff = gather_eff(patches,nlDists,nlInds)
+        th.cuda.synchronize()
+        timer.stop("eff")
+        print(timer)
+        print(vid_simp[0,0,:3,:3])
+        print(vid_eff[0,0,:3,:3])
+        print(vid_simp[0,0,16:19,16:19])
+        print(vid_eff[0,0,16:19,16:19])
+
+        print(vid_simp[6,0,16:19,16:19])
+        print(vid_eff[6,0,16:19,16:19])
+
+        diff = th.mean((vid_eff - vid_simp)**2,1)
+        args = th.where(diff>1e-5)
+        print(th.unique(args[0]))
+        diff = repeat(diff,'t h w -> t c h w',c=3)
+        diff /= diff.max()
+        dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+
         error = th.mean((vid_eff - vid_simp)**2).item()
         assert error < 1e-10
 
@@ -125,6 +179,7 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls):
 #
 # -------------------------------------
 
+@pytest.mark.skip()
 def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
 
     # -- set device --
@@ -199,7 +254,7 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
 # -- Test Gather & Fold --
 #
 
-# @pytest.mark.skip()
+@pytest.mark.skip()
 def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
 
     # -- set device --

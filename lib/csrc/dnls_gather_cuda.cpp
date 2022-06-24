@@ -16,6 +16,7 @@ void dnls_cuda_gather_forward(
     torch::Tensor patches,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
+    int ws, int wt,
     int dilation, float lam);
 
 void dnls_cuda_gather_forward_race(
@@ -44,13 +45,14 @@ void dnls_gather_forward(
     torch::Tensor patches,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
+    int ws, int wt,
     int dilation, float lam) {
   CHECK_INPUT(vid);
   CHECK_INPUT(wvid);
   CHECK_INPUT(patches);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_gather_forward(vid,wvid,patches,nlDists,nlInds,dilation,lam);
+  dnls_cuda_gather_forward(vid,wvid,patches,nlDists,nlInds,ws,wt,dilation,lam);
 }
 
 
