@@ -19,6 +19,7 @@
 	path = externals/csnln
 	url = git@github.com:gauenk/csnln.git
 [submodule "externals/cran"]
+    branch = main
 	path = externals/cran
 	url = git@github.com:gauenk/cran.git
 [submodule "externals/n3net"]
