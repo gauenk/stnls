@@ -51,6 +51,7 @@ __global__ void dnls_ifold_forward_kernel(
     int pt = patches.size(2);
     int ps = patches.size(5);
     int numQueries = patches.size(0);
+    int psOffset = (ps-1)/2;
     int psHalf = ps/2;
     int hw = height*width;
     int fill_pad = psHalf * dilation;
@@ -120,8 +121,9 @@ __global__ void dnls_ifold_forward_kernel(
             for (int pj = 0; pj < ps; pj++){
 
               // -- offsets for ni --
-              int _wi = w_im + dilation*(pi - psHalf);
-              int _hi = h_im + dilation*(pj - psHalf);
+              // use "psOffset" instead of "psHalf" because of reflection.
+              int _wi = w_im + dilation*(pi - psOffset);
+              int _hi = h_im + dilation*(pj - psOffset);
               int ti = t_im + pk;
 
               // -- check bounds (we need the patch for the pixel!) --
@@ -248,6 +250,7 @@ __global__ void dnls_ifold_backward_kernel(
     int pt = patches.size(2);
     int ps = patches.size(4);
     int psHalf = (int)ps/2;
+    int psOffset = (int)(ps-1)/2; // convention to decided center
     int height_width = height*width;
     int hw = height*width;
 

@@ -154,6 +154,7 @@ def test_nn_scatter():
     clean_flow = True
     comp_flow = False
     exact = False
+    dil = 1
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
@@ -195,7 +196,7 @@ def test_nn_scatter():
     vid_nl.requires_grad_(True)
 
     # -- run forward --
-    patches_nn = run_unfold(vid_nn,ps)
+    patches_nn = run_unfold(vid_nn,ps,dil=dil)
     patches_nl = scatter_nl(vid_nl,nlInds[:,[0]])
 
     # -- run backward --
@@ -245,14 +246,14 @@ def setup():
     sigma = 50.
     dname = "text_tourbus_64"
     dname = "davis_baseball_64x64"
-    args = edict({'ps':7,'pt':1,'k':10,'ws':10,'wt':5})
+    args = edict({'ps':8,'pt':1,'k':10,'ws':10,'wt':5})
     args.device = device
     return dname,sigma,comp_flow,args
 
-def run_unfold(vid,ps):
-    psHalf = ps//2
+def run_unfold(vid,ps,dil=1):
+    lpad,rpad = ps//2,(ps-1)//2
     shape_str = 't (c h w) np -> (t np) 1 1 c h w'
-    vid_pad = pad(vid,4*[psHalf,],mode="reflect")
+    vid_pad = pad(vid,[lpad,rpad,lpad,rpad,],mode="reflect")
     patches = unfold(vid_pad,(ps,ps))
     patches = rearrange(patches,shape_str,h=ps,w=ps)
     return patches

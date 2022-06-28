@@ -90,6 +90,7 @@ class iUnfold(th.nn.Module):
         self.patches = th.empty(0).to(device)
         self.device = device
         self.coords = coords
+        assert not(self.coords is None)
 
     # def update_patches(patches):
     #     self.patches = th.stack([self.patches,patches],0)

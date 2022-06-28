@@ -77,6 +77,9 @@ class iFold(th.nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.coords = coords
+        if self.coords is None:
+            t,c,h,w = vid_shape
+            self.coords = [0,0,h,w]
 
     def allocate_vid(self,vid_shape,device):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)

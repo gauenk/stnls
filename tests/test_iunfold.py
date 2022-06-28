@@ -33,9 +33,11 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    # test_lists = {"ps":[7,],"stride":[1],"dilation":[1],
+    # test_lists = {"ps":[3,8,],"stride":[1,2,4,8],"dilation":[1,2,4,8],
     #               "top":[3],"btm":[50],"left":[3],"right":[50]}
-    test_lists = {"ps":[3,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
+    # test_lists = {"ps":[3,7,11],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
+    #               "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
+    test_lists = {"ps":[3,7,8,11],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5],
                   "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -119,7 +121,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     th.autograd.backward(patches_nl,patches_grad)
 
     # -- get grads --
-    grad_nn = center_crop(vid_nn.grad,(sq_h,sq_w))
+    grad_nn = crop_pads(vid_nn.grad,sq_h,sq_w,ps,dil)
     grad_nl = vid_nl.grad[:,:,top:btm,left:right]
 
     # -- check forward --
@@ -234,7 +236,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     assert error < 1e-10
 
     # -- get grads --
-    grad_nn = center_crop(vid_nn.grad,(sq_h,sq_w))
+    grad_nn = crop_pads(vid_nn.grad,sq_h,sq_w,ps,dil)
     grad_nl = vid_nl.grad[:,:,top:btm,left:right]
 
     # -- check backward --
@@ -286,16 +288,20 @@ def run_unfold(_vid,_pads,_ps,_stride=1,_dil=1):
     patches = rearrange(patches,shape_str,ph=ps,pw=ps)
     return patches
 
+def crop_pads(vid,h,w,ps,dil):
+    pad_lg,pad_sm = dil*(ps//2),dil*((ps-1)//2)
+    return vid[...,pad_lg:pad_lg+h,pad_lg:pad_lg+w]
+
 def pad_video(vid,coords,ps,stride,dil):
     #
     # -- add video boarder for no edge effects from coords --
     #
 
     # -- compute pads --
-    padp = dil*(ps//2)
+    pad_lg,pad_sm = dil*(ps//2),dil*((ps-1)//2)
     t,c,h,w = vid.shape
-    pcoords = padded_coords(coords,h,w,padp)
-    pads = padded_boarder(coords,pcoords,padp)
+    pcoords = padded_coords(coords,h,w,pad_lg,pad_sm)
+    pads = padded_boarder(coords,pcoords,pad_lg,pad_sm)
     top,left,btm,right = pcoords
     # -- include non-refl. boundary if possible --
     vid_cc = vid[:,:,top:btm,left:right]
@@ -303,45 +309,22 @@ def pad_video(vid,coords,ps,stride,dil):
     vid_pad = pad(vid_cc,pads,mode="reflect")
     return vid_pad
 
-def padded_coords(coords,h,w,padp):
+def padded_coords(coords,h,w,pad_lg,pad_sm):
     top,left,btm,right = coords
-    top_p = max(top-padp,0)
-    left_p = max(left-padp,0)
-    btm_p = min(btm+padp,h)
-    right_p = min(right+padp,w)
+    top_p = max(top-pad_lg,0)
+    left_p = max(left-pad_lg,0)
+    btm_p = min(btm+pad_sm,h)
+    right_p = min(right+pad_sm,w)
     pcoords = [top_p,left_p,btm_p,right_p]
     return pcoords
 
-def padded_boarder(coords,pcoords,padp):
+def padded_boarder(coords,pcoords,pad_lg,pad_sm):
     top,left,btm,right = coords
     top_p,left_p,btm_p,right_p = pcoords
-    top_b = padp - (top - top_p)
-    left_b = padp - (left - left_p)
-    btm_b = padp - (btm_p - btm)
-    right_b = padp - (right_p - right)
+    top_b = pad_lg - (top - top_p)
+    left_b = pad_lg - (left - left_p)
+    btm_b = pad_sm - (btm_p - btm)
+    right_b = pad_sm - (right_p - right)
     pads = [left_b,right_b,top_b,btm_b]
     return pads
-
-# def run_fold(patches,t,h,w,stride=1,dil=1,ones=None):
-#     ps = patches.shape[-1]
-#     psHalf = ps//2
-#     padf = dil * psHalf
-#     hp,wp = h+2*padf,w+2*padf
-#     shape_str = '(t np) 1 1 c h w -> t (c h w) np'
-#     patches = rearrange(patches,shape_str,t=t)
-#     if ones is None:
-#         ones = th.ones_like(patches)
-#     vid_pad = fold(patches,(hp,wp),(ps,ps),stride=stride,dilation=dil)
-#     vid = center_crop(vid_pad,(h,w))
-#     wvid_pad = fold(ones,(hp,wp),(ps,ps),stride=stride,dilation=dil)
-#     wvid = center_crop(wvid_pad,(h,w))
-#     return vid,wvid
-
-# def run_unfold(vid_pad,ps,stride=1,dil=1):
-#     # psHalf = ps//2
-#     # vid_pad = pad(vid,4*[psHalf,],mode="reflect")
-#     shape_str = 't (c h w) np -> (t np) 1 1 c h w'
-#     patches = unfold(vid_pad,(ps,ps),stride=stride,dilation=dil)
-#     patches = rearrange(patches,shape_str,h=ps,w=ps)
-#     return patches
 

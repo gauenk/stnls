@@ -42,7 +42,9 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    test_lists = {"ps":[3,7],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
+    # test_lists = {"ps":[3],"stride":[1],"dilation":[3],
+    #               "top":[0],"btm":[64],"left":[0],"right":[64]}
+    test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
                   "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -175,6 +177,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     vid = th.from_numpy(vid).to(device).contiguous()
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     print_gpu_stats(gpu_stats,"post-io")
+    vid = th.ones_like(vid)
 
     # -- unpack image --
     device = vid.device
@@ -469,19 +472,19 @@ def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1):
 
     # -- unpack --
     ps = patches.shape[-1]
-    padf = dil * (ps//2)
-    hp,wp = h+2*padf,w+2*padf
+    padf_lg,padf_sm = dil * (ps//2),dil * ((ps-1)//2)
+    hp,wp = h+padf_lg+padf_sm,w+padf_lg+padf_sm
     shape_str = '(t np) 1 1 c h w -> t (c h w) np'
     patches = rearrange(patches,shape_str,t=t)
     ones = th.ones_like(patches)
 
     # -- folded --
     vid_pad = fold(patches,(hp,wp),(ps,ps),stride=stride,dilation=dil)
-    vid = center_crop(vid_pad,(h,w))
+    vid = vid_pad[:,:,padf_lg:h+padf_lg,padf_lg:w+padf_lg]
 
     # -- weigthed vid --
     wvid_pad = fold(ones,(hp,wp),(ps,ps),stride=stride,dilation=dil)
-    wvid = center_crop(wvid_pad,(h,w))
+    wvid = wvid_pad[:,:,padf_lg:h+padf_lg,padf_lg:w+padf_lg]
 
     return vid,wvid
 

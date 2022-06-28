@@ -85,7 +85,7 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
         shift_t = min(0,t_c - nWt_b) + max(0,t_c + nWt_f - nframes + ps_t)
         t_start = max(t_c - nWt_b - shift_t,0)
         t_end = min(nframes - ps_t, t_c + nWt_f - shift_t)+1
-        print("t_c,t_start,t_end: ",t_c,t_start,t_end)
+        # print("t_c,t_start,t_end: ",t_c,t_start,t_end)
 
         # -- final range --
         trange = [t_c]

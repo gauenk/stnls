@@ -211,6 +211,7 @@ __global__ void dnls_iunfold_backward_kernel(
     int pt = patches.size(2);
     int ps = patches.size(5);
     int numQueries = patches.size(0);
+    int psOffset = (ps-1)/2;
     int psHalf = ps/2;
     int hw = height*width;
     int fill_pad = psHalf * dilation;
@@ -252,8 +253,10 @@ __global__ void dnls_iunfold_backward_kernel(
             for (int pj = 0; pj < ps; pj++){
 
               // -- offsets for ni --
-              int _wi = w_im + dilation*(pi - psHalf);
-              int _hi = h_im + dilation*(pj - psHalf);
+              int _wi = w_im + dilation*(pi - psOffset);
+              int _hi = h_im + dilation*(pj - psOffset);
+              // int _wi = w_im + dilation*(pi - psHalf);
+              // int _hi = h_im + dilation*(pj - psHalf);
               int ti = t_im + pk;
 
               // -- check bounds --
