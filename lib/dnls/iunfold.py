@@ -29,7 +29,7 @@ class iUnfoldFunction(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, patches, vid, start, coords, stride, dilation):
+    def forward(ctx, patches, vid, start, coords, stride, dilation, adj_h, adj_w):
 
         # -- unpack --
         top,left = coords[:2]
@@ -42,7 +42,7 @@ class iUnfoldFunction(th.autograd.Function):
         # -- forward --
         dnls_cuda.iunfold_forward(vid, patches,
                                   top,left,btm,right,
-                                  start, stride, dilation)
+                                  start, stride, dilation,adj_h, adj_w)
 
         # -- store --
         ctx.start = start
@@ -50,6 +50,8 @@ class iUnfoldFunction(th.autograd.Function):
         ctx.dilation = dilation
         ctx.vid_shape = vid.shape
         ctx.stride = stride
+        ctx.adj_h = adj_h
+        ctx.adj_w = adj_w
 
         return patches
 
@@ -63,6 +65,8 @@ class iUnfoldFunction(th.autograd.Function):
         dilation = ctx.dilation
         vid_shape = ctx.vid_shape
         coords = ctx.coords
+        adj_h = ctx.adj_h
+        adj_w = ctx.adj_w
 
         # -- unpack --
         top,left = coords[:2]
@@ -74,14 +78,15 @@ class iUnfoldFunction(th.autograd.Function):
         # -- forward --
         dnls_cuda.iunfold_backward(grad_vid,grad_patches,
                                    top,left,btm,right,
-                                   start,stride,dilation)
+                                   start,stride,dilation,adj_h, adj_w)
 
-        return None,grad_vid,None,None,None,None,None
+        return None,grad_vid,None,None,None,None,None,None,None
 
 class iUnfold(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
 
-    def __init__(self, ps, coords, pt=1, stride=1, dilation=1, device="cuda:0"):
+    def __init__(self, ps, coords, pt=1, stride=1, dilation=1,
+                 adj_h=0,adj_w=0,device="cuda:0"):
         super(iUnfold, self).__init__()
         self.ps = ps
         self.pt = pt
@@ -90,6 +95,7 @@ class iUnfold(th.nn.Module):
         self.patches = th.empty(0).to(device)
         self.device = device
         self.coords = coords
+        self.adj_h,self.adj_w = adj_h,adj_w
         assert not(self.coords is None)
 
     # def update_patches(patches):
@@ -99,7 +105,8 @@ class iUnfold(th.nn.Module):
         colors = vid.shape[1]
         patches = allocate_patches(qNum,1,self.ps,self.pt,colors,self.device)
         patches = iUnfoldFunction.apply(patches,vid,start,self.coords,
-                                        self.stride,self.dilation)
+                                        self.stride,self.dilation,
+                                        self.adj_h,self.adj_w)
         return patches
 
 

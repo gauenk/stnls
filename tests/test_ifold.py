@@ -42,10 +42,10 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    # test_lists = {"ps":[3],"stride":[1],"dilation":[3],
-    #               "top":[0],"btm":[64],"left":[0],"right":[64]}
-    test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
-                  "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
+    test_lists = {"ps":[8],"stride":[8],"dilation":[1],
+                  "top":[0],"btm":[64],"left":[0],"right":[64]}
+    # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
+    #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -95,7 +95,8 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- exec fold fxns --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,
+                               adj_h=-4,adj_w=-4)
 
     # -- patches for ifold --
     index = 0
@@ -177,7 +178,6 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     vid = th.from_numpy(vid).to(device).contiguous()
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     print_gpu_stats(gpu_stats,"post-io")
-    vid = th.ones_like(vid)
 
     # -- unpack image --
     device = vid.device
@@ -200,7 +200,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- exec fold fxns --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,
+                               adj_h=-4,adj_w=-4)
     patches_nl = []
     print_gpu_stats(gpu_stats,"pre-loop")
 
@@ -249,6 +250,12 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     th.autograd.backward(vid_nn,vid_grad)
     th.autograd.backward(vid_nl,vid_grad)
     print_gpu_stats(gpu_stats,"post-bkw")
+    print(vid_nn[0,0,:3,:3])
+    print(vid_nl[0,0,:3,:3])
+    print(vid_nn[0,0,-3:,-3:])
+    print(vid_nl[0,0,-3:,-3:])
+    dnls.testing.data.save_burst(vid_nn,"./output/","vid_nn")
+    dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
 
     # -- get grads --
     grad_nn = patches_nn.grad
@@ -263,6 +270,13 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
     grad_nn = rearrange(grad_nn,shape_str,t=t,h=nh)
     grad_nl = rearrange(grad_nl,shape_str,t=t,h=nh)
+    print(grad_nn[0,0,0,0])
+    print(grad_nl[0,0,0,0])
+
+    print(grad_nn[0,0,4,4])
+    print(grad_nl[0,0,4,4])
+    print(grad_nl[0,0,5,5])
+
 
     # -- check backward --
     error = th.sum((grad_nn - grad_nl)**2).item()
@@ -473,6 +487,7 @@ def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1):
     # -- unpack --
     ps = patches.shape[-1]
     padf_lg,padf_sm = dil * (ps//2),dil * ((ps-1)//2)
+    padf_lg,padf_sm = 0,0
     hp,wp = h+padf_lg+padf_sm,w+padf_lg+padf_sm
     shape_str = '(t np) 1 1 c h w -> t (c h w) np'
     patches = rearrange(patches,shape_str,t=t)

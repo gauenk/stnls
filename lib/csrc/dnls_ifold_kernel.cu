@@ -40,8 +40,9 @@ template <typename scalar_t>
 __global__ void dnls_ifold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    int top, int left, int btm, int right,
-    int start, int stride, int dilation, int num_kernels) {
+    int top, int left, int btm, int right, 
+    int start, int stride, int dilation, int adj_h, int adj_w,
+    int num_kernels) {
 
     // -- unpack --
     int nframes = vid.size(0);
@@ -122,8 +123,8 @@ __global__ void dnls_ifold_forward_kernel(
 
               // -- offsets for ni --
               // use "psOffset" instead of "psHalf" because of reflection.
-              int _wi = w_im + dilation*(pi - psOffset);
-              int _hi = h_im + dilation*(pj - psOffset);
+              int _wi = w_im + dilation*(pi - psOffset + adj_w);
+              int _hi = h_im + dilation*(pj - psOffset + adj_h);
               int ti = t_im + pk;
 
               // -- check bounds (we need the patch for the pixel!) --
@@ -191,7 +192,8 @@ __global__ void dnls_ifold_forward_kernel(
 void dnls_cuda_ifold_forward(
     torch::Tensor vid, torch::Tensor patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation){
+    int start, int stride, int dilation,
+    int adj_h, int adj_w){
 
   // batching entire image always
   int nframes = vid.size(0);
@@ -223,7 +225,7 @@ void dnls_cuda_ifold_forward(
     dnls_ifold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        top,left,btm,right,start,stride,dilation,num_kernels);
+        top,left,btm,right,start,stride,dilation,adj_h,adj_w,num_kernels);
       }));
 }
 
@@ -238,7 +240,7 @@ __global__ void dnls_ifold_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid, // grad
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation, int qpt, int kpt) {
+    int start, int stride, int dilation, int adj_h, int adj_w, int qpt, int kpt) {
 
     // -- shapes --
     int nframes = vid.size(0);
@@ -253,6 +255,12 @@ __global__ void dnls_ifold_backward_kernel(
     int psOffset = (int)(ps-1)/2; // convention to decided center
     int height_width = height*width;
     int hw = height*width;
+
+    // -- reverse adjust --
+    // adj_h = (adj_h == 0) ? 0 : ( (adj_h < 0) ? (adj_h+4) : (adj_h-1) );
+    // adj_w = (adj_w == 0) ? 0 : ( (adj_w < 0) ? (adj_w+4) : (adj_w-1) );
+    // adj_h = (adj_h == 0) ? 0 : ( (adj_h < 0) ? (adj_h+4) : (adj_h-1) );
+    // adj_w = (adj_w == 0) ? 0 : ( (adj_w < 0) ? (adj_w+4) : (adj_w-1) );
 
     // -- cuda threads --
     int pi = threadIdx.y;
@@ -317,8 +325,8 @@ __global__ void dnls_ifold_backward_kernel(
         // -- fill across cuda threads --
         // vi_h = bounds(hi+dilation*(pi - psHalf),height);
         // vi_w = bounds(wi+dilation*(pj - psHalf),width);
-        vi_h = hi+dilation*(pi - psHalf);
-        vi_w = wi+dilation*(pj - psHalf);
+        vi_h = hi+dilation*(pi - psHalf - adj_h);
+        vi_w = wi+dilation*(pj - psHalf - adj_w);
 
         // -- spatially valid --
         valid_hw = valid_hw && (vi_h >= top) && (vi_h < btm);
@@ -356,7 +364,8 @@ void dnls_cuda_ifold_backward(
   torch::Tensor grad_vid,
   torch::Tensor patches,
   int top, int left, int btm, int right,
-  int start, int stride, int dilation) {
+  int start, int stride, int dilation,
+  int adj_h, int adj_w) {
 
   // -- kernel blocks --
   int numQueries = patches.size(0);
@@ -379,7 +388,7 @@ void dnls_cuda_ifold_backward(
     dnls_ifold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        top, left, btm, right, start, stride, dilation, qpt, kpt);
+        top, left, btm, right, start, stride, dilation, adj_h, adj_w, qpt, kpt);
   }));
 
 }
