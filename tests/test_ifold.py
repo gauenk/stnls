@@ -38,14 +38,16 @@ def pytest_generate_tests(metafunc):
     np.random.seed(seed)
     # test_lists = {"ps":[3],"stride":[1],"dilation":[1],
     #               "top":[2],"btm":[62],"left":[2],"right":[62]}
-    # test_lists = {"ps":[3],"stride":[1],"dilation":[1],
-    #               "top":[3],"btm":[57],"left":[7],"right":[57]}
+    # test_lists = {"ps":[3],"stride":[1],"dilation":[1],"adj":[True]}
+    test_lists = {"ps":[3],"stride":[1],"dilation":[1],
+                  "top":[3],"btm":[57],"left":[7],"right":[57],"adj":[True]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
-    #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    test_lists = {"ps":[8],"stride":[8],"dilation":[1],
-                  "top":[0],"btm":[64],"left":[0],"right":[64]}
+    #               "top":[3],"btm":[57],"left":[7],"right":[57],"adj":[False]}
+    # test_lists = {"ps":[8],"stride":[8],"dilation":[1],
+    #               "top":[0],"btm":[64],"left":[0],"right":[64]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
-    #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
+    #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30],
+    #               "adj":[True,False]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -53,14 +55,20 @@ def pytest_generate_tests(metafunc):
 # -- Test Against Pytorch.nn.fold --
 #
 
-# @pytest.mark.skip(reason="too long right now")
-def test_nn(ps,stride,dilation,top,btm,left,right):
+def test_nn_with_unfold(ps,stride,dilation):
 
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
     chnls,k,pt = 1,1,1
     ws,wt = 10,0
+    adj = True
+    top,btm,left,right = 0,64,0,64
+
+    # -- sub square --
+    coords = [top,left,btm,right]
+    sq_h = coords[2] - coords[0]
+    sq_w = coords[3] - coords[1]
 
     # -- init vars --
     device = "cuda:0"
@@ -71,6 +79,92 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
+
+    # -- compute optical flow --
+    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+
+    # -- image params --
+    device = vid.device
+    shape = vid.shape
+    t,color,h,w = shape
+    nframes,height,width = t,h,w
+    vshape = vid.shape
+
+    # -- run unfold --
+    patches = run_unfold(vid,ps,stride,dil)
+    patches.requires_grad_(True)
+    patches_nn = patches
+    patches_nl = patches.clone()
+
+    #
+    # -- test logic --
+    #
+
+    # -- run forward --
+    # top,left,btm,right = coords
+    vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
+    vid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
+    print(vid_nn[0,0,:3,:3])
+    print(vid_nl[0,0,:3,:3])
+    print(vid_nn[0,0,-3:,-3:])
+    print(vid_nl[0,0,-3:,-3:])
+
+
+    # -- run backward --
+    vid_grad = th.randn_like(vid_nl)
+    th.autograd.backward(vid_nn,vid_grad)
+    th.autograd.backward(vid_nl,vid_grad)
+
+    # -- check forward --
+    delta = vid_nn - vid_nl
+    error = th.sum(delta**2).item()
+    assert error < 1e-10
+
+    # -- check backward --
+    grad_nn = patches_nn.grad
+    grad_nl = patches_nl.grad
+
+    # -- rearrange --
+    shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
+    grad_nn = rearrange(grad_nn,shape_str,t=t,h=nh)
+    grad_nl = rearrange(grad_nl,shape_str,t=t,h=nh)
+
+    # -- check backward --
+    error = th.sum((grad_nn - grad_nl)**2).item()
+    assert error < 1e-10
+
+    # -- clean-up --
+    th.cuda.empty_cache()
+    del vid,flow
+    del vid_nn,vid_nl
+    del patches_nl,patches_nn
+    del grad_nn,grad_nl,vid_grad
+    del queryInds,nlDists,nlInds
+    th.cuda.empty_cache()
+
+
+# @pytest.mark.skip(reason="too long right now")
+def test_nn(ps,stride,dilation,top,btm,left,right):
+
+    # -- get args --
+    dil = dilation
+    dname,ext = "davis_baseball_64x64","jpg"
+    chnls,k,pt = 1,1,1
+    ws,wt = 10,0
+    adj = False
+
+    # -- init vars --
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    exact = True
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = th.from_numpy(vid).to(device).contiguous()
+
+    # -- compute optical flow --
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
@@ -95,8 +189,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- exec fold fxns --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,
-                               adj_h=-4,adj_w=-4)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
 
     # -- patches for ifold --
     index = 0
@@ -117,7 +210,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- run forward --
     top,left,btm,right = coords
-    vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil)
+    vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
     vid_nl = fold_nl(patches_nl,0)[:,:,top:btm,left:right]
 
     # -- run backward --
@@ -172,6 +265,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     exact = True
     exact = True
     gpu_stats = False
+    adj = False
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
@@ -200,8 +294,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- exec fold fxns --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,
-                               adj_h=-4,adj_w=-4)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
     patches_nl = []
     print_gpu_stats(gpu_stats,"pre-loop")
 
@@ -240,7 +333,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     patches_nn = scatter_nl(vid,nlInds)
     patches_nn.requires_grad_(True)
     print_gpu_stats(gpu_stats,"post-search")
-    vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil)
+    vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
     print_gpu_stats(gpu_stats,"post-fold")
 
     # -- run backward --
@@ -250,12 +343,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     th.autograd.backward(vid_nn,vid_grad)
     th.autograd.backward(vid_nl,vid_grad)
     print_gpu_stats(gpu_stats,"post-bkw")
-    print(vid_nn[0,0,:3,:3])
-    print(vid_nl[0,0,:3,:3])
-    print(vid_nn[0,0,-3:,-3:])
-    print(vid_nl[0,0,-3:,-3:])
-    dnls.testing.data.save_burst(vid_nn,"./output/","vid_nn")
-    dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
+    # dnls.testing.data.save_burst(vid_nn,"./output/","vid_nn")
+    # dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
 
     # -- get grads --
     grad_nn = patches_nn.grad
@@ -270,12 +359,6 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
     grad_nn = rearrange(grad_nn,shape_str,t=t,h=nh)
     grad_nl = rearrange(grad_nl,shape_str,t=t,h=nh)
-    print(grad_nn[0,0,0,0])
-    print(grad_nl[0,0,0,0])
-
-    print(grad_nn[0,0,4,4])
-    print(grad_nl[0,0,4,4])
-    print(grad_nl[0,0,5,5])
 
 
     # -- check backward --
@@ -478,16 +561,16 @@ def test_shrink_search():
     error = th.sum((vid_f - vid)**2).item()
     assert error < 1e-10
 
-def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1):
+def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1,_adj=False):
     # -- avoid pytest fixtures --
     patches = _patches
     t,h,w = _t,_h,_w
-    stride,dil = _stride,_dil
+    stride,dil,adj = _stride,_dil,_adj
 
     # -- unpack --
     ps = patches.shape[-1]
     padf_lg,padf_sm = dil * (ps//2),dil * ((ps-1)//2)
-    padf_lg,padf_sm = 0,0
+    if adj is True: padf_lg,padf_sm = 0,0
     hp,wp = h+padf_lg+padf_sm,w+padf_lg+padf_sm
     shape_str = '(t np) 1 1 c h w -> t (c h w) np'
     patches = rearrange(patches,shape_str,t=t)
@@ -509,13 +592,17 @@ def run_unfold(_vid,_ps,_stride=1,_dil=1):
     vid,stride = _vid,_stride
     ps,dil = _ps,_dil
 
-    # -- run --
-    psHalf = ps//2
-    padf = dil * psHalf
-    shape_str = 't (c h w) np -> (t np) 1 1 c h w'
-    vid_pad = pad(vid,4*[padf,],mode="reflect")
-    patches = unfold(vid_pad,(ps,ps),stride=stride,dilation=dil)
-    patches = rearrange(patches,shape_str,h=ps,w=ps)
-    return patches
+    # # -- padding --
+    # padf_lg,padf_sm = dil * (ps//2),dil * ((ps-1)//2)
+    # if adj is True: padf_lg,padf_sm = 0,0
+    # psHalf = ps//2
+    # padf = dil * psHalf
+    # vid_pad = pad(vid,4*[padf,],mode="reflect")
 
+    # -- unfold --
+    shape_str = 't (c h w) np -> (t np) 1 1 c h w'
+    patches = unfold(vid,(ps,ps),stride=stride,dilation=dil)
+    patches = rearrange(patches,shape_str,h=ps,w=ps)
+
+    return patches
 

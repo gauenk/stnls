@@ -40,7 +40,7 @@ __global__ void dnls_iunfold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation, int qpt, int kpt) {
+    int start, int stride, int dilation, int adj, int qpt, int kpt) {
 
     // -- shapes --
     int nframes = vid.size(0);
@@ -124,8 +124,8 @@ __global__ void dnls_iunfold_forward_kernel(
         // -- fill across cuda threads --
         // vi_h = hi+dilation*(pi - psHalf);
         // vi_w = wi+dilation*(pj - psHalf);
-        vi_h = bounds(hi+dilation*(pi - psHalf),0.,height);
-        vi_w = bounds(wi+dilation*(pj - psHalf),0.,width);
+        vi_h = bounds(hi+dilation*(pi - psHalf + adj),0.,height);
+        vi_w = bounds(wi+dilation*(pj - psHalf + adj),0.,width);
         // vi_h = bounds(hi+dilation*(pi - psHalf),top,btm);
         // vi_w = bounds(wi+dilation*(pj - psHalf),left,right);
 
@@ -161,7 +161,7 @@ __global__ void dnls_iunfold_forward_kernel(
 void dnls_cuda_iunfold_forward(
     torch::Tensor vid, torch::Tensor patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation, int adj_h, int adj_w){
+    int start, int stride, int dilation, int adj){
 
   // -- kernel blocks --
   int numQueries = patches.size(0);
@@ -185,7 +185,7 @@ void dnls_cuda_iunfold_forward(
     dnls_iunfold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        top, left, btm, right, start, stride, dilation, qpt, kpt);
+        top, left, btm, right, start, stride, dilation, adj, qpt, kpt);
       }));
 }
 
@@ -201,7 +201,7 @@ __global__ void dnls_iunfold_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation, int num_kernels) {
+    int start, int stride, int dilation, int adj, int num_kernels) {
 
     // -- unpack --
     int nframes = vid.size(0);
@@ -253,8 +253,8 @@ __global__ void dnls_iunfold_backward_kernel(
             for (int pj = 0; pj < ps; pj++){
 
               // -- offsets for ni --
-              int _wi = w_im + dilation*(pi - psOffset);
-              int _hi = h_im + dilation*(pj - psOffset);
+              int _wi = w_im + dilation*(pi - psOffset - adj);
+              int _hi = h_im + dilation*(pj - psOffset - adj);
               // int _wi = w_im + dilation*(pi - psHalf);
               // int _hi = h_im + dilation*(pj - psHalf);
               int ti = t_im + pk;
@@ -337,7 +337,7 @@ __global__ void dnls_iunfold_backward_kernel(
 void dnls_cuda_iunfold_backward(
   torch::Tensor grad_vid,torch::Tensor patches,
   int top, int left, int btm, int right,
-  int start, int stride, int dilation, int adj_h, int adj_w) {
+  int start, int stride, int dilation, int adj) {
 
   // -- kernel blocks --
   // int numQueries = patches.size(0);
@@ -375,7 +375,7 @@ void dnls_cuda_iunfold_backward(
       <<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        top, left, btm, right, start, stride, dilation, num_kernels);
+        top, left, btm, right, start, stride, dilation, adj, num_kernels);
   }));
 
 }

@@ -13,15 +13,13 @@ void dnls_cuda_iunfold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation,
-    int adj_h, int adj_w);
+    int start, int stride, int dilation, int adj);
 
 void dnls_cuda_iunfold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation,
-    int adj_h, int adj_w);
+    int start, int stride, int dilation, int adj);
 
 // C++ interface
 
@@ -33,26 +31,23 @@ void dnls_iunfold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation,
-    int adj_h, int adj_w) {
+    int start, int stride, int dilation, int adj) {
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
   dnls_cuda_iunfold_forward(vid,patches,
                             top,left,btm,right,
-                            start,stride,dilation,
-                            adj_h,adj_w);
+                            start,stride,dilation,adj);
 }
 
 void dnls_iunfold_backward(
     torch::Tensor grad_vid, torch::Tensor patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation,
-    int adj_h, int adj_w) {
+    int start, int stride, int dilation, int adj) {
   CHECK_INPUT(grad_vid);
   CHECK_INPUT(patches);
   dnls_cuda_iunfold_backward(grad_vid,patches,
                              top,left,btm,right,
-                             start,stride,dilation,adj_h,adj_w);
+                             start,stride,dilation,adj);
 }
 
 
