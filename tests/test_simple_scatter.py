@@ -317,4 +317,5 @@ class TestSimpleScatter(unittest.TestCase):
         # self.exec_query_strided_test(dname,sigma,flow_args,args)
 
         args.stride = 2
-        self.exec_patch_strided_test(dname,sigma,flow_args,args)
+        # self.exec_patch_strided_test(dname,sigma,flow_args,args)
+        th.cuda.synchronize()

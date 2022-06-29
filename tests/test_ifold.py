@@ -36,18 +36,18 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    # test_lists = {"ps":[3],"stride":[1],"dilation":[1],
-    #               "top":[2],"btm":[62],"left":[2],"right":[62]}
-    # test_lists = {"ps":[3],"stride":[1],"dilation":[1],"adj":[True]}
-    test_lists = {"ps":[3],"stride":[1],"dilation":[1],
-                  "top":[3],"btm":[57],"left":[7],"right":[57],"adj":[True]}
+    # test_lists = {"ps":[3],"stride":[1],"dilation":[1,2],
+    #               "top":[3],"btm":[62],"left":[2],"right":[62]}
+    test_lists = {"ps":[4],"stride":[1,2],"dilation":[2],
+                  "top":[4],"btm":[64],"left":[1],"right":[61]}
+    # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5],"dilation":[1,2,3,4,5],
+    #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
-    #               "top":[3],"btm":[57],"left":[7],"right":[57],"adj":[False]}
+    #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[8],"stride":[8],"dilation":[1],
     #               "top":[0],"btm":[64],"left":[0],"right":[64]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
-    #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30],
-    #               "adj":[True,False]}
+    #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -63,7 +63,7 @@ def test_nn_with_unfold(ps,stride,dilation):
     chnls,k,pt = 1,1,1
     ws,wt = 10,0
     adj = True
-    top,btm,left,right = 0,64,0,64
+    top,btm,left,right = 0,64,0,64 # full image
 
     # -- sub square --
     coords = [top,left,btm,right]
@@ -79,6 +79,7 @@ def test_nn_with_unfold(ps,stride,dilation):
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
+    vid = th.ones_like(vid)
 
     # -- compute optical flow --
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -90,26 +91,38 @@ def test_nn_with_unfold(ps,stride,dilation):
     nframes,height,width = t,h,w
     vshape = vid.shape
 
-    # -- run unfold --
-    patches = run_unfold(vid,ps,stride,dil)
-    patches.requires_grad_(True)
-    patches_nn = patches
-    patches_nl = patches.clone()
+    # -- num of steps each direction --
+    npix = t * h * w
+    n_h = (sq_h - (ps-1)*dil - 1)//stride + 1
+    n_w = (sq_w - (ps-1)*dil - 1)//stride + 1
+
+    # -- skip if invalid shape --
+    # valid_h = (sq_h - (ps-1)*dil - 1) % stride == 0
+    # valid_w = (sq_w - (ps-1)*dil - 1) % stride == 0
+    # valid = valid_h and valid_w
+    # if not(valid):
+    #     print("invalid: ",ps,dil,stride,coords)
+
 
     #
     # -- test logic --
     #
 
+    # -- run unfold --
+    patches_nl = run_unfold(vid,ps,stride,dil)
+    patches_nn = patches_nl.clone()
+    patches_nl.requires_grad_(True)
+    patches_nn.requires_grad_(True)
+
     # -- run forward --
-    # top,left,btm,right = coords
     vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
     fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
     vid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
-    print(vid_nn[0,0,:3,:3])
-    print(vid_nl[0,0,:3,:3])
-    print(vid_nn[0,0,-3:,-3:])
-    print(vid_nl[0,0,-3:,-3:])
 
+    vid_nn_s  = vid_nn /vid_nn.max()
+    vid_nl_s = vid_nl / vid_nl.max()
+    # dnls.testing.data.save_burst(vid_nn_s,"./output/","vid_nn")
+    # dnls.testing.data.save_burst(vid_nl_s,"./output/","vid_nl")
 
     # -- run backward --
     vid_grad = th.randn_like(vid_nl)
@@ -127,8 +140,13 @@ def test_nn_with_unfold(ps,stride,dilation):
 
     # -- rearrange --
     shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
-    grad_nn = rearrange(grad_nn,shape_str,t=t,h=nh)
-    grad_nl = rearrange(grad_nl,shape_str,t=t,h=nh)
+    grad_nn = rearrange(grad_nn,shape_str,t=t,h=n_h)
+    grad_nl = rearrange(grad_nl,shape_str,t=t,h=n_h)
+
+    # -- viz --
+    diff = th.mean((grad_nn - grad_nl)**2,(-2,-1))
+    diff /= diff.max()
+    dnls.testing.data.save_burst(diff,"./output/","grad")
 
     # -- check backward --
     error = th.sum((grad_nn - grad_nl)**2).item()
@@ -140,9 +158,8 @@ def test_nn_with_unfold(ps,stride,dilation):
     del vid_nn,vid_nl
     del patches_nl,patches_nn
     del grad_nn,grad_nl,vid_grad
-    del queryInds,nlDists,nlInds
     th.cuda.empty_cache()
-
+    th.cuda.synchronize()
 
 # @pytest.mark.skip(reason="too long right now")
 def test_nn(ps,stride,dilation,top,btm,left,right):
@@ -244,6 +261,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     del grad_nn,grad_nl,vid_grad
     del queryInds,nlDists,nlInds
     th.cuda.empty_cache()
+    th.cuda.synchronize()
 
 #
 # -- Test a Batched Ours Against Pytorch.nn.fold --
@@ -373,7 +391,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     del grad_nn,grad_nl,vid_grad
     del queryInds,nlDists,nlInds
     th.cuda.empty_cache()
-
+    th.cuda.synchronize()
 
 # @pytest.mark.skip(reason="too long right now")
 def test_shifted(ps,stride,dilation,top,btm,left,right):
@@ -415,9 +433,9 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
 
     # -- batching info --
     npix = t * h * w
-    nh = (sq_h-1)//stride+1
-    nw = (sq_w-1)//stride+1
-    qTotal = t * nh * nw
+    n_h = (sq_h-1)//stride+1
+    n_w = (sq_w-1)//stride+1
+    qTotal = t * n_h * n_w
     qSize = qTotal
     nbatches = (qTotal-1) // qSize + 1
 
@@ -470,8 +488,8 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
 
     # -- rearrange --
     shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
-    grad_nn = rearrange(grad_nn,shape_str,t=t,h=nh)
-    grad_nl = rearrange(grad_nl,shape_str,t=t,h=nh)
+    grad_nn = rearrange(grad_nn,shape_str,t=t,h=n_h)
+    grad_nl = rearrange(grad_nl,shape_str,t=t,h=n_h)
 
     # -- check backward --
     error = th.sum((grad_nn - grad_nl)**2).item()
@@ -485,6 +503,7 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     del grad_nn,grad_nl,vid_grad
     del queryInds,nlDists,nlInds
     th.cuda.empty_cache()
+    th.cuda.synchronize()
 
 def test_shrink_search():
 
@@ -560,6 +579,7 @@ def test_shrink_search():
     # -- misc --
     error = th.sum((vid_f - vid)**2).item()
     assert error < 1e-10
+    th.cuda.synchronize()
 
 def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1,_adj=False):
     # -- avoid pytest fixtures --
@@ -592,9 +612,9 @@ def run_unfold(_vid,_ps,_stride=1,_dil=1):
     vid,stride = _vid,_stride
     ps,dil = _ps,_dil
 
-    # # -- padding --
+    # -- padding --
     # padf_lg,padf_sm = dil * (ps//2),dil * ((ps-1)//2)
-    # if adj is True: padf_lg,padf_sm = 0,0
+    # # if adj is True: padf_lg,padf_sm = 0,0
     # psHalf = ps//2
     # padf = dil * psHalf
     # vid_pad = pad(vid,4*[padf,],mode="reflect")

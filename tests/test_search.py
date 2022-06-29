@@ -1,6 +1,6 @@
 
 # -- python --
-import cv2,tqdm,copy
+import cv2,tqdm,copy,pytest
 import numpy as np
 import unittest
 import tempfile
@@ -344,9 +344,11 @@ class TestTopKSearch(unittest.TestCase):
         args = edict({'ps':7,'pt':1,"ws":10,"wt":10,"chnls":1})
         # self.run_comparison(dname,sigma,args)
 
+    @pytest.mark.skip()
     def test_sim_search_fwd_bwd(self):
 
         # -- init save path --
+        return
         np.random.seed(123)
         save_dir = SAVE_DIR
         if not save_dir.exists():

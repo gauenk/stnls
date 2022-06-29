@@ -236,14 +236,14 @@ void dnls_cuda_gather_forward(
   int L = S * S * (2 * wt + 1);
   int kwWarpSize = 32;
   int nWarps = (L-1)/kwWarpSize+1;
-  fprintf(stdout,"S,L,ws,wt: %d,%d,%d,%d\n",S,L,ws,wt);
+  // fprintf(stdout,"S,L,ws,wt: %d,%d,%d,%d\n",S,L,ws,wt);
 
   // launching params
   int qpt = 1;
   int nthreads = kwWarpSize*nWarps;
   int queries_per_block = nthreads * qpt;
   int nblocks = numQueries;
-  fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
+  // fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel", ([&] {
@@ -459,14 +459,14 @@ void dnls_cuda_gather_forward_dist(
   int L = S * S * (2 * wt + 1);
   int kwWarpSize = 32;
   int nWarps = (L-1)/kwWarpSize+1;
-  fprintf(stdout,"S,L,ws,wt: %d,%d,%d,%d\n",S,L,ws,wt);
+  // fprintf(stdout,"S,L,ws,wt: %d,%d,%d,%d\n",S,L,ws,wt);
 
   // launching params
   int qpt = 1;
   int nthreads = kwWarpSize*nWarps;
   int queries_per_block = nthreads * qpt;
   int nblocks = numQueries;
-  fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
+  // fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel", ([&] {

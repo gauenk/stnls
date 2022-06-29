@@ -84,7 +84,6 @@ class TestFold(unittest.TestCase):
         # assert th.sum((patches-patches_uf)**2).item() < 1e-10
         # th.cuda.synchronize()
 
-
         # -- save query mask --
         mask = th.zeros((t,h,w),dtype=np.bool,device=device)
         start = h*w

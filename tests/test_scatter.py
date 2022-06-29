@@ -1,6 +1,7 @@
 
 # -- python --
-import sys
+import sys,pytest
+import numba as nb
 
 # -- data mgnmt --
 from pathlib import Path
@@ -35,6 +36,7 @@ SAVE_DIR = Path("./output/tests/")
 # -- Test Simple Scatter --
 #
 
+@pytest.mark.skip()
 def test_simple_scatter():
 
     # -- get args --
@@ -84,11 +86,13 @@ def test_simple_scatter():
         error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
         assert error < 1e-10
     th.cuda.synchronize()
+    nb.cuda.synchronize()
 
 #
 # -- Test Simple Scatter --
 #
 
+@pytest.mark.skip()
 def test_efficient_scatter():
 
     # -- get args --
@@ -138,12 +142,13 @@ def test_efficient_scatter():
         error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
         assert error < 1e-10
     th.cuda.synchronize()
-
+    nb.cuda.synchronize()
 
 #
 # -- Test Scatter & Unfold --
 #
 
+@pytest.mark.skip()
 def test_nn_scatter():
 
     # -- get args --
@@ -217,6 +222,8 @@ def test_nn_scatter():
     else: tol = 1.
     error = th.mean((grad_nn - grad_nl)**2).item()
     assert error < tol
+    th.cuda.synchronize()
+    nb.cuda.synchronize()
 
 #
 # -- Misc --
@@ -241,6 +248,7 @@ def setup():
     save_dir = SAVE_DIR
     if not save_dir.exists():
         save_dir.mkdir(parents=True)
+    th.cuda.synchronize()
 
     # -- exec test 1 --
     sigma = 50.

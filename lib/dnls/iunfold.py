@@ -101,7 +101,7 @@ class iUnfold(th.nn.Module):
         colors = vid.shape[1]
         patches = allocate_patches(qNum,1,self.ps,self.pt,colors,self.device)
         patches = iUnfoldFunction.apply(patches,vid,start,self.coords,
-                                        self.stride,self.dilation,self.adj)
+                                        self.stride,self.dilation,adj)
         return patches
 
 

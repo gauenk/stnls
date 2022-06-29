@@ -54,6 +54,7 @@ __global__ void dnls_iunfold_forward_kernel(
     int psHalf = (int)ps/2;
     int height_width = height*width;
     int fill_pad = dilation * psHalf;
+    int dil = dilation;
 
     // -- cuda threads --
     int pi = threadIdx.y;
@@ -71,6 +72,10 @@ __global__ void dnls_iunfold_forward_kernel(
     // -- strided size --
     int n_h = int((sq_h-1) / stride) + 1;
     int n_w = int((sq_w-1) / stride) + 1;
+    if (adj > 0){
+      n_h = (sq_h - (ps-1)*dil - 1)/stride + 1;
+      n_w = (sq_w - (ps-1)*dil - 1)/stride + 1;
+    }
     int n_hw = n_h*n_w;
 
     // inits
@@ -216,6 +221,13 @@ __global__ void dnls_iunfold_backward_kernel(
     int hw = height*width;
     int fill_pad = psHalf * dilation;
     bool valid,valid_q,is_edge;
+    int dil = dilation;
+
+    // -- boundary --
+    int right_a = right - (ps-1)*dil;
+    int btm_a = btm - (ps-1)*dil;
+    int right_bnd = (adj > 0) ? right_a : right;
+    int btm_bnd = (adj > 0) ? btm_a : btm;
 
     // -- make square --
     int sq_h = btm - top;
@@ -225,6 +237,10 @@ __global__ void dnls_iunfold_backward_kernel(
     // -- strided size --
     int n_h = int((sq_h-1) / stride) + 1;
     int n_w = int((sq_w-1) / stride) + 1;
+    if (adj > 0){
+      n_h = (sq_h - (ps-1)*dil - 1)/stride + 1;
+      n_w = (sq_w - (ps-1)*dil - 1)/stride + 1;
+    }
     int n_hw = n_h * n_w;
 
     CUDA_KERNEL_LOOP(_index, num_kernels) {
@@ -260,8 +276,8 @@ __global__ void dnls_iunfold_backward_kernel(
               int ti = t_im + pk;
 
               // -- check bounds --
-              valid = (_wi >= left) && (_wi < (right));
-              valid = valid && (_hi >= top) && (_hi < (btm));
+              valid = (_wi >= left) && (_wi < (right_bnd));
+              valid = valid && (_hi >= top) && (_hi < (btm_bnd));
 
               // valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
               // valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));

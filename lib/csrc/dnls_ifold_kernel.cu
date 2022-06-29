@@ -55,6 +55,7 @@ __global__ void dnls_ifold_forward_kernel(
     int psHalf = ps/2;
     int hw = height*width;
     int fill_pad = psHalf * dilation;
+    int dil = dilation;
     // int width_s = width/stride;
     // int hw_s = (height/stride)*(width/stride);
     // int num_kernels = inds.size(0);
@@ -65,6 +66,7 @@ __global__ void dnls_ifold_forward_kernel(
 
     // -- coords with pads --
     int pad = dilation*(ps/2);
+    pad = (adj > 0) ? 0 : pad;
     int top_p = std::max(top-pad,0);
     int left_p = std::max(left-pad,0);
     int btm_p = std::min(btm+pad,height);
@@ -74,6 +76,13 @@ __global__ void dnls_ifold_forward_kernel(
     int sq_hp = btm_p - top_p;
     int sq_wp = right_p - left_p;
     int sq_hwp = sq_hp * sq_wp;
+
+    // -- adjust endpoint for "adj" --
+    // no spilling over right-hand boundary
+    int right_a = right - (ps-1)*dil;
+    int btm_a = btm - (ps-1)*dil;
+    int right_bnd = (adj > 0) ? right_a : right;
+    int btm_bnd = (adj > 0) ? btm_a : btm;
   
     // -- make square --
     int sq_h = btm - top;
@@ -83,35 +92,20 @@ __global__ void dnls_ifold_forward_kernel(
     // -- strided size --
     int n_h = int((sq_h-1) / stride) + 1;
     int n_w = int((sq_w-1) / stride) + 1;
+    if (adj > 0){
+      n_h = (sq_h - (ps-1)*dil - 1)/stride + 1;
+      n_w = (sq_w - (ps-1)*dil - 1)/stride + 1;
+    }
     int n_hw = n_h * n_w;
 
     CUDA_KERNEL_LOOP(_index, num_kernels) {
 
+      // index to pixel location
       int index = (_index);
       const int64_t t_im = (index / sq_hwp);
       const int64_t i_mod = index % sq_hwp;
       const int64_t w_im = (i_mod % sq_wp) + left_p;
       const int64_t h_im = ((i_mod / sq_wp) % sq_hp) + top_p;
-
-      // const int64_t t_im = (index / sq_hw);
-      // const int64_t i_mod = index % sq_hw;
-      // const int64_t w_im = (i_mod % sq_w) + left;
-      // const int64_t h_im = ((i_mod / sq_w) % sq_h) + top;
-
-      // const int64_t t_im = (index / n_hw);
-      // const int64_t w_im = (index % n_w) + left;
-      // const int64_t h_im = ((index / n_w) % n_h) + top;
-
-
-      // const int64_t t_im = (index / n_hw);
-      // int i_mod = index % (n_hw);
-      // const int64_t h_im = (stride*(i_mod / n_w) + top);// % height;
-      // const int64_t w_im = (stride*(i_mod % n_w) + left);// % width;
-
-      // -- allow partial nhits if edge --
-      // int padf = dilation*ps;
-      // bool is_edge = (w_im < padf) || (w_im > (width-padf));
-      // is_edge = is_edge || (h_im < padf) || (h_im > (height-padf));
 
       // Which patches (qi) impact me (t_im,w_im,h_im)?
       for(int ci = 0; ci < colors; ci++){
@@ -127,15 +121,8 @@ __global__ void dnls_ifold_forward_kernel(
               int ti = t_im + pk;
 
               // -- check bounds (we need the patch for the pixel!) --
-              // NOTE; this will not work for dilation > 1
-              // valid = (_wi >= -fill_pad) && (_wi < (width+fill_pad));
-              // valid = valid && (_hi >= -fill_pad) && (_hi < (height+fill_pad));
-              valid = (_wi >= left) && (_wi < right);
-              valid = valid && (_hi >= top) && (_hi < btm);
-              // valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
-              // valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));
-              // valid = (_wi >= (left-fill_pad)) && (_wi < (right+fill_pad));
-              // valid = valid && (_hi >= (top-fill_pad)) && (_hi < (btm+fill_pad));
+              valid = (_wi >= left) && (_wi < right_bnd);
+              valid = valid && (_hi >= top) && (_hi < btm_bnd);
               int wi = bounds(_wi,left,right);
               int hi = bounds(_hi,top,btm);
 
@@ -143,9 +130,6 @@ __global__ void dnls_ifold_forward_kernel(
               valid = valid && ((hi-top) % stride == 0) && ((wi-left) % stride == 0);
 
               // -- compute ni --
-              // int qi = ti * hw + hi * width + wi; // maybe stride here?
-              // qi = (int) (qi / (1.*stride));
-              // qi -= start;
               int qi = ti * n_hw;
               qi += (((hi-top)/stride) * n_w);
               qi += ((wi-left)/stride);
@@ -202,6 +186,7 @@ void dnls_cuda_ifold_forward(
 
   // -- coords with pads --
   int pad = dilation*(ps/2);
+  pad = (adj > 0) ? 0 : pad;
   int top_p = std::max(top-pad,0);
   int left_p = std::max(left-pad,0);
   int btm_p = std::min(btm+pad,height);
@@ -253,6 +238,7 @@ __global__ void dnls_ifold_backward_kernel(
     int psOffset = (int)(ps-1)/2; // convention to decided center
     int height_width = height*width;
     int hw = height*width;
+    int dil = dilation;
 
     // -- cuda threads --
     int pi = threadIdx.y;
@@ -262,6 +248,12 @@ __global__ void dnls_ifold_backward_kernel(
     int query_start_block = blockIdx.x*qpt;
     int k_start = threadIdx.x*kpt;
 
+    // -- only fully contained patches count --
+    int right_a = right - (ps-1)*dil;
+    int btm_a = btm - (ps-1)*dil;
+    int right_bnd = (adj > 0) ? right_a : right;
+    int btm_bnd = (adj > 0) ? btm_a : btm;
+
     // -- unpack --
     int sq_h = btm - top;
     int sq_w = right - left;
@@ -270,6 +262,10 @@ __global__ void dnls_ifold_backward_kernel(
     // -- strided size --
     int n_h = int((sq_h-1) / stride) + 1;
     int n_w = int((sq_w-1) / stride) + 1;
+    if (adj > 0){
+      n_h = (sq_h - (ps-1)*dil - 1)/stride + 1;
+      n_w = (sq_w - (ps-1)*dil - 1)/stride + 1;
+    }
     int n_hw = n_h*n_w;
 
     // inits
@@ -310,8 +306,8 @@ __global__ void dnls_ifold_backward_kernel(
         wi = (qi_mod % n_w) * stride + left;
 
         // -- valid ind --
-        valid_hw = (hi >= top) && (hi < btm);
-        valid_hw = valid_hw && (wi >= left) && (wi < right);
+        valid_hw = (hi >= top) && (hi < btm_bnd);
+        valid_hw = valid_hw && (wi >= left) && (wi < right_bnd);
         valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- fill across cuda threads --

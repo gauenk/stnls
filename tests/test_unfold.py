@@ -39,6 +39,7 @@ class TestUnfold(unittest.TestCase):
 
         # -- get args --
         dname,sigma,comp_flow,args = self.setup()
+        th.cuda.synchronize()
 
         # -- init vars --
         device = "cuda:0"
@@ -130,6 +131,7 @@ class TestUnfold(unittest.TestCase):
 
         # -- get args --
         dname,sigma,comp_flow,args = self.setup()
+        th.cuda.synchronize()
 
         # -- init vars --
         device = "cuda:0"
@@ -170,6 +172,7 @@ class TestUnfold(unittest.TestCase):
         vid_nn.requires_grad_(True)
         vid_nl.requires_grad_(True)
         vid_nl_cc = center_crop(vid_nl,(h,w)).contiguous()
+        th.cuda.synchronize()
 
         # -- exec fold fxns --
         # vid_nl = vid.clone().requires_grad_(True)
@@ -252,8 +255,9 @@ class TestUnfold(unittest.TestCase):
 
         # -- set seed --
         seed = 123
-        th.manual_seed(seed)
-        np.random.seed(seed)
+        # th.manual_seed(seed)
+        # np.random.seed(seed)
+        th.cuda.synchronize()
 
         # -- options --
         comp_flow = False

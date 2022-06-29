@@ -138,6 +138,7 @@ class TestPairScatterFold(unittest.TestCase):
 
         error = th.sum((grad_nn - grad_nl)**2).item()/ps
         assert error < 1e-6
+        th.cuda.synchronize()
 
     def test_batched(self):
 
@@ -242,6 +243,7 @@ class TestPairScatterFold(unittest.TestCase):
 
         error = th.sum((grad_nn - grad_nl)**2).item()/ps
         assert error < 1e-6
+        th.cuda.synchronize()
 
     #
     # -- Launcher --

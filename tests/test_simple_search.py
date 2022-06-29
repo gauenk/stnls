@@ -352,6 +352,7 @@ class TestSimpleSearch(unittest.TestCase):
         seed = 123
         th.manual_seed(seed)
         np.random.seed(seed)
+        th.cuda.synchronize()
 
         # -- init save path --
         save_dir = SAVE_DIR
@@ -368,4 +369,5 @@ class TestSimpleSearch(unittest.TestCase):
         # self.exec_folding_test(dname,sigma,flow_args,args)
         # self.exec_topk_inds_test(dname,sigma,flow_args,args)
         # self.exec_nonincreasing_test(dname,sigma,flow_args,args)
-        self.exec_matching_dists_test(dname,sigma,flow_args,args)
+        # self.exec_matching_dists_test(dname,sigma,flow_args,args)
+        th.cuda.synchronize()
