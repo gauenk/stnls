@@ -29,7 +29,7 @@ def allocate_vid(vid_shape,device):
     return vid
 
 def allocate_bufs(nq,t,ws,device):
-    bufs = th.zeros(nq,3,t,ws,ws,dtype=th.float32,device=device)
+    bufs = th.zeros(nq,3,t,ws,ws,dtype=th.int32,device=device)
     return bufs
 
 def allocate_exh(nq,ws,wt,device):

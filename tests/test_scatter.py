@@ -36,7 +36,7 @@ SAVE_DIR = Path("./output/tests/")
 # -- Test Simple Scatter --
 #
 
-@pytest.mark.skip()
+# @pytest.mark.skip()
 def test_simple_scatter():
 
     # -- get args --
@@ -78,10 +78,11 @@ def test_simple_scatter():
                                                 flow,k,ps,pt,ws,wt,chnls)
 
         # -- exec scatter fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="simple",device=device)
+        # scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="simple",device=device)
 
         # -- testing forward --
-        patches_nl_fwd = scatter_nl(vid,nlInds)
+        # patches_nl_fwd = scatter_nl(vid,nlInds)
+        patches_nl_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
         patches_simp_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
         error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
         assert error < 1e-10
@@ -92,7 +93,7 @@ def test_simple_scatter():
 # -- Test Simple Scatter --
 #
 
-@pytest.mark.skip()
+# @pytest.mark.skip()
 def test_efficient_scatter():
 
     # -- get args --
@@ -148,7 +149,7 @@ def test_efficient_scatter():
 # -- Test Scatter & Unfold --
 #
 
-@pytest.mark.skip()
+# @pytest.mark.skip()
 def test_nn_scatter():
 
     # -- get args --
@@ -232,7 +233,7 @@ def test_nn_scatter():
 def setup():
 
     # -- set device --
-    device = "cuda:1"
+    device = "cuda:0"
     th.cuda.set_device(device)
 
     # -- set seed --

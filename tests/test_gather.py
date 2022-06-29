@@ -49,7 +49,7 @@ def pytest_generate_tests(metafunc):
 #
 # -----------------------------------------
 
-@pytest.mark.skip()
+# @pytest.mark.skip()
 def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
 
     # -- set device --
@@ -179,7 +179,7 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
 #
 # -------------------------------------
 
-@pytest.mark.skip()
+# @pytest.mark.skip()
 def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
 
     # -- set device --
@@ -205,7 +205,7 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     # -- gather/scatter decl --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,
                                         exact=True,device=device)
-    gather_nl = dnls.gather.GatherNl(vid.shape,dilation=dilation,
+    gather_nl = dnls.gather.GatherNl(vid.shape,ws,wt,dilation=dilation,
                                      exact=exact,device=device)
 
     # -- batching info --
@@ -254,7 +254,7 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
 # -- Test Gather & Fold --
 #
 
-@pytest.mark.skip()
+# @pytest.mark.skip()
 def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
 
     # -- set device --
@@ -289,7 +289,7 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
     # -- exec gather fxns --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,
                                         exact=True,device=device)
-    gather_nl = dnls.gather.GatherNl((t,c,h,w),dilation=dilation,
+    gather_nl = dnls.gather.GatherNl((t,c,h,w),ws,wt,dilation=dilation,
                                      exact=exact,device=device)
 
     # -- get [patches & nlInds] --

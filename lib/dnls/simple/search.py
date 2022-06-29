@@ -85,7 +85,6 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
         shift_t = min(0,t_c - nWt_b) + max(0,t_c + nWt_f - nframes + ps_t)
         t_start = max(t_c - nWt_b - shift_t,0)
         t_end = min(nframes - ps_t, t_c + nWt_f - shift_t)+1
-        # print("t_c,t_start,t_end: ",t_c,t_start,t_end)
 
         # -- final range --
         trange = [t_c]
@@ -137,8 +136,6 @@ def numba_search_launcher(vid,queryInds,nlDists,nlInds,
     n_tranges_nba = cuda.as_cuda_array(n_tranges)
     min_tranges_nba = cuda.as_cuda_array(min_tranges)
     # cs_nba = cuda.external_stream(cs)
-    # print(tranges)
-    # print(n_tranges)
 
     # -- launch params --
     nq = queryInds.shape[0]
@@ -163,15 +160,8 @@ def numba_search_launcher(vid,queryInds,nlDists,nlInds,
 def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                  dilation,stride,bufs,tranges,n_tranges,min_tranges,ws_iters,bpb):
 
-    # -- reflective boundary [weird to match lidia] --
-    def bounds(val,lim):
-        # return int(val)
-        if val < 0: val = (-val-1)
-        elif val >= lim: val = (2*lim - val-2)
-        return int(val)
-
     # -- reflective boundary --
-    def bounds3(val,lim):
+    def bounds(val,lim):
         nval = val
         if val < 0: nval = -nval
         elif val >= lim: nval = 2*(lim-1)-nval
@@ -179,11 +169,11 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
 
     # -- shapes --
     nframes,color,h,w = vid.shape
+    height,width = h,w
     bsize,st,ws,ws = dists.shape
     bsize,st,ws,ws,_ = inds.shape
-    height,width = h,w
     Z = ps*ps*pt*chnls
-    psHalf = int(ps//2)
+    psHalf = int((ps-1)//2)
     wsHalf = (ws-1)//2
 
     # -- cuda threads --
@@ -191,8 +181,8 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
     cu_tidY = cuda.threadIdx.y
     blkDimX = cuda.blockDim.x
     blkDimY = cuda.blockDim.y
-    tidX = cuda.threadIdx.x
-    tidY = cuda.threadIdx.y
+    # tidX = cuda.threadIdx.x
+    # tidY = cuda.threadIdx.y
 
     # ---------------------------
     #
@@ -217,7 +207,6 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
         ti = queryInds[bidx,0]
         hi = queryInds[bidx,1]
         wi = queryInds[bidx,2]
-        top,left = hi-psHalf,wi-psHalf
 
         # ---------------------------
         #     valid (anchor pixel)
@@ -239,21 +228,22 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
         # -- we loop over search space if needed --
         for _xi in range(ws_iters):
             tidX = cu_tidX + blkDimX*_xi
-            # tidX = cu_tidX + _xi*blkDimX
-            if tidX >= ws: continue
+            ws_i = tidX
+            if ws_i >= ws: continue
 
             for _yi in range(ws_iters):
                 tidY = cu_tidY + blkDimY*_yi
-                # tidY = blkDimX*cu_tidY + _yi
-                if tidY >= ws: continue
+                ws_j = tidY
+                if ws_j >= ws: continue
 
                 for tidZ in range(n_trange):
+                    wt_k = tidZ
 
                     # -------------------
                     #    search frame
                     # -------------------
-                    n_ti = trange[tidZ]
-                    dt = trange[tidZ] - min_trange
+                    n_ti = trange[wt_k]
+                    dt = trange[wt_k] - min_trange
 
                     # ------------------------
                     #      init direction
@@ -264,14 +254,14 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
 
                         # -- get offset at index --
                         dtd = int(dt-direction)
-                        cw0 = bufs[bidx,0,dtd,tidX,tidY]
-                        ch0 = bufs[bidx,1,dtd,tidX,tidY]
-                        ct0 = bufs[bidx,2,dtd,tidX,tidY]
+                        cw0 = bufs[bidx,0,dtd,ws_i,ws_j]
+                        ch0 = bufs[bidx,1,dtd,ws_i,ws_j]
+                        ct0 = bufs[bidx,2,dtd,ws_i,ws_j]
 
                         # -- legalize access --
                         l_cw0 = int(max(0,min(w-1,cw0)))
                         l_ch0 = int(max(0,min(h-1,ch0)))
-                        l_ct0 = int(max(0,min(ct0,nframes-1)))
+                        l_ct0 = int(max(0,min(nframes-1,ct0)))
 
                         # -- pick flow --
                         flow = fflow if direction > 0 else bflow
@@ -280,9 +270,13 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                         cw_f = cw0 + flow[l_ct0,0,l_ch0,l_cw0]
                         ch_f = ch0 + flow[l_ct0,1,l_ch0,l_cw0]
 
-                        # -- rounding --
-                        cw = max(0,min(width-1,round(cw_f)))
-                        ch = max(0,min(height-1,round(ch_f)))
+                        # -- round --
+                        cw_f = int(cw_f + 0.5)
+                        ch_f = int(ch_f + 0.5)
+
+                        # -- bounds --
+                        cw = max(0,min(width-1,cw_f))
+                        ch = max(0,min(height-1,ch_f))
                         ct = n_ti
 
                     else:
@@ -290,12 +284,16 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                         ch = hi
                         ct = ti
 
+
                     # ----------------
                     #     update
                     # ----------------
                     bufs[bidx,0,dt,tidX,tidY] = cw
                     bufs[bidx,1,dt,tidX,tidY] = ch
                     bufs[bidx,2,dt,tidX,tidY] = ct
+                    # cw = wi
+                    # ch = hi
+                    # ct = n_ti
 
                     # --------------------
                     #      init dists
@@ -305,18 +303,15 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                     # -----------------
                     #    spatial dir
                     # -----------------
-                    ws_i,ws_j = tidX,tidY
                     n_hi = ch + stride * (ws_i - wsHalf)
                     n_wi = cw + stride * (ws_j - wsHalf)
 
                     # ---------------------------
                     #      valid (search "n")
                     # ---------------------------
-
                     valid_t = (n_ti < nframes) and (n_ti >= 0)
                     valid_top = (n_hi < height) and (n_hi >= 0)
                     valid_left = (n_wi < width) and (n_wi >= 0)
-
                     valid = valid_t and valid_top and valid_left
                     valid = valid and valid_anchor
                     if not(valid): dist = np.inf
@@ -332,22 +327,22 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                             for pj in range(ps):
 
                                 # -- inside entire image --
-                                vH = bounds3(hi + dilation*(pi - psHalf),height)
-                                vW = bounds3(wi + dilation*(pj - psHalf),width)
+                                vH = bounds(hi + dilation*(pi - psHalf),height)
+                                vW = bounds(wi + dilation*(pj - psHalf),width)
                                 vT = ti + pk
 
-                                nH = bounds3(n_hi + dilation*(pi - psHalf),height)
-                                nW = bounds3(n_wi + dilation*(pj - psHalf),width)
+                                nH = bounds(n_hi + dilation*(pi - psHalf),height)
+                                nW = bounds(n_wi + dilation*(pj - psHalf),width)
                                 nT = n_ti + pk
 
                                 # -- valid checks [for testing w/ zero pads] --
-                                vvalid = (vH < height and vH >= 0)
-                                vvalid = vvalid and (vW < width and vW >= 0)
-                                vvalid = vvalid and (vT < nframes and vT >= 0)
+                                vvalid = (vH < height) and (vH >= 0)
+                                vvalid = vvalid and (vW < width) and (vW >= 0)
+                                vvalid = vvalid and (vT < nframes) and (vT >= 0)
 
-                                nvalid = (nH < height and nH >= 0)
-                                nvalid = nvalid and (nW < width and nW >= 0)
-                                nvalid = nvalid and (nT < nframes and nT >= 0)
+                                nvalid = (nH < height) and (nH >= 0)
+                                nvalid = nvalid and (nW < width) and (nW >= 0)
+                                nvalid = nvalid and (nT < nframes) and (nT >= 0)
 
                                 # -- all channels --
                                 for ci in range(chnls):
@@ -356,35 +351,32 @@ def numba_search(vid,queryInds,dists,inds,fflow,bflow,ps,pt,chnls,
                                     if vvalid:
                                         v_pix = vid[vT][ci][vH][vW]
                                     else:
-                                        v_pix = 0.
+                                        v_pix = 0
+
                                     if nvalid:
                                         n_pix = vid[nT][ci][nH][nW]
                                     else:
                                         n_pix = 0.
-                                    # v_pix = vid[vT][ci][vH][vW]
-                                    # n_pix = vid[nT][ci][nH][nW]
 
                                     # -- compute dist --
                                     if dist < np.infty:
-                                        dist += (v_pix - n_pix)**2
+                                        dist += n_pix#(v_pix - n_pix)**2
 
                     # -- dists --
-                    # dist /= Z
-                    # dist = dist if dist > 0 else 0
-                    dists[bidx,tidZ,tidX,tidY] = dist
+                    dists[bidx,wt_k,ws_i,ws_j] = dist
 
                     # -- inds --
-                    inds[bidx,tidZ,tidX,tidY,0] = n_ti
-                    inds[bidx,tidZ,tidX,tidY,1] = n_hi
-                    inds[bidx,tidZ,tidX,tidY,2] = n_wi
+                    inds[bidx,wt_k,ws_i,ws_j,0] = n_ti
+                    inds[bidx,wt_k,ws_i,ws_j,1] = n_hi
+                    inds[bidx,wt_k,ws_i,ws_j,2] = n_wi
 
                     # -- final check [put self@index 0] --
                     eq_ti = n_ti == ti
                     eq_hi = n_hi == hi # hi
                     eq_wi = n_wi == wi # wi
                     eq_dim = eq_ti and eq_hi and eq_wi
-                    dist = dists[bidx,tidZ,tidX,tidY]
-                    dists[bidx,tidZ,tidX,tidY] = -100 if eq_dim else dist
+                    dist = dists[bidx,wt_k,ws_i,ws_j]
+                    dists[bidx,wt_k,ws_i,ws_j] = -100 if eq_dim else dist
 
 
 

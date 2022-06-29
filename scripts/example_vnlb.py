@@ -15,7 +15,7 @@ from einops import rearrange,repeat
 
 # -- load video --
 sigma = 30.
-device = "cuda:1"
+device = "cuda:0"
 th.cuda.set_device(device)
 vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
 vid = th.from_numpy(vid).to(device)

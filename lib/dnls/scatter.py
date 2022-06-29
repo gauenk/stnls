@@ -63,7 +63,7 @@ class ScatterNlFunction(th.autograd.Function):
 class ScatterNl(th.nn.Module):
     # [video -> patches] @ nlInds
 
-    def __init__(self, ps, pt=1, dilation=1, btype="eff", exact=False,
+    def __init__(self, ps, pt=1, dilation=1, btype="simple", exact=False,
                  device="cuda:0"):
         super(ScatterNl, self).__init__()
         self.ps = ps

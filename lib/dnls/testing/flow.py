@@ -45,6 +45,12 @@ def compute_flow(comp_flow,burst,sigma,device):
         fflow,bflow = svnlb.swig.runPyFlow(burst,sigma,flow_params)
         fflow = th.from_numpy(fflow).to(device)
         bflow = th.from_numpy(bflow).to(device)
+
+        # -- append zeros to front and back --
+        t,c,h,w = burst.shape
+        zflow = th.zeros(1,2,h,w,dtype=th.float32,device=device)
+        fflow = th.cat([fflow,zflow])
+        bflow = th.cat([zflow,bflow])
     else:
         #  -- Empty shells --
         t,c,h,w = burst.shape

@@ -33,8 +33,8 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ps":[3],"stride":[6],"dilation":[1,2,3,4,5,6],
-                  "top":[0],"btm":[64],"left":[0],"right":[64]}
+    # test_lists = {"ps":[3],"stride":[6],"dilation":[1,2,3,4,5,6],
+    #               "top":[0],"btm":[64],"left":[0],"right":[64]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,6,7,8],
     #               "dilation":[1,2,3,4,5,6],
     #               "top":[0],"btm":[64],"left":[0],"right":[64]}
@@ -42,8 +42,8 @@ def pytest_generate_tests(metafunc):
     #               "top":[0],"btm":[64],"left":[0],"right":[64]}
     # test_lists = {"ps":[3,4,7,8,9],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
-    # test_lists = {"ps":[3,4,7,8,9,11],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
-    #               "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
+    test_lists = {"ps":[3,4,7,8,9,11],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
+                  "top":[3,11],"btm":[50,57],"left":[3,7],"right":[57,50]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
