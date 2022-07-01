@@ -26,3 +26,6 @@
     branch = main
 	path = externals/maxim
 	url = git@github.com:gauenk/maxim.git
+[submodule "externals/colanet"]
+	path = externals/colanet
+	url = git@github.com:gauenk/colanet.git
