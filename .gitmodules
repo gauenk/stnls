@@ -1,9 +1,6 @@
 [submodule "externals/lidia"]
 	path = externals/lidia
 	url = git@github.com:gauenk/lidia.git
-[submodule "externals/colanet"]
-	path = externals/colanet
-	url = git@github.com:gauenk/colanet.git
 [submodule "externals/uformer"]
     branch = main
 	path = externals/uformer
