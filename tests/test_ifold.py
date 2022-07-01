@@ -16,6 +16,7 @@ from einops import rearrange,repeat
 
 # -- dnls --
 import dnls
+import dnls.utils.gpu_mem as gpu_mem
 
 # -- meshgrid --
 import cache_io
@@ -26,11 +27,6 @@ from torchvision.transforms.functional import center_crop
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/")
-
-def print_gpu_stats(gpu_bool,note=""):
-    if gpu_bool:
-        gpu_max = th.cuda.memory_allocated()/(1024**3)
-        print("[%s] GPU Max: %2.4f" % (note,gpu_max))
 
 def pytest_generate_tests(metafunc):
     seed = 123
@@ -289,7 +285,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
-    print_gpu_stats(gpu_stats,"post-io")
+    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --
     device = vid.device
@@ -314,7 +310,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
     fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
     patches_nl = []
-    print_gpu_stats(gpu_stats,"pre-loop")
+    gpu_mem.print_gpu_stats(gpu_stats,"pre-loop")
 
     for index in range(nbatches):
 
@@ -339,7 +335,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
         patches_nl.append(patches_nl_i)
 
     # -- vis --
-    print_gpu_stats(gpu_stats,"post-loop")
+    gpu_mem.print_gpu_stats(gpu_stats,"post-loop")
 
     # -- forward all at once --
     index,qSize = 0,qTotal
@@ -350,9 +346,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
                                             stride=stride,dilation=dil)
     patches_nn = scatter_nl(vid,nlInds)
     patches_nn.requires_grad_(True)
-    print_gpu_stats(gpu_stats,"post-search")
+    gpu_mem.print_gpu_stats(gpu_stats,"post-search")
     vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
-    print_gpu_stats(gpu_stats,"post-fold")
+    gpu_mem.print_gpu_stats(gpu_stats,"post-fold")
 
     # -- run backward --
     top,left,btm,right = coords
@@ -360,7 +356,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     vid_nl = fold_nl.vid[:,:,top:btm,left:right]
     th.autograd.backward(vid_nn,vid_grad)
     th.autograd.backward(vid_nl,vid_grad)
-    print_gpu_stats(gpu_stats,"post-bkw")
+    gpu_mem.print_gpu_stats(gpu_stats,"post-bkw")
     # dnls.testing.data.save_burst(vid_nn,"./output/","vid_nn")
     # dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
 
@@ -526,7 +522,7 @@ def test_shrink_search():
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
-    print_gpu_stats(gpu_stats,"post-io")
+    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --
     device = vid.device

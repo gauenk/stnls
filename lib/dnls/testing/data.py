@@ -3,7 +3,7 @@
 # -- linalg --
 import torch as th
 import numpy as np
-from einops import rearrange
+from einops import rearrange,repeat
 
 # -- file io --
 from PIL import Image
@@ -60,6 +60,10 @@ def save_image(image,path):
     if image.max() < 100:
         image = image*255.
     image = np.clip(image,0,255).astype(np.uint8)
+
+    # -- add color if needed --
+    if image.shape[0] == 1:
+        image = repeat(image,'1 h w -> c h w',c=3)
 
     # -- save --
     image = rearrange(image,'c h w -> h w c')

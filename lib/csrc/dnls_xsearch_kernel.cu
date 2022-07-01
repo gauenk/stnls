@@ -31,14 +31,16 @@ __inline__ __device__ int bounds(int val, int lim ){
 // }
 
 template <typename scalar_t>
-__global__ void dnls_search_forward_kernel(
+__global__ void dnls_xsearch_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> queryInds,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> fflow,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> nlDists,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> nlInds,
-    int ps, int pt, int ws, int wt, int chnls, int dilation, int stride,
+    int ps, int pt, int ws, int wt, int chnls, int stride, int dilation, 
+    bool use_search_abs, bool use_bounds, bool use_adj,
+    int oh0, int ow0, int oh1, int ow1,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> bufs,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
@@ -55,9 +57,11 @@ __global__ void dnls_search_forward_kernel(
   width = w;
 
   // offsets
-  int psHalf = (ps-1)/2;
+  int psHalf = ps/2;
   int wsHalf = (ws-1)/2;
   int numQueries = queryInds.size(0);
+  // int adj = use_adj ? psHalf : 0;
+  int adj = psHalf;
 
   // column index
   int blkDimX = blockDim.x; // num threads in x-block
@@ -103,10 +107,10 @@ __global__ void dnls_search_forward_kernel(
     valid_anchor = valid_ti && valid_hi && valid_wi;
 
     // ---------------------------------------
-    //     searching loop for (ti,top,left)
+    //     xsearching loop for (ti,top,left)
     // ---------------------------------------
 
-    // -- we loop over search space if needed --
+    // -- we loop over xsearch space if needed --
     for (int _xi = 0; _xi < ws_iters; _xi++){
 
       int ws_i = cu_tidX + blkDimX*_xi;
@@ -159,16 +163,12 @@ __global__ void dnls_search_forward_kernel(
             ct = ti;
           }
 
-          
           // ----------------
           //     update
           // ----------------
           bufs[bidx][0][dt][ws_i][ws_j] = cw;
           bufs[bidx][1][dt][ws_i][ws_j] = ch;
           bufs[bidx][2][dt][ws_i][ws_j] = ct;
-          // cw = wi;
-          // ch = hi;
-          // ct = n_ti;
 
           // --------------------
           //      init dists
@@ -178,11 +178,18 @@ __global__ void dnls_search_forward_kernel(
           // -----------------
           //    spatial dir
           // -----------------
-          n_hi = ch + stride * (ws_i - wsHalf);
-          n_wi = cw + stride * (ws_j - wsHalf);
+          if (use_search_abs){
+            n_hi = stride * ws_i;
+            n_wi = stride * ws_j;
+          }else{
+            n_hi = ch + stride * (ws_i - wsHalf);
+            n_wi = cw + stride * (ws_j - wsHalf);
+          }
+          n_hi = stride * ws_i;
+          n_wi = stride * ws_j;
 
           // ---------------------------
-          //      valid (search "n")
+          //      valid (xsearch "n")
           // ---------------------------
           valid_n_ti = (n_ti < nframes) && (n_ti >= 0);
           valid_n_hi = (n_hi < height) && (n_hi >= 0);
@@ -201,12 +208,28 @@ __global__ void dnls_search_forward_kernel(
               for (int pj = 0; pj < ps; pj++){
                 
                 // -- inside entire image --
-                vH = bounds(hi + dilation*(pi - psHalf),height);
-                vW = bounds(wi + dilation*(pj - psHalf),width);
+                if (use_bounds){
+                  vH = bounds((hi-oh0) + dilation*(pi - psHalf + adj),height);
+                  vW = bounds((wi-ow0) + dilation*(pj - psHalf + adj),width);
+                }else{
+                  vH = (hi-oh0) + dilation*(pi - psHalf + adj);
+                  vW = (wi-ow0) + dilation*(pj - psHalf + adj);
+                }
+                vH = bounds((hi-oh0) + dilation*(pi - psHalf + adj),height);
+                vW = bounds((wi-ow0) + dilation*(pj - psHalf + adj),width);
                 vT = ti + pk;
 
-                nH = bounds(n_hi + dilation*(pi - psHalf),height);
-                nW = bounds(n_wi + dilation*(pj - psHalf),width);
+                if (use_bounds){
+                  nH = bounds((n_hi-oh1) + dilation*(pi - psHalf + adj),height);
+                  nW = bounds((n_wi-ow1) + dilation*(pj - psHalf + adj),width);
+                }else{
+                  nH = (n_hi-oh1) + dilation*(pi - psHalf + adj);
+                  nW = (n_wi-ow1) + dilation*(pj - psHalf + adj);
+                }
+                nH = bounds((n_hi-oh1) + dilation*(pi - psHalf + adj),height);
+                nW = bounds((n_wi-ow1) + dilation*(pj - psHalf + adj),width);
+                // nH = (n_hi-oh1) + dilation*(pi - psHalf + adj);
+                // nW = (n_wi-ow1) + dilation*(pj - psHalf + adj);
                 nT = n_ti + pk;
 
                 // -- valid checks [for testing w/ zero pads] --
@@ -236,8 +259,8 @@ __global__ void dnls_search_forward_kernel(
 
                   // -- compute dist --
                   if (valid){
-                    float _dist = (v_pix - n_pix);
-                    dist += _dist*_dist;
+                    float _dist = v_pix * n_pix;
+                    dist += _dist;
                   }
                 }
               }
@@ -253,14 +276,14 @@ __global__ void dnls_search_forward_kernel(
           nlInds[bidx][wt_k][ws_i][ws_j][2] = n_wi;
 
           // -- final check [put self@index 0] --
-          eq_ti = n_ti == ti;
-          eq_hi = n_hi == hi;
-          eq_wi = n_wi == wi;
-          eq_dim = eq_ti && eq_hi && eq_wi;
-          dist = nlDists[bidx][wt_k][ws_i][ws_j];
-          if (eq_dim){
-            nlDists[bidx][wt_k][ws_i][ws_j] = -100;
-          }
+          // eq_ti = n_ti == ti;
+          // eq_hi = n_hi == hi;
+          // eq_wi = n_wi == wi;
+          // eq_dim = eq_ti && eq_hi && eq_wi;
+          // dist = nlDists[bidx][wt_k][ws_i][ws_j];
+          // if (eq_dim){
+          //   nlDists[bidx][wt_k][ws_i][ws_j] = -100;
+          // }
 
         }
       }
@@ -268,10 +291,12 @@ __global__ void dnls_search_forward_kernel(
   }
 }
 
-void dnls_cuda_search_forward(
+void dnls_cuda_xsearch_forward(
     torch::Tensor vid, torch::Tensor queryInds,
     torch::Tensor fflow, torch::Tensor bflow, torch::Tensor nlDists, torch::Tensor nlInds,
-    int ps, int pt, int ws, int wt, int chnls, int dilation, int stride,
+    int ps, int pt, int ws, int wt, int chnls, int stride, int dilation,
+    bool use_search_abs, bool use_bounds, bool use_adj,
+    int oh0, int ow0, int oh1, int ow1,
     torch::Tensor bufs, torch::Tensor tranges, torch::Tensor n_tranges,
     torch::Tensor min_tranges){
 
@@ -280,6 +305,9 @@ void dnls_cuda_search_forward(
     // nthreads = (w_threads,w_threads)
     // ws_iters = (ws-1)//w_threads + 1
     // nblocks = (nq-1)//batches_per_block+1
+    // fprintf(stdout,"use_search_abs, bool use_bounds, bool use_adj: %d,%d,%d",use_search_abs, use_bounds, use_adj);
+    fprintf(stdout,"oh0, ow0, oh1, ow1: %d,%d,%d,%d",oh0, ow0, oh1, ow1);
+    fprintf(stdout,"stride, dilation: %d,%d",stride, dilation);
 
    // launch params 
    int bpb = 10;
@@ -291,15 +319,17 @@ void dnls_cuda_search_forward(
    //fprintf(stdout,"w_threads: %d\n",w_threads);
     
    // launch kernel
-   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_search_forward_kernel", ([&] {
-      dnls_search_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_xsearch_forward_kernel", ([&] {
+      dnls_xsearch_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         queryInds.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
         fflow.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         bflow.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         nlDists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        ps, pt, ws, wt, chnls, dilation, stride,
+        ps, pt, ws, wt, chnls, stride, dilation, 
+        use_search_abs, use_bounds, use_adj,
+        oh0, ow0, oh1, ow1,
         bufs.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
         n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -316,7 +346,7 @@ void dnls_cuda_search_forward(
 ****************************/
 
 template <typename scalar_t>
-__global__ void dnls_search_backward_kernel(
+__global__ void dnls_xsearch_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
@@ -354,7 +384,7 @@ __global__ void dnls_search_backward_kernel(
 
 }
 
-void dnls_cuda_search_backward(
+void dnls_cuda_xsearch_backward(
     torch::Tensor vid, torch::Tensor nlDists, torch::Tensor nlInds,
     int ps, int pt, float lam) {
 
@@ -369,8 +399,8 @@ void dnls_cuda_search_backward(
   int nblocks = ((numQueries - 1) / num_per_block) + 1;
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_search_backward_kernel", ([&] {
-    dnls_search_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_xsearch_backward_kernel", ([&] {
+    dnls_xsearch_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),

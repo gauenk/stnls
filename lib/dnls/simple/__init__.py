@@ -5,3 +5,5 @@ from . import gather_v1
 from . import gather_cu
 from . import scatter
 from . import query
+from . import xsearch
+from . import xsearch_nn

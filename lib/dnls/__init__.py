@@ -8,3 +8,4 @@ from . import fold
 from . import unfold
 from . import ifold
 from . import iunfold
+from . import xsearch

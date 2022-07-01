@@ -10,12 +10,22 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,dilation=1,stride=1):
+# -- padding --
+from dnls.utils.pads import comp_pads
+
+# -- fold/unfold
+from torch.nn.functional import fold,unfold,pad
+
+def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride=1,dilation=1,
+        use_search_abs=True,use_bound=True,use_adj=True):
+
+    # -- handle "-1" --
+    ws,wt,k = _get_args(vid.shape,ps,stride,dilation,ws,wt,k)
 
     # -- allocate --
     device = iqueries.device
     nq = iqueries.shape[0]
-    nlDists,nlInds = allocate_k(nq,k,device)
+    # nlDists,nlInds = allocate_k(nq,k,device)
     nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
 
     # -- unpack --
@@ -23,11 +33,14 @@ def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,dilation=1,stride=1):
 
     # -- exec --
     numba_search_launcher(vid,iqueries,nlDists_exh,nlInds_exh,
-                          fflow,bflow,k,ps,pt,ws,wt,chnls,dilation,stride)
+                          fflow,bflow,k,ps,pt,ws,wt,chnls,stride,dilation,
+                          use_search_abs,use_bound,use_adj)
 
     # -- patches of topk --
-    get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
-    nlDists[:,0] = 0. # fix the "-100" hack to 0.
+    # get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
+    # nlDists[:,0] = 0. # fix the "-100" hack to 0.
+    nlDists = nlDists_exh[:,0]
+    nlInds = nlInds_exh[:,0]
 
     return nlDists,nlInds
 
@@ -41,6 +54,16 @@ def unpack_flow(flow,shape,device):
         fflow = flow.fflow
         bflow = flow.bflow
     return fflow,bflow
+
+def _get_args(vshape,ps,stride,dil,ws,wt,k):
+    t,c,h,w = vshape
+    _,_,hp,wp = comp_pads(vshape, ps, stride, dil)
+    n_h = (hp - (ps-1)*dil - 1)//stride + 1
+    n_w = (wp - (ps-1)*dil - 1)//stride + 1
+    # coords = [0,0,n_h,n_w]
+    if ws == -1: ws = n_h # hope its square
+    if k == -1: k = ws**2 * (2*wt + 1)
+    return ws,wt,k
 
 def allocate_k(nq,k,device):
     dists = th.zeros((nq,k),device=device,dtype=th.float32)
@@ -113,16 +136,22 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     return tranges,n_tranges,min_tranges
 
 def numba_search_launcher(vid,iqueries,nlDists,nlInds,
-                          fflow,bflow,k,ps,pt,ws,wt,chnls,dilation,stride):
+                          fflow,bflow,k,ps,pt,ws,wt,chnls,stride,dilation,
+                          use_search_abs,use_bound,use_adj):
 
     # -- buffer for searching --
     t = vid.shape[0]
     nq = nlInds.shape[0]
     device = nlInds.device
     bufs = th.zeros(nq,3,t,ws,ws,dtype=th.int32,device=device)
+    dil = dilation
 
     # -- pre-computed search offsets --
     tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
+
+    # -- pad image --
+    oh0,ow0,_,_ = comp_pads(vid.shape, ps, 1, dil)
+    oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride, dil)
 
     # -- numbify all params --
     vid_nba = cuda.as_cuda_array(vid)
@@ -150,15 +179,16 @@ def numba_search_launcher(vid,iqueries,nlDists,nlInds,
 
     # -- exec kernel --
     numba_search[nblocks,nthreads](vid_nba,iqueries_nba,nlDists_nba,nlInds_nba,
-                                   fflow_nba,bflow_nba,ps,pt,chnls,dilation,stride,
-                                   bufs_nba,tranges_nba,n_tranges_nba,
-                                   min_tranges_nba,ws_iters,bpb)
+                                   fflow_nba,bflow_nba,ps,pt,chnls,stride,dilation,
+                                   oh0,ow0,oh1,ow1,bufs_nba,tranges_nba,n_tranges_nba,
+                                   min_tranges_nba,ws_iters,bpb,use_search_abs,use_bound,use_adj)
 
 
 # @cuda.jit(debug=True,max_registers=64,opt=False)
 @cuda.jit(debug=False,max_registers=64)
-def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,
-                 dilation,stride,bufs,tranges,n_tranges,min_tranges,ws_iters,bpb):
+def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,stride,dilation,
+                 oh0,ow0,oh1,ow1,bufs,tranges,n_tranges,min_tranges,ws_iters,bpb,
+                 use_search_abs,use_bound,use_adj):
 
     # -- reflective boundary --
     def bounds(val,lim):
@@ -173,8 +203,9 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,
     bsize,st,ws,ws = dists.shape
     bsize,st,ws,ws,_ = inds.shape
     Z = ps*ps*pt*chnls
-    psHalf = int((ps-1)//2)
+    psHalf = int(ps//2)
     wsHalf = (ws-1)//2
+    adj = psHalf if use_adj else 0
 
     # -- cuda threads --
     cu_tidX = cuda.threadIdx.x
@@ -284,16 +315,12 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,
                         ch = hi
                         ct = ti
 
-
                     # ----------------
                     #     update
                     # ----------------
                     bufs[bidx,0,dt,tidX,tidY] = cw
                     bufs[bidx,1,dt,tidX,tidY] = ch
                     bufs[bidx,2,dt,tidX,tidY] = ct
-                    # cw = wi
-                    # ch = hi
-                    # ct = n_ti
 
                     # --------------------
                     #      init dists
@@ -303,8 +330,12 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,
                     # -----------------
                     #    spatial dir
                     # -----------------
-                    n_hi = ch + stride * (ws_i - wsHalf)
-                    n_wi = cw + stride * (ws_j - wsHalf)
+                    if use_search_abs:
+                        n_hi = stride * ws_i
+                        n_wi = stride * ws_j
+                    else:
+                        n_hi = ch + stride * (ws_i - wsHalf)
+                        n_wi = cw + stride * (ws_j - wsHalf)
 
                     # ---------------------------
                     #      valid (search "n")
@@ -327,12 +358,20 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,
                             for pj in range(ps):
 
                                 # -- inside entire image --
-                                vH = bounds(hi + dilation*(pi - psHalf),height)
-                                vW = bounds(wi + dilation*(pj - psHalf),width)
+                                if use_bound:
+                                    vH = bounds((hi-oh0) + dilation*(pi - psHalf + adj),height)
+                                    vW = bounds((wi-ow0) + dilation*(pj - psHalf + adj),width)
+                                else:
+                                    vH = (hi-oh0) + dilation*(pi - psHalf + adj)
+                                    vW = (wi-ow0) + dilation*(pj - psHalf + adj)
                                 vT = ti + pk
 
-                                nH = bounds(n_hi + dilation*(pi - psHalf),height)
-                                nW = bounds(n_wi + dilation*(pj - psHalf),width)
+                                if use_bound:
+                                    nH = bounds((n_hi-oh1) + dilation*(pi - psHalf + adj),height)
+                                    nW = bounds((n_wi-ow1) + dilation*(pj - psHalf + adj),width)
+                                else:
+                                    nH = (n_hi-oh1) + dilation*(pi - psHalf + adj)
+                                    nW = (n_wi-ow1) + dilation*(pj - psHalf + adj)
                                 nT = n_ti + pk
 
                                 # -- valid checks [for testing w/ zero pads] --
@@ -360,7 +399,7 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,
 
                                     # -- compute dist --
                                     if dist < np.infty:
-                                        dist += (v_pix - n_pix)**2
+                                        dist += n_pix * v_pix
 
                     # -- dists --
                     dists[bidx,wt_k,ws_i,ws_j] = dist
@@ -371,12 +410,12 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,
                     inds[bidx,wt_k,ws_i,ws_j,2] = n_wi
 
                     # -- final check [put self@index 0] --
-                    eq_ti = n_ti == ti
-                    eq_hi = n_hi == hi # hi
-                    eq_wi = n_wi == wi # wi
-                    eq_dim = eq_ti and eq_hi and eq_wi
-                    dist = dists[bidx,wt_k,ws_i,ws_j]
-                    dists[bidx,wt_k,ws_i,ws_j] = -100 if eq_dim else dist
+                    # eq_ti = n_ti == ti
+                    # eq_hi = n_hi == hi # hi
+                    # eq_wi = n_wi == wi # wi
+                    # eq_dim = eq_ti and eq_hi and eq_wi
+                    # dist = dists[bidx,wt_k,ws_i,ws_j]
+                    # dists[bidx,wt_k,ws_i,ws_j] = -100 if eq_dim else dist
 
 
 
