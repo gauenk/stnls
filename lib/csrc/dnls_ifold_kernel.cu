@@ -41,7 +41,8 @@ __global__ void dnls_ifold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, 
-    int start, int stride, int dilation, int adj, int num_kernels) {
+    int start, int stride, int dilation, int adj,
+    bool only_full, bool use_reflect, int num_kernels) {
 
     // -- unpack --
     int nframes = vid.size(0);
@@ -66,7 +67,7 @@ __global__ void dnls_ifold_forward_kernel(
 
     // -- coords with pads --
     int pad = dilation*(ps/2);
-    pad = (adj > 0) ? 0 : pad;
+    pad = (adj > 0) ? 0 : pad; // suspect line.
     int top_p = std::max(top-pad,0);
     int left_p = std::max(left-pad,0);
     int btm_p = std::min(btm+pad,height);
@@ -81,8 +82,8 @@ __global__ void dnls_ifold_forward_kernel(
     // no spilling over right-hand boundary
     int right_a = right - (ps-1)*dil;
     int btm_a = btm - (ps-1)*dil;
-    int right_bnd = (adj > 0) ? right_a : right;
-    int btm_bnd = (adj > 0) ? btm_a : btm;
+    int right_bnd = (only_full) ? right_a : right;
+    int btm_bnd = (only_full) ? btm_a : btm;
   
     // -- make square --
     int sq_h = btm - top;
@@ -92,7 +93,7 @@ __global__ void dnls_ifold_forward_kernel(
     // -- strided size --
     int n_h = int((sq_h-1) / stride) + 1;
     int n_w = int((sq_w-1) / stride) + 1;
-    if (adj > 0){
+    if (only_full){
       n_h = (sq_h - (ps-1)*dil - 1)/stride + 1;
       n_w = (sq_w - (ps-1)*dil - 1)/stride + 1;
     }
@@ -123,8 +124,8 @@ __global__ void dnls_ifold_forward_kernel(
               // -- check bounds (we need the patch for the pixel!) --
               valid = (_wi >= left) && (_wi < right_bnd);
               valid = valid && (_hi >= top) && (_hi < btm_bnd);
-              int wi = bounds(_wi,left,right);
-              int hi = bounds(_hi,top,btm);
+              int wi = use_reflect ? bounds(_wi,left,right) : _wi;
+              int hi = use_reflect ? bounds(_hi,top,btm) : _hi;
 
               // -- only if proposed index is aligned with stride --
               valid = valid && ((hi-top) % stride == 0) && ((wi-left) % stride == 0);
@@ -175,7 +176,8 @@ __global__ void dnls_ifold_forward_kernel(
 void dnls_cuda_ifold_forward(
     torch::Tensor vid, torch::Tensor patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation, int adj){
+    int start, int stride, int dilation, int adj,
+    bool only_full, bool use_reflect){
 
   // batching entire image always
   int nframes = vid.size(0);
@@ -208,7 +210,7 @@ void dnls_cuda_ifold_forward(
     dnls_ifold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        top,left,btm,right,start,stride,dilation,adj,num_kernels);
+        top,left,btm,right,start,stride,dilation,adj,only_full,use_reflect,num_kernels);
       }));
 }
 
@@ -222,8 +224,8 @@ template <typename scalar_t>
 __global__ void dnls_ifold_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid, // grad
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    int top, int left, int btm, int right,
-    int start, int stride, int dilation, int adj, int qpt, int kpt) {
+    int top, int left, int btm, int right, int start, int stride,
+    int dilation, int adj, bool only_full, bool use_reflect, int qpt, int kpt) {
 
     // -- shapes --
     int nframes = vid.size(0);
@@ -352,7 +354,8 @@ void dnls_cuda_ifold_backward(
   torch::Tensor grad_vid,
   torch::Tensor patches,
   int top, int left, int btm, int right,
-  int start, int stride, int dilation, int adj) {
+  int start, int stride, int dilation, int adj,
+  bool only_full, bool use_reflect) {
 
   // -- kernel blocks --
   int numQueries = patches.size(0);
@@ -375,7 +378,8 @@ void dnls_cuda_ifold_backward(
     dnls_ifold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        top, left, btm, right, start, stride, dilation, adj, qpt, kpt);
+        top, left, btm, right, start, stride, dilation, adj,
+        only_full, use_reflect, qpt, kpt);
   }));
 
 }

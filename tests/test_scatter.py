@@ -183,7 +183,8 @@ def test_nn_scatter():
     vid = vid.contiguous()
 
     # -- exec scatter fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact,device=device)
+    scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact,
+                                        device=device)
 
     # -- get [patches & nlInds] --
     index = 0
@@ -204,6 +205,11 @@ def test_nn_scatter():
     # -- run forward --
     patches_nn = run_unfold(vid_nn,ps,dil=dil)
     patches_nl = scatter_nl(vid_nl,nlInds[:,[0]])
+    print(vid_nn.shape)
+    print(nlInds.shape)
+    print(patches_nn.shape)
+    print(patches_nl.shape)
+    # print(nlInds[:3])
 
     # -- run backward --
     patches_grad = th.randn_like(patches_nn)
@@ -219,6 +225,20 @@ def test_nn_scatter():
     # -- check backward --
     grad_nn = vid_nn.grad
     grad_nl = vid_nl.grad
+    print(patches_grad[0,0,0,0])
+    # print(patches_nn[0,0,0,0])
+    # print(patches_nl[0,0,0,0])
+    print(grad_nn[0,0,:3,:3])
+    print(grad_nl[0,0,:3,:3])
+    print(grad_nn[0,0,-3:,-3:])
+    print(grad_nl[0,0,-3:,-3:])
+
+    # -- vis --
+    diff = th.abs(grad_nn - grad_nl)
+    diff /= diff.max()
+    dnls.testing.data.save_burst(diff,'./output/tests/','diff')
+
+    # -- test --
     if exact: tol = 1e-10
     else: tol = 1.
     error = th.mean((grad_nn - grad_nl)**2).item()
@@ -255,7 +275,7 @@ def setup():
     sigma = 50.
     dname = "text_tourbus_64"
     dname = "davis_baseball_64x64"
-    args = edict({'ps':8,'pt':1,'k':10,'ws':10,'wt':5})
+    args = edict({'ps':7,'pt':1,'k':10,'ws':10,'wt':5})
     args.device = device
     return dname,sigma,comp_flow,args
 

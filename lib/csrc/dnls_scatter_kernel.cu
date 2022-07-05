@@ -12,12 +12,13 @@
 ****************************/
 
 __inline__ __device__ int bounds(int val, int lim ){
+  int vval = val;
   if (val < 0){
-    val = -val;
+    vval = -val;
   }else if (val >= lim){
-    val = 2*lim - val - 2;
+    vval = 2*(lim-1) - val;
   }
-  return val;
+  return vval;
 }
 
 /****************************
@@ -31,7 +32,7 @@ __global__ void dnls_scatter_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
-    int dilation, int qpt, int kpt){
+    int dilation, int adj, bool use_bounds, int qpt, int kpt){
 
     // -- shapes --
     int nframes = vid.size(0);
@@ -77,8 +78,13 @@ __global__ void dnls_scatter_forward_kernel(
         wi = nlInds[qi][ki][2];
 
         // -- fill across cuda threads --
-        vi_h = bounds(hi+dilation*(pi - psHalf),height);
-        vi_w = bounds(wi+dilation*(pj - psHalf),width);
+        if (use_bounds){
+          vi_h = bounds(hi+dilation*(pi - psHalf + adj),height);
+          vi_w = bounds(wi+dilation*(pj - psHalf + adj),width);
+        }else{
+          vi_h = hi+dilation*(pi - psHalf + adj);
+          vi_w = wi+dilation*(pj - psHalf + adj);
+        }
 
         // -- spatially valid --
         valid_hw = (vi_h >= 0) && (vi_h < height);
@@ -108,7 +114,7 @@ __global__ void dnls_scatter_forward_kernel(
 
 void dnls_cuda_scatter_forward(
     torch::Tensor vid, torch::Tensor patches, torch::Tensor nlInds,
-    int dilation) {
+    int dilation, int adj, bool use_bounds) {
 
   // -- kernel blocks --
   int numQueries = nlInds.size(0);
@@ -130,7 +136,7 @@ void dnls_cuda_scatter_forward(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        dilation, qpt, kpt);
+        dilation, adj, use_bounds, qpt, kpt);
     }));
 }
 
@@ -147,7 +153,7 @@ __global__ void dnls_scatter_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
-    int dilation, float lam, int qpt) {
+    int dilation, float lam, int adj, bool use_bounds, int qpt) {
 
   // shape
   int nq =    grad_patches.size(0);
@@ -156,10 +162,12 @@ __global__ void dnls_scatter_backward_kernel(
   int color = grad_patches.size(3);
   int ps =    grad_patches.size(4);
   int qi,ti,hi,wi;
-  float weight;
+  float weight,pix;
   int height = vid.size(2);
   int width = vid.size(3);
   int psHalf = ps/2;
+  bool valid_h,valid_w,valid;
+  int _hi,_wi;
 
   // get indices
   int tidx = threadIdx.x;
@@ -175,13 +183,21 @@ __global__ void dnls_scatter_backward_kernel(
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
               ti = nlInds[qi][ki][0] + pk;
-              hi = nlInds[qi][ki][1] + dilation*(pi - psHalf);
-              wi = nlInds[qi][ki][2] + dilation*(pj - psHalf);
-              hi = bounds(hi,height);
-              wi = bounds(wi,width);
+              _hi = nlInds[qi][ki][1] + dilation*(pi - psHalf + adj);
+              _wi = nlInds[qi][ki][2] + dilation*(pj - psHalf + adj);
+              hi = bounds(_hi,height);
+              wi = bounds(_wi,width);
+              // hi = use_bounds ? bounds(hi,height) : hi;
+              // wi = use_bounds ? bounds(wi,width) : wi;
+              valid_h = (hi >= 0) && (hi < height);
+              valid_w = (wi >= 0) && (wi < width);
+              valid = valid_h && valid_w;
               weight = __expf(-lam * nlDists[qi][ki]);
               for (int ci = 0; ci < color; ci++){
-                vid[ti][ci][hi][wi] += weight * grad_patches[qi][ki][pk][ci][pi][pj];
+                pix = weight * grad_patches[qi][ki][pk][ci][pi][pj];
+                if(valid){
+                  vid[ti][ci][hi][wi] += pix;
+                }
               }
             }
           }
@@ -195,7 +211,7 @@ __global__ void dnls_scatter_backward_kernel(
 void dnls_cuda_scatter_backward(
     torch::Tensor grad_patches, torch::Tensor vid,
     torch::Tensor nlDists, torch::Tensor nlInds,
-    int dilation, float lam, bool exact) {
+    int dilation, float lam, bool exact, int adj, bool use_bounds) {
 
   // launch params
   int numQueries = nlInds.size(0);
@@ -222,7 +238,7 @@ void dnls_cuda_scatter_backward(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        dilation, lam, qpt);
+        dilation, lam, adj, use_bounds, qpt);
   }));
 
 }
@@ -241,24 +257,32 @@ __global__ void dnls_scatter_backward_kernel_simple(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
-    int dilation, float lam, int qpt) {
+    int dilation, float lam, int adj, bool use_bounds, int qpt, int cpt){
 
   // shape
   int nq =    grad_patches.size(0);
   int k =     grad_patches.size(1);
   int pt =    grad_patches.size(2);
-  int color = grad_patches.size(3);
+  int colors = grad_patches.size(3);
   int ps =    grad_patches.size(4);
   int qi,ti,hi,wi;
-  float weight;
+  float weight,pix;
   int height = vid.size(2);
   int width = vid.size(3);
   int psHalf = ps/2;
+  bool valid_h,valid_w,valid;
 
-  // get indices
-  int tidx = threadIdx.x;
-  int bidx = blockIdx.x;
-  int q_start = qpt*(tidx + bidx * blockDim.x);
+  // color indices
+  int c0_start = threadIdx.y*cpt;
+  int c0_end = min(c0_start + cpt,colors);
+  int c0 = 0;
+  int c0_offset = threadIdx.x % (c0_end - c0_start);
+  int c0_dist = c0_end - c0_start;
+
+  // block indices
+  int thread_x = threadIdx.x;
+  int block_x = blockIdx.x;
+  int q_start = qpt*( thread_x + block_x * blockDim.x);
   
   for (int _qi = 0; _qi < qpt; _qi++){
     qi = q_start + _qi;
@@ -269,13 +293,20 @@ __global__ void dnls_scatter_backward_kernel_simple(
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
               ti = nlInds[qi][ki][0] + pk;
-              hi = nlInds[qi][ki][1] + dilation*(pi - psHalf);
-              wi = nlInds[qi][ki][2] + dilation*(pj - psHalf);
-              hi = bounds(hi,height);
-              wi = bounds(wi,width);
+              hi = nlInds[qi][ki][1] + dilation*(pi - psHalf + adj);
+              wi = nlInds[qi][ki][2] + dilation*(pj - psHalf + adj);
+              hi = use_bounds ? bounds(hi,height) : hi;
+              wi = use_bounds ? bounds(wi,width) : wi;
+              valid_h = (hi >= 0) && (hi < height);
+              valid_w = (wi >= 0) && (wi < width);
+              valid = valid_h && valid_w;
               weight = __expf(-lam * nlDists[qi][ki]);
-              for (int ci = 0; ci < color; ci++){
-                vid[ti][ci][hi][wi] += weight * grad_patches[qi][ki][pk][ci][pi][pj];
+              for (int _c0 = c0_start; _c0 < c0_end; _c0++){
+                c0 = (_c0 + c0_offset) % c0_dist + c0_start;
+                pix = weight * grad_patches[qi][ki][pk][c0][pi][pj];
+                if (valid){
+                  vid[ti][c0][hi][wi] += pix;
+                }
               }
             }
           }
@@ -289,25 +320,45 @@ __global__ void dnls_scatter_backward_kernel_simple(
 void dnls_cuda_scatter_backward_simple(
     torch::Tensor grad_patches, torch::Tensor vid,
     torch::Tensor nlDists, torch::Tensor nlInds,
-    int dilation, float lam, bool exact) {
+    int dilation, float lam, bool exact, int adj, bool use_bounds) {
 
-  // launch params
+  // unpack params
   int numQueries = nlInds.size(0);
   int k = nlDists.size(1);
   int pt = grad_patches.size(2);
-  int color = grad_patches.size(3);
+  int colors = grad_patches.size(3);
   int ps = grad_patches.size(4);
   assert(pt == 1);
 
-  int qpt = 10;
-  int nthreads = 1024;
-  int queries_per_block = nthreads * qpt;
-  int nblocks = ((numQueries - 1) / queries_per_block) + 1;
+  // num of threads
+  int max_nthreads = 1024;
+  int color_threads = min(8,(colors-1) / 3 + 1);
+  int block_threads = max_nthreads/color_threads;
+  int cpt = (colors-1)/color_threads+1;
+  block_threads = exact ? 1 : block_threads;
+  color_threads = exact ? colors : color_threads;
+  dim3 nthreads = dim3(block_threads,color_threads);
+
+  // num of blocks
+  int max_nblocks = 32;
+  int num_per_block = 16;
+  int total_per_block = block_threads * num_per_block;
+  int nblocks = ((numQueries - 1) / total_per_block) + 1;
+  nblocks = min(nblocks,max_nblocks);
+  int total_pb = (numQueries - 1) / nblocks + 1;
+  int bpb = (total_pb-1) / block_threads + 1;
+  // fprintf(stdout,"bpb: %d\n",bpb);
+
+  // if exact
   if (exact){
-    nthreads = 1;
+    cpt = 1;
     nblocks = 1;
-    qpt = numQueries;
+    block_threads = 1;
+    bpb = numQueries;
   }
+  // fprintf(stdout,"exact: %d, bpb: %d, nthreads.x .y: %d, %d\n",
+  //         exact,bpb,nthreads.x,nthreads.y);
+  
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_scatter_backward_kernel_simple", ([&] {
@@ -316,7 +367,7 @@ void dnls_cuda_scatter_backward_simple(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        dilation, lam, qpt);
+        dilation, lam, adj, use_bounds, bpb, cpt);
   }));
 
 }

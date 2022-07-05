@@ -5,7 +5,7 @@
 // CUDA forward declarations
 
 void dnls_cuda_xsearch_forward(
-    torch::Tensor vid,torch::Tensor queryInds,
+    torch::Tensor vid0,torch::Tensor vid1,torch::Tensor queryInds,
     torch::Tensor fflow,torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
     int ps, int pt, int ws, int wt,
@@ -17,8 +17,10 @@ void dnls_cuda_xsearch_forward(
 
 
 void dnls_cuda_xsearch_backward(
-    torch::Tensor vid, torch::Tensor nlDists, torch::Tensor nlInds,
-    int ps, int pt, float lam);
+    torch::Tensor vid0_grad, torch::Tensor vid1_grad,
+    torch::Tensor vid0, torch::Tensor vid1,
+    torch::Tensor qinds, torch::Tensor nlDists, torch::Tensor nlInds,
+    int ps, int pt, float lam, bool use_bounds, bool exact);
 
 // C++ interface
 
@@ -27,7 +29,7 @@ void dnls_cuda_xsearch_backward(
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 void dnls_xsearch_forward(
-    torch::Tensor vid,torch::Tensor queryInds,
+    torch::Tensor vid0,torch::Tensor vid1,torch::Tensor queryInds,
     torch::Tensor fflow,torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
     int ps, int pt, int ws, int wt,
@@ -36,7 +38,8 @@ void dnls_xsearch_forward(
     int oh0, int ow0, int oh1, int ow1,
     torch::Tensor bufs,torch::Tensor tranges,
     torch::Tensor n_tranges,torch::Tensor min_tranges){
-  CHECK_INPUT(vid);
+  CHECK_INPUT(vid0);
+  CHECK_INPUT(vid1);
   CHECK_INPUT(queryInds);
   CHECK_INPUT(fflow);
   CHECK_INPUT(bflow);
@@ -46,7 +49,7 @@ void dnls_xsearch_forward(
   CHECK_INPUT(tranges);
   CHECK_INPUT(n_tranges);
   CHECK_INPUT(min_tranges);
-  dnls_cuda_xsearch_forward(vid,queryInds,fflow,bflow,nlDists,nlInds,
+  dnls_cuda_xsearch_forward(vid0,vid1,queryInds,fflow,bflow,nlDists,nlInds,
                             ps,pt,ws,wt,chnls,stride,dilation,
                             use_search_abs, use_bounds, use_adj,
                             oh0, ow0, oh1, ow1,
@@ -54,14 +57,23 @@ void dnls_xsearch_forward(
 }
 
 void dnls_xsearch_backward(
-    torch::Tensor vid,
+    torch::Tensor vid0_grad,
+    torch::Tensor vid1_grad,
+    torch::Tensor vid0,
+    torch::Tensor vid1,
+    torch::Tensor qinds,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
-    int ps,int pt,float lam) {
-  CHECK_INPUT(vid);
+    int ps,int pt,float lam, bool use_bounds, bool exact) {
+  CHECK_INPUT(vid0_grad);
+  CHECK_INPUT(vid1_grad);
+  CHECK_INPUT(vid0);
+  CHECK_INPUT(vid1);
+  CHECK_INPUT(qinds);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_xsearch_backward(vid,nlDists,nlInds,ps,pt,lam);
+  dnls_cuda_xsearch_backward(vid0_grad,vid1_grad,vid0,vid1,qinds,
+                             nlDists,nlInds,ps,pt,lam,use_bounds,exact);
 }
 
 // python bindings

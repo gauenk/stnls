@@ -97,7 +97,9 @@ def test_nn_with_fold(ps,stride,dilation):
     vid = vid.contiguous()
 
     # -- exec iunfold fxns --
-    iunfold_nl = dnls.iunfold.iUnfold(ps,coords,stride=stride,dilation=dil,adj=True)
+    iunfold_nl = dnls.iunfold.iUnfold(ps,coords,stride=stride,dilation=dil,
+                                      match_nn=True)
+                                      # adj=True,only_full=True)
 
     #
     # -- test logic --

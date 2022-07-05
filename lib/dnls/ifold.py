@@ -25,16 +25,19 @@ class iFoldFunction(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, patches, vid, coords, qStart, stride, dilation, adj):
+    def forward(ctx, patches, vid, coords, qStart, stride, dilation, adj,
+                only_full,use_reflect):
         top,left,btm,right = coords
         dnls_cuda.ifold_forward(vid, patches, top, left, btm, right,
-                                qStart, stride, dilation, adj)
+                                qStart, stride, dilation, adj, only_full, use_reflect)
         ctx.coords = coords
         ctx.qStart = qStart
         ctx.stride = stride
         ctx.qNum = patches.shape[0]
         ctx.dilation = dilation
         ctx.adj = adj
+        ctx.only_full = only_full
+        ctx.use_reflect = use_reflect
         ctx.pt = patches.shape[2]
         ctx.ps = patches.shape[5]
         return vid
@@ -50,6 +53,8 @@ class iFoldFunction(th.autograd.Function):
         stride = ctx.stride
         qNum = ctx.qNum
         adj = ctx.adj
+        only_full = ctx.only_full
+        use_reflect = ctx.use_reflect
         top,left,btm,right = ctx.coords
 
         # -- alloc --
@@ -62,13 +67,15 @@ class iFoldFunction(th.autograd.Function):
         # -- backward --
         dnls_cuda.ifold_backward(grad_vid,grad_patches,
                                  top, left, btm, right,
-                                 qStart,stride,dilation,adj)
-        return grad_patches,None,None,None,None,None,None
+                                 qStart,stride,dilation,adj,
+                                 only_full, use_reflect)
+        return grad_patches,None,None,None,None,None,None,None,None
 
 class iFold(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
 
-    def __init__(self,vid_shape,coords,stride=1,dilation=1,adj=False,device="cuda:0"):
+    def __init__(self,vid_shape,coords,stride=1,dilation=1,adj=0,
+                 only_full=False,use_reflect=True,device="cuda:0"):
         super(iFold, self).__init__()
         self.device = device
         self.vshape = vid_shape
@@ -78,6 +85,8 @@ class iFold(th.nn.Module):
         self.dilation = dilation
         self.coords = coords
         self.adj = adj
+        self.only_full = only_full
+        self.use_reflect = use_reflect
         if self.coords is None:
             t,c,h,w = vid_shape
             self.coords = [0,0,h,w]
@@ -88,11 +97,11 @@ class iFold(th.nn.Module):
 
     def forward(self, patches, qStart):
         ps = patches.shape[-1]
-        adj = ps//2 if self.adj else 0
         bpatches,qStart = patches,qStart
         vid = self.allocate_vid(self.vid_shape,self.device)
         vid = iFoldFunction.apply(bpatches, vid, self.coords, qStart,
-                                  self.stride,self.dilation,adj)
+                                  self.stride,self.dilation,self.adj,
+                                  self.only_full,self.use_reflect)
         self.vid = self.vid + vid
         return self.vid
 

@@ -112,7 +112,8 @@ def test_nn_with_unfold(ps,stride,dilation):
 
     # -- run forward --
     vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,
+                               adj=ps//2,use_reflect=True,only_full=True)
     vid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
 
     vid_nn_s  = vid_nn /vid_nn.max()
@@ -202,7 +203,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- exec fold fxns --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
 
     # -- patches for ifold --
     index = 0
@@ -308,7 +309,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- exec fold fxns --
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
+    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"pre-loop")
 

@@ -9,21 +9,23 @@ void dnls_cuda_scatter_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     torch::Tensor nlInds,
-    int dilation);
+    int dilation, int adj, bool use_bounds);
 
 void dnls_cuda_scatter_backward(
     torch::Tensor grad_patches,
     torch::Tensor vid,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
-    int dilation, float lam, bool exact);
+    int dilation, float lam, bool exact,
+    int adj, bool use_bounds);
 
 void dnls_cuda_scatter_backward_simple(
     torch::Tensor grad_patches,
     torch::Tensor vid,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
-    int dilation, float lam, bool exact);
+    int dilation, float lam, bool exact,
+    int adj, bool use_bounds);
 
 
 // C++ interface
@@ -36,11 +38,11 @@ void dnls_scatter_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     torch::Tensor nlInds,
-    int dilation) {
+    int dilation, int adj, bool use_bounds) {
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
   CHECK_INPUT(nlInds);
-  dnls_cuda_scatter_forward(vid,patches,nlInds,dilation);
+  dnls_cuda_scatter_forward(vid,patches,nlInds,dilation,adj,use_bounds);
 }
 
 void dnls_scatter_backward_simple(
@@ -48,13 +50,14 @@ void dnls_scatter_backward_simple(
     torch::Tensor vid,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
-    int dilation, float lam, bool exact) {
+    int dilation, float lam, bool exact,
+    int adj, bool use_bounds) {
   CHECK_INPUT(grad_patches);
   CHECK_INPUT(vid);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
   dnls_cuda_scatter_backward_simple(grad_patches,vid,nlDists,nlInds,
-                                    dilation,lam,exact);
+                                    dilation,lam,exact,adj,use_bounds);
 }
 
 void dnls_scatter_backward(
@@ -62,13 +65,14 @@ void dnls_scatter_backward(
     torch::Tensor vid,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
-    int dilation, float lam, bool exact) {
+    int dilation, float lam, bool exact,
+    int adj, bool use_bounds) {
   CHECK_INPUT(grad_patches);
   CHECK_INPUT(vid);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
   dnls_cuda_scatter_backward(grad_patches,vid,nlDists,nlInds,
-                             dilation,lam,exact);
+                             dilation,lam,exact,adj,use_bounds);
 }
 
 
