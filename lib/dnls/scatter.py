@@ -21,7 +21,7 @@ class ScatterNlFunction(th.autograd.Function):
     # [video -> patches] @ nlInds
 
     @staticmethod
-    def forward(ctx, vid, nlInds, ps, pt=1, dilation=1, btype="eff", exact=False,
+    def forward(ctx, vid, nlInds, ps, pt=1, dilation=1, btype="simple", exact=False,
                 adj = 0, use_bounds=True):
         """
         vid = [T,C,H,W]
@@ -49,7 +49,6 @@ class ScatterNlFunction(th.autograd.Function):
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
         exact = ctx.exact
-        print(exact)
         btype = ctx.btype
         adj = ctx.adj
         use_bounds = ctx.use_bounds
@@ -69,7 +68,7 @@ class ScatterNl(th.nn.Module):
     # [video -> patches] @ nlInds
 
     def __init__(self, ps, pt=1, dilation=1, btype="simple", exact=False,
-                 adj=0, use_bounds = True, device="cuda:0"):
+                 adj=0, use_bounds = True):
         super(ScatterNl, self).__init__()
         self.ps = ps
         self.pt = pt
@@ -78,7 +77,6 @@ class ScatterNl(th.nn.Module):
         self.btype = btype
         self.adj = adj
         self.use_bounds = use_bounds
-        self.device = device
 
     def forward(self, vid, nlInds):
         return ScatterNlFunction.apply(vid,nlInds,self.ps,self.pt,

@@ -49,11 +49,10 @@ class GatherNlFunction(th.autograd.Function):
 class GatherNl(th.nn.Module):
     # [patches -> video] @ nlInds
 
-    def __init__(self, vid_shape, ws, wt, dilation=1, lam=0., exact=False, use_race=True,
-                 device="cuda:0"):
+    def __init__(self, vid_shape, ws, wt, dilation=1, lam=0.,
+                 exact=False, use_race=True, device="cuda"):
         super(GatherNl, self).__init__()
         self.vid_shape = vid_shape
-        self.device = device
         self.vid,self.wvid = self.allocate_vid(vid_shape,device)
         self.dilation = dilation
         self.lam = lam

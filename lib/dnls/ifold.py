@@ -75,9 +75,8 @@ class iFold(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
 
     def __init__(self,vid_shape,coords,stride=1,dilation=1,adj=0,
-                 only_full=False,use_reflect=True,device="cuda:0"):
+                 only_full=False,use_reflect=True,device="cuda"):
         super(iFold, self).__init__()
-        self.device = device
         self.vshape = vid_shape
         self.vid_shape = vid_shape
         self.vid = self.allocate_vid(vid_shape,device)
@@ -98,7 +97,7 @@ class iFold(th.nn.Module):
     def forward(self, patches, qStart):
         ps = patches.shape[-1]
         bpatches,qStart = patches,qStart
-        vid = self.allocate_vid(self.vid_shape,self.device)
+        vid = self.allocate_vid(self.vid_shape,patches.device)
         vid = iFoldFunction.apply(bpatches, vid, self.coords, qStart,
                                   self.stride,self.dilation,self.adj,
                                   self.only_full,self.use_reflect)

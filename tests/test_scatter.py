@@ -27,10 +27,15 @@ from torchvision.transforms.functional import center_crop
 # -- paths --
 SAVE_DIR = Path("./output/tests/")
 
-#
-# -- Primary Testing Class --
-#
-
+def pytest_generate_tests(metafunc):
+    seed = 123
+    th.manual_seed(seed)
+    np.random.seed(seed)
+    test_lists = {"exact":[True,False],"ps":[7],"pt":[1],
+                  "ws":[10],"wt":[5],"k":[10]}
+    for key,val in test_lists.items():
+        if key in metafunc.fixturenames:
+            metafunc.parametrize(key,val)
 
 #
 # -- Test Simple Scatter --
@@ -135,7 +140,7 @@ def test_efficient_scatter():
                                                 flow,k,ps,pt,ws,wt,chnls)
 
         # -- exec scatter fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="eff",device=device)
+        scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="eff")
 
         # -- testing forward --
         patches_nl_fwd = scatter_nl(vid,nlInds)
@@ -150,7 +155,7 @@ def test_efficient_scatter():
 #
 
 # @pytest.mark.skip()
-def test_nn_scatter():
+def test_nn_scatter(exact,ps,pt,k):
 
     # -- get args --
     dname,sigma,comp_flow,args = setup()
@@ -159,7 +164,6 @@ def test_nn_scatter():
     device = args.device
     clean_flow = True
     comp_flow = False
-    exact = False
     dil = 1
 
     # -- load data --
@@ -167,9 +171,11 @@ def test_nn_scatter():
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    noisy = th.randn((3,64,128,128)).to(vid.device)
+    vid = noisy.clone()
+    th.cuda.synchronize()
 
     # -- unpack params --
-    k,ps,pt = args.k,args.ps,args.pt
     ws,wt,chnls = args.ws,args.wt,1
 
     # -- batching info --
@@ -183,8 +189,7 @@ def test_nn_scatter():
     vid = vid.contiguous()
 
     # -- exec scatter fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact,
-                                        device=device)
+    scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact)
 
     # -- get [patches & nlInds] --
     index = 0
@@ -192,6 +197,8 @@ def test_nn_scatter():
                                                 t,h,w,device)
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
+
+
     #
     # -- test logic --
     #
@@ -205,10 +212,10 @@ def test_nn_scatter():
     # -- run forward --
     patches_nn = run_unfold(vid_nn,ps,dil=dil)
     patches_nl = scatter_nl(vid_nl,nlInds[:,[0]])
-    print(vid_nn.shape)
-    print(nlInds.shape)
-    print(patches_nn.shape)
-    print(patches_nl.shape)
+    # print(vid_nn.shape)
+    # print(nlInds.shape)
+    # print(patches_nn.shape)
+    # print(patches_nl.shape)
     # print(nlInds[:3])
 
     # -- run backward --
@@ -225,23 +232,40 @@ def test_nn_scatter():
     # -- check backward --
     grad_nn = vid_nn.grad
     grad_nl = vid_nl.grad
-    print(patches_grad[0,0,0,0])
+    # print(patches_grad[0,0,0,0])
     # print(patches_nn[0,0,0,0])
     # print(patches_nl[0,0,0,0])
-    print(grad_nn[0,0,:3,:3])
-    print(grad_nl[0,0,:3,:3])
-    print(grad_nn[0,0,-3:,-3:])
-    print(grad_nl[0,0,-3:,-3:])
+    # print(grad_nn[0,0,:3,:3])
+    # print(grad_nl[0,0,:3,:3])
+    # print(grad_nn[0,0,-3:,-3:])
+    # print(grad_nl[0,0,-3:,-3:])
 
     # -- vis --
     diff = th.abs(grad_nn - grad_nl)
-    diff /= diff.max()
-    dnls.testing.data.save_burst(diff,'./output/tests/','diff')
+    if diff.max() > 1e-8: diff /= diff.max()
+    print("diff.shape: ",diff.shape)
+    dnls.testing.data.save_burst(diff[:,:3],'./output/tests/','diff')
 
     # -- test --
-    if exact: tol = 1e-10
+    if exact: tol = 1e-6
     else: tol = 1.
-    error = th.mean((grad_nn - grad_nl)**2).item()
+    error = th.mean(th.abs(grad_nn - grad_nl)/(grad_nn.abs() + 1e-8)).item()
+    print("Mean Error: ",error)
+    assert error < tol
+
+    # -- viz --
+    args = th.where(th.abs(grad_nn)>1.)
+    error = th.abs(grad_nn[args] - grad_nl[args])/grad_nn[args].abs()
+    args2 = th.where(error > 5.)
+    # print(args)
+    # print(th.stack([grad_nn[args][args2],grad_nl[args][args2]],-1))
+
+    # -- error --
+    if exact: tol = 1e-1
+    else: tol = 1.
+    args = th.where(th.abs(grad_nn)>1.)
+    error = th.max(th.abs(grad_nn[args] - grad_nl[args])/grad_nn[args].abs()).item()
+    print("Max Error: ",error)
     assert error < tol
     th.cuda.synchronize()
     nb.cuda.synchronize()

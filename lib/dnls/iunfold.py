@@ -92,14 +92,13 @@ class iUnfold(th.nn.Module):
 
     def __init__(self, ps, coords, pt=1, stride=1, dilation=1,
                  adj=0,only_full=False,match_nn=False,
-                 border="reflect",device="cuda:0"):
+                 border="reflect"):
         super(iUnfold, self).__init__()
         self.ps = ps
         self.pt = pt
         self.stride = stride
         self.dilation = dilation
-        self.patches = th.empty(0).to(device)
-        self.device = device
+        self.patches = th.empty(0)
         self.coords = coords
 
         # -- handle borders --
@@ -143,7 +142,7 @@ class iUnfold(th.nn.Module):
         coords = self._get_coords(vid.shape)
         start,num = self._get_start_num(start,num,coords,vid.shape)
         colors = vid.shape[1]
-        patches = allocate_patches(num,1,self.ps,self.pt,colors,self.device)
+        patches = allocate_patches(num,1,self.ps,self.pt,colors,vid.device)
         patches = iUnfoldFunction.apply(patches,vid,start,coords,self.stride,
                                         self.dilation,self.adj,self.only_full,
                                         self.use_reflect)

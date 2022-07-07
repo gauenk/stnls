@@ -17,7 +17,7 @@ def get_query_batch(index,qSearch,stride,t,h,w,device):
     srch_inds = numba_query_launcher(index,qSearch,stride,t,h,w,device)
     return srch_inds
 
-def get_iquery_batch(index,qSearch,stride,_coords,t,device):
+def get_iquery_batch(index,qSearch,stride,_coords,t,device=None,dtype=None):
 
     # -- add temporal if needed --
     coords = list(_coords) # copy
@@ -31,7 +31,7 @@ def get_iquery_batch(index,qSearch,stride,_coords,t,device):
     fstart,top,left = coords[0],coords[2],coords[3]
 
     # -- get inds --
-    srch_inds = numba_query_launcher(index,qSearch,stride,sq_t,sq_h,sq_w,device)
+    srch_inds = numba_query_launcher(index,qSearch,stride,sq_t,sq_h,sq_w,device,dtype)
 
     # -- add offsets --
     srch_inds[:,0] += fstart
@@ -40,12 +40,24 @@ def get_iquery_batch(index,qSearch,stride,_coords,t,device):
 
     return srch_inds
 
-def numba_query_launcher(index,qSearch,stride,t,h,w,device):
+def numba_query_launcher(index,qSearch,stride,t,h,w,device=None,dtype=None):
+    # -- type assert --
+    assert not(device is None) or not(dtype is None)
+
+    # -- exec fill of search values --
     srch_inds = np.zeros((qSearch,3),dtype=np.int64)
     # assert (h % stride == 0) and (w % stride == 0)
     numba_query_raster(srch_inds,index,qSearch,stride,t,h,w)
     # numba_query_equal(srch_inds,index,qSearch,stride,t,h,w)
-    srch_inds = th.from_numpy(srch_inds).to(device).contiguous()
+    srch_inds = th.from_numpy(srch_inds).contiguous()
+
+    # -- handle device --
+    if not(dtype is None):
+        srch_inds = srch_inds.type(type(dtype))
+    elif not(device is None):
+        srch_inds = srch_inds.to(device)
+    else:
+        raise ValueError("We need dtype or device not None.")
     return srch_inds
 
 @njit

@@ -72,7 +72,6 @@ def test_nn_v1(ps,stride,dilation,top,btm,left,right):
     clean_flow = True
     comp_flow = False
     exact = True
-    exact = True
     gpu_stats = False
     adj = False
 
@@ -131,7 +130,6 @@ def test_nn_v2(ps,stride,dilation):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    exact = True
     exact = True
     gpu_stats = False
     adj = False

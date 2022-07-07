@@ -474,7 +474,7 @@ void dnls_cuda_xsearch_backward(
 
   // launch params
   int max_nblocks = 8;
-  int bpb = 32;//max(4,(num0-1)/max_nblocks+1);
+  int bpb = 16;//max(4,(num0-1)/max_nblocks+1);
   int nblocks = (num0-1)/bpb+1;
   if (exact){
     bpb = num0;
