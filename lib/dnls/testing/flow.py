@@ -24,6 +24,8 @@ def get_flow(comp_flow,use_clean,noisy,clean,sigma):
     else: flow_img = noisy
     if th.is_tensor(flow_img):
         flow_img = flow_img.cpu().numpy()
+    if flow_img.shape[1] == 1:
+        flow_img = flow_img.repeat(3,axis=1)
 
     # -- exec --
     fflow,bflow = compute_flow(comp_flow,flow_img,sigma,device)

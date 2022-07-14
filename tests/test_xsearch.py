@@ -601,7 +601,7 @@ def test_cu(ps,stride,dilation,top,btm,left,right):
     exact = True
     exact = True
     gpu_stats = False
-    adj = False
+    adj = 0
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)

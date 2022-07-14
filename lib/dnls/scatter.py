@@ -31,6 +31,7 @@ class ScatterNlFunction(th.autograd.Function):
         """
         patches = allocate_patches(nlInds,ps,pt,vid.shape[1])
         dnls_cuda.scatter_forward(vid, patches, nlInds, dilation, adj, use_bounds)
+        # print("nlInds.shape: ",nlInds.shape)
         ctx.save_for_backward(nlInds)
         ctx.ps,ctx.pt = ps,pt
         ctx.vid_shape = vid.shape
