@@ -11,6 +11,7 @@
 
 ****************************/
 
+
 __inline__ __device__ int bounds(int val, int lim ){
   int vval = val;
   if (val < 0){
@@ -49,7 +50,9 @@ __global__ void dnls_xsearch_forward_kernel(
     int ws_iters, int bpb){
 
   // shapes
-  int nframes,color,h,w,height,width;
+  float nan = __int_as_float(0xffe00000);
+  float inf = __int_as_float(0x7f800000);
+   int nframes,color,h,w,height,width;
   nframes = vid0.size(0);
   color = vid0.size(1);
   h = vid0.size(2);
@@ -198,7 +201,6 @@ __global__ void dnls_xsearch_forward_kernel(
           valid_n_wi = (n_wi < width) && (n_wi >= 0);
           valid_n = valid_n_ti && valid_n_hi && valid_n_wi;
           valid = valid_n && valid_anchor;
-          if (!valid){ dist = 100000; }
 
           // ---------------------------------
           //
@@ -266,6 +268,7 @@ __global__ void dnls_xsearch_forward_kernel(
           }
 
           // -- dists --
+          if (!valid){ dist = nan; }
           nlDists[bidx][wt_k][ws_i][ws_j] = dist;
 
           // -- inds --
@@ -274,14 +277,14 @@ __global__ void dnls_xsearch_forward_kernel(
           nlInds[bidx][wt_k][ws_i][ws_j][2] = n_wi;
 
           // -- final check [put self@index 0] --
-          // eq_ti = n_ti == ti;
-          // eq_hi = n_hi == hi;
-          // eq_wi = n_wi == wi;
-          // eq_dim = eq_ti && eq_hi && eq_wi;
-          // dist = nlDists[bidx][wt_k][ws_i][ws_j];
-          // if (eq_dim){
-          //   nlDists[bidx][wt_k][ws_i][ws_j] = -100;
-          // }
+          eq_ti = n_ti == ti;
+          eq_hi = n_hi == hi;
+          eq_wi = n_wi == wi;
+          eq_dim = eq_ti && eq_hi && eq_wi;
+          dist = nlDists[bidx][wt_k][ws_i][ws_j];
+          if (eq_dim){
+            nlDists[bidx][wt_k][ws_i][ws_j] = inf;
+          }
 
         }
       }
@@ -372,15 +375,15 @@ __global__ void dnls_xsearch_backward_kernel(
   // get indices
   int i0_start = blockIdx.x * bpb;
   int i1_start = threadIdx.x * npt;
-  int c0_start = threadIdx.y*cpt;
+  int c0_start = threadIdx.y * cpt;
 
   // get block limits
   int i0_end = min(i0_start + bpb,i0_max);
   int i1_end = min(i1_start + npt,i1_max);
   int c0_end = min(c0_start + cpt,colors);
   int c0 = 0;
-  int c0_offset = threadIdx.x % (c0_end - c0_start);
   int c0_dist = c0_end - c0_start;
+  int c0_offset = threadIdx.x % c0_dist;
 
   // misc
   int oh0,ow0,oh1,ow1;
@@ -442,8 +445,8 @@ __global__ void dnls_xsearch_backward_kernel(
             valid_hk = (hk >= 0) && (hk < height);
             valid_wk = (wk >= 0) && (wk < width);
             valid_k = valid_hk && valid_wk;
-            valid = valid_j && valid_k;
 
+            valid = valid_j && valid_k;
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
               if (valid){

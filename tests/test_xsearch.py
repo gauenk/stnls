@@ -187,7 +187,7 @@ def test_nn_v2(ps,stride,dilation):
                                          ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=chnls,dilation=dil, stride=stride1,
                                          use_bound=True,use_k=False)
-    # -- query inds
+    # -- query inds --
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)

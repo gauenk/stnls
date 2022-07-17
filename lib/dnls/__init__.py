@@ -9,3 +9,4 @@ from . import unfold
 from . import ifold
 from . import iunfold
 from . import xsearch
+from . import wpsum

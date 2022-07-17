@@ -22,7 +22,7 @@ class ScatterNlFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid, nlInds, ps, pt=1, dilation=1, btype="simple", exact=False,
-                adj = 0, use_bounds=True):
+                adj = 0, reflect_bounds=True):
         """
         vid = [T,C,H,W]
         nlInds = [NumQueries,K,3]
@@ -30,7 +30,7 @@ class ScatterNlFunction(th.autograd.Function):
         pt = patchsize_time (forward only)
         """
         patches = allocate_patches(nlInds,ps,pt,vid.shape[1])
-        dnls_cuda.scatter_forward(vid, patches, nlInds, dilation, adj, use_bounds)
+        dnls_cuda.scatter_forward(vid, patches, nlInds, dilation, adj, reflect_bounds)
         # print("nlInds.shape: ",nlInds.shape)
         ctx.save_for_backward(nlInds)
         ctx.ps,ctx.pt = ps,pt
@@ -39,7 +39,7 @@ class ScatterNlFunction(th.autograd.Function):
         ctx.exact = exact
         ctx.btype = btype
         ctx.adj = adj
-        ctx.use_bounds = use_bounds
+        ctx.reflect_bounds = reflect_bounds
         return patches
 
     @staticmethod
@@ -52,15 +52,15 @@ class ScatterNlFunction(th.autograd.Function):
         exact = ctx.exact
         btype = ctx.btype
         adj = ctx.adj
-        use_bounds = ctx.use_bounds
+        reflect_bounds = ctx.reflect_bounds
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         grad_patches = grad_patches.contiguous()
         if btype in "simple":
             dnls_cuda.scatter_backward_simple(grad_patches,grad_vid,ones,nlInds,
-                                              dilation,0.,exact,adj,use_bounds)
+                                              dilation,0.,exact,adj,reflect_bounds)
         elif btype in "efficient":
             dnls_cuda.scatter_backward(grad_patches,grad_vid,ones,nlInds,
-                                       dilation,0.,exact,adj,use_bounds)
+                                       dilation,0.,exact,adj,reflect_bounds)
         else:
             raise ValueError(f"Uknown backward type for scatter [{btype}]")
         return grad_vid,None,None,None,None,None,None,None,None
@@ -69,7 +69,7 @@ class ScatterNl(th.nn.Module):
     # [video -> patches] @ nlInds
 
     def __init__(self, ps, pt=1, dilation=1, btype="simple", exact=False,
-                 adj=0, use_bounds = True):
+                 adj=0, reflect_bounds = True):
         super(ScatterNl, self).__init__()
         self.ps = ps
         self.pt = pt
@@ -77,10 +77,10 @@ class ScatterNl(th.nn.Module):
         self.exact = exact
         self.btype = btype
         self.adj = adj
-        self.use_bounds = use_bounds
+        self.reflect_bounds = reflect_bounds
 
     def forward(self, vid, nlInds):
         return ScatterNlFunction.apply(vid,nlInds,self.ps,self.pt,
                                        self.dilation,self.btype,self.exact,
-                                       self.adj, self.use_bounds)
+                                       self.adj, self.reflect_bounds)
 

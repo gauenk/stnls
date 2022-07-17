@@ -22,8 +22,12 @@ setup(name='dnls',
               'csrc/dnls_iunfold_kernel.cu',
               'csrc/dnls_xsearch_cuda.cpp',
               'csrc/dnls_xsearch_kernel.cu',
+              'csrc/dnls_wpsum_cuda.cpp',
+              'csrc/dnls_wpsum_kernel.cu',
               'csrc/pybind.cpp',
           ])
       ],
-      cmdclass={'build_ext': BuildExtension}
+      cmdclass={'build_ext': BuildExtension},
+      extra_cuda_cflags=['-lineinfo']
+      #extra_cuda_cflags=['--generate-line-info']
 )

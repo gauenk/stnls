@@ -9,6 +9,7 @@ void init_fold(py::module &);
 void init_unfold(py::module &);
 void init_iunfold(py::module &);
 void init_xsearch(py::module &);
+void init_wpsum(py::module &);
 
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -19,6 +20,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_unfold(m);
   init_iunfold(m);
   init_xsearch(m);
+  init_wpsum(m);
 }
 
 
