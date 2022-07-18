@@ -36,8 +36,7 @@ class WpSumFunction(th.autograd.Function):
         print("inds.shape: ",inds.shape)
         print("dilation,adj,reflect_bounds: ",dilation,adj,reflect_bounds)
         dnls_cuda.wpsum_forward(vid, patches, dists, inds, dilation, adj, reflect_bounds)
-        ctx.save_for_backward(dists)
-        ctx.save_for_backward(inds)
+        ctx.save_for_backward(dists,inds)
         ctx.ps,ctx.pt = ps,pt
         ctx.vid_shape = vid.shape
         ctx.dilation = dilation
@@ -56,10 +55,11 @@ class WpSumFunction(th.autograd.Function):
         adj = ctx.adj
         reflect_bounds = ctx.reflect_bounds
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
-        grad_patches = grad_patches.contiguous()
+        grad_patches = grad_patches#.contiguous()
+        print(grad_vid.shape,grad_patches.shape)
         dnls_cuda.wpsum_backward(grad_vid,grad_patches,dists,inds,
                                  dilation,adj,reflect_bounds,exact)
-        return grad_vid,None,None,None,None,None,None,None
+        return grad_vid,None,None,None,None,None,None,None,None
 
 class WeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds

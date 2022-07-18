@@ -21,6 +21,16 @@ __inline__ __device__ int bounds(int val, int lim ){
   return vval;
 }
 
+__inline__ int cpu_bounds(int val, int lim ){
+  int vval = val;
+  if (val < 0){
+    vval = -val;
+  }else if (val >= lim){
+    vval = 2*(lim-1) - val;
+  }
+  return vval;
+}
+
 /****************************
 
        Forward Pass
@@ -107,9 +117,6 @@ __global__ void dnls_wpsum_forward_kernel(
             if (valid && (ci < colors)){
               pix = dist*vid[ti][ci][hi][wi];
               patches[qi][0][pk][ci][pi][pj] += pix;
-            }else{
-              pix = 0; // maybe problem since not reading
-              patches[qi][0][pk][0][pi][pj] += pix;
             }
 
           }
@@ -224,72 +231,79 @@ __global__ void dnls_wpsum_backward_kernel(
 }
 
 
+template <typename scalar_t>
 void dnls_wpsum_backward_exact(
-    torch::Tensor vid_grad, torch::Tensor patches_grad, 
-    torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor _vid_grad,
+    torch::Tensor _patches_grad,
+    torch::Tensor _dists,
+    torch::Tensor _inds,
     int dilation, int adj, bool reflect_bounds){
-  
 
+  // get accessors 
+  auto vid_grad = _vid_grad.accessor<scalar_t,4>();
+  auto patches_grad = _patches_grad.accessor<scalar_t,6>();
+  auto dists = _dists.accessor<scalar_t,2>();
+  auto inds = _inds.accessor<int,3>();
+  
   // shape
   int nq =    patches_grad.size(0);
-  int k =     patches_grad.size(1);
+  int k =     inds.size(1);
   int pt =    patches_grad.size(2);
   int colors = patches_grad.size(3);
   int ps =    patches_grad.size(4);
-  int qi,ti,hi,wi;
-  float weight,pix;
+  int nframes = vid_grad.size(0);
   int height = vid_grad.size(2);
   int width = vid_grad.size(3);
   int psHalf = ps/2;
   bool valid_h,valid_w,valid;
 
-  // color indices
-  // int c0_start = threadIdx.y*cpt;
-  // int c0_end = min(c0_start + cpt,colors);
-  // int c0 = 0;
-  // int c0_offset = threadIdx.x % (c0_end - c0_start);
-  // int c0_dist = c0_end - c0_start;
+  int ti,hi,wi;
+  int center_ti,center_hi,center_wi;
+  float weight,pix,dist;
 
-  // // block indices
-  // int thread_x = threadIdx.x;
-  // int block_x = blockIdx.x;
-  // int q_start = qpt*( thread_x + block_x * blockDim.x);
-  
-  // for (int _qi = 0; _qi < qpt; _qi++){
-  //   qi = q_start + _qi;
-  //   if (qi < nq){
-  //     // iterate
-  //     for (int ki = 0; ki < k; ki++){
-  //       for (int pk = 0; pk < pt; pk++){
-  //         for (int pi = 0; pi < ps; pi++){
-  //           for (int pj = 0; pj < ps; pj++){
-  //             ti = inds[qi][ki][0] + pk;
-  //             hi = inds[qi][ki][1] + dilation*(pi - psHalf + adj);
-  //             wi = inds[qi][ki][2] + dilation*(pj - psHalf + adj);
-  //             hi = reflect_bounds ? bounds(hi,height) : hi;
-  //             wi = reflect_bounds ? bounds(wi,width) : wi;
-  //             valid_h = (hi >= 0) && (hi < height);
-  //             valid_w = (wi >= 0) && (wi < width);
-  //             valid = valid_h && valid_w;
-  //             weight = __expf(-lam * dists[qi][ki]);
-  //             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
-  //               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-  //               pix = weight * patches_grad[qi][ki][pk][c0][pi][pj];
-  //               if (valid){
-  //                 vid[ti][c0][hi][wi] += pix;
-  //               }
-  //             }
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
+  for (int qi = 0; qi < nq; qi++){
+    for (int ki = 0; ki < k; ki++){
+
+
+      // -- center location --
+      center_ti = inds[qi][ki][0];
+      center_hi = inds[qi][ki][1];
+      center_wi = inds[qi][ki][2];
+      dist = dists[qi][ki];
+
+      for (int pk = 0; pk < pt; pk++){
+        for (int pi = 0; pi < ps; pi++){
+          for (int pj = 0; pj < ps; pj++){
+
+            // -- pix location --
+            ti = cpu_bounds(center_ti + pk,nframes);
+            hi = center_hi + dilation*(pi - psHalf + adj);
+            wi = center_wi + dilation*(pj - psHalf + adj);
+            hi = reflect_bounds ? cpu_bounds(hi,height) : hi;
+            wi = reflect_bounds ? cpu_bounds(wi,width) : wi;
+
+            // -- check valid --
+            valid_h = (hi >= 0) && (hi < height);
+            valid_w = (wi >= 0) && (wi < width);
+            valid = valid_h && valid_w;
+
+            for (int ci = 0; ci < colors; ci++){
+              pix = dist * patches_grad[qi][0][pk][ci][pi][pj];
+              if (valid){
+                vid_grad[ti][ci][hi][wi] += pix;
+              }
+            }
+          }
+        }
+      }
+
+    }
+  }
 
 }
 
 void dnls_cuda_wpsum_backward(
-    torch::Tensor patches_grad, torch::Tensor vid_grad,
+    torch::Tensor vid_grad, torch::Tensor patches_grad, 
     torch::Tensor dists, torch::Tensor inds,
     int dilation, int adj, bool reflect_bounds, bool exact){
 
@@ -319,19 +333,31 @@ void dnls_cuda_wpsum_backward(
   int total_pb = (numQueries - 1) / nblocks + 1;
   int bpb = (total_pb-1) / block_threads + 1;
 
-  // launch kernel
+  // exact gradient
   if (exact){
-      AT_DISPATCH_FLOATING_TYPES(vid_grad.type(), "dnls_wpsum_backward_kernel", ([&] {
-        dnls_wpsum_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-            vid_grad.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-            patches_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-            dilation, adj, reflect_bounds, bpb, cpt);
-      }));
-  }else{
-    dnls_wpsum_backward_exact(vid_grad,patches_grad,dists,inds,
-                              dilation,adj,reflect_bounds);
+    cpt = 1;
+    nblocks = 1;
+    block_threads = 1;
+    bpb = numQueries;
   }
+
+  // launch kernel
+  AT_DISPATCH_FLOATING_TYPES(vid_grad.type(), "dnls_wpsum_backward_kernel", ([&] {
+    dnls_wpsum_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+        vid_grad.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        patches_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        dilation, adj, reflect_bounds, bpb, cpt);
+  }));
+
+  // if (exact){
+  //     AT_DISPATCH_FLOATING_TYPES(vid_grad.type(), "dnls_wpsum_backward_exact", ([&] {
+  //           dnls_wpsum_backward_exact<scalar_t>(vid_grad,patches_grad,
+  //                                               dists,inds,
+  //                                               dilation,adj,reflect_bounds);
+  //         }));
+  // }else{
+  // }
     
 }

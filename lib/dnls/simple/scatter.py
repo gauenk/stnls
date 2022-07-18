@@ -10,38 +10,40 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
+# -- scatter --
+from .scatter_bwd import run_bwd
 
-def run(vid,nlInds,ps,pt=1,dilation=1):
+def run(vid,inds,ps,pt=1,dilation=1):
 
     # -- allocate patches --
-    patches = allocate_patches(vid,nlInds,ps,pt)
+    patches = allocate_patches(vid,inds,ps,pt)
 
     # -- exec scatter --
-    numba_launcher(patches,vid,nlInds,dilation)
+    numba_launcher(patches,vid,inds,dilation)
 
     return patches
 
 
-def allocate_patches(vid,nlInds,ps,pt):
+def allocate_patches(vid,inds,ps,pt):
     # -- device --
-    device = nlInds.device
+    device = inds.device
     assert pt == 1
 
     # -- unpack shapes --
     t,c,h,w = vid.shape
-    nq,k,three = nlInds.shape
+    nq,k,three = inds.shape
 
     # -- patches --
     pshape = (nq,k,pt,c,ps,ps)
     patches = th.zeros(pshape,device=device,dtype=th.float32)
     return patches
 
-def numba_launcher(patches,vid,nlInds,dilation):
+def numba_launcher(patches,vid,inds,dilation):
 
     # -- numbify all params --
     patches_nba = cuda.as_cuda_array(patches)
     vid_nba = cuda.as_cuda_array(vid)
-    nlInds_nba = cuda.as_cuda_array(nlInds)
+    inds_nba = cuda.as_cuda_array(inds)
 
     # -- kernel blocks --
     nq,k,pt,c,ps,ps = patches.shape
@@ -56,11 +58,11 @@ def numba_launcher(patches,vid,nlInds,dilation):
     nthreads = (n_kthreads,ps,ps)
 
     # -- exec kernel --
-    numba_scatter[nblocks,nthreads](patches_nba,vid_nba,nlInds_nba,dilation,kpt,qpb)
+    numba_scatter[nblocks,nthreads](patches_nba,vid_nba,inds_nba,dilation,kpt,qpb)
 
 # -- reflect padding --
 @cuda.jit(debug=False,max_registers=64)
-def numba_scatter(patches,vid,nlInds,dilation,kpt,qpb):
+def numba_scatter(patches,vid,inds,dilation,kpt,qpb):
 
     # -- reflective boundary --
     # def bounds(val,lim):
@@ -101,9 +103,9 @@ def numba_scatter(patches,vid,nlInds,dilation,kpt,qpb):
             if ki >= k: continue
 
             # -- fill --
-            ti = nlInds[qi,ki,0]
-            hi = nlInds[qi,ki,1]
-            wi = nlInds[qi,ki,2]
+            ti = inds[qi,ki,0]
+            hi = inds[qi,ki,1]
+            wi = inds[qi,ki,2]
 
             # -- fill across cuda threads --
             pi = tidY
@@ -131,7 +133,7 @@ def numba_scatter(patches,vid,nlInds,dilation,kpt,qpb):
 
 # -- zero padding --
 @cuda.jit(debug=False,max_registers=64)
-def numba_scatter_zp(patches,vid,nlInds,dilation,kpt,qpb):
+def numba_scatter_zp(patches,vid,inds,dilation,kpt,qpb):
 
     # -- reflective boundary --
     def bounds(val,lim):
@@ -167,26 +169,26 @@ def numba_scatter_zp(patches,vid,nlInds,dilation,kpt,qpb):
             if ki >= k: continue
 
             # -- fill --
-            ti = nlInds[qi,ki,0]
-            hi = nlInds[qi,ki,1]
-            wi = nlInds[qi,ki,2]
+            _ti = inds[qi,ki,0]
+            _hi = inds[qi,ki,1]
+            _wi = inds[qi,ki,2]
 
             # -- fill across cuda threads --
             pi = tidY
             pj = tidZ
-            vi_h = bounds(hi+dilation*(pi - psHalf),h)
-            vi_w = bounds(wi+dilation*(pj - psHalf),w)
+            hi = bounds(_hi+dilation*(pi - psHalf),h)
+            wi = bounds(_wi+dilation*(pj - psHalf),w)
 
             # -- valid check for zero padding --
-            valid = vi_h >= 0 and vi_h < h
-            valid = (vi_w >= 0 and vi_w < w) and valid
+            valid = hi >= 0 and hi < h
+            valid = (wi >= 0 and wi < w) and valid
             valid = (ti >= 0 and ti < t) and valid
 
             # -- iterate over loop --
             for pk in range(pt):
-                vi_t = bounds(ti + pk,t)
+                ti = bounds(_ti + pk,t)
                 for ci in range(c):
-                    if valid: pix = vid[vi_t,ci,vi_h,vi_w]
+                    if valid: pix = vid[ti,ci,hi,wi]
                     else: pix = 0.
                     patches[qi,ki,pk,ci,pi,pj] = pix
 

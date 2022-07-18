@@ -21,7 +21,7 @@ class ScatterNlFunction(th.autograd.Function):
     # [video -> patches] @ nlInds
 
     @staticmethod
-    def forward(ctx, vid, nlInds, ps, pt=1, dilation=1, btype="simple", exact=False,
+    def forward(ctx, vid, nlInds, ps, pt=1, dilation=1, btype="default", exact=False,
                 adj = 0, reflect_bounds=True):
         """
         vid = [T,C,H,W]
@@ -45,7 +45,6 @@ class ScatterNlFunction(th.autograd.Function):
     @staticmethod
     def backward(ctx, grad_patches):
         nlInds = ctx.saved_tensors[0]
-        ones = th.ones_like(nlInds[:,:,0]).type(th.float32)
         ps,pt = ctx.ps,ctx.pt
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
@@ -55,12 +54,12 @@ class ScatterNlFunction(th.autograd.Function):
         reflect_bounds = ctx.reflect_bounds
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         grad_patches = grad_patches.contiguous()
-        if btype in "simple":
-            dnls_cuda.scatter_backward_simple(grad_patches,grad_vid,ones,nlInds,
-                                              dilation,0.,exact,adj,reflect_bounds)
+        if btype in "default" or btype in "simple":
+            dnls_cuda.scatter_backward(grad_vid,grad_patches,nlInds,
+                                              dilation,exact,adj,reflect_bounds)
         elif btype in "efficient":
-            dnls_cuda.scatter_backward(grad_patches,grad_vid,ones,nlInds,
-                                       dilation,0.,exact,adj,reflect_bounds)
+            dnls_cuda.scatter_backward_eff(grad_vid,grad_patches,nlInds,
+                                           dilation,exact,adj,reflect_bounds)
         else:
             raise ValueError(f"Uknown backward type for scatter [{btype}]")
         return grad_vid,None,None,None,None,None,None,None,None
@@ -68,7 +67,7 @@ class ScatterNlFunction(th.autograd.Function):
 class ScatterNl(th.nn.Module):
     # [video -> patches] @ nlInds
 
-    def __init__(self, ps, pt=1, dilation=1, btype="simple", exact=False,
+    def __init__(self, ps, pt=1, dilation=1, btype="default", exact=False,
                  adj=0, reflect_bounds = True):
         super(ScatterNl, self).__init__()
         self.ps = ps
