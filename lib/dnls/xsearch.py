@@ -112,6 +112,13 @@ class CrossSearchNlFunction(th.autograd.Function):
         nlDists,nlInds = allocate_rtn(nq,k,device)
         nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
 
+        # -- checks --
+        for i in range(vid0.ndim):
+            assert vid0.shape[i] == vid1.shape[i]
+            if i == 1: continue
+            assert vid0.shape[i] == fflow.shape[i]
+            assert vid0.shape[i] == bflow.shape[i]
+
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
@@ -122,13 +129,18 @@ class CrossSearchNlFunction(th.autograd.Function):
                                   use_search_abs, use_bounds, use_adj,
                                   oh0, ow0, oh1, ow1,
                                   bufs,tranges,n_tranges,min_tranges)
+        th.cuda.synchronize()
+        th.cuda.empty_cache()
+        # print(nlDists_exh[:3,:3,:3])
+
         # -- topk --
         if use_k:
             get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
             nlDists = nlDists.contiguous()
             nlInds = nlInds.contiguous()
         else:
-            nlDists_exh[th.where(th.isnan(nlDists_exh))] = -th.inf # fix nan
+            args = th.where(th.isnan(nlDists_exh))
+            nlDists_exh[args] = -th.inf # fix nan
             b = nlDists_exh.shape[0]
             nlDists=nlDists_exh[:,0].view(b,-1).contiguous()
             nlInds=nlInds_exh[:,0].view(b,-1,3).contiguous()
@@ -162,6 +174,7 @@ class CrossSearchNlFunction(th.autograd.Function):
         ow0 = ctx.ow0
         oh1 = ctx.oh1
         ow1 = ctx.ow1
+        # print("oh0, ow0, oh1, ow1: ",oh0, ow0, oh1, ow1)
         use_bounds = ctx.use_bounds
         vid0_grad = allocate_vid(vid_shape,grad_nlDists.device)
         vid1_grad = allocate_vid(vid_shape,grad_nlDists.device)

@@ -171,6 +171,7 @@ __global__ void dnls_wpsum_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches_grad,
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int dilation, int adj, bool reflect_bounds, int qpt, int cpt){
 
   // shape
@@ -190,7 +191,7 @@ __global__ void dnls_wpsum_backward_kernel(
   int c0_start = threadIdx.y*cpt;
   int c0_end = min(c0_start + cpt,colors);
   int c0 = 0;
-  int c0_offset = threadIdx.x % (c0_end - c0_start);
+  int c0_offset = 0;
   int c0_dist = c0_end - c0_start;
 
   // block indices
@@ -201,8 +202,10 @@ __global__ void dnls_wpsum_backward_kernel(
   for (int _qi = 0; _qi < qpt; _qi++){
     qi = q_start + _qi;
     if (qi < nq){
+      c0_offset = __float2int_rd(c0_dist * rand_nums[qi][0][0]);
       // iterate
       for (int ki = 0; ki < k; ki++){
+        c0_offset = (c0_offset + 1) % c0_dist;
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
@@ -317,7 +320,7 @@ void dnls_cuda_wpsum_backward(
 
   // num of threads
   int max_nthreads = 1024;
-  int color_threads = min(8,(colors-1) / 3 + 1);
+  int color_threads = 1;
   int block_threads = max_nthreads/color_threads;
   int cpt = (colors-1)/color_threads+1;
   block_threads = exact ? 1 : block_threads;
@@ -341,6 +344,11 @@ void dnls_cuda_wpsum_backward(
     bpb = numQueries;
   }
 
+  // -- allocate random memory --
+  auto cu_index = vid_grad.device().index();
+  auto options = torch::TensorOptions().device(torch::kCUDA, cu_index).dtype(torch::kFloat32);
+  torch::Tensor rand_nums = torch::rand({numQueries,1,1},options);
+
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid_grad.type(), "dnls_wpsum_backward_kernel", ([&] {
     dnls_wpsum_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
@@ -348,6 +356,7 @@ void dnls_cuda_wpsum_backward(
         patches_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         dilation, adj, reflect_bounds, bpb, cpt);
   }));
 

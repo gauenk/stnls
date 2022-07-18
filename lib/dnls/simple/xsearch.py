@@ -16,16 +16,15 @@ from dnls.utils.pads import comp_pads
 # -- fold/unfold
 from torch.nn.functional import fold,unfold,pad
 
-def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride=1,dilation=1,
-        use_search_abs=True,use_bound=True,use_adj=True):
+def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride0=4,stride1=1,dilation=1,
+        use_search_abs=True,use_bound=True,use_adj=True,use_k=True):
 
     # -- handle "-1" --
-    ws,wt,k = _get_args(vid.shape,ps,stride,dilation,ws,wt,k)
+    ws,wt,k = _get_args(vid.shape,ps,stride1,dilation,ws,wt,k)
 
     # -- allocate --
     device = iqueries.device
     nq = iqueries.shape[0]
-    # nlDists,nlInds = allocate_k(nq,k,device)
     nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
 
     # -- unpack --
@@ -33,14 +32,19 @@ def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride=1,dilation=1,
 
     # -- exec --
     numba_search_launcher(vid,iqueries,nlDists_exh,nlInds_exh,
-                          fflow,bflow,k,ps,pt,ws,wt,chnls,stride,dilation,
-                          use_search_abs,use_bound,use_adj)
+                          fflow,bflow,k,ps,pt,ws,wt,chnls,stride0,stride1,
+                          dilation,use_search_abs,use_bound,use_adj)
 
     # -- patches of topk --
-    # get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
-    # nlDists[:,0] = 0. # fix the "-100" hack to 0.
-    nlDists = nlDists_exh[:,0]
-    nlInds = nlInds_exh[:,0]
+    if use_k:
+        nlDists,nlInds = allocate_k(nq,k,device)
+        get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
+    else:
+        args = th.where(th.isnan(nlDists_exh))
+        nlDists_exh[args] = -th.inf # fix nan
+        nq = nlDists_exh.shape[0]
+        nlDists=nlDists_exh[:,0].view(nq,-1).contiguous()
+        nlInds=nlInds_exh[:,0].view(nq,-1,3).contiguous()
 
     return nlDists,nlInds
 
@@ -67,14 +71,14 @@ def _get_args(vshape,ps,stride,dil,ws,wt,k):
 
 def allocate_k(nq,k,device):
     dists = th.zeros((nq,k),device=device,dtype=th.float32)
-    dists[...] = float("inf")
+    dists[...] = -float("inf")
     inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
 
 def allocate_exh(nq,ws,wt,device):
     dists = th.zeros((nq,2*wt+1,ws,ws),device=device,dtype=th.float32)
-    dists[...] = float("inf")
+    dists[...] = -float("inf")
     inds = th.zeros((nq,2*wt+1,ws,ws,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
@@ -90,8 +94,11 @@ def get_topk(l2_vals,l2_inds,vals,inds):
     b,_ = l2_vals.shape
     _,k = vals.shape
 
+    # -- fill nan --
+    l2_vals[th.where(th.isnan(l2_vals))] = -th.inf # fix nan
+
     # -- take mins --
-    order = th.argsort(l2_vals,dim=1,descending=False)
+    order = th.argsort(l2_vals,dim=1,descending=True)
     vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
@@ -136,8 +143,8 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     return tranges,n_tranges,min_tranges
 
 def numba_search_launcher(vid,iqueries,nlDists,nlInds,
-                          fflow,bflow,k,ps,pt,ws,wt,chnls,stride,dilation,
-                          use_search_abs,use_bound,use_adj):
+                          fflow,bflow,k,ps,pt,ws,wt,chnls,stride0,stride1,
+                          dilation,use_search_abs,use_bound,use_adj):
 
     # -- buffer for searching --
     t = vid.shape[0]
@@ -150,8 +157,8 @@ def numba_search_launcher(vid,iqueries,nlDists,nlInds,
     tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
     # -- pad image --
-    oh0,ow0,_,_ = comp_pads(vid.shape, ps, 1, dil)
-    oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride, dil)
+    oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
+    oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- numbify all params --
     vid_nba = cuda.as_cuda_array(vid)
@@ -179,7 +186,7 @@ def numba_search_launcher(vid,iqueries,nlDists,nlInds,
 
     # -- exec kernel --
     numba_search[nblocks,nthreads](vid_nba,iqueries_nba,nlDists_nba,nlInds_nba,
-                                   fflow_nba,bflow_nba,ps,pt,chnls,stride,dilation,
+                                   fflow_nba,bflow_nba,ps,pt,chnls,stride1,dilation,
                                    oh0,ow0,oh1,ow1,bufs_nba,tranges_nba,n_tranges_nba,
                                    min_tranges_nba,ws_iters,bpb,use_search_abs,use_bound,use_adj)
 
@@ -402,6 +409,7 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,stride,dilation
                                         dist += n_pix * v_pix
 
                     # -- dists --
+                    if not(valid): dist = np.nan
                     dists[bidx,wt_k,ws_i,ws_j] = dist
 
                     # -- inds --

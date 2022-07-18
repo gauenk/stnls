@@ -30,26 +30,8 @@ def run_nn(vid,ps,stride=4,dilation=1,mode="reflect",vid1=None):
     vid_pad_1,_ = same_padding(vid1,ps,1,dil,mode)
     patches_1 = unfold(vid_pad_1,ps,stride=1,dilation=dil) # t (c h w) n
     patches_s = patches_s.permute(0, 2, 1)
-    # patches_s = th.ones_like(patches_s)
-    # patches_1 = th.ones_like(patches_1)
-    # print("patches_s.shape: ",patches_s.shape)
-    # print("patches_1.shape: ",patches_1.shape)
-    # th.set_float32_matmul_precision(th.float32)
-    # th.set_float32_matmul_precision("medium")
-    # th.set_float32_matmul_precision("medium")
-    # print(th.get_float32_matmul_precision())
     score = th.matmul(patches_s,patches_1)
     t,c,h,w = vid.shape
-
-    # -- float-point error is okay --
-    # score_np = np_matmul(patches_s,patches_1)
-    # diff = np.abs(score.detach().cpu().numpy() - score_np).max()
-    # print(diff)
-
-    # tmp = patches_s[0,:,:] @ patches_1[0,:,:]
-    # tmp = rearrange(tmp,'n (h w) -> n h w',h=64)
-    # print("tmp.shape: ",tmp.shape)
-    # print(tmp[:2,:4,:4])
 
     t,c,hp,wp = vid_pad_s.shape
     n_h = (hp - (ps-1)*dil - 1)//stride + 1

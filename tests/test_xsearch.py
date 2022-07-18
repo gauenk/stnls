@@ -27,7 +27,7 @@ from torch.nn.functional import fold,unfold,pad
 from torchvision.transforms.functional import center_crop
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/")
+SAVE_DIR = Path("./output/tests/xsearch")
 
 def pytest_generate_tests(metafunc):
     seed = 123
@@ -42,7 +42,7 @@ def pytest_generate_tests(metafunc):
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
-                  "ws":[-1],"top":[0],"btm":[64],"left":[0],"right":[64]}
+                  "ws":[-1],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
@@ -105,13 +105,10 @@ def test_nn_v1(ps,stride,dilation,top,btm,left,right):
     # print(nlDists_simp[:3,:3,:3,:3])
 
     # -- compare --
+    tol = 1e-10
     error = th.sum(th.abs(nlDists_simp - nlDists_nn)).item()
-    print("error: ",error)
-    assert error < 1e-10
-
-    # perc_neq = th.mean((nlInds_simp != nlInds_simp)*1.)
-    # print("perc_neq: ",perc_neq)
-    # assert perc_neq < 0.05
+    if error > tol: print("error: ",error)
+    assert error < tol
 
 def test_nn_v2(ps,stride,dilation):
 
@@ -181,18 +178,22 @@ def test_nn_v2(ps,stride,dilation):
     # -- swap --
     oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    # print(oh0,oh1)
+    # oh0,ow0 = 1,1
+    # oh1,ow1 = 3,3
+    # oh0,ow0 = 3,3
+    # oh1,ow1 = 1,1
+
 
     # -- exec fold fxns --
     xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
                                          ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=chnls,dilation=dil, stride=stride1,
-                                         use_bound=True,use_k=False)
+                                         use_bound=True,use_k=False,use_search_abs=True)
     # -- query inds --
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
-    # print(iqueries[:3])
-    # print(iqueries[-3:])
 
     # -- run search --
     # vidr = None
@@ -216,8 +217,8 @@ def test_nn_v2(ps,stride,dilation):
     nlDists_nn,nlInds_nn = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,
                                                          dilation=dil,vid1=vidr)
     sh = nlDists_nn.shape[-1]
-    print(nlDists_cu.shape)
-    print(nlDists_nn.shape)
+    # print(nlDists_cu.shape)
+    # print(nlDists_nn.shape)
 
     # print(vid.shape)
     # print(nlDists_nn.shape)
@@ -227,25 +228,38 @@ def test_nn_v2(ps,stride,dilation):
     # print(nlDists_cu.shape)
 
     # -- viz --
-    print(nlDists_cu[:2,:2,:2,:2])
-    print(nlDists_nn[:2,:2,:2,:2])
-    print(nlDists_cu[16:18,16:18,16:18,16:18])
-    print(nlDists_nn[16:18,16:18,16:18,16:18])
-    args = th.where(th.abs(nlDists_nn - nlDists_cu)>1e-8)
-    print(th.unique(args[0]))
-    print(th.unique(args[1]))
-    print(th.unique(args[2]))
-    print(th.unique(args[3]))
+    # print(nlDists_cu[:2,:2,:2,:2])
+    # print(nlDists_nn[:2,:2,:2,:2])
+    # print(nlDists_cu[7:10,7:10,2,2])
+    # print(nlDists_nn[7:10,7:10,2,2])
+    # print(nlDists_cu[16:18,16:18,16:18,16:18])
+    # print(nlDists_nn[16:18,16:18,16:18,16:18])
+    # args = th.where(th.abs(nlDists_nn - nlDists_cu)>1e-8)
+    # print(th.unique(args[0]))
+    # print(th.unique(args[1]))
+    # print(th.unique(args[2]))
+    # print(th.unique(args[3]))
+
+    diff = th.abs(nlDists_cu - nlDists_nn).mean((-1,-2))
+    if diff.max() > 1e-5: diff /= diff.max()
+    diff = repeat(diff,'h w -> 1 c h w',c=3)
+    dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+
+    diff = th.abs(nlDists_cu - nlDists_nn).mean((0,1))
+    if diff.max() > 1e-5: diff /= diff.max()
+    diff = repeat(diff,'h w -> 1 c h w',c=3)
+    dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
 
     # -- compare --
+    tol = 1e-10
     max_error = th.abs(nlDists_cu - nlDists_nn).max().item()
-    print("max error: ",max_error)
-    assert max_error < 1e-10
+    if max_error > tol: print("max error: ",max_error)
+    assert max_error < tol
 
     error = th.sum(th.abs(nlDists_cu - nlDists_nn)).item()
-    print("error: ",error)
-    assert error < 1e-10
+    if error > tol: print("error: ",error)
+    assert error < tol
 
     # perc_neq = th.mean((nlInds_simp != nlInds_simp)*1.)
     # print("perc_neq: ",perc_neq)
@@ -283,7 +297,7 @@ def test_nn_bwd(ps,stride,dilation):
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
 
     # -- normalize --
     vid /= vid.max()
@@ -324,7 +338,7 @@ def test_nn_bwd(ps,stride,dilation):
     xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
                                          ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=chnls,dilation=dil, stride=stride1,
-                                         use_bound=True,use_k=False,exact=True)
+                                         use_bound=True,use_k=False,exact=True,use_search_abs=True)
     # -- query inds
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -380,19 +394,19 @@ def test_nn_bwd(ps,stride,dilation):
     # -- vis --
     diff = th.abs(nlDists_cu - nlDists_nn)
     args = th.where(diff>1e-10)
-    for i in range(len(args)):
-        print(i,th.unique(args[i]))
-    if diff.max() > 1e-10: diff /= diff.max()
-    dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
-    dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
+    # for i in range(len(args)):
+    #     print(i,th.unique(args[i]))
+    # if diff.max() > 1e-10: diff /= diff.max()
+    # dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
+    # dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
 
     # -- compare fwd --
     max_error = th.abs(nlDists_cu - nlDists_nn).max().item()
-    print("max error: ",max_error)
+    # print("max error: ",max_error)
     assert max_error < 1e-3
 
     error = th.mean(th.abs(nlDists_cu - nlDists_nn)).item()
-    print("error: ",error)
+    # print("error: ",error)
     assert error < 1e-4
 
     # -- compute grad --
@@ -434,13 +448,15 @@ def test_nn_bwd(ps,stride,dilation):
     # print(len(args[0]))
     # print(args)
 
+    tol = 1e-4
+
     error = th.max(rel_error_nz).item()
-    print("Max Error: ",error)
-    assert error < 1e-4
+    if error > tol: print("Max Error: ",error)
+    assert error < tol
 
     error = th.mean(rel_error_nz).item()
-    print("Mean Error: ",error)
-    assert error < 1e-4
+    if error > tol: print("Mean Error: ",error)
+    assert error < tol
 
     # error = th.max(th.abs(grads_cu[args_z])).item()
     # print("Max Error: ",error)
@@ -481,15 +497,17 @@ def test_nn_bwd(ps,stride,dilation):
     args = th.where(th.abs(grads_nn) > 1e-8)
     rel_error_nz = rel_error[args]
     args_z = th.where(th.abs(grads_nn) <= 1e-8)
-    print(args_z)
 
+    tol = 1e-4
     error = th.max(rel_error_nz).item()
-    print("Max Error: ",error)
-    assert error < 1e-4
+    # print("Max Error: ",error)
+    if error > tol: print("Max Error: ",error)
+    assert error < tol
 
     error = th.mean(rel_error_nz).item()
-    print("Mean Error: ",error)
-    assert error < 1e-4
+    # print("Mean Error: ",error)
+    if error > tol: print("Mean Error: ",error)
+    assert error < tol
 
     # error = th.max(th.abs(grads_cu[args_z])).item()
     # print("Max Error: ",error)
@@ -522,8 +540,9 @@ def test_simp(ps,stride,dilation,top,btm,left,right):
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = th.from_numpy(vid).to(device)[:1,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+    vid[...] = th.randn_like(vid)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -541,7 +560,8 @@ def test_simp(ps,stride,dilation,top,btm,left,right):
     sq_w = coords[3] - coords[1]
 
     # -- batching info --
-    stride0 = 1
+    stride0 = stride
+    stride1 = 1
     npix = t * h * w
     nh = (sq_h-1)//stride0+1
     nw = (sq_w-1)//stride0+1
@@ -554,45 +574,50 @@ def test_simp(ps,stride,dilation,top,btm,left,right):
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
 
+    # -- pads --
+    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    # n_h = (sq_h-1)//stride0+1 # corrected
+    # n_w = (sq_w-1)//stride0+1
+
     # -- run search --
-    # nlDists_cu,nlInds_cu = xsearch_nl(vid,iqueries)
-    nlDists_simp,nlInds_simp = dnls.simple.xsearch_nn.run(vid,ps,stride=stride,dilation=dil)
+    nlDists_simp,nlInds_simp = dnls.simple.xsearch_nn.run(vid,ps,stride=stride0,dilation=dil)
+    # print("iqueries.shape: ",iqueries.shape)
     nlDists_cu,nlInds_cu = dnls.simple.xsearch.run(vid,iqueries,flows,k,
                                                    ps,pt,ws,wt,chnls,
-                                                   stride=stride,dilation=dil)
-    print("nlDists_cu.shape: ",nlDists_cu.shape)
-
-    # -- reshape --
+                                                   stride0=stride0,stride1=stride1,
+                                                   dilation=dil,
+                                                   use_search_abs=True,use_k=False)
+    # print(nlDists_simp.shape)
+    # print(nlDists_cu.shape)
+    nlDists_cu = rearrange(nlDists_cu,'(nh nw) (h w) -> h w nh nw',h=h,nh=nh)
     # nlDists_cu = rearrange(nlDists_cu,'(h w) (nh nw) -> h w nh nw',h=h,nh=nh)
-    nlDists_cu = rearrange(nlDists_cu,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
+    # print(nlDists_cu.shape)
 
     # -- viz --
-    # print(nlDists_simp.shape)
     # print(nlDists_simp[8,8,:3,:3])
     # print(nlDists_cu[8,8,:3,:3])
-    # print(nlDists_simp[8,8,8,8])
-    # print(nlDists_cu[8,8,8,8])
-    # print(nlDists_cu[8,8,28:34,28:34])
 
     # -- compare --
     error = th.sum(th.abs(nlDists_cu - nlDists_simp)).item()
-    print("error: ",error)
     assert error < 1e-10
 
     # perc_neq = th.mean((nlInds_cu != nlInds_simp)*1.)
     # print("perc_neq: ",perc_neq)
     # assert perc_neq < 0.05
 
-def test_cu(ps,stride,dilation,top,btm,left,right):
+def test_cu(ps,stride,dilation,top,btm,left,right,k):
 
 
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
-    chnls,k,pt = 3,1,1
-    ws,wt = 10,0
-    ws = -1
-    k = -1
+    chnls,pt = 3,1
+    wt = 2
+    ws = -1 if k == -1 else 10
+    use_search_abs = k == -1
+    use_k = not(k == -1)
+    # print(ws,k,use_search_abs,use_k)
 
     # -- init vars --
     device = "cuda:0"
@@ -605,7 +630,7 @@ def test_cu(ps,stride,dilation,top,btm,left,right):
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = th.from_numpy(vid).to(device)[:2,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
@@ -624,8 +649,8 @@ def test_cu(ps,stride,dilation,top,btm,left,right):
     sq_w = coords[3] - coords[1]
 
     # -- batching info --
-    stride0 = 1
-    stride1 = stride
+    stride0 = stride
+    stride1 = 1
     npix = t * h * w
     nh = (sq_h-1)//stride0+1
     nw = (sq_w-1)//stride0+1
@@ -636,13 +661,12 @@ def test_cu(ps,stride,dilation,top,btm,left,right):
     # -- pads --
     oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride + 1
 
     # -- exec fold fxns --
     xsearch_nl = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
                                             ws, wt, oh0, ow0, oh1, ow1,
-                                            chnls=chnls,dilation=dil, stride=stride1)
+                                            chnls=chnls,dilation=dil, stride=stride1,
+                                            use_k=use_k,use_search_abs=use_search_abs)
     scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
     fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
@@ -655,36 +679,23 @@ def test_cu(ps,stride,dilation,top,btm,left,right):
 
     # -- run search --
     nlDists_cu,nlInds_cu = xsearch_nl(vid,iqueries)
-    # nlDists_simp,nlInds_simp = dnls.simple.xsearch_nn.run(vid,ps,stride=stride,dilation=dil)
     nlDists_simp,nlInds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
                                                        ps,pt,ws,wt,chnls,
-                                                       stride=stride1,dilation=dil)
-    # nlDists_cu,nlInds_cu = dnls.simple.xsearch.run(vid,iqueries,flows,k,
-    #                                                ps,pt,ws,wt,chnls,
-    #                                                stride=stride,dilation=dil)
-    print("nlDists_cu.shape: ",nlDists_cu.shape)
-    # -- reshape --
-    if nlDists_simp.ndim == 3:
-        nlDists_simp = rearrange(nlDists_simp,'(h w) nh nw -> h w nh nw',h=h)
-    if nlDists_cu.ndim == 2:
-        nlDists_cu = rearrange(nlDists_cu,'(h w) (nh nw) -> h w nh nw',h=h,nh=n_h)
+                                                       stride0=stride0,stride1=stride1,dilation=dil,
+                                                       use_k=use_k,use_search_abs=use_search_abs)
+    # print("nlDists_cu.shape: ",nlDists_cu.shape)
+    # print("nlDists_simp.shape: ",nlDists_simp.shape)
+    # print(nlDists_cu[:3,:2])
+    # print(nlDists_simp[:3,:2])
 
-    # -- viz --
-    # print(nlDists_simp.shape)
-    print(nlDists_simp[8,8,:3,:3])
-    print(nlDists_cu[8,8,:3,:3])
-    print(nlDists_simp[8,8,8,8])
-    print(nlDists_cu[8,8,8,8])
-    print(nlDists_cu[8,8,28:34,28:34])
+    # -- reshape --
+    nq = iqueries.shape[0]
+    nlDists_cu = nlDists_cu.view(nq,-1)
+    nlDists_simp = nlDists_simp.view(nq,-1)
 
     # -- compare --
-    error = th.sum(th.abs(nlDists_cu - nlDists_simp)).item()
-    print("error: ",error)
-    assert error < 1e-10
-
-    # perc_neq = th.mean((nlInds_cu != nlInds_simp)*1.)
-    # print("perc_neq: ",perc_neq)
-    # assert perc_neq < 0.05
+    error = th.mean(th.abs(nlDists_cu - nlDists_simp)).item()
+    assert error < 1e-6
 
 @pytest.mark.skip(reason="too long right now")
 def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
@@ -726,6 +737,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
 
     # -- batching info --
     npix = t * h * w
+
     nh = (sq_h-1)//stride+1
     nw = (sq_w-1)//stride+1
     ntotal = t * nh * nw
@@ -749,13 +761,14 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
         # -- get patches --
         iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
                                                      coords,t,device)
-        nlDists,nlInds = dnls.simple.xsearch.run(vid,iqueries,flows,k,
-                                                 ps,pt,ws,wt,chnls,
-                                                 stride=stride,dilation=dil)
-        nlDists,nlInds = search_nl(vid,iqueries,flows,k,
-                                   ps,pt,ws,wt,chnls,
-                                   stride=stride,dilation=dil)
-        patches_nl_i = scatter_nl(vid,nlInds)
+        nlDists_simp,nlInds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
+                                                           ps,pt,ws,wt,chnls,
+                                                           stride0=stride0,stride1=stride1,dilation=dil,
+                                                           use_k=use_k,use_search_abs=use_search_abs)
+        nlDists_cu,nlInds_cu = search_nl(vid,iqueries,flows,k,
+                                         ps,pt,ws,wt,chnls,
+                                         stride=stride,dilation=dil)
+        patches_nl_i = scatter_nl(vid,nlInds_simp)
         del iqueries,nlDists,nlInds
         th.cuda.empty_cache()
 
