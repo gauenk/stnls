@@ -30,11 +30,11 @@ class WpSumFunction(th.autograd.Function):
         pt = patchsize_time (forward only)
         """
         patches = allocate_patches(inds,ps,pt,vid.shape[1])
-        print("vid.shape: ",vid.shape)
-        print("patches.shape: ",patches.shape)
-        print("dists.shape: ",dists.shape)
-        print("inds.shape: ",inds.shape)
-        print("dilation,adj,reflect_bounds: ",dilation,adj,reflect_bounds)
+        # print("vid.shape: ",vid.shape)
+        # print("patches.shape: ",patches.shape)
+        # print("dists.shape: ",dists.shape)
+        # print("inds.shape: ",inds.shape)
+        # print("dilation,adj,reflect_bounds: ",dilation,adj,reflect_bounds)
         dnls_cuda.wpsum_forward(vid, patches, dists, inds, dilation, adj, reflect_bounds)
         ctx.save_for_backward(dists,inds)
         ctx.ps,ctx.pt = ps,pt
@@ -56,7 +56,7 @@ class WpSumFunction(th.autograd.Function):
         reflect_bounds = ctx.reflect_bounds
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         grad_patches = grad_patches#.contiguous()
-        print(grad_vid.shape,grad_patches.shape)
+        # print(grad_vid.shape,grad_patches.shape)
         dnls_cuda.wpsum_backward(grad_vid,grad_patches,dists,inds,
                                  dilation,adj,reflect_bounds,exact)
         return grad_vid,None,None,None,None,None,None,None,None

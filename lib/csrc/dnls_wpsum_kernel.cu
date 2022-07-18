@@ -144,8 +144,8 @@ void dnls_cuda_wpsum_forward(
   int cpb = MAX_THREADS/dim; // num of colors per block
   int cpt = ((colors - 1)/cpb) + 1; // num of colors per thread
   dim3 nthreads(cpb,ps,ps);
-  printf("colors: %d, cpt: %d, cpb: %d, ps: %d, nblocks: %d, rbounds: %d\n",
-         colors,cpt,cpb,ps,nblocks,(int)reflect_bounds);
+  // printf("colors: %d, cpt: %d, cpb: %d, ps: %d, nblocks: %d, rbounds: %d\n",
+  //        colors,cpt,cpb,ps,nblocks,(int)reflect_bounds);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_wpsum_forward_kernel", ([&] {

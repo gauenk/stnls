@@ -136,10 +136,6 @@ class CrossSearchNlFunction(th.autograd.Function):
         # -- fix "self" to 1. --
         nlDists[th.where(nlDists == th.inf)] = 1 # fix "self" to 1.
 
-        print(queryInds[:3])
-        print(nlDists[:3,:3])
-        print(nlInds[:3,:3])
-
         # -- for backward --
         # print(nlDists.shape,nlInds.shape)
         ctx.save_for_backward(nlDists,nlInds,queryInds,vid0,vid1)

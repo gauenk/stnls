@@ -62,8 +62,8 @@ def simple_run(vid,dists_s,inds,ps,pt,reflect_bounds,exact):
     dists_s = dists_s[...,None].type(th.float64)
     patches_i = scatter(vid,inds).type(th.float64)
     patches_i = rearrange(patches_i,'n k 1 c h w -> n k (c h w)')
-    print("0: ",patches_i[:3,0,:3])
-    print("1: ",patches_i[:3,1,:3])
+    # print("0: ",patches_i[:3,0,:3])
+    # print("1: ",patches_i[:3,1,:3])
     wpatches_i = th.sum(dists_s * patches_i,1).type(th.float32)
     return wpatches_i
 
@@ -101,7 +101,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right):
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],0)
     # vid = th.cat([vid,vid],0)
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -191,7 +191,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right):
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],0)
     # vid = th.cat([vid,vid],0)
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -257,10 +257,10 @@ def test_backward(ps,stride,dilation,top,btm,left,right):
     # -- grab grads --
     grad_te = vid_te.grad
     grad_gt = vid_gt.grad
-    print(grad_te[0,0,:3,:3])
-    print(grad_gt[0,0,:3,:3])
+    # print(grad_te[0,0,:3,:3])
+    # print(grad_gt[0,0,:3,:3])
 
     # -- compare --
     error = th.abs(grad_te - grad_gt).mean().item()
-    assert error < 1e-10
+    assert error < 1e-6
 
