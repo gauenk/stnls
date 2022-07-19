@@ -7,11 +7,19 @@
 void dnls_cuda_wpsum_forward(
   torch::Tensor vid, torch::Tensor patches,
   torch::Tensor dists, torch::Tensor inds,
+  int h_off, int w_off,
   int dilation, int adj, bool reflect_bounds);
 
-void dnls_cuda_wpsum_backward(
+void dnls_cuda_wpsum_backward_vid(
     torch::Tensor vid_grad, torch::Tensor patches_grad,
     torch::Tensor dists, torch::Tensor inds,
+    int h_off, int w_off,
+    int dilation, int adj, bool reflect_bounds, bool exact);
+
+void dnls_cuda_wpsum_backward_dists(
+    torch::Tensor dists_grad, torch::Tensor patches_grad,
+    torch::Tensor vid, torch::Tensor inds,
+    int h_off, int w_off,
     int dilation, int adj, bool reflect_bounds, bool exact);
 
 // C++ interface
@@ -23,29 +31,47 @@ void dnls_cuda_wpsum_backward(
 void dnls_wpsum_forward(
   torch::Tensor vid, torch::Tensor patches,
   torch::Tensor dists, torch::Tensor inds,
+  int h_off, int w_off,
   int dilation, int adj, bool reflect_bounds){
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  dnls_cuda_wpsum_forward(vid,patches,dists,inds,dilation,adj,reflect_bounds);
+  dnls_cuda_wpsum_forward(vid,patches,dists,inds,
+                          h_off,w_off,dilation,adj,reflect_bounds);
 }
 
-void dnls_wpsum_backward(
+void dnls_wpsum_backward_vid(
   torch::Tensor vid_grad, torch::Tensor patches_grad,
   torch::Tensor dists, torch::Tensor inds,
+  int h_off, int w_off,
   int dilation, int adj, bool reflect_bounds, bool exact){
   CHECK_INPUT(vid_grad);
   CHECK_INPUT(patches_grad);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  dnls_cuda_wpsum_backward(vid_grad,patches_grad,dists,inds,
-                           dilation,adj,reflect_bounds,exact);
+  dnls_cuda_wpsum_backward_vid(vid_grad,patches_grad,dists,inds,
+                           h_off,w_off,dilation,adj,reflect_bounds,exact);
 }
+
+void dnls_wpsum_backward_dists(
+  torch::Tensor dists_grad, torch::Tensor patches_grad,
+  torch::Tensor vid, torch::Tensor inds,
+  int h_off, int w_off,
+  int dilation, int adj, bool reflect_bounds, bool exact){
+  CHECK_INPUT(dists_grad);
+  CHECK_INPUT(patches_grad);
+  CHECK_INPUT(vid);
+  CHECK_INPUT(inds);
+  dnls_cuda_wpsum_backward_dists(dists_grad,patches_grad,vid,inds,
+                                 h_off,w_off,dilation,adj,reflect_bounds,exact);
+}
+
 
 // python bindings
 void init_wpsum(py::module &m){
   m.def("wpsum_forward", &dnls_wpsum_forward,"DNLS WeightedPatchSum Forward (CUDA)");
-  m.def("wpsum_backward", &dnls_wpsum_backward,"DNLS WeightedPatchSum Backward (CUDA)");
+  m.def("wpsum_backward_vid", &dnls_wpsum_backward_vid,"DNLS WeightedPatchSum Backward (CUDA)");
+  m.def("wpsum_backward_dists", &dnls_wpsum_backward_dists,"DNLS WeightedPatchSum Backward (CUDA)");
 }
 

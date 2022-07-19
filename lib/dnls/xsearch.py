@@ -92,7 +92,7 @@ class CrossSearchNlFunction(th.autograd.Function):
     def forward(ctx, vid0, vid1, queryInds, fflow, bflow,
                 k, ps, pt, ws, wt, chnls,
                 stride,dilation,lam,
-                use_search_abs, use_bounds, use_adj, use_k,
+                use_search_abs, reflect_bounds, use_adj, use_k,
                 oh0, ow0, oh1, ow1, exact):
         """
         vid = [T,C,H,W]
@@ -109,15 +109,7 @@ class CrossSearchNlFunction(th.autograd.Function):
 
         # -- allocs --
         bufs = allocate_bufs(nq,t,ws,device)
-        nlDists,nlInds = allocate_rtn(nq,k,device)
         nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
-
-        # -- checks --
-        for i in range(vid0.ndim):
-            assert vid0.shape[i] == vid1.shape[i]
-            if i == 1: continue
-            assert vid0.shape[i] == fflow.shape[i]
-            assert vid0.shape[i] == bflow.shape[i]
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -126,14 +118,20 @@ class CrossSearchNlFunction(th.autograd.Function):
         dnls_cuda.xsearch_forward(vid0, vid1, queryInds, fflow, bflow,
                                   nlDists_exh, nlInds_exh,
                                   ps, pt, ws, wt, chnls, stride, dilation,
-                                  use_search_abs, use_bounds, use_adj,
+                                  use_search_abs, reflect_bounds, use_adj,
                                   oh0, ow0, oh1, ow1,
                                   bufs,tranges,n_tranges,min_tranges)
         th.cuda.synchronize()
         th.cuda.empty_cache()
         # print(nlDists_exh[:3,:3,:3])
+        # print("nlDists_exh._version:",nlDists_exh._version)
+        # print("nlInds_exh._version:",nlInds_exh._version)
 
         # -- topk --
+        # b = nlDists_exh.shape[0]
+        # nlDists=nlDists_exh.view(b,-1)#.contiguous()
+        # nlInds=nlInds_exh.view(b,-1,3)#.contiguous()
+
         if use_k:
             get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
             nlDists = nlDists.contiguous()
@@ -142,20 +140,17 @@ class CrossSearchNlFunction(th.autograd.Function):
             args = th.where(th.isnan(nlDists_exh))
             nlDists_exh[args] = -th.inf # fix nan
             b = nlDists_exh.shape[0]
-            nlDists=nlDists_exh[:,0].view(b,-1).contiguous()
-            nlInds=nlInds_exh[:,0].view(b,-1,3).contiguous()
-
-        # -- fix "self" to 1. --
-        nlDists[th.where(nlDists == th.inf)] = 1 # fix "self" to 1.
+            nlDists=nlDists_exh.view(b,-1)#.contiguous()
+            nlInds=nlInds_exh.view(b,-1,3)#.contiguous()
 
         # -- for backward --
-        # print(nlDists.shape,nlInds.shape)
-        ctx.save_for_backward(nlDists,nlInds,queryInds,vid0,vid1)
+        ctx.save_for_backward(nlDists,nlInds,
+                              queryInds,vid0,vid1)
         ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt = ps,pt
         ctx.lam = lam
         ctx.use_k = use_k
-        ctx.use_bounds = use_bounds
+        ctx.reflect_bounds = reflect_bounds
         ctx.exact = exact
         ctx.oh0 = oh0
         ctx.ow0 = ow0
@@ -166,7 +161,6 @@ class CrossSearchNlFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_nlDists, grad_nlInds):
-        # print("unpacking.")
         nlDists,nlInds,queryInds,vid0,vid1 = ctx.saved_tensors
         vid_shape,exact = ctx.vid_shape,ctx.exact
         lam,ps,pt = ctx.lam,ctx.ps,ctx.pt
@@ -175,21 +169,22 @@ class CrossSearchNlFunction(th.autograd.Function):
         oh1 = ctx.oh1
         ow1 = ctx.ow1
         # print("oh0, ow0, oh1, ow1: ",oh0, ow0, oh1, ow1)
-        use_bounds = ctx.use_bounds
+        reflect_bounds = ctx.reflect_bounds
         vid0_grad = allocate_vid(vid_shape,grad_nlDists.device)
         vid1_grad = allocate_vid(vid_shape,grad_nlDists.device)
         # th.cuda.synchronize()
         dnls_cuda.xsearch_backward(vid0_grad,vid1_grad,vid0,vid1,
                                    queryInds,grad_nlDists,nlInds,
-                                   ps,pt,lam,use_bounds,exact)
+                                   oh0,ow0,oh1,ow1,
+                                   ps,pt,lam,reflect_bounds,exact)
         # th.cuda.synchronize()
         return vid0_grad,vid1_grad,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None
 
 class CrossSearchNl(th.nn.Module):
 
-    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
-                 chnls=1,stride=1, dilation=1, lam = 1., use_search_abs=False,
-                 use_bound=True, use_adj=True, use_k=True, exact=True):
+    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
+                 chnls=-1,stride=1, dilation=1, lam = 1., use_search_abs=False,
+                 reflect_bounds=True, use_adj=True, use_k=True, exact=True):
         super(CrossSearchNl, self).__init__()
         self.k = k
         self.ps = ps
@@ -203,7 +198,7 @@ class CrossSearchNl(th.nn.Module):
         self.dilation = dilation
         self.lam = lam
         self.use_search_abs = use_search_abs
-        self.use_bound = use_bound
+        self.reflect_bounds = reflect_bounds
         self.use_adj = use_adj
         self.use_k = use_k
         self.oh0 = oh0
@@ -213,15 +208,19 @@ class CrossSearchNl(th.nn.Module):
         self.exact = exact
 
     def _get_args(self,vshape):
-        ws,wt,k = self.ws,self.wt,self.k
+        # -- unpack --
+        ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
         ps,stride,dil = self.ps,self.stride,self.dilation
         t,c,h,w = vshape
+
+        # -- compute --
         _,_,hp,wp = comp_pads(vshape, ps, stride, dil)
         n_h = (hp - (ps-1)*dil - 1)//stride + 1
         n_w = (wp - (ps-1)*dil - 1)//stride + 1
         if ws == -1: ws = n_h # hope its square
         if k == -1: k = ws**2 * (2*wt + 1)
-        return ws,wt,k
+        if chnls <= 0: chnls = c
+        return ws,wt,k,chnls
 
     def _update_flow(self,vshape,device):
         t,c,h,w = vshape
@@ -229,18 +228,17 @@ class CrossSearchNl(th.nn.Module):
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
         for i in [0,2,3]:
-            assert self.fflow.shape[i] == vshape[i],"Must be equal size"
-            assert self.bflow.shape[i] == vshape[i],"Must be equal size"
+            assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
+            assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
     def forward(self, vid0, iqueries, vid1=None):
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
-        ws,wt,k = self._get_args(vid0.shape)
+        ws,wt,k,chnls = self._get_args(vid0.shape)
         return CrossSearchNlFunction.apply(vid0,vid1,iqueries,self.fflow,self.bflow,
-                                           k,self.ps,self.pt,ws,wt,self.chnls,
+                                           k,self.ps,self.pt,ws,wt,chnls,
                                            self.stride,self.dilation,self.lam,
-                                           self.use_search_abs,self.use_bound,
+                                           self.use_search_abs,self.reflect_bounds,
                                            self.use_adj,self.use_k,
                                            self.oh0,self.ow0,self.oh1,self.ow1,
                                            self.exact)
-

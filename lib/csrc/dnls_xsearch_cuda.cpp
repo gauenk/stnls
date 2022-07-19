@@ -20,6 +20,7 @@ void dnls_cuda_xsearch_backward(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor qinds, torch::Tensor nlDists, torch::Tensor nlInds,
+    int oh0, int ow0, int oh1, int ow1,
     int ps, int pt, float lam, bool use_bounds, bool exact);
 
 // C++ interface
@@ -64,6 +65,7 @@ void dnls_xsearch_backward(
     torch::Tensor qinds,
     torch::Tensor nlDists,
     torch::Tensor nlInds,
+    int oh0, int ow0, int oh1, int ow1,
     int ps,int pt,float lam, bool use_bounds, bool exact) {
   CHECK_INPUT(vid0_grad);
   CHECK_INPUT(vid1_grad);
@@ -73,7 +75,8 @@ void dnls_xsearch_backward(
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
   dnls_cuda_xsearch_backward(vid0_grad,vid1_grad,vid0,vid1,qinds,
-                             nlDists,nlInds,ps,pt,lam,use_bounds,exact);
+                             nlDists,nlInds,oh0,ow0,oh1,ow1,
+                             ps,pt,lam,use_bounds,exact);
 }
 
 // python bindings

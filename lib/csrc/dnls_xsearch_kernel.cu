@@ -350,6 +350,8 @@ __global__ void dnls_xsearch_backward_kernel(
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> qinds,
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
+    const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
+    int oh0, int ow0, int oh1, int ow1,
     int ps, int pt, float lam, bool use_bounds,
     int bpb, int npt, int cpt) {
 
@@ -377,14 +379,10 @@ __global__ void dnls_xsearch_backward_kernel(
   int c0_end = min(c0_start + cpt,colors);
   int c0 = 0;
   int c0_dist = c0_end - c0_start;
-  int c0_offset = threadIdx.x % c0_dist;
+  int c0_offset = 0;
 
   // misc
-  int oh0,ow0,oh1,ow1;
-  oh0 = 1;//3;
-  ow0 = 1;//3;
-  oh1 = 3;
-  ow1 = 3;
+  // int oh0,ow0,oh1,ow1;
   int psHalf = ps/2;
   int adj = psHalf;
   int dilation = 1;
@@ -400,9 +398,11 @@ __global__ void dnls_xsearch_backward_kernel(
     tk_a = qinds[i0][0];
     hk_a = qinds[i0][1];
     wk_a = qinds[i0][2];
+    c0_offset = __float2int_rd(c0_dist * rand_nums[i0][0][0]);
 
     // k neighbors
     for (int i1=i1_start; i1 < i1_end; i1++){
+      c0_offset = (c0_offset + 1) % c0_dist;
       ti = nlInds[i0][i1][0];
       hi = nlInds[i0][i1][1];
       wi = nlInds[i0][i1][2];
@@ -462,6 +462,7 @@ void dnls_cuda_xsearch_backward(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor qinds, torch::Tensor nlDists, torch::Tensor nlInds,
+    int oh0, int ow0, int oh1, int ow1,
     int ps, int pt, float lam, bool use_bounds, bool exact) {
 
   // unpack
@@ -485,12 +486,18 @@ void dnls_cuda_xsearch_backward(
   dim3 nthreads(tdim0,tdim1);
   int npt = (num1-1)/tdim0+1;
   int cpt = (colors-1)/tdim1+1;
+
   // fprintf(stdout,"num0,num1: %d,%d\n",num0,num1);
   // fprintf(stdout,"nblocks,tdim0,tdim1: %d,%d,%d\n",
   //         nblocks,tdim0,tdim1);
   // fprintf(stdout,"bpb,npt,cpt: %d,%d,%d\n",
   //         bpb,npt,cpt);
 
+
+  // -- allocate random memory --
+  auto cu_index = vid0_grad.device().index();
+  auto options = torch::TensorOptions().device(torch::kCUDA, cu_index).dtype(torch::kFloat32);
+  torch::Tensor rand_nums = torch::rand({num0,1,1},options);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_backward_kernel", ([&] {
@@ -502,7 +509,8 @@ void dnls_cuda_xsearch_backward(
         qinds.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
         nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        ps,pt,lam,use_bounds,bpb,npt,cpt);
+        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        oh0,ow0,oh1,ow1,ps,pt,lam,use_bounds,bpb,npt,cpt);
   }));
 
 }

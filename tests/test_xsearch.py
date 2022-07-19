@@ -96,7 +96,7 @@ def test_nn_v1(ps,stride,dilation,top,btm,left,right):
     vshape = vid.shape
 
     # -- run search --
-    nlDists_nn,nlInds_nn = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride,dilation=dil)
+    nlDists_nn,_ = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride,dilation=dil)
     nlDists_simp,nlInds_simp = dnls.simple.xsearch_nn.run(vid,ps,stride=stride,dilation=dil)
 
     # -- viz --
@@ -116,7 +116,7 @@ def test_nn_v2(ps,stride,dilation):
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
-    chnls,k,pt = 1,1,1
+    k,pt = 1,1
     wt = 0
     ws = -1
     k = -1
@@ -172,24 +172,12 @@ def test_nn_v2(ps,stride,dilation):
     ntotal = t * n_h * n_w
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
-    # print(t,n_h,n_w)
-    # print(nbatch)
-
-    # -- swap --
-    oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
-    # print(oh0,oh1)
-    # oh0,ow0 = 1,1
-    # oh1,ow1 = 3,3
-    # oh0,ow0 = 3,3
-    # oh1,ow1 = 1,1
-
 
     # -- exec fold fxns --
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                         ws, wt, oh0, ow0, oh1, ow1,
+    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow,
+                                         k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=chnls,dilation=dil, stride=stride1,
-                                         use_bound=True,use_k=False,use_search_abs=True)
+                                         reflect_bounds=True,use_k=False,use_search_abs=True)
     # -- query inds --
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -198,72 +186,54 @@ def test_nn_v2(ps,stride,dilation):
     # -- run search --
     # vidr = None
     # vidr = 10*th.ones_like(vid)
+    # vidr = vid
     vidr = th.rand_like(vid)
-    vidr[th.where(th.abs(vidr) > 0.2)] = 1
-    vidr[th.where(th.abs(vidr) < 1)] = 0
+    # vidr[th.where(th.abs(vidr) > 0.2)] = 1
+    # vidr[th.where(th.abs(vidr) < 1)] = 0
     # print(th.unique(vidr))
     # vid = th.ones_like(vid)
-    vid = th.rand_like(vid)
-    vid[th.where(th.abs(vid) > 0.2)] = 1
-    vid[th.where(th.abs(vid) < 1)] = 0
+    # vid = th.rand_like(vid)
+    # vid[th.where(th.abs(vid) > 0.2)] = 1
+    # vid[th.where(th.abs(vid) < 1)] = 0
 
     # ones = th.ones_like(vid)
     nlDists_cu,nlInds_cu = xsearch(vid,iqueries,vid1=vidr)
 
     # -- flip cu --
+    # print(nlDists_cu.shape)
     nlDists_cu = rearrange(nlDists_cu,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
 
     # -- run search --
-    nlDists_nn,nlInds_nn = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,
-                                                         dilation=dil,vid1=vidr)
-    sh = nlDists_nn.shape[-1]
-    # print(nlDists_cu.shape)
-    # print(nlDists_nn.shape)
-
-    # print(vid.shape)
-    # print(nlDists_nn.shape)
-    # print(nlDists_cu.shape)
-
+    nlDists_nn,_ = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,
+                                                 dilation=dil,vid1=vidr)
     # print(nlDists_nn.shape)
     # print(nlDists_cu.shape)
 
     # -- viz --
     # print(nlDists_cu[:2,:2,:2,:2])
     # print(nlDists_nn[:2,:2,:2,:2])
-    # print(nlDists_cu[7:10,7:10,2,2])
-    # print(nlDists_nn[7:10,7:10,2,2])
-    # print(nlDists_cu[16:18,16:18,16:18,16:18])
-    # print(nlDists_nn[16:18,16:18,16:18,16:18])
-    # args = th.where(th.abs(nlDists_nn - nlDists_cu)>1e-8)
-    # print(th.unique(args[0]))
-    # print(th.unique(args[1]))
-    # print(th.unique(args[2]))
-    # print(th.unique(args[3]))
 
-    diff = th.abs(nlDists_cu - nlDists_nn).mean((-1,-2))
-    if diff.max() > 1e-5: diff /= diff.max()
-    diff = repeat(diff,'h w -> 1 c h w',c=3)
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+    # diff = th.abs(nlDists_cu - nlDists_nn).mean((-1,-2))
+    # if diff.max() > 1e-5: diff /= diff.max()
+    # diff = repeat(diff,'h w -> 1 c h w',c=3)
+    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
-    diff = th.abs(nlDists_cu - nlDists_nn).mean((0,1))
-    if diff.max() > 1e-5: diff /= diff.max()
-    diff = repeat(diff,'h w -> 1 c h w',c=3)
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
-
+    # diff = th.abs(nlDists_cu - nlDists_nn).mean((0,1))
+    # if diff.max() > 1e-5: diff /= diff.max()
+    # diff = repeat(diff,'h w -> 1 c h w',c=3)
+    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
-    tol = 1e-10
+    tol = 1e-5
+    error = th.mean(th.abs(nlDists_cu - nlDists_nn)).item()
+    if error > tol: print("error: ",error)
+    assert error < tol
+
+    tol = 1e-4
     max_error = th.abs(nlDists_cu - nlDists_nn).max().item()
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 
-    error = th.sum(th.abs(nlDists_cu - nlDists_nn)).item()
-    if error > tol: print("error: ",error)
-    assert error < tol
-
-    # perc_neq = th.mean((nlInds_simp != nlInds_simp)*1.)
-    # print("perc_neq: ",perc_neq)
-    # assert perc_neq < 0.05
 
 def test_nn_bwd(ps,stride,dilation):
 
@@ -283,13 +253,12 @@ def test_nn_bwd(ps,stride,dilation):
     clean_flow = True
     comp_flow = False
     exact = True
-    exact = True
     gpu_stats = False
     adj = False
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = th.from_numpy(vid).to(device)[:1,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -298,9 +267,6 @@ def test_nn_bwd(ps,stride,dilation):
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
     # print("vid.shape: ",vid.shape)
-
-    # -- normalize --
-    vid /= vid.max()
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -338,7 +304,7 @@ def test_nn_bwd(ps,stride,dilation):
     xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
                                          ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=chnls,dilation=dil, stride=stride1,
-                                         use_bound=True,use_k=False,exact=True,use_search_abs=True)
+                                         reflect_bounds=True,use_k=False,exact=True,use_search_abs=True)
     # -- query inds
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -347,8 +313,10 @@ def test_nn_bwd(ps,stride,dilation):
     # vidr = None
     # vidr = 10*th.ones_like(vid)
     # vid = th.round(th.rand_like(vid),decimals=2)*100
-    # vid = th.round(th.rand_like(vid),decimals=3)
-    vidr = th.round(th.rand_like(vid),decimals=3)
+    # vid = th.rand_like(vid)*1.5
+    # vid = th.round(th.rand_like(vid),decimals=10)
+    # vidr = th.round(th.rand_like(vid),decimals=3)
+    # vidr = th.round(th.rand_like(vid),decimals=3)
     # vid = th.round(th.rand_like(vid),decimals=2)*100.
     # vidr = th.round(th.rand_like(vid),decimals=2)*100.
     # vid = vid.type(th.float32)
@@ -360,7 +328,6 @@ def test_nn_bwd(ps,stride,dilation):
     # vid[th.where(th.abs(vid) > 0.2)] = 1
     # vid[th.where(th.abs(vid) < 1)] = 0
 
-    # vidr[...] = 1
     # vid = vidr.clone()
     # vid[:,:,:3,:3] = 0
     # vid[:,:,0,0] = 0
@@ -369,13 +336,19 @@ def test_nn_bwd(ps,stride,dilation):
 
     # -- allow grads --
     vid_cu = vid.clone()
-    vidr_cu = vidr.clone()
     vid_nn = vid.clone()
-    vidr_nn = vidr.clone()
     vid_cu.requires_grad_(True)
-    vidr_cu.requires_grad_(True)
     vid_nn.requires_grad_(True)
-    vidr_nn.requires_grad_(True)
+
+    vidr_cu = vid_cu
+    vidr_nn = vid_nn
+
+    # vidr_cu = vidr.clone()
+    # vidr_cu.requires_grad_(True)
+    # vidr_nn = vidr.clone()
+    # vidr_nn.requires_grad_(True)
+
+
 
     #
     # -- run search --
@@ -387,8 +360,8 @@ def test_nn_bwd(ps,stride,dilation):
     # nlDists_cu = rearrange(nlDists_cu,'(sh sw) h w -> h w sh sw',sh=n_h)
 
     # -- run nn --
-    nlDists_nn,nlInds_nn = dnls.simple.xsearch_nn.run_nn(vid_nn,ps,stride=stride0,
-                                                         dilation=dil,vid1=vidr_nn)
+    nlDists_nn,_ = dnls.simple.xsearch_nn.run_nn(vid_nn,ps,stride=stride0,
+                                                 dilation=dil,vid1=vidr_nn)
     sh = nlDists_nn.shape[-1]
 
     # -- vis --
@@ -417,8 +390,6 @@ def test_nn_bwd(ps,stride,dilation):
     # -- get grads --
     grads_cu = vidr_cu.grad
     grads_nn = vidr_nn.grad
-    # print(grads_cu.shape)
-    # print(grads_nn.shape)
     # print("cu,nn")
     # print("-"*10)
     # print(grads_cu[0,0,:3,:3])
@@ -430,9 +401,20 @@ def test_nn_bwd(ps,stride,dilation):
     # print(grads_cu[0,0,30:33,30:33])
     # print(grads_nn[0,0,30:33,30:33])
     # print("-"*10)
-    # print(grads_cu[0,0,-3:,-3:])
-    # print(grads_nn[0,0,-3:,-3:])
+    print(grads_cu[0,0,-3:,-3:])
+    print(grads_nn[0,0,-3:,-3:])
     # print("-"*10)
+
+    # -- viz [the error map looks weird] --
+    # print(grads_cu[0,-1,-10:,-10:])
+    # print(grads_nn[0,-1,-10:,-10:])
+    diff = (grads_cu -grads_nn).abs()/(grads_nn.abs()+1e-8)
+    print(diff.max())
+    print(diff.mean((0,2,3)))
+    diff /= diff.max()
+    dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0")
+    dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1")
+    dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2")
 
     # -- compare grads --
     rel_error = th.abs(grads_nn - grads_cu)/(th.abs(grads_nn)+1e-8)
@@ -448,14 +430,16 @@ def test_nn_bwd(ps,stride,dilation):
     # print(len(args[0]))
     # print(args)
 
-    tol = 1e-4
-
+    tol = 1e-3
     error = th.max(rel_error_nz).item()
     if error > tol: print("Max Error: ",error)
+    print("Max Error: ",error)
     assert error < tol
 
+    tol = 1e-4
     error = th.mean(rel_error_nz).item()
     if error > tol: print("Mean Error: ",error)
+    print("Mean Error: ",error)
     assert error < tol
 
     # error = th.max(th.abs(grads_cu[args_z])).item()
@@ -466,56 +450,6 @@ def test_nn_bwd(ps,stride,dilation):
     # print("Mean Error: ",error)
     # assert error < 1e-4
 
-
-    #
-    # -- compare --
-    #
-
-    # -- get grads --
-    grads_cu = vid_cu.grad
-    grads_nn = vid_nn.grad
-
-    # -- viz --
-    # print(grads_cu.shape)
-    # print(grads_nn.shape)
-    # print("cu,nn")
-    # print("-"*10)
-    # print(grads_cu[0,0,:3,:3])
-    # print(grads_nn[0,0,:3,:3])
-    # print("-"*10)
-    # print(grads_cu[0,0,16:19,16:19])
-    # print(grads_nn[0,0,16:19,16:19])
-    # print("-"*10)
-    # print(grads_cu[0,0,30:33,30:33])
-    # print(grads_nn[0,0,30:33,30:33])
-    # print("-"*10)
-    # print(grads_cu[0,0,-3:,-3:])
-    # print(grads_nn[0,0,-3:,-3:])
-    # print("-"*10)
-
-    # -- compare grads --
-    args = th.where(th.abs(grads_nn) > 1e-8)
-    rel_error_nz = rel_error[args]
-    args_z = th.where(th.abs(grads_nn) <= 1e-8)
-
-    tol = 1e-4
-    error = th.max(rel_error_nz).item()
-    # print("Max Error: ",error)
-    if error > tol: print("Max Error: ",error)
-    assert error < tol
-
-    error = th.mean(rel_error_nz).item()
-    # print("Mean Error: ",error)
-    if error > tol: print("Mean Error: ",error)
-    assert error < tol
-
-    # error = th.max(th.abs(grads_cu[args_z])).item()
-    # print("Max Error: ",error)
-    # assert error < 1e-4
-
-    # error = th.mean(th.abs(grads_cu[args_z])).item()
-    # print("Mean Error: ",error)
-    # assert error < 1e-4
 
 # @pytest.mark.skip(reason="too long right now")
 def test_simp(ps,stride,dilation,top,btm,left,right):
@@ -533,7 +467,6 @@ def test_simp(ps,stride,dilation,top,btm,left,right):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    exact = True
     exact = True
     gpu_stats = False
     adj = False
@@ -581,7 +514,7 @@ def test_simp(ps,stride,dilation,top,btm,left,right):
     # n_w = (sq_w-1)//stride0+1
 
     # -- run search --
-    nlDists_simp,nlInds_simp = dnls.simple.xsearch_nn.run(vid,ps,stride=stride0,dilation=dil)
+    nlDists_simp,_ = dnls.simple.xsearch_nn.run(vid,ps,stride=stride0,dilation=dil)
     # print("iqueries.shape: ",iqueries.shape)
     nlDists_cu,nlInds_cu = dnls.simple.xsearch.run(vid,iqueries,flows,k,
                                                    ps,pt,ws,wt,chnls,
@@ -623,7 +556,6 @@ def test_cu(ps,stride,dilation,top,btm,left,right,k):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    exact = True
     exact = True
     gpu_stats = False
     adj = 0
