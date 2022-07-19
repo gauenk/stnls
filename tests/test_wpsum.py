@@ -142,6 +142,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # -- init our inner product --
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
+    adj,h_off,w_off = 0,0,0
     wpsum = dnls.wpsum.WeightedPatchSum(ps, pt, h_off=h_off,w_off=w_off, dilation=dil,
                                         reflect_bounds=reflect_bounds, adj=adj, exact=exact)
 
@@ -152,7 +153,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
 
     # -- run simple forward for testing --
     if use_unfold:
-        dists_gt,wpatches_gt = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,dilation=dil,vid1=vid)
+        mode = "reflect" if reflect_bounds else "zero"
+        dists_gt,wpatches_gt = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,dilation=dil,vid1=vid,mode=mode)
         wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
     else:
         wpatches_gt = simple_run(vid,dists_s,inds,ps,pt,reflect_bounds,exact)
@@ -210,6 +212,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
     vid = th.from_numpy(vid).to(device)[:t,].contiguous()
+    vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -260,6 +263,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
     # -- init our inner product --
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
+    adj,h_off,w_off = 0,0,0
     wpsum = dnls.wpsum.WeightedPatchSum(ps, pt, h_off=h_off, w_off=w_off, dilation=dil,
                                         reflect_bounds=reflect_bounds, adj=adj, exact=exact)
 
@@ -267,28 +271,32 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- prepare for grads --
     # vid = th.rand_like(vid)
-    vid_te = vid.clone()
-    vid_gt = vid.clone()
-    vid_te.requires_grad_(True)
-    vid_gt.requires_grad_(True)
-    vid_te_0 = vid.clone()
-    vid_gt_0 = vid.clone()
+    vid0_te = vid.clone()
+    vid0_gt = vid.clone()
+    vid0_te.requires_grad_(True)
+    vid0_gt.requires_grad_(True)
 
-    # -- use entire grad graph? --
-    all_grad = True
-    if all_grad:
-        vid_te_0 = vid_te
-        vid_gt_0 = vid_gt
+    vid1_te = vid.clone()#th.randn_like(vid)
+    vid1_gt = vid1_te.clone()
+    vid1_te.requires_grad_(True)
+    vid1_gt.requires_grad_(True)
+
+    vid2_te = vid.clone()#th.randn_like(vid)
+    vid2_gt = vid2_te.clone()
+    vid2_te.requires_grad_(True)
+    vid2_gt.requires_grad_(True)
 
     # -- forward passes --
-    dists,inds = xsearch(vid_te,iqueries,vid1=vid_te)
+    dists,inds = xsearch(vid0_te,iqueries,vid1=vid1_te)
     dists_s = softmax(dists*10,dim=1)
-    wpatches_te = wpsum(vid_te,dists_s,inds).view(iqueries.shape[0],-1)
+    # dists_s = dists_s.detach()
+    wpatches_te = wpsum(vid2_te,dists_s,inds).view(iqueries.shape[0],-1)
 
     # -- run simple forward for testing --
     soft_score = None
     if use_unfold:
-        dists_gt,wpatches_gt = dnls.simple.xsearch_nn.run_nn(vid_gt_0,ps,stride=stride0,dilation=dil,vid1=vid_gt_0,vid2=vid_gt)
+        mode = "reflect" if reflect_bounds else "zero"
+        dists_gt,wpatches_gt = dnls.simple.xsearch_nn.run_nn(vid0_gt,ps,stride=stride0,dilation=dil,vid1=vid1_gt,vid2=vid2_gt,mode=mode)
         wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
     else:
         dists_gt,inds = xsearch(vid_gt_0,iqueries,vid1=vid_gt_0)
@@ -307,38 +315,45 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
     th.autograd.backward(wpatches_gt,wpatches_grad)
 
     # -- grab grads --
-    grad_te = vid_te.grad
-    grad_gt = vid_gt.grad
+    vids_te = [vid0_te,vid1_te,vid2_te]
+    vids_gt = [vid0_gt,vid1_gt,vid2_gt]
+    for idx,(vid_te,vid_gt) in enumerate(zip(vids_te,vids_gt)):
 
-    # -- viz --
-    args_te = th.where(grad_te.abs()>1e-2)
-    args_gt = th.where(grad_gt.abs()>1e-2)
-    # print(grad_te[args_te][:3])
-    # print(grad_gt[args_gt][:3])
+        # -- unpack grads --
+        grad_te = vid_te.grad
+        grad_gt = vid_gt.grad
+        if grad_gt is None: continue
+        # print("testing: %d" % idx)
 
-    # -- get tolerance --
-    if exact: tol = 1e-3 if use_unfold else 1e-7
-    else: tol = 1e-2 if use_unfold else 1e-7
+        # -- viz --
+        args_te = th.where(grad_te.abs()>1e-2)
+        args_gt = th.where(grad_gt.abs()>1e-2)
+        # print(grad_te[args_te][:3])
+        # print(grad_gt[args_gt][:3])
 
-    # -- viz --
-    # diff = (grad_te - grad_gt).abs()/(grad_gt.abs()+1e-10)
-    # args = th.where(grad_gt.abs() < 1e-2)
-    # diff[args] = 0.
-    # args = th.where(diff > 1e-2)
-    # print(grad_te[args][:5])
-    # print(grad_gt[args][:5])
-    # diff /= diff.max()
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d" % use_unfold)
+        # -- get tolerance --
+        if exact: tol = 1e-3 if use_unfold else 1e-7
+        else: tol = 1e-2 if use_unfold else 1e-7
 
-    # -- compare --
-    error = th.abs((grad_te - grad_gt)).mean().item()
-    # print(error)
-    if error > tol: print(error)
-    assert error < tol
+        # -- viz --
+        # diff = (grad_te - grad_gt).abs()#/(grad_gt.abs()+1e-10)
+        # args = th.where(grad_gt.abs() < 1e-2)
+        # args = th.where(diff > 1e-3)
+        # print(grad_te[args][:5])
+        # print(grad_gt[args][:5])
+        # print(diff.max())
+        # diff /= diff.max()
+        # dnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d_%d" % (use_unfold,idx))
 
-    tol = tol*10 # max is x10 bigger
-    error = th.abs((grad_te - grad_gt)).max().item()
-    # print(error)
-    if error > tol: print(error)
-    assert error < tol
+        # -- compare --
+        error = th.abs((grad_te - grad_gt)).mean().item()
+        # print(error)
+        if error > tol: print(error)
+        assert error < tol
+
+        tol = tol*10 # max is x10 bigger
+        error = th.abs((grad_te - grad_gt)).max().item()
+        # print(error)
+        if error > tol: print(error)
+        assert error < tol
 

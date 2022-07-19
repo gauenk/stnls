@@ -42,7 +42,7 @@ def run_nn(vid,ps,stride=4,dilation=1,mode="reflect",vid1=None,vid2=None):
 
     # -- compute 2nd part --
     soft_score = softmax(score_mm*10,dim=2)
-    # soft_score.detach()
+    # soft_score = soft_score.detach()
     vid_pad_2,_ = same_padding(vid2,ps,1,dil,mode)
     patches_2 = unfold(vid_pad_2,ps,stride=1,dilation=dil) # t (c h w) n
     yi = th.matmul(soft_score, patches_2.permute(0,2,1))

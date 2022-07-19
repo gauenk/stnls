@@ -334,20 +334,20 @@ __global__ void dnls_wpsum_backward_dists_kernel(
     int center_hi = inds[qi][ki][1];
     int center_wi = inds[qi][ki][2];
     for (int pk = 0; pk < pt; pk++){
-      for (int pi = 0; pi < ps; pi++){
-        for (int pj = 0; pj < ps; pj++){
-          ti = center_ti + pk;
-          hi = (center_hi-h_off) + dilation*(pi - psHalf + adj);
-          wi = (center_wi-w_off) + dilation*(pj - psHalf + adj);
-          hi = reflect_bounds ? bounds(hi,height) : hi;
-          wi = reflect_bounds ? bounds(wi,width) : wi;
-          valid_h = (hi >= 0) && (hi < height);
-          valid_w = (wi >= 0) && (wi < width);
-          valid = valid_h && valid_w;
-          for (int c0 = 0; c0 < colors; c0++){
-            pix_n = patches_grad[qi][0][pk][c0][pi][pj];
-            pix_m = valid ? vid[ti][c0][hi][wi] : 0;
-            dists_grad[qi][ki] += pix_n * pix_m;
+      for (int c0 = 0; c0 < colors; c0++){
+        for (int pi = 0; pi < ps; pi++){
+          for (int pj = 0; pj < ps; pj++){
+              ti = center_ti + pk;
+              hi = (center_hi-h_off) + dilation*(pi - psHalf + adj);
+              wi = (center_wi-w_off) + dilation*(pj - psHalf + adj);
+              hi = reflect_bounds ? bounds(hi,height) : hi;
+              wi = reflect_bounds ? bounds(wi,width) : wi;
+              valid_h = (hi >= 0) && (hi < height);
+              valid_w = (wi >= 0) && (wi < width);
+              valid = valid_h && valid_w;
+              pix_n = patches_grad[qi][0][pk][c0][pi][pj];
+              pix_m = valid ? vid[ti][c0][hi][wi] : 0;
+              dists_grad[qi][ki] += pix_n * pix_m;
           }
         }
       }

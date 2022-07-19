@@ -133,6 +133,7 @@ class CrossSearchNlFunction(th.autograd.Function):
         # nlInds=nlInds_exh.view(b,-1,3)#.contiguous()
 
         if use_k:
+            nlDists,nlInds = allocate_rtn(nq,k,device)
             get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
             nlDists = nlDists.contiguous()
             nlInds = nlInds.contiguous()
