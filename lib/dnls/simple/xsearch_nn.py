@@ -14,7 +14,7 @@ from einops import rearrange,repeat
 from dnls.utils.pads import same_padding,comp_pads
 
 # -- fold/unfold
-from torch.nn.functional import fold,unfold,pad,softmax
+from torch.nn.functional import fold,unfold,pad,softmax,log_softmax
 
 def np_matmul(mat_a,mat_b):
     mat_a = mat_a.detach().cpu().numpy()
@@ -48,6 +48,32 @@ def run_nn(vid,ps,stride=4,dilation=1,mode="reflect",vid1=None,vid2=None):
     yi = th.matmul(soft_score, patches_2.permute(0,2,1))
 
     return score,yi
+
+def run_nn_v2(vid,ps,stride=4,dilation=1,mode="reflect",vid1=None,vid2=None):
+    if vid1 is None: vid1 = vid
+    if vid2 is None: vid2 = vid
+    dil = dilation
+    vid_pad_s,_ = same_padding(vid,ps,stride,dil,mode)
+    patches_s = unfold(vid_pad_s,ps,stride=stride,dilation=dil) # t (c h w) n
+    vid_pad_1,_ = same_padding(vid1,ps,1,dil,mode)
+    patches_1 = unfold(vid_pad_1,ps,stride=1,dilation=dil) # t (c h w) n
+    patches_s = patches_s.permute(0, 2, 1)
+    score = th.matmul(patches_s,patches_1)
+    score_mm = score[0]
+    t,c,h,w = vid.shape
+
+    # -- compute 2nd part --
+    score_mm.requires_grad_(True)
+    soft_score = softmax(score_mm*10,dim=1) # yes, dim = 1
+    soft_score.requires_grad_(True)
+    soft_score.retain_grad()
+    # soft_score = soft_score.detach()
+    vid_pad_2,_ = same_padding(vid2,ps,1,dil,mode)
+    patches_2 = unfold(vid_pad_2,ps,stride=1,dilation=dil)[0] # t (c h w) n
+    yi = th.matmul(soft_score, patches_2.permute(1,0))
+
+    return score_mm,soft_score,yi
+
 
 def run(vid,ps,stride=4,dilation=1,start_index=0,nqueries=-1,k=-1,mode="reflect"):
 

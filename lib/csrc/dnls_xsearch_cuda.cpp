@@ -8,7 +8,7 @@ void dnls_cuda_xsearch_forward(
     torch::Tensor vid0,torch::Tensor vid1,torch::Tensor queryInds,
     torch::Tensor fflow,torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
-    int ps, int pt, int ws, int wt,
+    int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
     int oh0, int ow0, int oh1, int ow1,
@@ -33,7 +33,7 @@ void dnls_xsearch_forward(
     torch::Tensor vid0,torch::Tensor vid1,torch::Tensor queryInds,
     torch::Tensor fflow,torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
-    int ps, int pt, int ws, int wt,
+    int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
     int oh0, int ow0, int oh1, int ow1,
@@ -51,7 +51,7 @@ void dnls_xsearch_forward(
   CHECK_INPUT(n_tranges);
   CHECK_INPUT(min_tranges);
   dnls_cuda_xsearch_forward(vid0,vid1,queryInds,fflow,bflow,nlDists,nlInds,
-                            ps,pt,ws,wt,chnls,stride,dilation,
+                            ps,pt,ws_h,ws_w,wt,chnls,stride,dilation,
                             use_search_abs, use_bounds, use_adj,
                             oh0, ow0, oh1, ow1,
                             bufs,tranges,n_tranges,min_tranges);

@@ -5,6 +5,8 @@ import torch as th
 # -- cpp cuda kernel --
 import dnls_cuda
 
+from dnls.utils.timer import ExpTimer
+
 
 def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
@@ -24,7 +26,7 @@ class WpSumFunction(th.autograd.Function):
     # [video -> patches] @ inds
 
     # -- static video since it is the same --
-    vid = None
+    # vid = None
 
     @staticmethod
     def forward(ctx, vid, dists, inds, ps, pt=1,
@@ -35,13 +37,13 @@ class WpSumFunction(th.autograd.Function):
         ps = patchsize
         pt = patchsize_time (forward only)
         """
-        if WpSumFunction.vid is None: WpSumFunction.vid = vid
+        # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         patches = allocate_patches(inds,ps,pt,vid.shape[1])
         dnls_cuda.wpsum_forward(vid, patches, dists, inds,
                                 h_off,w_off,dilation,adj,reflect_bounds)
         # print("dists._version: ",dists._version)
         # print("inds._version: ",inds._version)
-        ctx.save_for_backward(dists,inds)
+        ctx.save_for_backward(dists,inds,vid)
         ctx.ps,ctx.pt = ps,pt
         ctx.vid_shape = vid.shape
         ctx.dilation = dilation
@@ -55,8 +57,8 @@ class WpSumFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_patches):
-        dists,inds = ctx.saved_tensors
-        vid = WpSumFunction.vid
+        dists,inds,vid = ctx.saved_tensors
+        # vid = WpSumFunction.vid
         ps,pt = ctx.ps,ctx.pt
         vid_shape = ctx.vid_shape
 
@@ -67,6 +69,10 @@ class WpSumFunction(th.autograd.Function):
         reflect_bounds = ctx.reflect_bounds
         exact = ctx.exact
 
+        # -- start timer --
+        timer = ExpTimer()
+        timer.start("wpsum_bwd")
+
         # -- gradient for video --
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         dnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,dists,inds,
@@ -76,6 +82,11 @@ class WpSumFunction(th.autograd.Function):
         grad_dists = th.zeros_like(dists)
         dnls_cuda.wpsum_backward_dists(grad_dists,grad_patches,vid,inds,
                                        h_off,w_off,dilation,adj,reflect_bounds,exact)
+
+        # -- stop timer --
+        th.cuda.synchronize()
+        timer.stop("wpsum_bwd")
+        # print(timer)
 
         return grad_vid,grad_dists,None,None,None,None,None,None,None,None,None
 

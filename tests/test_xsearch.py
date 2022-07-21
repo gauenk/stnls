@@ -42,75 +42,24 @@ def pytest_generate_tests(metafunc):
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
-                  "ws":[-1],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5]}
+                  "ws":[-1],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
+                  "exact":[True]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-#
-#
-# -- Primary Testing Class --
-#
-#
-
-# @pytest.mark.skip(reason="too long right now")
-def test_nn_v1(ps,stride,dilation,top,btm,left,right):
 
 
-    # -- get args --
-    dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
-    chnls,k,pt = 1,1,1
-    ws,wt = 10,0
-    ws = -1
-    k = -1
+def test_cu_vs_th_fwd(ps,stride,dilation,exact):
+    """
 
-    # -- init vars --
-    device = "cuda:0"
-    clean_flow = True
-    comp_flow = False
-    exact = True
-    gpu_stats = False
-    adj = False
+    Test the CUDA code with torch code
 
-    # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
-    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+    Forward Pass
 
-    # -- grow img --
-    vid = th.cat([vid,vid],-1)
-    # vid = th.cat([vid,vid],-1)
-    # vid = th.cat([vid,vid],-2)
-    vid = th.cat([vid,vid],-2)
-
-    # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    t,color,h,w = shape
-    vshape = vid.shape
-
-    # -- run search --
-    nlDists_nn,_ = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride,dilation=dil)
-    nlDists_simp,nlInds_simp = dnls.simple.xsearch_nn.run(vid,ps,stride=stride,dilation=dil)
-
-    # -- viz --
-    # print("nlDists_nn.shape: ",nlDists_nn.shape)
-    # print(nlDists_nn[:3,:3,:3,:3])
-    # print(nlDists_simp[:3,:3,:3,:3])
-
-    # -- compare --
-    tol = 1e-10
-    error = th.sum(th.abs(nlDists_simp - nlDists_nn)).item()
-    if error > tol: print("error: ",error)
-    assert error < tol
-
-def test_nn_v2(ps,stride,dilation):
+    """
 
 
     # -- get args --
@@ -127,9 +76,9 @@ def test_nn_v2(ps,stride,dilation):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    exact = True
     gpu_stats = False
     adj = False
+    reflect_bounds = False
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
@@ -174,10 +123,14 @@ def test_nn_v2(ps,stride,dilation):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
+    use_adj = True
+    # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
+    # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
     xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow,
                                          k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
-                                         chnls=chnls,dilation=dil, stride=stride1,
-                                         reflect_bounds=True,use_k=False,use_search_abs=True)
+                                         chnls=-1,dilation=dil, stride=stride1,
+                                         reflect_bounds=reflect_bounds,use_k=False,
+                                         use_search_abs=True,use_adj=use_adj,exact=exact)
     # -- query inds --
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -197,51 +150,65 @@ def test_nn_v2(ps,stride,dilation):
     # vid[th.where(th.abs(vid) < 1)] = 0
 
     # ones = th.ones_like(vid)
-    nlDists_cu,nlInds_cu = xsearch(vid,iqueries,vid1=vidr)
+    score_te,inds_te = xsearch(vid,iqueries,vid1=vidr)
 
     # -- flip cu --
-    # print(nlDists_cu.shape)
-    nlDists_cu = rearrange(nlDists_cu,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
+    # print(score_te.shape)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
 
     # -- run search --
-    nlDists_nn,_ = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,
-                                                 dilation=dil,vid1=vidr)
-    # print(nlDists_nn.shape)
-    # print(nlDists_cu.shape)
+    mode = "reflect" if reflect_bounds else "zero"
+    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,mode=mode,
+                                               dilation=dil,vid1=vidr)
+    # print(score_gt.shape)
+    # print(score_te.shape)
 
     # -- viz --
-    # print(nlDists_cu[:2,:2,:2,:2])
-    # print(nlDists_nn[:2,:2,:2,:2])
+    print(score_te[0,0,:5,:5])
+    print(score_gt[0,0,:5,:5])
+    print("-"*10)
+    print(score_te[0,0,5:10,5:10])
+    print(score_gt[0,0,5:10,5:10])
+    print("-"*10)
+    print(score_te[0,0,16:18,16:18])
+    print(score_gt[0,0,16:18,16:18])
 
-    # diff = th.abs(nlDists_cu - nlDists_nn).mean((-1,-2))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
-    # diff = th.abs(nlDists_cu - nlDists_nn).mean((0,1))
+    diff = th.abs(score_te - score_gt).mean((-1,-2))
+    if diff.max() > 1e-5: diff /= diff.max()
+    diff = repeat(diff,'h w -> 1 c h w',c=3)
+    dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+
+    # diff = th.abs(score_te - score_gt).mean((0,1))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
     # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     tol = 1e-5
-    error = th.mean(th.abs(nlDists_cu - nlDists_nn)).item()
+    error = th.mean(th.abs(score_te - score_gt)).item()
     if error > tol: print("error: ",error)
     assert error < tol
 
     tol = 1e-4
-    max_error = th.abs(nlDists_cu - nlDists_nn).max().item()
+    max_error = th.abs(score_te - score_gt).max().item()
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 
 
-def test_nn_bwd(ps,stride,dilation):
+def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
+    """
+
+    Test the CUDA code with torch code
+
+    Backward Pass for videos
+
+    """
 
 
     # -- get args --
-    dil = dilation
+    dil,pt = dilation,1
     dname,ext = "davis_baseball_64x64","jpg"
-    chnls,k,pt = 1,1,1
     wt = 0
     ws = -1
     k = -1
@@ -252,21 +219,24 @@ def test_nn_bwd(ps,stride,dilation):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    exact = True
     gpu_stats = False
     adj = False
+    reflect_bounds = False
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()/255.
+    vid = th.from_numpy(vid).to(device)[[4],].contiguous()/255.
+    vid = vid + 25./255. * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
+    vid = th.cat([vid,vid],1)
+    vid = th.cat([vid,vid],1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
-    # print("vid.shape: ",vid.shape)
+    print("vid.shape: ",vid.shape)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -304,7 +274,8 @@ def test_nn_bwd(ps,stride,dilation):
     xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
                                          ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=chnls,dilation=dil, stride=stride1,
-                                         reflect_bounds=True,use_k=False,exact=True,use_search_abs=True)
+                                         reflect_bounds=reflect_bounds,use_k=False,
+                                         exact=exact,use_search_abs=True)
     # -- query inds
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -335,38 +306,31 @@ def test_nn_bwd(ps,stride,dilation):
 
 
     # -- allow grads --
-    vid_cu = vid.clone()
-    vid_nn = vid.clone()
-    vid_cu.requires_grad_(True)
-    vid_nn.requires_grad_(True)
-
-    vidr_cu = vid_cu
-    vidr_nn = vid_nn
-
-    # vidr_cu = vidr.clone()
-    # vidr_cu.requires_grad_(True)
-    # vidr_nn = vidr.clone()
-    # vidr_nn.requires_grad_(True)
-
-
+    vid_te = vid.clone()
+    vid_gt = vid.clone()
+    vidr_te = vid_te.clone()
+    vidr_gt = vid_gt.clone()
+    vid_te.requires_grad_(True)
+    vid_gt.requires_grad_(True)
+    vidr_te.requires_grad_(True)
+    vidr_gt.requires_grad_(True)
 
     #
     # -- run search --
     #
 
     # -- run cu --
-    nlDists_cu,nlInds_cu = xsearch(vid_cu,iqueries,vid1=vidr_cu)
-    nlDists_cu = rearrange(nlDists_cu,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
-    # nlDists_cu = rearrange(nlDists_cu,'(sh sw) h w -> h w sh sw',sh=n_h)
+    score_te,inds_te = xsearch(vid_te,iqueries,vid1=vidr_te)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
 
     # -- run nn --
-    nlDists_nn,_ = dnls.simple.xsearch_nn.run_nn(vid_nn,ps,stride=stride0,
-                                                 dilation=dil,vid1=vidr_nn)
-    sh = nlDists_nn.shape[-1]
-
+    mode = "reflect" if reflect_bounds else "zero"
+    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid_gt,ps,stride=stride0,
+                                               dilation=dil,vid1=vidr_gt,
+                                               mode=mode)
     # -- vis --
-    diff = th.abs(nlDists_cu - nlDists_nn)
-    args = th.where(diff>1e-10)
+    # diff = th.abs(score_te - score_gt)
+    # args = th.where(diff>1e-10)
     # for i in range(len(args)):
     #     print(i,th.unique(args[i]))
     # if diff.max() > 1e-10: diff /= diff.max()
@@ -374,85 +338,281 @@ def test_nn_bwd(ps,stride,dilation):
     # dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
 
     # -- compare fwd --
-    max_error = th.abs(nlDists_cu - nlDists_nn).max().item()
+    max_error = th.abs(score_te - score_gt).max().item()
     # print("max error: ",max_error)
     assert max_error < 1e-3
 
-    error = th.mean(th.abs(nlDists_cu - nlDists_nn)).item()
+    error = th.mean(th.abs(score_te - score_gt)).item()
     # print("error: ",error)
     assert error < 1e-4
 
     # -- compute grad --
-    nlDists_grad = th.ones_like(nlDists_nn)
-    th.autograd.backward(nlDists_nn,nlDists_grad)
-    th.autograd.backward(nlDists_cu,nlDists_grad)
+    score_grad = th.rand_like(score_gt)/1000.
+    th.autograd.backward(score_gt,score_grad)
+    th.autograd.backward(score_te,score_grad)
 
-    # -- get grads --
-    grads_cu = vidr_cu.grad
-    grads_nn = vidr_nn.grad
-    # print("cu,nn")
-    # print("-"*10)
-    # print(grads_cu[0,0,:3,:3])
-    # print(grads_nn[0,0,:3,:3])
-    # print("-"*10)
-    # print(grads_cu[0,0,16:19,16:19])
-    # print(grads_nn[0,0,16:19,16:19])
-    # print("-"*10)
-    # print(grads_cu[0,0,30:33,30:33])
-    # print(grads_nn[0,0,30:33,30:33])
-    # print("-"*10)
-    print(grads_cu[0,0,-3:,-3:])
-    print(grads_nn[0,0,-3:,-3:])
-    # print("-"*10)
+    # -- for both grads --
+    _grads_te = [vid_te.grad,vidr_te.grad]
+    _grads_gt = [vid_gt.grad,vidr_gt.grad]
+    for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
-    # -- viz [the error map looks weird] --
-    # print(grads_cu[0,-1,-10:,-10:])
-    # print(grads_nn[0,-1,-10:,-10:])
-    diff = (grads_cu -grads_nn).abs()/(grads_nn.abs()+1e-8)
-    print(diff.max())
-    print(diff.mean((0,2,3)))
-    diff /= diff.max()
-    dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0")
-    dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1")
-    dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2")
+        # -- viz [the error map looks weird] --
+        print(grads_te[0,-1,-10:,-10:])
+        print(grads_gt[0,-1,-10:,-10:])
+        diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
+        diff /= diff.max()
+        dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        print(idx)
 
-    # -- compare grads --
-    rel_error = th.abs(grads_nn - grads_cu)/(th.abs(grads_nn)+1e-8)
-    args = th.where(th.abs(grads_nn) > 1e-3)
-    rel_error_nz = rel_error[args]
-    args_z = th.where(th.abs(grads_nn) <= 1e-3)
-    # print(args_z)
+        # -- compare grads --
+        rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
+        rel_error_nz  = rel_error
 
-    # args = th.where(rel_error> 0.5)
-    # print(th.sum(th.abs(grads_cu[args])))
-    # print(th.sum(th.abs(grads_nn[args])))
-    # print(grads_cu[args],grads_nn[args])
-    # print(len(args[0]))
-    # print(args)
+        tol = 1e-3
+        error = th.max(rel_error_nz).item()
+        if error > tol: print("Max Error: ",error)
+        print("Max Error: ",error)
+        # assert error < tol
 
-    tol = 1e-3
-    error = th.max(rel_error_nz).item()
-    if error > tol: print("Max Error: ",error)
-    print("Max Error: ",error)
-    assert error < tol
+        tol = 1e-4
+        error = th.mean(rel_error_nz).item()
+        if error > tol: print("Mean Error: ",error)
+        print("Mean Error: ",error)
+        # assert error < tol
 
-    tol = 1e-4
-    error = th.mean(rel_error_nz).item()
-    if error > tol: print("Mean Error: ",error)
-    print("Mean Error: ",error)
-    assert error < tol
+def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
+    """
 
-    # error = th.max(th.abs(grads_cu[args_z])).item()
-    # print("Max Error: ",error)
-    # assert error < 1e-4
+    Test the CUDA code with torch code
 
-    # error = th.mean(th.abs(grads_cu[args_z])).item()
-    # print("Mean Error: ",error)
-    # assert error < 1e-4
+    Backward Pass for parameters for video
+
+    """
+
+
+    # -- get args --
+    dil,pt = dilation,1
+    dname,ext = "davis_baseball_64x64","jpg"
+    wt = 0
+    ws = -1
+    k = -1
+    stride0 = stride
+    stride1 = 1
+
+    # -- init vars --
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    gpu_stats = False
+    adj = False
+    reflect_bounds = False
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = th.from_numpy(vid).to(device)[[4],].contiguous()/255.
+    vid = vid + 25./255. * th.randn_like(vid)
+    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+
+    # -- grow img --
+    vid = th.cat([vid,vid],1)
+    vid = th.cat([vid,vid],1)
+    # vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-2)
+    # vid = th.cat([vid,vid],-2)
+    print("vid.shape: ",vid.shape)
+
+    # -- compute flow --
+    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+
+    # -- unpack image --
+    device = vid.device
+    shape = vid.shape
+    t,color,h,w = shape
+    vshape = vid.shape
+
+    # -- sub square --
+    top,btm,left,right = 0,h,0,w
+    coords = [top,left,btm,right]
+    # sq_h = coords[2] - coords[0]
+    # sq_w = coords[3] - coords[1]
+
+    # -- pads --
+    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
+    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
+
+    # -- batching info --
+    npix = t * h * w
+    ntotal = t * n_h * n_w
+    nbatch = ntotal
+    nbatches = (ntotal-1) // nbatch + 1
+
+    # -- swap --
+    oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+
+    # -- exec fold fxns --
+    use_adj = True
+    # use_adj = False
+    # oh0, ow0, oh1, ow1 = 0,0,0,0
+    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
+                                         ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
+                                         chnls=-1,dilation=dil, stride=stride1,
+                                         reflect_bounds=reflect_bounds,
+                                         use_k=False,exact=exact,use_search_abs=True)
+    # -- query inds
+    qindex = 0
+    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+                                                coords,t,device)
+    # -- binary image to remove float error --
+    # vidr = None
+    # vidr = 10*th.ones_like(vid)
+    # vid = th.round(th.rand_like(vid),decimals=2)*100
+    # vid = th.rand_like(vid)*1.5
+    # vid = th.round(th.rand_like(vid),decimals=10)
+    # vidr = th.round(th.rand_like(vid),decimals=3)
+    # vidr = th.round(th.rand_like(vid),decimals=3)
+    # vid = th.round(th.rand_like(vid),decimals=2)*100.
+    # vidr = th.round(th.rand_like(vid),decimals=2)*100.
+    # vid = vid.type(th.float32)
+    # vidr = vidr.type(th.float32)
+    # vidr[th.where(th.abs(vidr) > 0.2)] = 1
+    # vidr[th.where(th.abs(vidr) < 1)] = 0
+    # # vid = th.ones_like(vid)
+    # vid = th.rand_like(vid)
+    # vid[th.where(th.abs(vid) > 0.2)] = 1
+    # vid[th.where(th.abs(vid) < 1)] = 0
+
+    # vid = vidr.clone()
+    # vid[:,:,:3,:3] = 0
+    # vid[:,:,0,0] = 0
+    # vidr[:,:,:3,:3] = 0
+
+    # -- declare weights --
+    def create_weights(ichnls,ochnls):
+        gam = th.nn.Conv2d(in_channels=ichnls, out_channels=ochnls,
+                        kernel_size=1, stride=1,padding=0)
+        phi = th.nn.Conv2d(in_channels=ichnls, out_channels=ochnls,
+                        kernel_size=1, stride=1,padding=0)
+        # theta = th.nn.Conv2d(in_channels=ichnls, out_channels=ochnls,
+        #                 kernel_size=1, stride=1,padding=0)
+        return gam,phi
+
+    def create_weights_pair(ichnls,ochnls):
+        params0 = create_weights(ichnls,ochnls)
+        params1 = create_weights(ichnls,ochnls)
+        for param0,param1 in zip(params0,params1):
+            param0.weight.data = th.randn_like(param0.weight.data)
+            param1.weight.data.copy_(param0.weight.data)
+            param0.bias.data = th.randn_like(param0.bias.data)
+            param1.bias.data.copy_(param0.bias.data)
+        return params0,params1
+
+    def get_xformed(vid,params):
+        xformed = []
+        for param in params:
+            param.requires_grad_(True)
+            param = param.to(vid.device)
+            _xform = param(vid)
+            # _xform = _xform.abs()
+            _xform = _xform.clip(-1.,1.)
+            # _xform = th.round(_xform,decimals=2).type(th.float)
+            xformed.append(_xform)
+        # xformed = [vid,vid]
+        return xformed
+
+    # -- allow grads --
+    ichnls,ochnls = vid.shape[1],16
+    params_te,params_gt = create_weights_pair(ichnls,ochnls)
+    vid0_te,vid1_te = get_xformed(vid.clone(),params_te)
+    vid0_gt,vid1_gt = get_xformed(vid.clone(),params_gt)
+    print(vid0_te.mean(),vid0_te.std())
+
+    # -- check fwd with weights --
+    error0 = th.sum(th.abs(vid0_te - vid0_gt)).item()
+    error1 = th.sum(th.abs(vid1_te - vid1_gt)).item()
+    assert error0 < 1e-10
+    assert error1 < 1e-10
+    print("errors: ",error0,error1)
+
+    #
+    # -- run search --
+    #
+
+    # -- run cu --
+    score_te,inds_te = xsearch(vid0_te,iqueries,vid1=vid1_te)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
+
+    # -- run nn --
+    mode = "reflect" if reflect_bounds else "zero"
+    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid0_gt,ps,stride=stride0,
+                                               dilation=dil,vid1=vid1_gt,mode=mode)
+    # -- vis --
+    diff = th.abs(score_te - score_gt)/(score_gt.abs()+1e-10)
+    args = th.where(diff>1e-10)
+    for i in range(len(args)):
+        print(i,th.unique(args[i]))
+    if diff.max() > 1e-10: diff /= diff.max()
+    dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
+    dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
+
+    # -- compare fwd --
+    diff = th.abs(score_te - score_gt)
+    args = th.where(diff > 1e-3)
+    print(score_te[args][:5])
+    print(score_gt[args][:5])
+    max_error = th.abs(score_te - score_gt).max().item()
+    print("max error: ",max_error)
+    assert max_error < 1e-3
+
+    error = th.mean(th.abs(score_te - score_gt)).item()
+    print("error: ",error)
+    assert error < 1e-4
+
+    # -- compute grad --
+    score_grad = 2.*(th.rand_like(score_gt)-0.5)
+    th.autograd.backward(score_gt,score_grad)
+    th.autograd.backward(score_te,score_grad)
+
+    # -- for both grads --
+    _grads_te = [p.weight.grad for p in params_te]
+    _grads_gt = [p.weight.grad for p in params_gt]
+    for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
+
+        # -- viz [the error map looks weird] --
+        print(grads_te[0,-1,-10:,-10:])
+        print(grads_gt[0,-1,-10:,-10:])
+        diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
+        diff /= diff.max()
+        dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        print(idx)
+
+        # -- compare grads --
+        rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
+        rel_error_nz  = rel_error
+
+        tol = 1e-3
+        error = th.max(rel_error_nz).item()
+        if error > tol: print("Max Error: ",error)
+        print("Max Error: ",error)
+        # assert error < tol
+
+        tol = 1e-4
+        error = th.mean(rel_error_nz).item()
+        if error > tol: print("Mean Error: ",error)
+        print("Mean Error: ",error)
+        # assert error < tol
+
 
 
 # @pytest.mark.skip(reason="too long right now")
-def test_simp(ps,stride,dilation,top,btm,left,right):
+def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
 
 
     # -- get args --
@@ -467,7 +627,6 @@ def test_simp(ps,stride,dilation,top,btm,left,right):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    exact = True
     gpu_stats = False
     adj = False
 
@@ -514,32 +673,32 @@ def test_simp(ps,stride,dilation,top,btm,left,right):
     # n_w = (sq_w-1)//stride0+1
 
     # -- run search --
-    nlDists_simp,_ = dnls.simple.xsearch_nn.run(vid,ps,stride=stride0,dilation=dil)
+    score_simp,_ = dnls.simple.xsearch_nn.run(vid,ps,stride=stride0,dilation=dil)
     # print("iqueries.shape: ",iqueries.shape)
-    nlDists_cu,nlInds_cu = dnls.simple.xsearch.run(vid,iqueries,flows,k,
+    score_te,inds_te = dnls.simple.xsearch.run(vid,iqueries,flows,k,
                                                    ps,pt,ws,wt,chnls,
                                                    stride0=stride0,stride1=stride1,
                                                    dilation=dil,
                                                    use_search_abs=True,use_k=False)
-    # print(nlDists_simp.shape)
-    # print(nlDists_cu.shape)
-    nlDists_cu = rearrange(nlDists_cu,'(nh nw) (h w) -> h w nh nw',h=h,nh=nh)
-    # nlDists_cu = rearrange(nlDists_cu,'(h w) (nh nw) -> h w nh nw',h=h,nh=nh)
-    # print(nlDists_cu.shape)
+    # print(score_simp.shape)
+    # print(score_te.shape)
+    score_te = rearrange(score_te,'(nh nw) (h w) -> h w nh nw',h=h,nh=nh)
+    # score_te = rearrange(score_te,'(h w) (nh nw) -> h w nh nw',h=h,nh=nh)
+    # print(score_te.shape)
 
     # -- viz --
-    # print(nlDists_simp[8,8,:3,:3])
-    # print(nlDists_cu[8,8,:3,:3])
+    # print(score_simp[8,8,:3,:3])
+    # print(score_te[8,8,:3,:3])
 
     # -- compare --
-    error = th.sum(th.abs(nlDists_cu - nlDists_simp)).item()
+    error = th.sum(th.abs(score_te - score_simp)).item()
     assert error < 1e-10
 
-    # perc_neq = th.mean((nlInds_cu != nlInds_simp)*1.)
+    # perc_neq = th.mean((inds_te != inds_simp)*1.)
     # print("perc_neq: ",perc_neq)
     # assert perc_neq < 0.05
 
-def test_cu(ps,stride,dilation,top,btm,left,right,k):
+def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
 
 
     # -- get args --
@@ -556,7 +715,6 @@ def test_cu(ps,stride,dilation,top,btm,left,right,k):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    exact = True
     gpu_stats = False
     adj = 0
 
@@ -599,7 +757,6 @@ def test_cu(ps,stride,dilation,top,btm,left,right,k):
                                             ws, wt, oh0, ow0, oh1, ow1,
                                             chnls=chnls,dilation=dil, stride=stride1,
                                             use_k=use_k,use_search_abs=use_search_abs)
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
     fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"start-exec")
@@ -610,23 +767,19 @@ def test_cu(ps,stride,dilation,top,btm,left,right,k):
                                                 coords,t,device)
 
     # -- run search --
-    nlDists_cu,nlInds_cu = xsearch_nl(vid,iqueries)
-    nlDists_simp,nlInds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
+    score_te,inds_te = xsearch_nl(vid,iqueries)
+    score_simp,inds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
                                                        ps,pt,ws,wt,chnls,
                                                        stride0=stride0,stride1=stride1,dilation=dil,
                                                        use_k=use_k,use_search_abs=use_search_abs)
-    # print("nlDists_cu.shape: ",nlDists_cu.shape)
-    # print("nlDists_simp.shape: ",nlDists_simp.shape)
-    # print(nlDists_cu[:3,:2])
-    # print(nlDists_simp[:3,:2])
 
     # -- reshape --
     nq = iqueries.shape[0]
-    nlDists_cu = nlDists_cu.view(nq,-1)
-    nlDists_simp = nlDists_simp.view(nq,-1)
+    score_te = score_te.view(nq,-1)
+    score_simp = score_simp.view(nq,-1)
 
     # -- compare --
-    error = th.mean(th.abs(nlDists_cu - nlDists_simp)).item()
+    error = th.mean(th.abs(score_te - score_simp)).item()
     assert error < 1e-6
 
 @pytest.mark.skip(reason="too long right now")
@@ -693,14 +846,14 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
         # -- get patches --
         iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
                                                      coords,t,device)
-        nlDists_simp,nlInds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
+        score_simp,inds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
                                                            ps,pt,ws,wt,chnls,
                                                            stride0=stride0,stride1=stride1,dilation=dil,
                                                            use_k=use_k,use_search_abs=use_search_abs)
-        nlDists_cu,nlInds_cu = search_nl(vid,iqueries,flows,k,
+        score_te,inds_te = search_nl(vid,iqueries,flows,k,
                                          ps,pt,ws,wt,chnls,
                                          stride=stride,dilation=dil)
-        patches_nl_i = scatter_nl(vid,nlInds_simp)
+        patches_nl_i = scatter_nl(vid,inds_simp)
         del iqueries,nlDists,nlInds
         th.cuda.empty_cache()
 
@@ -720,47 +873,47 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     nlDists,nlInds = dnls.simple.xsearch.run(vid,iqueries,flow,k,
                                              ps,pt,ws,wt,chnls,
                                              stride=stride,dilation=dil)
-    patches_nn = scatter_nl(vid,nlInds)
-    patches_nn.requires_grad_(True)
+    patches_gt = scatter_nl(vid,nlInds)
+    patches_gt.requires_grad_(True)
     gpu_mem.print_gpu_stats(gpu_stats,"post-search")
-    vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
+    vid_gt,_ = run_fold(patches_gt,t,sq_h,sq_w,stride,dil,adj)
     gpu_mem.print_gpu_stats(gpu_stats,"post-fold")
 
     # -- run backward --
     top,left,btm,right = coords
-    vid_grad = th.randn_like(vid_nn)
+    vid_grad = th.randn_like(vid_gt)
     vid_nl = fold_nl.vid[:,:,top:btm,left:right]
-    th.autograd.backward(vid_nn,vid_grad)
+    th.autograd.backward(vid_gt,vid_grad)
     th.autograd.backward(vid_nl,vid_grad)
     gpu_mem.print_gpu_stats(gpu_stats,"post-bkw")
-    # dnls.testing.data.save_burst(vid_nn,"./output/","vid_nn")
+    # dnls.testing.data.save_burst(vid_gt,"./output/","vid_gt")
     # dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
 
     # -- get grads --
-    grad_nn = patches_nn.grad
+    grad_gt = patches_gt.grad
     grad_nl = th.cat([p_nl.grad for p_nl in patches_nl])
 
     # -- check forward --
     top,left,btm,right = coords
-    error = th.sum((vid_nn - vid_nl)**2).item()
+    error = th.sum((vid_gt - vid_nl)**2).item()
     assert error < 1e-10
 
     # -- reshape --
     shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
-    grad_nn = rearrange(grad_nn,shape_str,t=t,h=nh)
+    grad_gt = rearrange(grad_gt,shape_str,t=t,h=nh)
     grad_nl = rearrange(grad_nl,shape_str,t=t,h=nh)
 
 
     # -- check backward --
-    error = th.sum((grad_nn - grad_nl)**2).item()
+    error = th.sum((grad_gt - grad_nl)**2).item()
     assert error < 1e-10
 
     # -- clean-up --
     th.cuda.empty_cache()
     del vid,flow
-    del vid_nn,vid_nl
-    del patches_nl,patches_nn
-    del grad_nn,grad_nl,vid_grad
+    del vid_gt,vid_nl
+    del patches_nl,patches_gt
+    del grad_gt,grad_nl,vid_grad
     del iqueries,nlDists,nlInds
     th.cuda.empty_cache()
     th.cuda.synchronize()

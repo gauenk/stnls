@@ -9,6 +9,8 @@ from dnls.utils.pads import comp_pads
 
 # -- cpp cuda kernel --
 import dnls_cuda
+from dnls.utils.timer import ExpTimer
+
 
 
 def get_topk(l2_vals,l2_inds,vals,inds):
@@ -35,14 +37,17 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_bufs(nq,t,ws,device):
-    bufs = th.zeros(nq,3,t,ws,ws,dtype=th.int32,device=device)
+def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
+    if wt <= 0:
+        bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
+    else:
+        bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
 
-def allocate_exh(nq,ws,wt,device):
-    dists = th.zeros((nq,2*wt+1,ws,ws),device=device,dtype=th.float32)
+def allocate_exh(nq,ws_h,ws_w,wt,device):
+    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
     dists[...] = -float("inf")
-    inds = th.zeros((nq,2*wt+1,ws,ws,3),device=device,dtype=th.int32)
+    inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
 
@@ -90,7 +95,7 @@ class CrossSearchNlFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, queryInds, fflow, bflow,
-                k, ps, pt, ws, wt, chnls,
+                k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride,dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
                 oh0, ow0, oh1, ow1, exact):
@@ -108,8 +113,8 @@ class CrossSearchNlFunction(th.autograd.Function):
         queryInds = queryInds.type(th.int32)
 
         # -- allocs --
-        bufs = allocate_bufs(nq,t,ws,device)
-        nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
+        bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
+        nlDists_exh,nlInds_exh = allocate_exh(nq,ws_h,ws_w,wt,device)
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -117,7 +122,7 @@ class CrossSearchNlFunction(th.autograd.Function):
         # -- forward --
         dnls_cuda.xsearch_forward(vid0, vid1, queryInds, fflow, bflow,
                                   nlDists_exh, nlInds_exh,
-                                  ps, pt, ws, wt, chnls, stride, dilation,
+                                  ps, pt, ws_h, ws_w, wt, chnls, stride, dilation,
                                   use_search_abs, reflect_bounds, use_adj,
                                   oh0, ow0, oh1, ow1,
                                   bufs,tranges,n_tranges,min_tranges)
@@ -131,6 +136,9 @@ class CrossSearchNlFunction(th.autograd.Function):
         # b = nlDists_exh.shape[0]
         # nlDists=nlDists_exh.view(b,-1)#.contiguous()
         # nlInds=nlInds_exh.view(b,-1,3)#.contiguous()
+        # print(nlDists_exh[0],use_search_abs)
+        # print(k, ps, pt, ws_h, ws_w, wt, chnls, use_search_abs, use_adj, reflect_bounds)
+        # print(oh0, ow0, oh1, ow1)
 
         if use_k:
             nlDists,nlInds = allocate_rtn(nq,k,device)
@@ -143,6 +151,7 @@ class CrossSearchNlFunction(th.autograd.Function):
             b = nlDists_exh.shape[0]
             nlDists=nlDists_exh.view(b,-1)#.contiguous()
             nlInds=nlInds_exh.view(b,-1,3)#.contiguous()
+        # print(nlDists)
 
         # -- for backward --
         ctx.save_for_backward(nlDists,nlInds,
@@ -171,6 +180,12 @@ class CrossSearchNlFunction(th.autograd.Function):
         ow1 = ctx.ow1
         # print("oh0, ow0, oh1, ow1: ",oh0, ow0, oh1, ow1)
         reflect_bounds = ctx.reflect_bounds
+
+        # -- start timer --
+        # timer = ExpTimer()
+        # timer.start("xsearch_bwd")
+
+        # -- gradient --
         vid0_grad = allocate_vid(vid_shape,grad_nlDists.device)
         vid1_grad = allocate_vid(vid_shape,grad_nlDists.device)
         # th.cuda.synchronize()
@@ -178,8 +193,15 @@ class CrossSearchNlFunction(th.autograd.Function):
                                    queryInds,grad_nlDists,nlInds,
                                    oh0,ow0,oh1,ow1,
                                    ps,pt,lam,reflect_bounds,exact)
+
+        # -- stop timer --
+        th.cuda.synchronize()
+        # timer.stop("xsearch_bwd")
+        # print(timer)
+
+
         # th.cuda.synchronize()
-        return vid0_grad,vid1_grad,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None
+        return vid0_grad,vid1_grad,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None
 
 class CrossSearchNl(th.nn.Module):
 
@@ -218,10 +240,13 @@ class CrossSearchNl(th.nn.Module):
         _,_,hp,wp = comp_pads(vshape, ps, stride, dil)
         n_h = (hp - (ps-1)*dil - 1)//stride + 1
         n_w = (wp - (ps-1)*dil - 1)//stride + 1
-        if ws == -1: ws = n_h # hope its square
+        ws_h,ws_w = ws,ws
+        if ws == -1:
+            ws_h = n_h
+            ws_w = n_w
         if k == -1: k = ws**2 * (2*wt + 1)
         if chnls <= 0: chnls = c
-        return ws,wt,k,chnls
+        return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):
         t,c,h,w = vshape
@@ -235,9 +260,9 @@ class CrossSearchNl(th.nn.Module):
     def forward(self, vid0, iqueries, vid1=None):
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
-        ws,wt,k,chnls = self._get_args(vid0.shape)
+        ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
         return CrossSearchNlFunction.apply(vid0,vid1,iqueries,self.fflow,self.bflow,
-                                           k,self.ps,self.pt,ws,wt,chnls,
+                                           k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
                                            self.stride,self.dilation,self.lam,
                                            self.use_search_abs,self.reflect_bounds,
                                            self.use_adj,self.use_k,

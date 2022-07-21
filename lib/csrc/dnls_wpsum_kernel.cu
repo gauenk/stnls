@@ -186,6 +186,7 @@ __global__ void dnls_wpsum_backward_vid_kernel(
   int width = vid_grad.size(3);
   int psHalf = ps/2;
   bool valid_h,valid_w,valid;
+  int center_ti,center_hi,center_wi;
 
   // color indices
   int c0_start = threadIdx.y*cpt;
@@ -206,12 +207,15 @@ __global__ void dnls_wpsum_backward_vid_kernel(
       // iterate
       for (int ki = 0; ki < k; ki++){
         c0_offset = (c0_offset + 1) % c0_dist;
+        center_ti = inds[qi][ki][0];
+        center_hi = inds[qi][ki][1];
+        center_wi = inds[qi][ki][2];
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
-              ti = inds[qi][ki][0] + pk;
-              hi = (inds[qi][ki][1]-h_off) + dilation*(pi - psHalf + adj);
-              wi = (inds[qi][ki][2]-w_off) + dilation*(pj - psHalf + adj);
+              ti = center_ti + pk;
+              hi = (center_hi-h_off) + dilation*(pi - psHalf + adj);
+              wi = (center_wi-w_off) + dilation*(pj - psHalf + adj);
               hi = reflect_bounds ? bounds(hi,height) : hi;
               wi = reflect_bounds ? bounds(wi,width) : wi;
               valid_h = (hi >= 0) && (hi < height);
@@ -334,26 +338,26 @@ __global__ void dnls_wpsum_backward_dists_kernel(
     int center_hi = inds[qi][ki][1];
     int center_wi = inds[qi][ki][2];
     for (int pk = 0; pk < pt; pk++){
-      for (int c0 = 0; c0 < colors; c0++){
-        for (int pi = 0; pi < ps; pi++){
-          for (int pj = 0; pj < ps; pj++){
-              ti = center_ti + pk;
-              hi = (center_hi-h_off) + dilation*(pi - psHalf + adj);
-              wi = (center_wi-w_off) + dilation*(pj - psHalf + adj);
-              hi = reflect_bounds ? bounds(hi,height) : hi;
-              wi = reflect_bounds ? bounds(wi,width) : wi;
-              valid_h = (hi >= 0) && (hi < height);
-              valid_w = (wi >= 0) && (wi < width);
-              valid = valid_h && valid_w;
+      ti = center_ti + pk;
+      for (int pi = 0; pi < ps; pi++){
+        hi = (center_hi-h_off) + dilation*(pi - psHalf + adj);
+        hi = reflect_bounds ? bounds(hi,height) : hi;
+        valid_h = (hi >= 0) && (hi < height);
+        for (int pj = 0; pj < ps; pj++){
+          wi = (center_wi-w_off) + dilation*(pj - psHalf + adj);
+          wi = reflect_bounds ? bounds(wi,width) : wi;
+          valid_w = (wi >= 0) && (wi < width);
+          valid = valid_h && valid_w;
+          for (int c0 = 0; c0 < colors; c0++){
               pix_n = patches_grad[qi][0][pk][c0][pi][pj];
               pix_m = valid ? vid[ti][c0][hi][wi] : 0;
-              dists_grad[qi][ki] += pix_n * pix_m;
+              dists_grad[qi][ki] += valid ? pix_n * pix_m : 0.;
           }
         }
       }
     }
-
   }
+
 }
 
 void dnls_cuda_wpsum_backward_dists(
@@ -364,14 +368,11 @@ void dnls_cuda_wpsum_backward_dists(
   // const int NQ,NK = 4,4;
   int nq = dists_grad.size(0);
   int k = dists_grad.size(1);
-  dim3 threadsPerBlock(nq, k);
+  dim3 threadsPerBlock(32,32);
   dim3 blocksPerGrid(1, 1);
-  if (nq * k > 512){
-    threadsPerBlock.x = 32;
-    threadsPerBlock.y = 32;
-    blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
-    blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
-  }
+  blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
+  blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
+
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_wpsum_backward_dists_kernel", ([&] {
