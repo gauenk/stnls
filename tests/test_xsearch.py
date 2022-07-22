@@ -304,7 +304,6 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # vid[:,:,0,0] = 0
     # vidr[:,:,:3,:3] = 0
 
-
     # -- allow grads --
     vid_te = vid.clone()
     vid_gt = vid.clone()
@@ -782,7 +781,7 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     error = th.mean(th.abs(score_te - score_simp)).item()
     assert error < 1e-6
 
-@pytest.mark.skip(reason="too long right now")
+# @pytest.mark.skip(reason="too long right now")
 def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
 
     # -- get args --
@@ -793,19 +792,18 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     ws = -1
     k = -1
 
-
     # -- init vars --
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
     exact = True
-    exact = True
     gpu_stats = False
-    adj = False
+    use_adj = True
+    reflect_bounds = False
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device).contiguous()
+    vid = th.from_numpy(vid)[:1].to(device).contiguous()
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -816,105 +814,95 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     vshape = vid.shape
 
     # -- sub square --
+    top,left,btm,right=0,0,h,w
     coords = [top,left,btm,right]
     sq_h = coords[2] - coords[0]
     sq_w = coords[3] - coords[1]
 
-    # -- batching info --
-    npix = t * h * w
+    # -- allow grads --
+    vid_te = vid.clone()
+    vid_gt = vid.clone()
+    vidr_te = vid_te.clone()
+    vidr_gt = vid_gt.clone()
+    vid_te.requires_grad_(True)
+    vid_gt.requires_grad_(True)
+    vidr_te.requires_grad_(True)
+    vidr_gt.requires_grad_(True)
 
-    nh = (sq_h-1)//stride+1
-    nw = (sq_w-1)//stride+1
+    # -- batching info --
+    stride0 = stride
+    stride1 = 1
+    npix = t * h * w
+    nh = (sq_h-1)//stride0+1
+    nw = (sq_w-1)//stride0+1
     ntotal = t * nh * nw
-    nbatch = 512
+    nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
-    # -- exec fold fxns --
-    search_nl = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                           ws, wt, chnls=chnls,dilation=dil, stride=stride)
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
-    patches_nl = []
-    gpu_mem.print_gpu_stats(gpu_stats,"pre-loop")
+    # -- pads --
+    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
 
+    # -- exec fold fxns --
+    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
+                                         ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
+                                         chnls=-1,dilation=dil, stride=stride1,
+                                         reflect_bounds=reflect_bounds,
+                                         use_k=False,exact=exact,use_search_abs=True)
+
+    # -- run xsearch over batches --
+    score_te = []
     for index in range(nbatches):
 
         # -- batch info --
         qindex = min(nbatch * index,npix)
         nbatch =  min(nbatch, ntotal - qindex)
 
-        # -- get patches --
+        # -- get query inds --
         iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
                                                      coords,t,device)
-        score_simp,inds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
-                                                           ps,pt,ws,wt,chnls,
-                                                           stride0=stride0,stride1=stride1,dilation=dil,
-                                                           use_k=use_k,use_search_abs=use_search_abs)
-        score_te,inds_te = search_nl(vid,iqueries,flows,k,
-                                         ps,pt,ws,wt,chnls,
-                                         stride=stride,dilation=dil)
-        patches_nl_i = scatter_nl(vid,inds_simp)
-        del iqueries,nlDists,nlInds
-        th.cuda.empty_cache()
 
-        patches_nl_i = patches_nl_i.requires_grad_(True)
+        # -- run xsearch --
+        score_te_i,inds_te = xsearch(vid_te,iqueries,vid1=vidr_te)
+        score_te.append(score_te_i)
 
-        # -- run forward --
-        vid_nl = fold_nl(patches_nl_i,qindex)
-        patches_nl.append(patches_nl_i)
+    # -- forward reference --
+    mode = "reflect" if reflect_bounds else "zero"
+    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid_gt,ps,stride=stride0,mode=mode,
+                                               dilation=dil,vid1=vidr_gt)
+    score_gt = score_gt.view(h*w,-1).T
 
-    # -- vis --
-    gpu_mem.print_gpu_stats(gpu_stats,"post-loop")
-
-    # -- forward all at once --
-    index,nbatch = 0,ntotal
-    iqueries = dnls.utils.inds.get_iquery_batch(index,nbatch,stride,
-                                                 coords,t,device)
-    nlDists,nlInds = dnls.simple.xsearch.run(vid,iqueries,flow,k,
-                                             ps,pt,ws,wt,chnls,
-                                             stride=stride,dilation=dil)
-    patches_gt = scatter_nl(vid,nlInds)
-    patches_gt.requires_grad_(True)
-    gpu_mem.print_gpu_stats(gpu_stats,"post-search")
-    vid_gt,_ = run_fold(patches_gt,t,sq_h,sq_w,stride,dil,adj)
-    gpu_mem.print_gpu_stats(gpu_stats,"post-fold")
+    # -- compare forward --
+    score_te_cat = th.cat(score_te,0)
+    print("score_gt: ",score_gt.shape)
+    print("score_te_cat.shape: ",score_te_cat.shape)
+    error = th.abs(score_gt - score_te_cat).mean()
+    assert error < 1e-7
+    error = th.abs(score_gt - score_te_cat).max()
+    assert error < 1e-6
 
     # -- run backward --
-    top,left,btm,right = coords
     vid_grad = th.randn_like(vid_gt)
-    vid_nl = fold_nl.vid[:,:,top:btm,left:right]
     th.autograd.backward(vid_gt,vid_grad)
-    th.autograd.backward(vid_nl,vid_grad)
-    gpu_mem.print_gpu_stats(gpu_stats,"post-bkw")
+    th.autograd.backward(vid_te,vid_grad)
+    # gpu_mem.print_gpu_stats(gpu_stats,"post-bkw")
     # dnls.testing.data.save_burst(vid_gt,"./output/","vid_gt")
     # dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
 
     # -- get grads --
-    grad_gt = patches_gt.grad
-    grad_nl = th.cat([p_nl.grad for p_nl in patches_nl])
-
-    # -- check forward --
-    top,left,btm,right = coords
-    error = th.sum((vid_gt - vid_nl)**2).item()
-    assert error < 1e-10
-
-    # -- reshape --
-    shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
-    grad_gt = rearrange(grad_gt,shape_str,t=t,h=nh)
-    grad_nl = rearrange(grad_nl,shape_str,t=t,h=nh)
-
+    grad_gt = vid_gt.grad
+    grad_te = vid_te.grad
 
     # -- check backward --
-    error = th.sum((grad_gt - grad_nl)**2).item()
+    error = th.sum((grad_gt - grad_te)**2).item()
     assert error < 1e-10
 
     # -- clean-up --
     th.cuda.empty_cache()
-    del vid,flow
-    del vid_gt,vid_nl
-    del patches_nl,patches_gt
-    del grad_gt,grad_nl,vid_grad
-    del iqueries,nlDists,nlInds
+    del vid_te,vidr_te
+    del vid_gt,vidr_gt
+    del grad_gt,grad_te
+    del iqueries,score_te,score_te_cat,score_gt
     th.cuda.empty_cache()
     th.cuda.synchronize()
 
