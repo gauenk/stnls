@@ -102,11 +102,10 @@ class WeightedPatchSum(th.nn.Module):
         self.h_off = h_off
         self.w_off = w_off
 
-        self.dilation = dilation
-        self.adj = adj
+        self.dilation = int(dilation)
+        self.adj = int(adj)
         self.reflect_bounds = reflect_bounds
         self.exact = exact
-
 
     def forward(self, vid, dists, inds):
         patches = WpSumFunction.apply(vid,dists,inds,self.ps,self.pt,
