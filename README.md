@@ -3,6 +3,10 @@ Differentiable Non-Local Search: A suite of patch-based and batch-friendly CUDA 
 
 ## Summary
 
+Would you like to use optical flow or [remove cropped effects](https://github.com/ZhendongWang6/Uformer/issues/25) from vision transformers? This is the code repo for you! Transformers operate on image patches, which are often explicitly represented in code. This repo provides a set of functions which allow for users to operate on nearly arbitrary video lengths and resolutions. By operating in-place, we don't have to split-up video regions so we can incorporate optical flow. Also, non-patch-based layers (like convolution for example) can be operated on the entire video at once, so we don't see edge effects where cropped regions come together. We are working to incorporate our method into eight different transformer-based video restoration methods. Stay tuned for our final work in mid-August.
+
+## Detailed Summary
+
 This package provides five primary functions: `search`, `ifold`, `iunfold`, `scatter`, and `gather`.
 - `search` function provides a differentiable patch based search using the L2-norm allowing for optical flow to be used between frames.
 - `ifold` is a batched version of Pytorch `fold` that can operate on arbitrary rectangular regions. 
