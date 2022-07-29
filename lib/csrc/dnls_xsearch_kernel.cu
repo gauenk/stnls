@@ -497,12 +497,12 @@ void dnls_cuda_xsearch_backward(
   // fprintf(stdout,"bpb,npt,cpt: %d,%d,%d\n",
   //         bpb,npt,cpt);
 
-
   // -- allocate random memory --
   auto cu_index = vid0_grad.device().index();
-  auto options = torch::TensorOptions().device(torch::kCUDA, cu_index).dtype(torch::kFloat32);
+  auto options = torch::TensorOptions().device(torch::kCUDA,
+                                               cu_index).dtype(torch::kFloat32);
   torch::Tensor rand_nums = torch::rand({num0,1,1},options);
-
+  
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_backward_kernel", ([&] {
     dnls_xsearch_backward_kernel<scalar_t><<<nblocks, nthreads>>>(

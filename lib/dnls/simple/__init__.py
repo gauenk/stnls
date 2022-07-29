@@ -1,4 +1,5 @@
 from . import search
+from . import search_nn
 from . import gather1d
 from . import gather
 from . import gather_v1

@@ -52,9 +52,9 @@ def allocate_exh(nq,ws_h,ws_w,wt,device):
     return dists,inds
 
 def allocate_rtn(nq,k,device):
-    nlDists = th.zeros((nq,k),device=device,dtype=th.float32)
-    nlInds = th.zeros((nq,k,3),device=device,dtype=th.int32)
-    return nlDists,nlInds
+    dists = th.zeros((nq,k),device=device,dtype=th.float32)
+    inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
+    return dists,inds
 
 def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     tranges,n_tranges,min_tranges = [],[],[]
@@ -94,68 +94,68 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
 class CrossSearchNlFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, queryInds, fflow, bflow,
+    def forward(ctx, vid0, vid1, qinds, fflow, bflow,
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride,dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
                 oh0, ow0, oh1, ow1, exact):
         """
         vid = [T,C,H,W]
-        queryInds = [NumQueries,K,3]
+        qinds = [NumQueries,K,3]
         ws = xsearch Window Spatial (ws)
         wt = xsearch Window Time (wt)
         """
 
         # -- unpack --
-        device = queryInds.device
-        nq = queryInds.shape[0]
+        device = qinds.device
+        nq = qinds.shape[0]
         t,c,h,w = vid0.shape
-        queryInds = queryInds.type(th.int32)
+        qinds = qinds.type(th.int32)
 
         # -- allocs --
         bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
-        nlDists_exh,nlInds_exh = allocate_exh(nq,ws_h,ws_w,wt,device)
+        dists_exh,inds_exh = allocate_exh(nq,ws_h,ws_w,wt,device)
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
         # -- forward --
-        dnls_cuda.xsearch_forward(vid0, vid1, queryInds, fflow, bflow,
-                                  nlDists_exh, nlInds_exh,
+        dnls_cuda.xsearch_forward(vid0, vid1, qinds, fflow, bflow,
+                                  dists_exh, inds_exh,
                                   ps, pt, ws_h, ws_w, wt, chnls, stride, dilation,
                                   use_search_abs, reflect_bounds, use_adj,
                                   oh0, ow0, oh1, ow1,
                                   bufs,tranges,n_tranges,min_tranges)
         th.cuda.synchronize()
         th.cuda.empty_cache()
-        # print(nlDists_exh[:3,:3,:3])
-        # print("nlDists_exh._version:",nlDists_exh._version)
-        # print("nlInds_exh._version:",nlInds_exh._version)
+        # print(dists_exh[:3,:3,:3])
+        # print("dists_exh._version:",dists_exh._version)
+        # print("inds_exh._version:",inds_exh._version)
 
         # -- topk --
-        # b = nlDists_exh.shape[0]
-        # nlDists=nlDists_exh.view(b,-1)#.contiguous()
-        # nlInds=nlInds_exh.view(b,-1,3)#.contiguous()
-        # print(nlDists_exh[0],use_search_abs)
+        # b = dists_exh.shape[0]
+        # dists=dists_exh.view(b,-1)#.contiguous()
+        # inds=inds_exh.view(b,-1,3)#.contiguous()
+        # print(dists_exh[0],use_search_abs)
         # print(k, ps, pt, ws_h, ws_w, wt, chnls, use_search_abs, use_adj, reflect_bounds)
         # print(oh0, ow0, oh1, ow1)
 
         if use_k:
-            nlDists,nlInds = allocate_rtn(nq,k,device)
-            get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
-            nlDists = nlDists.contiguous()
-            nlInds = nlInds.contiguous()
+            dists,inds = allocate_rtn(nq,k,device)
+            get_topk(dists_exh,inds_exh,dists,inds)
+            dists = dists.contiguous()
+            inds = inds.contiguous()
         else:
-            args = th.where(th.isnan(nlDists_exh))
-            nlDists_exh[args] = -th.inf # fix nan
-            b = nlDists_exh.shape[0]
-            nlDists=nlDists_exh.view(b,-1)#.contiguous()
-            nlInds=nlInds_exh.view(b,-1,3)#.contiguous()
-        # print(nlDists)
+            args = th.where(th.isnan(dists_exh))
+            dists_exh[args] = -th.inf # fix nan
+            b = dists_exh.shape[0]
+            dists=dists_exh.view(b,-1)#.contiguous()
+            inds=inds_exh.view(b,-1,3)#.contiguous()
+        # print(dists)
 
         # -- for backward --
-        ctx.save_for_backward(nlDists,nlInds,
-                              queryInds,vid0,vid1)
+        ctx.save_for_backward(dists,inds,
+                              qinds,vid0,vid1)
         ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt = ps,pt
         ctx.lam = lam
@@ -167,11 +167,11 @@ class CrossSearchNlFunction(th.autograd.Function):
         ctx.oh1 = oh1
         ctx.ow1 = ow1
 
-        return nlDists,nlInds
+        return dists,inds
 
     @staticmethod
-    def backward(ctx, grad_nlDists, grad_nlInds):
-        nlDists,nlInds,queryInds,vid0,vid1 = ctx.saved_tensors
+    def backward(ctx, grad_dists, grad_inds):
+        dists,inds,qinds,vid0,vid1 = ctx.saved_tensors
         vid_shape,exact = ctx.vid_shape,ctx.exact
         lam,ps,pt = ctx.lam,ctx.ps,ctx.pt
         oh0 = ctx.oh0
@@ -186,16 +186,16 @@ class CrossSearchNlFunction(th.autograd.Function):
         # timer.start("xsearch_bwd")
 
         # -- gradient --
-        vid0_grad = allocate_vid(vid_shape,grad_nlDists.device)
-        vid1_grad = allocate_vid(vid_shape,grad_nlDists.device)
+        vid0_grad = allocate_vid(vid_shape,grad_dists.device)
+        vid1_grad = allocate_vid(vid_shape,grad_dists.device)
         # th.cuda.synchronize()
         dnls_cuda.xsearch_backward(vid0_grad,vid1_grad,vid0,vid1,
-                                   queryInds,grad_nlDists,nlInds,
+                                   qinds,grad_dists,inds,
                                    oh0,ow0,oh1,ow1,
                                    ps,pt,lam,reflect_bounds,exact)
 
         # -- stop timer --
-        th.cuda.synchronize()
+        # th.cuda.synchronize()
         # timer.stop("xsearch_bwd")
         # print(timer)
 

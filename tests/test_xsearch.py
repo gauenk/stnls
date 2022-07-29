@@ -51,7 +51,6 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize(key,val)
 
 
-
 def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     """
 
@@ -130,7 +129,8 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
                                          k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=-1,dilation=dil, stride=stride1,
                                          reflect_bounds=reflect_bounds,use_k=False,
-                                         use_search_abs=True,use_adj=use_adj,exact=exact)
+                                         use_search_abs=True,use_adj=use_adj,
+                                         exact=exact)
     # -- query inds --
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -164,14 +164,14 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # print(score_te.shape)
 
     # -- viz --
-    print(score_te[0,0,:5,:5])
-    print(score_gt[0,0,:5,:5])
-    print("-"*10)
-    print(score_te[0,0,5:10,5:10])
-    print(score_gt[0,0,5:10,5:10])
-    print("-"*10)
-    print(score_te[0,0,16:18,16:18])
-    print(score_gt[0,0,16:18,16:18])
+    # print(score_te[0,0,:5,:5])
+    # print(score_gt[0,0,:5,:5])
+    # print("-"*10)
+    # print(score_te[0,0,5:10,5:10])
+    # print(score_gt[0,0,5:10,5:10])
+    # print("-"*10)
+    # print(score_te[0,0,16:18,16:18])
+    # print(score_gt[0,0,16:18,16:18])
 
 
     diff = th.abs(score_te - score_gt).mean((-1,-2))
@@ -236,7 +236,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -356,14 +356,14 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
         # -- viz [the error map looks weird] --
-        print(grads_te[0,-1,-10:,-10:])
-        print(grads_gt[0,-1,-10:,-10:])
-        diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
-        diff /= diff.max()
-        dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
-        print(idx)
+        # print(grads_te[0,-1,-10:,-10:])
+        # print(grads_gt[0,-1,-10:,-10:])
+        # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
+        # diff /= diff.max()
+        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # print(idx)
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
@@ -372,14 +372,14 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
         tol = 1e-3
         error = th.max(rel_error_nz).item()
         if error > tol: print("Max Error: ",error)
-        print("Max Error: ",error)
-        # assert error < tol
+        # print("Max Error: ",error)
+        assert error < tol
 
         tol = 1e-4
         error = th.mean(rel_error_nz).item()
         if error > tol: print("Mean Error: ",error)
-        print("Mean Error: ",error)
-        # assert error < tol
+        # print("Mean Error: ",error)
+        assert error < tol
 
 def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     """
@@ -421,7 +421,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -529,14 +529,14 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     params_te,params_gt = create_weights_pair(ichnls,ochnls)
     vid0_te,vid1_te = get_xformed(vid.clone(),params_te)
     vid0_gt,vid1_gt = get_xformed(vid.clone(),params_gt)
-    print(vid0_te.mean(),vid0_te.std())
+    # print(vid0_te.mean(),vid0_te.std())
 
     # -- check fwd with weights --
     error0 = th.sum(th.abs(vid0_te - vid0_gt)).item()
     error1 = th.sum(th.abs(vid1_te - vid1_gt)).item()
     assert error0 < 1e-10
     assert error1 < 1e-10
-    print("errors: ",error0,error1)
+    # print("errors: ",error0,error1)
 
     #
     # -- run search --
@@ -553,23 +553,24 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # -- vis --
     diff = th.abs(score_te - score_gt)/(score_gt.abs()+1e-10)
     args = th.where(diff>1e-10)
-    for i in range(len(args)):
-        print(i,th.unique(args[i]))
-    if diff.max() > 1e-10: diff /= diff.max()
-    dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
-    dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
+    save_burst = dnls.testing.data.save_burst
+    # for i in range(len(args)):
+    #     print(i,th.unique(args[i]))
+    # if diff.max() > 1e-10: diff /= diff.max()
+    # save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
+    # save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
 
     # -- compare fwd --
     diff = th.abs(score_te - score_gt)
     args = th.where(diff > 1e-3)
-    print(score_te[args][:5])
-    print(score_gt[args][:5])
+    # print(score_te[args][:5])
+    # print(score_gt[args][:5])
     max_error = th.abs(score_te - score_gt).max().item()
-    print("max error: ",max_error)
+    # print("max error: ",max_error)
     assert max_error < 1e-3
 
     error = th.mean(th.abs(score_te - score_gt)).item()
-    print("error: ",error)
+    # print("error: ",error)
     assert error < 1e-4
 
     # -- compute grad --
@@ -583,14 +584,14 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
         # -- viz [the error map looks weird] --
-        print(grads_te[0,-1,-10:,-10:])
-        print(grads_gt[0,-1,-10:,-10:])
-        diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
-        diff /= diff.max()
-        dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
-        print(idx)
+        # print(grads_te[0,-1,-10:,-10:])
+        # print(grads_gt[0,-1,-10:,-10:])
+        # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
+        # diff /= diff.max()
+        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # print(idx)
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
@@ -599,14 +600,14 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
         tol = 1e-3
         error = th.max(rel_error_nz).item()
         if error > tol: print("Max Error: ",error)
-        print("Max Error: ",error)
-        # assert error < tol
+        # print("Max Error: ",error)
+        assert error < tol
 
         tol = 1e-4
         error = th.mean(rel_error_nz).item()
         if error > tol: print("Mean Error: ",error)
-        print("Mean Error: ",error)
-        # assert error < tol
+        # print("Mean Error: ",error)
+        assert error < tol
 
 
 
@@ -703,8 +704,7 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
-    chnls,pt = 3,1
-    wt = 2
+    chnls,pt,wt = 3,1,0
     ws = -1 if k == -1 else 10
     use_search_abs = k == -1
     use_k = not(k == -1)
@@ -768,9 +768,10 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     # -- run search --
     score_te,inds_te = xsearch_nl(vid,iqueries)
     score_simp,inds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
-                                                       ps,pt,ws,wt,chnls,
-                                                       stride0=stride0,stride1=stride1,dilation=dil,
-                                                       use_k=use_k,use_search_abs=use_search_abs)
+                                                   ps,pt,ws,wt,chnls,
+                                                   stride0=stride0,stride1=stride1,
+                                                   dilation=dil,use_k=use_k,
+                                                   use_search_abs=use_search_abs)
 
     # -- reshape --
     nq = iqueries.shape[0]
@@ -874,8 +875,6 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
 
     # -- compare forward --
     score_te_cat = th.cat(score_te,0)
-    print("score_gt: ",score_gt.shape)
-    print("score_te_cat.shape: ",score_te_cat.shape)
     error = th.abs(score_gt - score_te_cat).mean()
     assert error < 1e-7
     error = th.abs(score_gt - score_te_cat).max()

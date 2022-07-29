@@ -143,13 +143,15 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.wpsum.WeightedPatchSum(ps, pt, h_off=h_off,w_off=w_off, dilation=dil,
-                                        reflect_bounds=reflect_bounds, adj=adj, exact=exact)
+    wpsum = dnls.wpsum.WeightedPatchSum(ps, pt, h_off=h_off,w_off=w_off,
+                                        dilation=dil, reflect_bounds=reflect_bounds,
+                                        adj=adj, exact=exact)
 
     # -- run xsearch & wpsum --
     scores,inds = xsearch(vid,iqueries,vid1=vid)
     scores_s = softmax(scores*10,dim=1)
     wpatches_te = wpsum(vid,scores_s,inds).view(iqueries.shape[0],-1)
+    print(wpatches_te.shape)
 
     # -- run simple forward for testing --
     if use_unfold:

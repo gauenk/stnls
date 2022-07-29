@@ -3,6 +3,9 @@
 import torch as th
 import numpy as np
 
+# -- padding --
+from dnls.utils.pads import comp_pads
+
 # -- cpp cuda kernel --
 import dnls_cuda
 
@@ -28,21 +31,21 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_bufs(nq,t,ws,device):
-    bufs = th.zeros(nq,3,t,ws,ws,dtype=th.int32,device=device)
+def allocate_bufs(nq,t,ws_h,ws_w,device):
+    bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
 
-def allocate_exh(nq,ws,wt,device):
-    dists = th.zeros((nq,2*wt+1,ws,ws),device=device,dtype=th.float32)
+def allocate_exh(nq,wt,ws_h,ws_w,device):
+    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
     dists[...] = float("inf")
-    inds = th.zeros((nq,2*wt+1,ws,ws,3),device=device,dtype=th.int32)
+    inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
 
 def allocate_rtn(nq,k,device):
-    nlDists = th.zeros((nq,k),device=device,dtype=th.float32)
-    nlInds = th.zeros((nq,k,3),device=device,dtype=th.int32)
-    return nlDists,nlInds
+    dists = th.zeros((nq,k),device=device,dtype=th.float32)
+    inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
+    return dists,inds
 
 def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     tranges,n_tranges,min_tranges = [],[],[]
@@ -82,61 +85,88 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
 class SearchNlFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid, queryInds, fflow, bflow,
-                k, ps, pt, ws, wt, chnls,
-                dilation=1,stride=1,lam=1.):
+    def forward(ctx, vid0, vid1, qinds, fflow, bflow,
+                h0_off, w0_off, h1_off, w1_off,
+                k, ps, pt, ws_h, ws_w, wt, chnls,
+                dilation=1,stride=1,use_k=True,use_adj=True,
+                reflect_bounds=True,search_abs=False,exact=False):
         """
-        vid = [T,C,H,W]
-        queryInds = [NumQueries,K,3]
+        vid0 = [T,C,H,W]
+        qinds = [NumQueries,K,3]
         ws = search Window Spatial (ws)
         wt = search Window Time (wt)
         """
 
         # -- unpack --
-        device = queryInds.device
-        nq = queryInds.shape[0]
-        t,c,h,w = vid.shape
-        queryInds = queryInds.type(th.int32)
+        device = qinds.device
+        nq = qinds.shape[0]
+        t,c,h,w = vid0.shape
+        qinds = qinds.type(th.int32)
 
         # -- allocs --
-        bufs = allocate_bufs(nq,t,ws,device)
-        nlDists,nlInds = allocate_rtn(nq,k,device)
-        nlDists_exh,nlInds_exh = allocate_exh(nq,ws,wt,device)
+        bufs = allocate_bufs(nq,t,ws_h,ws_w,device)
+        dists_exh,inds_exh = allocate_exh(nq,wt,ws_h,ws_w,device)
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
         # -- forward --
-        dnls_cuda.search_forward(vid, queryInds, fflow, bflow,
-                                 nlDists_exh, nlInds_exh,
-                                 ps, pt, ws, wt, chnls, dilation, stride,
-                                 bufs,tranges,n_tranges,min_tranges)
+        dnls_cuda.search_forward(vid0, vid1, qinds, fflow, bflow,
+                                 dists_exh, inds_exh,
+                                 h0_off, w0_off, h1_off, w1_off,
+                                 ps, pt, ws_h, ws_w,
+                                 wt, chnls, dilation, stride, use_adj,
+                                 reflect_bounds, search_abs, bufs, tranges,
+                                 n_tranges, min_tranges)
         # -- topk --
-        get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
-        nlDists[:,0] = 0. # fix the "-100" hack to 0.
+        if use_k:
+            dists,inds = allocate_rtn(nq,k,device)
+            get_topk(dists_exh,inds_exh,dists,inds)
+            dists[:,0] = 0. # fix the "-100" hack to 0.
+        else:
+            args = th.where(dists_exh<0)
+            dists_exh[args] = 0. # fix the "-100" hack to 0.
+            b = dists_exh.shape[0]
+            dists=dists_exh.view(b,-1)#.contiguous()
+            inds=inds_exh.view(b,-1,3)#.contiguous()
 
         # -- for backward --
-        ctx.save_for_backward(nlDists,nlInds)
-        ctx.vid_shape = vid.shape
+        ctx.save_for_backward(inds,vid0,vid1)
+        ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt = ps,pt
-        ctx.lam = lam
-
-        return nlDists,nlInds
+        ctx.reflect_bounds = reflect_bounds
+        ctx.exact = exact
+        ctx.use_adj = use_adj
+        ctx.h0_off,ctx.w0_off = h0_off, w0_off
+        ctx.h1_off,ctx.w1_off = h1_off, w1_off
+        return dists,inds
 
     @staticmethod
-    def backward(ctx, grad_nlDists, grad_nlInds):
-        nlDists,nlInds = ctx.saved_tensors
-        bkwd_nlDists = nlDists * grad_nlDists
+    def backward(ctx, grad_dists, grad_inds):
+        inds,vid0,vid1 = ctx.saved_tensors
         vid_shape = ctx.vid_shape
-        lam,ps,pt = ctx.lam,ctx.ps,ctx.pt
-        vid = allocate_vid(vid_shape,grad_nlDists.device)
-        dnls_cuda.search_backward(vid,bkwd_nlDists,nlInds,ps,pt,lam)
-        return vid,None,None,None,None,None,None,None,None,None,None,None,None,None
+        ps,pt = ctx.ps,ctx.pt
+        exact,use_adj = ctx.exact,ctx.use_adj
+        reflect_bounds = ctx.reflect_bounds
+        h0_off, w0_off = ctx.h0_off,ctx.w0_off
+        h1_off, w1_off = ctx.h1_off,ctx.w1_off
+        grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
+        grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
+        dnls_cuda.search_backward(grad_vid0,grad_vid1,vid1,vid0,
+                                  grad_dists,inds,
+                                  h0_off, w0_off, h1_off, w1_off,
+                                  ps,pt, use_adj,reflect_bounds,exact)
+        return grad_vid0,grad_vid1,None,None,None,\
+            None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None
 
 class SearchNl(th.nn.Module):
 
-    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, chnls=1,
-                 dilation=1, stride=1, lam = 1.):
+    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, chnls=-1,
+                 dilation=1, stride=1,
+                 use_k=True, use_adj=True, reflect_bounds=True,
+                 search_abs=False, exact=False,
+                 h0_off=0,w0_off=0,h1_off=0,w1_off=0):
         super(SearchNl, self).__init__()
         self.k = k
         self.ps = ps
@@ -148,10 +178,50 @@ class SearchNl(th.nn.Module):
         self.chnls = chnls
         self.dilation = dilation
         self.stride = stride
-        self.lam = lam
+        self.h0_off = h0_off
+        self.w0_off = w0_off
+        self.h1_off = h1_off
+        self.w1_off = w1_off
+        self.use_adj = use_adj
+        self.use_k = use_k
+        self.exact = exact
+        self.reflect_bounds = reflect_bounds
+        self.search_abs = search_abs
 
-    def forward(self, vid, queryInds):
-        return SearchNlFunction.apply(vid,queryInds,self.fflow,self.bflow,
-                                      self.k,self.ps,self.pt,self.ws,self.wt,
-                                      self.chnls,self.dilation,self.stride,self.lam)
+    def _get_args(self,vshape):
+        # -- unpack --
+        ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
+        ps,stride,dil = self.ps,self.stride,self.dilation
+        t,c,h,w = vshape
+
+        # -- compute --
+        _,_,hp,wp = comp_pads(vshape, ps, stride, dil)
+        n_h = (hp - (ps-1)*dil - 1)//stride + 1
+        n_w = (wp - (ps-1)*dil - 1)//stride + 1
+        ws_h,ws_w = ws,ws
+        if ws == -1: ws_h,ws_w = n_h,n_w
+        if k == -1: k = ws**2 * (2*wt + 1)
+        if chnls <= 0: chnls = c
+        return ws_h,ws_w,wt,k,chnls
+
+    def _update_flow(self,vshape,device):
+        t,c,h,w = vshape
+        zflow = th.ones((t,2,h,w),device=device)
+        if self.fflow is None: self.fflow = zflow
+        if self.bflow is None: self.bflow = zflow
+        for i in [0,2,3]:
+            assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
+            assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
+
+    def forward(self, vid0, qinds, vid1=None):
+        if vid1 is None: vid1 = vid0
+        self._update_flow(vid0.shape,vid0.device)
+        ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
+        return SearchNlFunction.apply(vid0,vid1,qinds,self.fflow,self.bflow,
+                                      self.h0_off,self.w0_off,self.h1_off,self.w1_off,
+                                      k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
+                                      self.dilation,self.stride,
+                                      self.use_k,self.use_adj,
+                                      self.reflect_bounds,self.search_abs,
+                                      self.exact)
 
