@@ -256,6 +256,7 @@ __global__ void dnls_search_forward_kernel(
                   if (valid){
                     float _dist = (v_pix - n_pix);
                     dist += _dist*_dist;
+                    // dist += v_pix * n_pix;
                   }
                 }
               }
@@ -306,13 +307,13 @@ void dnls_cuda_search_forward(
 
    // launch params 
    int bpb = 10;
-   int numQueries = qinds.size(0);
+   int nqueries = qinds.size(0);
    int ws_h_threads = std::min(ws_h,32);
    int ws_w_threads = std::min(ws_w,32);
    int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
-   int nblocks = ((numQueries - 1) / bpb) + 1;
+   int nblocks = ((nqueries - 1) / bpb) + 1;
    //fprintf(stdout,"w_threads: %d\n",w_threads);
    // fprintf(stdout,"reflect_bounds,search_abs: %d,%d\n",reflect_bounds,search_abs);
     
@@ -350,74 +351,198 @@ __global__ void dnls_search_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid1,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> grad_dists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> qinds,
+    const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps, int pt, bool use_adj, bool reflect_bounds, int bpb) {
+    int ps, int pt, int dilation, bool use_adj, bool reflect_bounds,
+    int bpt, int npt, int cpt) {
 
   // -- shape --
-  int nq = dists.size(0);
-  int k =  dists.size(1);
-  int color = vid0.size(1);
-  int ti,hi,wi;
-  float weight;
-  int psHalf = ps/2;
+  int nq = grad_dists.size(0);
+  int k =  grad_dists.size(1);
+  int nframes = vid0.size(0);
+  int colors = vid0.size(1);
+  int height = vid0.size(2);
+  int width = vid0.size(3);
 
-  // -- get indices --
-  int tidx = threadIdx.x;
-  int bidx = blockIdx.x;
-  int index = tidx + bidx * blockDim.x;
+  // -- fwd decl registers --
+  int ti,hi,wi;
+  int tj,hj,wj;
+  int tk,hk,wk;
+  int tk_a,hk_a,wk_a;
+  bool valid_hj,valid_wj;
+  bool valid_hk,valid_wk;
+  bool valid,valid_j,valid_k;
+  float weight,pix,pix0,pix1;
+
+  // -- declare constants --
+  int psHalf = ps/2;
   int adj = use_adj ? psHalf : 0;
 
+  // -- limits --
+  int i0_max = inds.size(0);
+  int i1_max = inds.size(1);
 
-  if (bidx < nq){
-    // iterate
-    for (int ki = 0; ki < k; ki++){
-      for (int pk = 0; pk < ps; pk++){
+  // -- get indices --
+  int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.x);
+  int i1_start = threadIdx.y * npt;
+  int c0_start = threadIdx.z * cpt;
+
+  // -- get block limits --
+  int i0_end = min(i0_start + bpt,i0_max);
+  int i1_end = min(i1_start + npt,i1_max);
+  int c0_end = min(c0_start + cpt,colors);
+
+  // -- color offset --
+  int c0 = 0;
+  int c0_dist = c0_end - c0_start;
+  int c0_offset = 0;
+
+  // -- each region --
+  for (int i0=i0_start; i0 < i0_end; i0++){
+
+    tk_a = qinds[i0][0];
+    hk_a = qinds[i0][1];
+    wk_a = qinds[i0][2];
+    c0_offset = __float2int_rd(c0_dist * rand_nums[i0][0][0]);
+
+    // k neighbors
+    for (int i1=i1_start; i1 < i1_end; i1++){
+      ti = inds[i0][i1][0];
+      hi = inds[i0][i1][1];
+      wi = inds[i0][i1][2];
+      weight = grad_dists[i0][i1];
+
+      for (int pk = 0; pk < pt; pk++){
         for (int pi = 0; pi < ps; pi++){
           for (int pj = 0; pj < ps; pj++){
-            ti = inds[bidx][ki][0];
-            hi = inds[bidx][ki][1];
-            wi = inds[bidx][ki][2];
-            for (int ci = 0; ci < color; ci++){
-              grad_vid0[ti][ci][hi][wi] += dists[bidx][ki];
+            
+
+            // -- anchor patch --
+            hk = (hk_a-h0_off) + dilation*(pi - psHalf + adj);
+            hk = reflect_bounds ? bounds(hk,height) : hk;
+            wk = (wk_a-w0_off) + dilation*(pj - psHalf + adj);
+            wk = reflect_bounds ? bounds(wk,width) : wk;
+            tk = reflect_bounds ? bounds(tk_a+pk,nframes) : tk_a+pk;
+
+            // -- proposed location --
+            hj = (hi-h1_off) + dilation*(pi - psHalf + adj);
+            hj = reflect_bounds ? bounds(hj,height) : hj;
+            wj = (wi-w1_off) + dilation*(pj - psHalf + adj);
+            wj = reflect_bounds ? bounds(wj,width) : wj;
+            tj = reflect_bounds ? bounds(ti+pk,nframes) : ti+pk;
+
+            // -- assess if valid --
+            valid_hj = (hj >= 0) && (hj < height);
+            valid_wj = (wj >= 0) && (wj < width);
+            valid_j = valid_hj && valid_wj;
+
+            valid_hk = (hk >= 0) && (hk < height);
+            valid_wk = (wk >= 0) && (wk < width);
+            valid_k = valid_hk && valid_wk;
+
+            // valid = valid_j && valid_k;
+
+            for (int _c0 = c0_start; _c0 < c0_end; _c0++){
+              c0 = (_c0 + c0_offset) % c0_dist + c0_start;
+              pix0 =  valid_k ? vid0[tk][c0][hk][wk] : 0.;
+              pix1 =  valid_j ? vid1[tj][c0][hj][wj] : 0.;
+              pix = 2 * weight * (pix0 - pix1);
+
+              if (valid_j){
+                grad_vid1[tj][c0][hj][wj] -= pix;
+              }
+              if (valid_k){
+                grad_vid0[tk][c0][hk][wk] += pix;
+              }
+
             }
           }
         }
       }
     }
   }
-
 }
 
 void dnls_cuda_search_backward(
-    torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
-    torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor vid0, torch::Tensor vid1,
+    torch::Tensor grad_dists, torch::Tensor inds, torch::Tensor qinds,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps, int pt, bool use_adj, bool reflect_bounds, bool exact) {
+    int ps, int pt, int dilation,
+    bool use_adj, bool reflect_bounds, bool exact) {
 
-  // launch params
-  int numQueries = inds.size(0);
-  int k = dists.size(1);
+  // -- unpack --
+  int nframes = vid0.size(0);
+  int colors = vid0.size(1);
+  int height = vid0.size(2);
+  int width = vid0.size(3);
+  int nqueries = inds.size(0);
+  int k = grad_dists.size(1);
   assert(pt == 1);
 
-  int bpb = 10;
-  int nthreads = 512;
-  int num_per_block = nthreads * bpb;
-  int nblocks = ((numQueries - 1) / num_per_block) + 1;
+  // -- compute number of neighbor threads --
+  int npt = 16;
+  int neigh_nthreads = (k-1) / npt + 1;
+  if (neigh_nthreads > 64){
+    neigh_nthreads = 64;
+    npt = (k-1)/neigh_nthreads + 1;
+  }
+  if (exact){
+    neigh_nthreads = 1;
+    npt = k;
+  }
 
-  // launch kernel
+  // -- compute number of color threads --
+  int cpt = exact ? 1 : colors;
+  int color_nthreads = (colors - 1)/cpt + 1;
+
+  // -- compute number of blocks --
+  //    [think: parallelization over "nqueries"]
+  int bpt = 4;
+  int query_nthreads = 16;
+  int total_per_block = bpt * query_nthreads;
+  int nblocks = ((nqueries - 1) / total_per_block) + 1;
+  if (exact){
+    bpt = nqueries;
+    query_nthreads = 1;
+    nblocks = 1;
+  }
+
+  // -- launch params --
+  dim3 nthreads(query_nthreads, neigh_nthreads, color_nthreads);
+
+  // -- info --
+  // fprintf(stdout,
+  //         "query_nthreads, neigh_nthreads, color_nthreads: %d,%d,%d\n",
+  //         query_nthreads, neigh_nthreads, color_nthreads);
+  // fprintf(stdout,"nblocks: %d\n",nblocks);
+  // fprintf(stdout,"bpt,npt,cpt: %d,%d,%d\n",bpt,npt,cpt);
+  // fprintf(stdout,"h0_off,w0_off,h1_off,w1_off: %d,%d,%d,%d\n",
+  //         h0_off,w0_off,h1_off,w1_off);
+  // fprintf(stdout,"ps,pt,dil: %d,%d,%d\n",ps,pt,dilation);
+
+  // -- allocate random values --
+  auto cu_index = grad_vid0.device().index();
+  auto options = torch::TensorOptions().device(torch::kCUDA,
+                                               cu_index).dtype(torch::kFloat32);
+  torch::Tensor rand_nums = torch::rand({nqueries,1,1},options);
+
+  // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {
     dnls_search_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         grad_vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        grad_dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        h0_off, w0_off, h1_off, w1_off,
-        ps,pt,use_adj,reflect_bounds,bpb);
+        qinds.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        h0_off, w0_off, h1_off, w1_off,ps,pt,dilation,use_adj,reflect_bounds,
+        bpt,npt,cpt);
   }));
 
 }

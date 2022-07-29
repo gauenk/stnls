@@ -178,7 +178,7 @@ void dnls_cuda_iunfold_forward(
   // -- kernel blocks --
   int numQueries = patches.size(0);
   int k = 1;
-  int qpt = 10;
+  int qpt = 4;
   int nblocks = (numQueries-1)/qpt+1;
   int pt = patches.size(2);
   assert(pt == 1);

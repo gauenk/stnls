@@ -20,7 +20,7 @@ def run(vid0,iqueries,flow,k,ps,pt,ws,wt,chnls,dilation=1,stride=1,
 
     # -- allocate --
     use_k = k > 0
-    k,ws = get_args(k,ws,wt,vid0.shape)
+    k,ws = get_args(k,ws,wt,stride,vid0.shape)
     device = iqueries.device
     nq = iqueries.shape[0]
     dists_exh,inds_exh = allocate_exh(nq,ws,wt,device)
@@ -48,9 +48,9 @@ def run(vid0,iqueries,flow,k,ps,pt,ws,wt,chnls,dilation=1,stride=1,
 
     return dists,inds
 
-def get_args(k,ws,wt,vshape):
+def get_args(k,ws,wt,stride,vshape):
     t,c,h,w = vshape
-    if ws <= 0: ws = h
+    if ws <= 0: ws = int((h-1)//stride+1)
     if k <= 0: k = ws * ws * (2*(wt+1))
     return k,ws
 

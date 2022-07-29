@@ -42,7 +42,7 @@ __global__ void dnls_xsearch_forward_kernel(
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> nlInds,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride, int dilation, 
     bool use_search_abs, bool use_bounds, bool use_adj,
-    int oh0, int ow0, int oh1, int ow1,
+    int h0_off, int w0_off, int h1_off, int w1_off,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> bufs,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
@@ -224,24 +224,24 @@ __global__ void dnls_xsearch_forward_kernel(
 
             for (int pi = 0; pi < ps; pi++){
               // -- anchor height --
-              vH = (hi-oh0) + dilation*(pi - psHalf + adj);
+              vH = (hi-h0_off) + dilation*(pi - psHalf + adj);
               vH = use_bounds ? bounds(vH,height) : vH;
               vvalid_h = (vH < height) && (vH >= 0);
 
               // -- propose height --
-              nH = (n_hi-oh1) + dilation*(pi - psHalf + adj);
+              nH = (n_hi-h1_off) + dilation*(pi - psHalf + adj);
               nH = use_bounds ? bounds(nH,height) : nH;
               nvalid_h = (nH < height) && (nH >= 0);
 
               for (int pj = 0; pj < ps; pj++){
 
                 // -- anchor width --
-                vW = (wi-ow0) + dilation*(pj - psHalf + adj);
+                vW = (wi-w0_off) + dilation*(pj - psHalf + adj);
                 vW = use_bounds ? bounds(vW,width) : vW;
                 vvalid_w = (vW < width) && (vW >= 0);
 
                 // -- propose width --
-                nW = (n_wi-ow1) + dilation*(pj - psHalf + adj);
+                nW = (n_wi-w1_off) + dilation*(pj - psHalf + adj);
                 nW = use_bounds ? bounds(nW,height) : nW;
                 nvalid_w = (nW < width) && (nW >= 0);
 
@@ -294,7 +294,7 @@ void dnls_cuda_xsearch_forward(
     torch::Tensor fflow, torch::Tensor bflow, torch::Tensor nlDists, torch::Tensor nlInds,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
-    int oh0, int ow0, int oh1, int ow1,
+    int h0_off, int w0_off, int h1_off, int w1_off,
     torch::Tensor bufs, torch::Tensor tranges, torch::Tensor n_tranges,
     torch::Tensor min_tranges){
 
@@ -304,7 +304,7 @@ void dnls_cuda_xsearch_forward(
     // ws_iters = (ws-1)//w_threads + 1
     // nblocks = (nq-1)//batches_per_block+1
     // fprintf(stdout,"use_search_abs, bool use_bounds, bool use_adj: %d,%d,%d\n",use_search_abs, use_bounds, use_adj);
-    // fprintf(stdout,"oh0, ow0, oh1, ow1: %d,%d,%d,%d\n",oh0, ow0, oh1, ow1);
+    // fprintf(stdout,"h0_off, w0_off, h1_off, w1_off: %d,%d,%d,%d\n",h0_off, w0_off, h1_off, w1_off);
     // fprintf(stdout,"stride, dilation: %d,%d\n",stride, dilation);
 
     // -- threads --
@@ -331,7 +331,7 @@ void dnls_cuda_xsearch_forward(
          nlDists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
          nlInds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
          ps, pt, ws_h, ws_w, wt, chnls, stride, dilation, 
-         use_search_abs, use_bounds, use_adj, oh0, ow0, oh1, ow1,
+         use_search_abs, use_bounds, use_adj, h0_off, w0_off, h1_off, w1_off,
          bufs.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
          tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
          n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -357,7 +357,7 @@ __global__ void dnls_xsearch_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
-    int oh0, int ow0, int oh1, int ow1,
+    int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, float lam, bool use_bounds,
     int bpb, int npt, int cpt) {
 
@@ -388,7 +388,7 @@ __global__ void dnls_xsearch_backward_kernel(
   int c0_offset = 0;
 
   // misc
-  // int oh0,ow0,oh1,ow1;
+  // int h0_off,w0_off,h1_off,w1_off;
   int psHalf = ps/2;
   int adj = psHalf;
   int dilation = 1;
@@ -423,15 +423,15 @@ __global__ void dnls_xsearch_backward_kernel(
 
             // -- anchor patch --
             tk = use_bounds ? bounds(tk_a+pk,nframes) : tk_a+pk;
-            hk = (hk_a-oh0) + dilation*(pi - psHalf + adj);
+            hk = (hk_a-h0_off) + dilation*(pi - psHalf + adj);
             hk = use_bounds ? bounds(hk,height) : hk;
-            wk = (wk_a-ow0) + dilation*(pj - psHalf + adj);
+            wk = (wk_a-w0_off) + dilation*(pj - psHalf + adj);
             wk = use_bounds ? bounds(wk,width) : wk;
 
             // -- proposed location --
-            hj = (hi-oh1) + dilation*(pi - psHalf + adj);
+            hj = (hi-h1_off) + dilation*(pi - psHalf + adj);
             hj = use_bounds ? bounds(hj,height) : hj;
-            wj = (wi-ow1) + dilation*(pj - psHalf + adj);
+            wj = (wi-w1_off) + dilation*(pj - psHalf + adj);
             wj = use_bounds ? bounds(wj,width) : wj;
             tj = use_bounds ? bounds(ti+pk,nframes) : ti+pk;
 
@@ -466,7 +466,7 @@ void dnls_cuda_xsearch_backward(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor qinds, torch::Tensor nlDists, torch::Tensor nlInds,
-    int oh0, int ow0, int oh1, int ow1,
+    int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, float lam, bool use_bounds, bool exact) {
 
   // unpack
@@ -497,7 +497,7 @@ void dnls_cuda_xsearch_backward(
   // fprintf(stdout,"bpb,npt,cpt: %d,%d,%d\n",
   //         bpb,npt,cpt);
 
-  // -- allocate random memory --
+  // -- allocate random values --
   auto cu_index = vid0_grad.device().index();
   auto options = torch::TensorOptions().device(torch::kCUDA,
                                                cu_index).dtype(torch::kFloat32);
@@ -514,7 +514,7 @@ void dnls_cuda_xsearch_backward(
         nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
-        oh0,ow0,oh1,ow1,ps,pt,lam,use_bounds,bpb,npt,cpt);
+        h0_off,w0_off,h1_off,w1_off,ps,pt,lam,use_bounds,bpb,npt,cpt);
   }));
 
 }

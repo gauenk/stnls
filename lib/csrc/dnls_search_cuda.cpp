@@ -19,9 +19,9 @@ void dnls_cuda_search_forward(
 void dnls_cuda_search_backward(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor dists, torch::Tensor inds, torch::Tensor qinds,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps, int pt, bool use_adj,
+    int ps, int pt, int dilation, bool use_adj,
     bool reflect_bounds, bool exact);
 
 // C++ interface
@@ -61,19 +61,19 @@ void dnls_search_forward(
 void dnls_search_backward(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor dists, torch::Tensor inds, torch::Tensor qinds,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps,int pt, bool use_adj, bool reflect_bounds, bool exact) {
+    int ps,int pt, int dilation, bool use_adj, bool reflect_bounds, bool exact) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
+  CHECK_INPUT(qinds);
   dnls_cuda_search_backward(grad_vid0,grad_vid1,vid0,vid1,
-                            dists,inds,
-                            h0_off,w0_off,h1_off,w1_off,
-                            ps,pt,use_adj,reflect_bounds,exact);
+                            dists,inds,qinds,h0_off,w0_off,h1_off,w1_off,
+                            ps,pt,dilation,use_adj,reflect_bounds,exact);
 }
 
 // python bindings

@@ -131,9 +131,9 @@ class SearchNlFunction(th.autograd.Function):
             inds=inds_exh.view(b,-1,3)#.contiguous()
 
         # -- for backward --
-        ctx.save_for_backward(inds,vid0,vid1)
+        ctx.save_for_backward(qinds,inds,vid0,vid1)
         ctx.vid_shape = vid0.shape
-        ctx.ps,ctx.pt = ps,pt
+        ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
         ctx.exact = exact
         ctx.use_adj = use_adj
@@ -143,19 +143,21 @@ class SearchNlFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
-        inds,vid0,vid1 = ctx.saved_tensors
+        qinds,inds,vid0,vid1 = ctx.saved_tensors
         vid_shape = ctx.vid_shape
-        ps,pt = ctx.ps,ctx.pt
+        ps,pt,dil = ctx.ps,ctx.pt,ctx.dil
         exact,use_adj = ctx.exact,ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         h0_off, w0_off = ctx.h0_off,ctx.w0_off
         h1_off, w1_off = ctx.h1_off,ctx.w1_off
         grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
         grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
-        dnls_cuda.search_backward(grad_vid0,grad_vid1,vid1,vid0,
-                                  grad_dists,inds,
+        dnls_cuda.search_backward(grad_vid0,grad_vid1,vid0,vid1,
+                                  grad_dists,inds,qinds,
                                   h0_off, w0_off, h1_off, w1_off,
-                                  ps,pt, use_adj,reflect_bounds,exact)
+                                  ps,pt,dil, use_adj,reflect_bounds,exact)
+        th.cuda.synchronize()
+
         return grad_vid0,grad_vid1,None,None,None,\
             None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None
