@@ -176,11 +176,11 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
     k,pt = 1,1
     wt = 0
     ws = -1
-    k = -1
     # stride0 = stride
     # stride1 = 1
-    search_abs = True
+    search_abs = k<=0
     use_k = k>0
+    if ws == -1 and k > 0: ws = 10
     exact = True
     use_adj = True
 
@@ -256,17 +256,19 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- run search --
     score_gt,_ = dnls.simple.search.run(vid,iqueries,flows,k,ps,pt,ws,wt,chnls,
-                                        dilation=dil,stride=stride1,
-                                        use_adj=use_adj,reflect_bounds=reflect_bounds,
+                                        dilation=dil,stride=stride1,use_adj=use_adj,
+                                        reflect_bounds=reflect_bounds,
                                         search_abs=search_abs,
                                         h0_off=h0_off,w0_off=w0_off,
                                         h1_off=h1_off,w1_off=w1_off,
                                         vid1=vidr)
-    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
 
     # -- testing code --
     score_te,inds_te = search(vid,iqueries,vid1=vidr)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+
+    # -- viz --
+    # print(score_te[0,:3])
+    # print(score_gt[0,:3])
 
     # -- compare --
     tol = 1e-5

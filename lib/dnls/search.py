@@ -122,10 +122,10 @@ class SearchNlFunction(th.autograd.Function):
         if use_k:
             dists,inds = allocate_rtn(nq,k,device)
             get_topk(dists_exh,inds_exh,dists,inds)
-            dists[:,0] = 0. # fix the "-100" hack to 0.
+            # dists[:,0] = 0. # fix the "-100" hack to 0.
         else:
-            args = th.where(dists_exh<0)
-            dists_exh[args] = 0. # fix the "-100" hack to 0.
+            # args = th.where(dists_exh<0)
+            # dists_exh[args] = 0. # fix the "-100" hack to 0.
             b = dists_exh.shape[0]
             dists=dists_exh.view(b,-1)#.contiguous()
             inds=inds_exh.view(b,-1,3)#.contiguous()
