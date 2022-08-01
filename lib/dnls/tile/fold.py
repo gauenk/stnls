@@ -16,7 +16,7 @@ def allocate_patches(nq,k,ps,pt,c,device):
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
-class FoldFunction(th.autograd.Function):
+class fold(th.autograd.Function):
     """
     [patches -> video] @ nlInds
 
@@ -73,12 +73,11 @@ class Fold(th.nn.Module):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)
         return vid
 
-
     def forward(self, patches, qStart):
         bpatches,qStart = patches,qStart
         vid = self.allocate_vid(self.vid_shape,self.device)
-        vid = FoldFunction.apply(bpatches, vid, qStart,
-                                 self.stride,self.dilation)
+        vid = fold.apply(bpatches, vid, qStart,
+                         self.stride,self.dilation)
         self.vid = self.vid + vid
         return self.vid
 

@@ -20,7 +20,7 @@ def allocate_patches(nq,k,ps,pt,c,device):
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
-class UnfoldFunction(th.autograd.Function):
+class unfold(th.autograd.Function):
     """
     [patches -> video] @ nlInds
 
@@ -82,7 +82,7 @@ class Unfold(th.nn.Module):
     def forward(self, vid, qStart, qNum):
         colors = vid.shape[1]
         patches = allocate_patches(qNum,1,self.ps,self.pt,colors,self.device)
-        patches = UnfoldFunction.apply(patches,vid,qStart,self.stride,self.dilation)
+        patches = unfold.apply(patches,vid,qStart,self.stride,self.dilation)
         return patches
 
 

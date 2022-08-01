@@ -12,7 +12,7 @@ def allocate_patches(nlInds,ps,pt,c):
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
-class GatherNlFunction(th.autograd.Function):
+class fold_k(th.autograd.Function):
     """
     [patches -> video] @ nlInds
 
@@ -46,12 +46,12 @@ class GatherNlFunction(th.autograd.Function):
         dnls_cuda.gather_backward(grad_vid,patches,ones,nlInds,dilation)
         return patches,None,None,None,None,None,None,None,None,None,None
 
-class GatherNl(th.nn.Module):
+class FoldK(th.nn.Module):
     # [patches -> video] @ nlInds
 
     def __init__(self, vid_shape, ws, wt, dilation=1, lam=0.,
                  exact=False, use_race=True, device="cuda"):
-        super(GatherNl, self).__init__()
+        super(FoldK, self).__init__()
         self.vid_shape = vid_shape
         self.vid,self.wvid = self.allocate_vid(vid_shape,device)
         self.dilation = dilation
@@ -68,10 +68,10 @@ class GatherNl(th.nn.Module):
 
     def forward(self, patches, nlDists, nlInds):
         vid,wvid = self.allocate_vid(self.vid_shape,self.device)
-        vid,wvid = GatherNlFunction.apply(patches,nlDists,nlInds,vid,wvid,
-                                          self.ws, self.wt,
-                                          self.dilation,self.lam,
-                                          self.exact,self.use_race)
+        vid,wvid = fold_k.apply(patches,nlDists,nlInds,vid,wvid,
+                                self.ws, self.wt,
+                                self.dilation,self.lam,
+                                self.exact,self.use_race)
         self.vid += vid
         self.wvid += wvid
         return self.vid,self.wvid

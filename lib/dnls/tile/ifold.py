@@ -16,7 +16,7 @@ def allocate_patches(nq,k,ps,pt,c,device):
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
-class iFoldFunction(th.autograd.Function):
+class ifold(th.autograd.Function):
     """
     [patches -> video] @ nlInds
 
@@ -98,9 +98,9 @@ class iFold(th.nn.Module):
         ps = patches.shape[-1]
         bpatches,qStart = patches,qStart
         vid = self.allocate_vid(self.vid_shape,patches.device)
-        vid = iFoldFunction.apply(bpatches, vid, self.coords, qStart,
-                                  self.stride,self.dilation,self.adj,
-                                  self.only_full,self.use_reflect)
+        vid = ifold.apply(bpatches, vid, self.coords, qStart,
+                          self.stride,self.dilation,self.adj,
+                          self.only_full,self.use_reflect)
         self.vid = self.vid + vid
         return self.vid
 

@@ -1,5 +1,5 @@
 """
-The gather function that includes the race condition
+The fold_k function that includes the race condition
 
 Used as a benchmark for reference
 
@@ -23,7 +23,7 @@ def run(patches,nlDists,nlInds,vid=None,wvid=None,shape=None):
     if wvid is None:
         wvid = allocate_vid(shape,patches.device)
 
-    # -- exec gather --
+    # -- exec fold_k --
     numba_launcher(vid,wvid,patches,nlDists,nlInds)
 
     return vid,wvid
@@ -57,12 +57,12 @@ def numba_launcher(vid,wvid,patches,nlDists,nlInds):
     nthreads = (n_kthreads,ps,ps)
 
     # -- exec kernel --
-    numba_gather[nblocks,nthreads](vid_nba,wvid_nba,patches_nba,
+    numba_fold_k[nblocks,nthreads](vid_nba,wvid_nba,patches_nba,
                                    nlDists_nba,nlInds_nba,lamb,kpt,qpb)
 
 
 @cuda.jit(debug=False,max_registers=64)
-def numba_gather(vid,wvid,patches,nlDists,nlInds,lamb,kpt,qpb):
+def numba_fold_k(vid,wvid,patches,nlDists,nlInds,lamb,kpt,qpb):
 
     # -- reflective boundary --
     def bounds(val,lim):

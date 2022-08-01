@@ -202,9 +202,11 @@ __global__ void l2_search_with_index_forward_kernel(
           // ----------------
           //     update
           // ----------------
-          bufs[bidx][0][dt][ws_i][ws_j] = cw;
-          bufs[bidx][1][dt][ws_i][ws_j] = ch;
-          bufs[bidx][2][dt][ws_i][ws_j] = ct;
+          if (wt > 0){
+            bufs[bidx][0][dt][ws_i][ws_j] = cw;
+            bufs[bidx][1][dt][ws_i][ws_j] = ch;
+            bufs[bidx][2][dt][ws_i][ws_j] = ct;
+          }
           // cw = wi;
           // ch = hi;
           // ct = n_ti;
@@ -337,14 +339,19 @@ void l2_search_with_index_forward_cuda(
 
    // fprintf(stdout,"qstart, nqueries: %d,%d\n",qstart,nqueries);
    // launch params 
-   int bpb = 10;
    int ws_h_threads = std::min(ws_h,32);
    int ws_w_threads = std::min(ws_w,32);
    int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
+
+   int bpb = 2;
    int nblocks = ((nqueries - 1) / bpb) + 1;
-   //fprintf(stdout,"w_threads: %d\n",w_threads);
+   nblocks = min(nblocks,65535);
+   bpb = ((nqueries - 1) / nblocks) + 1;
+
+   // fprintf(stdout,"bpb,nblocks,w_threads: %d,%d,%d,%d\n",
+   //         bpb,nblocks,ws_h_threads,ws_w_threads);
    // fprintf(stdout,"reflect_bounds,search_abs: %d,%d\n",reflect_bounds,search_abs);
     
    // launch kernel
@@ -516,7 +523,7 @@ void l2_search_with_index_backward_cuda(
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
-  int npt = 16;
+  int npt = 8;
   int neigh_nthreads = (k-1) / npt + 1;
   if (neigh_nthreads > 64){
     neigh_nthreads = 64;
@@ -533,7 +540,7 @@ void l2_search_with_index_backward_cuda(
 
   // -- compute number of blocks --
   //    [think: parallelization over "nqueries"]
-  int bpt = 4;
+  int bpt = 2;
   int query_nthreads = 16;
   int total_per_block = bpt * query_nthreads;
   int nblocks = ((nqueries - 1) / total_per_block) + 1;
@@ -578,3 +585,98 @@ void l2_search_with_index_backward_cuda(
   }));
 
 }
+
+
+/****************************
+
+       Remove Self
+
+****************************/
+
+__global__ void remove_self_from_search_kernel(
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<bool,2,torch::RestrictPtrTraits> mask,
+    int qstart, int stride0, int n_h0, int n_w0, int qpb, int npt) {
+
+  // -- shape --
+  int nq = inds.size(0);
+  int k =  inds.size(1);
+  int n_hw0 = n_h0 * n_w0;
+
+  // -- fwd decl registers --
+  int ti,hi,wi;
+  int tj,hj,wj;
+  int qindex,i_mod;
+  bool eq_ij;
+
+  // -- boundary --
+  int i0_max = inds.size(0);
+  int i1_max = inds.size(1);
+
+  // -- get indices --
+  int i0_start = qpb * blockIdx.x;
+  int i1_start = npt * threadIdx.x;
+
+  // -- get block limits --
+  int i0_end = min(i0_start + qpb,i0_max);
+  int i1_end = min(i1_start + npt,i1_max);
+
+  // -- each region --
+  for (int i0=i0_start; i0 < i0_end; i0++){
+
+    // -- index from i0 --
+    qindex = i0 + qstart;
+    i_mod = qindex % n_hw0;
+    ti = qindex / n_hw0;
+    wi = ((i_mod % n_w0) * stride0);
+    hi = ((i_mod / n_w0) * stride0);
+
+    // -- each neighbor --
+    for (int i1=i1_start; i1 < i1_end; i1++){
+
+      // -- neighbor index --
+      tj = inds[i0][i1][0];
+      hj = inds[i0][i1][1];
+      wj = inds[i0][i1][2];
+
+      // -- check valids --
+      eq_ij = ti == tj;
+      eq_ij = eq_ij && (hi == hj);
+      eq_ij = eq_ij && (wi == wj);
+      
+      // -- assignment --
+      mask[i0][i1] = eq_ij;
+    }
+  }
+
+}
+
+void remove_self_from_search_cuda(
+    torch::Tensor inds, torch::Tensor mask,
+    int qstart, int stride0, int n_h0, int n_w0) {
+
+  // -- unpack --
+  int nqueries = inds.size(0);
+  int k = inds.size(1);
+  int nneigh = k;
+
+  // -- number of queries per cuda-block (qpb) --
+  int qpb = 2;
+  int query_nblocks = (nqueries-1)/qpb+1;
+  query_nblocks = min(nqueries,512);
+  qpb = (nqueries-1)/query_nblocks + 1;
+
+  // -- compute number of neighbor per threads (npt) --
+  int npt = 2;
+  int neigh_nthreads = (nneigh-1)/npt+1;
+  neigh_nthreads = min(nneigh,512);
+  npt = (nneigh-1)/neigh_nthreads+1;
+  // fprintf(stdout,"qpb,npt: %d,%d\n",qpb,npt);
+
+  // -- launch kernel --
+  remove_self_from_search_kernel<<<query_nblocks, neigh_nthreads>>>(
+        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        mask.packed_accessor32<bool,2,torch::RestrictPtrTraits>(),
+        qstart, stride0, n_h0, n_w0, qpb, npt);
+}
+

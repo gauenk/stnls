@@ -70,8 +70,8 @@ class TestFold(unittest.TestCase):
         vid = vid.contiguous()
 
         # -- exec fold fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),stride=stride,dilation=dil)
+        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
         # -- get [patches & nlInds] --
         index = 0
@@ -209,8 +209,8 @@ class TestFold(unittest.TestCase):
             print("[pre-def] GPU Max: %2.4f" % (gpu_max))
 
         # -- exec fold fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),stride=stride,dilation=dil)
+        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
         agg_patches = []
         # vid_nl = th.zeros((t,c,h,w),device=device)
 

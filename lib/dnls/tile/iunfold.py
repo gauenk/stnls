@@ -20,7 +20,7 @@ def allocate_patches(nq,k,ps,pt,c,device):
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
-class iUnfoldFunction(th.autograd.Function):
+class iunfold(th.autograd.Function):
     """
     [patches -> video] @ nlInds
 
@@ -143,9 +143,9 @@ class iUnfold(th.nn.Module):
         start,num = self._get_start_num(start,num,coords,vid.shape)
         colors = vid.shape[1]
         patches = allocate_patches(num,1,self.ps,self.pt,colors,vid.device)
-        patches = iUnfoldFunction.apply(patches,vid,start,coords,self.stride,
-                                        self.dilation,self.adj,self.only_full,
-                                        self.use_reflect)
+        patches = iunfold.apply(patches,vid,start,coords,self.stride,
+                                self.dilation,self.adj,self.only_full,
+                                self.use_reflect)
         return patches
 
 

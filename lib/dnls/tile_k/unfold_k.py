@@ -17,7 +17,7 @@ def allocate_patches(nlInds,ps,pt,c):
     return patches
 
 
-class ScatterNlFunction(th.autograd.Function):
+class unfold_k(th.autograd.Function):
     # [video -> patches] @ nlInds
 
     @staticmethod
@@ -64,12 +64,12 @@ class ScatterNlFunction(th.autograd.Function):
             raise ValueError(f"Uknown backward type for scatter [{btype}]")
         return grad_vid,None,None,None,None,None,None,None,None
 
-class ScatterNl(th.nn.Module):
+class UnfoldK(th.nn.Module):
     # [video -> patches] @ nlInds
 
     def __init__(self, ps, pt=1, dilation=1, btype="default", exact=False,
                  adj=0, reflect_bounds = True):
-        super(ScatterNl, self).__init__()
+        super(UnfoldK, self).__init__()
         self.ps = ps
         self.pt = pt
         self.dilation = dilation
@@ -79,7 +79,7 @@ class ScatterNl(th.nn.Module):
         self.reflect_bounds = reflect_bounds
 
     def forward(self, vid, nlInds):
-        return ScatterNlFunction.apply(vid,nlInds,self.ps,self.pt,
-                                       self.dilation,self.btype,self.exact,
-                                       self.adj, self.reflect_bounds)
+        return unfold_k.apply(vid,nlInds,self.ps,self.pt,
+                              self.dilation,self.btype,self.exact,
+                              self.adj, self.reflect_bounds)
 

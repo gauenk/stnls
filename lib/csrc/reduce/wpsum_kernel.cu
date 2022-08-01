@@ -131,9 +131,9 @@ void dnls_cuda_wpsum_forward(
     int h_off, int w_off, int dilation, int adj, bool reflect_bounds){
 
   // -- kernel blocks --
-  int numQueries = inds.size(0);
+  int nqueries = inds.size(0);
   int qpt = 10;
-  int nblocks = (numQueries-1)/qpt+1;
+  int nblocks = (nqueries-1)/qpt+1;
 
   // -- kernel threads --
   int k = inds.size(1);

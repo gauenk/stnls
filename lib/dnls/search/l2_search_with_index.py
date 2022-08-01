@@ -36,7 +36,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- allocs --
         nq = nqueries
-        bufs = allocate_bufs(nq,t,ws_h,ws_w,device)
+        bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
         dists_exh,inds_exh = allocate_exh(nq,wt,ws_h,ws_w,device)
 
         # -- pre-computed search offsets --
@@ -60,8 +60,8 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- remove self --
         if remove_self:
-            raise NotImplementedError("")
-            dists_exh,inds_exh = run_remove_self(dists_exh,inds_exh,qstart,nq,stride0)
+            dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qstart,
+                                                      stride0,n_h0,n_w0)
 
         # -- topk --
         if use_k:

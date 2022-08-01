@@ -17,6 +17,7 @@ void init_scatter(py::module &);
 
 // -- batched fold/unfold --
 void init_fold(py::module &);
+void init_ifold(py::module &);
 void init_unfold(py::module &);
 void init_iunfold(py::module &);
 
@@ -32,6 +33,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_scatter(m);
 
   init_fold(m);
+  init_ifold(m);
   init_unfold(m);
   init_iunfold(m);
 

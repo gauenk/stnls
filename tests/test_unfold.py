@@ -73,8 +73,8 @@ class TestUnfold(unittest.TestCase):
         vid = th.randn_like(vid)
 
         # -- exec unfold fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        unfold_nl = dnls.unfold.Unfold(ps,stride=stride,dilation=dil)
+        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        unfold_nl = dnls.Unfold(ps,stride=stride,dilation=dil)
 
         #
         # -- test logic --
@@ -176,8 +176,7 @@ class TestUnfold(unittest.TestCase):
 
         # -- exec fold fxns --
         # vid_nl = vid.clone().requires_grad_(True)
-        # scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        unfold_nl = dnls.unfold.Unfold(ps,stride=stride,dilation=dil)
+        unfold_nl = dnls.Unfold(ps,stride=stride,dilation=dil)
         patches_nl = []
         for index in range(nbatches):
 

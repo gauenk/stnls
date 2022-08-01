@@ -16,7 +16,6 @@ void l2_search_with_index_forward_cuda(
     torch::Tensor bufs, torch::Tensor tranges,
     torch::Tensor n_tranges, torch::Tensor min_tranges);
 
-
 void l2_search_with_index_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
@@ -25,6 +24,11 @@ void l2_search_with_index_backward_cuda(
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int dilation, bool use_adj,
     bool reflect_bounds, bool exact);
+
+void remove_self_from_search_cuda(
+    torch::Tensor dists, torch::Tensor mask,
+    int qstart, int stride0, int n_h0, int n_w0);
+
 
 // C++ interface
 
@@ -81,11 +85,22 @@ void l2_search_with_index_backward(
                                      ps,pt,dilation,use_adj,reflect_bounds,exact);
 }
 
+void remove_self_from_search(
+    torch::Tensor inds, torch::Tensor mask,
+    int qstart, int stride0, int n_h0, int n_w0) {
+  CHECK_INPUT(inds);
+  CHECK_INPUT(mask);
+  remove_self_from_search_cuda(inds, mask, qstart, stride0, n_h0, n_w0);
+}
+
+
 // python bindings
 void init_l2_with_index_search(py::module &m){
   m.def("l2_search_with_index_forward", &l2_search_with_index_forward,
         "DNLS Search Forward with Index (CUDA)");
   m.def("l2_search_with_index_backward", &l2_search_with_index_backward,
         "DNLS Search Backward with Index (CUDA)");
+  m.def("remove_self_from_search", &remove_self_from_search,
+        "Remove Self from Any Search Result (CUDA)");
 }
 

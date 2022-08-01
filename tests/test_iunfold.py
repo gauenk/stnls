@@ -97,9 +97,9 @@ def test_nn_with_fold(ps,stride,dilation):
     vid = vid.contiguous()
 
     # -- exec iunfold fxns --
-    iunfold_nl = dnls.iunfold.iUnfold(ps,coords,stride=stride,dilation=dil,
-                                      match_nn=True)
-                                      # adj=True,only_full=True)
+    iunfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dil,
+                              match_nn=True)
+    # adj=True,only_full=True)
 
     #
     # -- test logic --
@@ -200,7 +200,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     vid = vid.contiguous()
 
     # -- exec iunfold fxns --
-    iunfold_nl = dnls.iunfold.iUnfold(ps,coords,stride=stride,dilation=dil)
+    iunfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dil)
 
     #
     # -- test logic --
@@ -296,7 +296,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- functions --
-    iunfold_nl = dnls.iunfold.iUnfold(ps,coords,stride=stride,dilation=dil)
+    iunfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dil)
 
     # -- prepare videos --
     vid_nl = vid.clone()

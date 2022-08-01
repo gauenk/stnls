@@ -36,7 +36,7 @@ class L2SearchFunction(th.autograd.Function):
         qinds = qinds.type(th.int32)
 
         # -- allocs --
-        bufs = allocate_bufs(nq,t,ws_h,ws_w,device)
+        bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
         dists_exh,inds_exh = allocate_exh(nq,wt,ws_h,ws_w,device)
 
         # -- pre-computed search offsets --

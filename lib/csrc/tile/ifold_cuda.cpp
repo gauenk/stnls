@@ -9,18 +9,6 @@
 
 // CUDA forward declarations
 
-void dnls_cuda_fold_forward(
-    torch::Tensor vid,
-    torch::Tensor patches,
-    int start, int stride,
-    int dilation);
-
-void dnls_cuda_fold_backward(
-    torch::Tensor grad_vid,
-    torch::Tensor patches,
-    int start, int stride,
-    int dilation);
-
 void dnls_cuda_ifold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
@@ -43,33 +31,7 @@ void dnls_cuda_ifold_backward(
 
 /*********************************
 
-      Using Raster Ordering
-
-*********************************/
-
-void dnls_fold_forward(
-    torch::Tensor vid,
-    torch::Tensor patches,
-    int start, int stride,
-    int dilation) {
-  CHECK_INPUT(vid);
-  CHECK_INPUT(patches);
-  dnls_cuda_fold_forward(vid,patches,start,stride,dilation);
-}
-
-void dnls_fold_backward(
-    torch::Tensor grad_vid,
-    torch::Tensor patches,
-    int start, int stride,
-    int dilation) {
-  CHECK_INPUT(grad_vid);
-  CHECK_INPUT(patches);
-  dnls_cuda_fold_backward(grad_vid,patches,start,stride,dilation);
-}
-
-/*********************************
-
-       Using Indices
+      Using Raster Order
 
 *********************************/
 
@@ -104,9 +66,7 @@ void dnls_ifold_backward(
 
 
 // python bindings
-void init_fold(py::module &m){
-  m.def("fold_forward", &dnls_fold_forward, "DNLS Fold Forward (CUDA)");
-  m.def("fold_backward", &dnls_fold_backward, "DNLS Fold Backward (CUDA)");
+void init_ifold(py::module &m){
   m.def("ifold_forward", &dnls_ifold_forward, "DNLS Fold Forward (CUDA)");
   m.def("ifold_backward", &dnls_ifold_backward, "DNLS Fold Backward (CUDA)");
 }

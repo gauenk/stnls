@@ -22,7 +22,7 @@ def allocate_iunfold_patches(nq,k,ps,pt,c,device):
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
-class WpSumFunction(th.autograd.Function):
+class WpSumHeadsFunction(th.autograd.Function):
     # [video -> patches] @ inds
 
     # -- static video since it is the same --
@@ -39,8 +39,8 @@ class WpSumFunction(th.autograd.Function):
         """
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         patches = allocate_patches(inds,ps,pt,vid.shape[1])
-        dnls_cuda.wpsum_forward(vid, patches, dists, inds,
-                                h_off,w_off,dilation,adj,reflect_bounds)
+        dnls_cuda.wpsum_heads_forward(vid, patches, dists, inds,
+                                      h_off,w_off,dilation,adj,reflect_bounds)
         # print("dists._version: ",dists._version)
         # print("inds._version: ",inds._version)
         ctx.save_for_backward(dists,inds,vid)
@@ -70,8 +70,8 @@ class WpSumFunction(th.autograd.Function):
         exact = ctx.exact
 
         # -- start timer --
-        timer = ExpTimer()
-        timer.start("wpsum_bwd")
+        # timer = ExpTimer()
+        # timer.start("wpsum_heads_bwd")
 
         # -- gradient for video --
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
@@ -84,8 +84,8 @@ class WpSumFunction(th.autograd.Function):
                                        h_off,w_off,dilation,adj,reflect_bounds,exact)
 
         # -- stop timer --
-        th.cuda.synchronize()
-        timer.stop("wpsum_bwd")
+        # th.cuda.synchronize()
+        # timer.stop("wpsum_bwd")
         # print(timer)
 
         return grad_vid,grad_dists,None,None,None,None,None,None,None,None,None
@@ -108,10 +108,10 @@ class WeightedPatchSum(th.nn.Module):
         self.exact = exact
 
     def forward(self, vid, dists, inds):
-        patches = WpSumFunction.apply(vid,dists,inds,self.ps,self.pt,
-                                      self.h_off,self.w_off,
-                                      self.dilation,self.adj,
-                                      self.reflect_bounds, self.exact)
+        patches = WpSumHeadsFunction.apply(vid,dists,inds,self.ps,self.pt,
+                                           self.h_off,self.w_off,
+                                           self.dilation,self.adj,
+                                           self.reflect_bounds, self.exact)
         nq,_,_,c,ph,pw = patches.shape
         patches = patches.view(nq,c,ph,pw)
         return patches

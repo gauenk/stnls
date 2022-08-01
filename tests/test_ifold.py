@@ -112,7 +112,7 @@ def test_nn_with_unfold(ps,stride,dilation):
 
     # -- run forward --
     vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,
+    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,
                                adj=ps//2,use_reflect=True,only_full=True)
     vid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
 
@@ -155,6 +155,7 @@ def test_nn_with_unfold(ps,stride,dilation):
     del vid_nn,vid_nl
     del patches_nl,patches_nn
     del grad_nn,grad_nl,vid_grad
+    del fold_nl
     th.cuda.empty_cache()
     th.cuda.synchronize()
 
@@ -202,8 +203,8 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- exec fold fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
+    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
 
     # -- patches for ifold --
     index = 0
@@ -308,8 +309,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- exec fold fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
+    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"pre-loop")
 
@@ -437,9 +438,9 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- exec fold fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil)
-    shift_fold_nl = dnls.ifold.iFold(shift_vshape,shift_coords,
+    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
+    shift_fold_nl = dnls.iFold(shift_vshape,shift_coords,
                                      stride=stride,dilation=dil)
 
     # -- patches for ifold --
@@ -550,9 +551,9 @@ def test_shrink_search():
     # vid_pad = pad(vid,[padf,]*4,mode="reflect")
 
     # -- get folds --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil)
-    wfold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dil)
+    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
+    wfold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
 
     # -- get patches with dilation --
     qindex,k,pt,chnls = 0,1,1,1

@@ -191,9 +191,11 @@ __global__ void search_l2_forward_kernel(
           // ----------------
           //     update
           // ----------------
-          bufs[bidx][0][dt][ws_i][ws_j] = cw;
-          bufs[bidx][1][dt][ws_i][ws_j] = ch;
-          bufs[bidx][2][dt][ws_i][ws_j] = ct;
+          if (wt > 0){
+            bufs[bidx][0][dt][ws_i][ws_j] = cw;
+            bufs[bidx][1][dt][ws_i][ws_j] = ch;
+            bufs[bidx][2][dt][ws_i][ws_j] = ct;
+          }
           // cw = wi;
           // ch = hi;
           // ct = n_ti;

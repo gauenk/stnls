@@ -20,7 +20,7 @@ def forward(patches,nlDists,nlInds,vid=None,wvid=None,shape=None,lam=0.,dilation
     if vid is None: vid = allocate_vid(shape,dilation,device)
     if wvid is None: wvid = allocate_vid(shape,dilation,device)
 
-    # -- exec gather --
+    # -- exec fold_k --
     numba_launcher(vid,wvid,patches,nlDists,nlInds,lam,dilation)
 
     return vid,wvid
@@ -41,7 +41,7 @@ def numba_launcher(vid,wvid,patches,nlDists,nlInds,lam,dilation):
     nlInds_nba = nlInds.cpu().detach().numpy()
 
     # -- exec --
-    numba_gather(vid_nba,wvid_nba,patches_nba,nlDists_nba,nlInds_nba,lam,dilation)
+    numba_fold_k(vid_nba,wvid_nba,patches_nba,nlDists_nba,nlInds_nba,lam,dilation)
 
     # -- to device --
     device = vid.device
@@ -53,7 +53,7 @@ def numba_launcher(vid,wvid,patches,nlDists,nlInds,lam,dilation):
     wvid[...] = wvid_nba[...]
 
 @njit
-def numba_gather(vid,wvid,patches,vals,inds,lam,dilation):
+def numba_fold_k(vid,wvid,patches,vals,inds,lam,dilation):
 
     # -- valid index --
     def valid_ind(ti,hi,wi):

@@ -25,7 +25,7 @@ from torchvision.transforms.functional import center_crop
 
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/scatter")
+SAVE_DIR = Path("./output/tests/unfold_k")
 
 def pytest_generate_tests(metafunc):
     seed = 123
@@ -38,11 +38,64 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize(key,val)
 
 #
-# -- Test Simple Scatter --
+# -- Test Simple UnfoldK --
 #
 
 # @pytest.mark.skip()
-def test_simple_scatter():
+def test_simple_unfold_k():
+
+    # -- get args --
+    dname,sigma,comp_flow,args = setup()
+
+    # -- init vars --
+    device = args.device
+    clean_flow = True
+    comp_flow = False
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = th.from_numpy(vid).to(device)
+    noisy = vid + sigma * th.randn_like(vid)
+    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+
+    # -- unpack params --
+    k,ps,pt = args.k,args.ps,args.pt
+    ws,wt,chnls = args.ws,args.wt,1
+
+    # -- batching info --
+    device = noisy.device
+    shape = noisy.shape
+    t,c,h,w = shape
+    npix = t * h * w
+    qStride,qSize = 1,100
+    nsearch = (npix-1) // qStride + 1
+    nbatches = (nsearch-1) // qSize + 1
+    vid = vid.contiguous()
+    th.cuda.synchronize()
+
+    # -- nbatches --
+    for index in range(nbatches):
+
+        # -- get [patches & nlInds] --
+        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+                                                    t,h,w,device)
+        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+                                                flow,k,ps,pt,ws,wt,chnls)
+        # -- testing forward --
+        # patches_nl_fwd = unfold_k(vid,nlInds)
+        patches_nl_fwd = dnls.simple.unfold_k.run(vid,nlInds,ps)
+        patches_simp_fwd = dnls.simple.unfold_k.run(vid,nlInds,ps)
+        error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
+        assert error < 1e-10
+    th.cuda.synchronize()
+    nb.cuda.synchronize()
+
+#
+# -- Test Simple UnfoldK --
+#
+
+# @pytest.mark.skip()
+def test_efficient_unfold_k():
 
     # -- get args --
     dname,sigma,comp_flow,args = setup()
@@ -82,80 +135,23 @@ def test_simple_scatter():
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
 
-        # -- exec scatter fxns --
-        # scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="simple",device=device)
+        # -- exec unfold_k fxns --
+        unfold_k = dnls.UnfoldK(ps,pt,btype="eff")
 
         # -- testing forward --
-        # patches_nl_fwd = scatter_nl(vid,nlInds)
-        patches_nl_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
-        patches_simp_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
+        patches_nl_fwd = unfold_k(vid,nlInds)
+        patches_simp_fwd = dnls.simple.unfold_k.run(vid,nlInds,ps)
         error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
         assert error < 1e-10
     th.cuda.synchronize()
     nb.cuda.synchronize()
 
 #
-# -- Test Simple Scatter --
+# -- Test UnfoldK & Unfold --
 #
 
 # @pytest.mark.skip()
-def test_efficient_scatter():
-
-    # -- get args --
-    dname,sigma,comp_flow,args = setup()
-
-    # -- init vars --
-    device = args.device
-    clean_flow = True
-    comp_flow = False
-
-    # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-    vid = th.from_numpy(vid).to(device)
-    noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
-
-    # -- unpack params --
-    k,ps,pt = args.k,args.ps,args.pt
-    ws,wt,chnls = args.ws,args.wt,1
-
-    # -- batching info --
-    device = noisy.device
-    shape = noisy.shape
-    t,c,h,w = shape
-    npix = t * h * w
-    qStride,qSize = 1,100
-    nsearch = (npix-1) // qStride + 1
-    nbatches = (nsearch-1) // qSize + 1
-    vid = vid.contiguous()
-    th.cuda.synchronize()
-
-    # -- nbatches --
-    for index in range(nbatches):
-
-        # -- get [patches & nlInds] --
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
-                                                    t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                flow,k,ps,pt,ws,wt,chnls)
-
-        # -- exec scatter fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,btype="eff")
-
-        # -- testing forward --
-        patches_nl_fwd = scatter_nl(vid,nlInds)
-        patches_simp_fwd = dnls.simple.scatter.run(vid,nlInds,ps)
-        error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
-        assert error < 1e-10
-    th.cuda.synchronize()
-    nb.cuda.synchronize()
-
-#
-# -- Test Scatter & Unfold --
-#
-
-# @pytest.mark.skip()
-def test_scatter_vs_simple(exact,ps,pt,k):
+def test_unfold_k_vs_simple(exact,ps,pt,k):
 
     # -- get args --
     dname,sigma,comp_flow,args = setup()
@@ -192,8 +188,8 @@ def test_scatter_vs_simple(exact,ps,pt,k):
     nbatches = (nsearch-1) // qSize + 1
     vid = vid.contiguous()
 
-    # -- exec scatter fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact)
+    # -- exec unfold_k fxns --
+    unfold_k = dnls.UnfoldK(ps,pt,exact=exact)
 
     # -- get [patches & inds] --
     index = 0
@@ -214,13 +210,13 @@ def test_scatter_vs_simple(exact,ps,pt,k):
     vid_nl.requires_grad_(True)
 
     # -- run forward --
-    patches_simp = dnls.simple.scatter.run(vid_nn,inds,ps,pt,dil)
-    patches_nl = scatter_nl(vid_nl,inds)
+    patches_simp = dnls.simple.unfold_k.run(vid_nn,inds,ps,pt,dil)
+    patches_nl = unfold_k(vid_nl,inds)
 
     # -- run backward --
     patches_grad = th.randn_like(patches_simp)
     th.autograd.backward(patches_nl,patches_grad)
-    grad_simp = dnls.simple.scatter.run_bwd(patches_grad,inds,t,h,w)
+    grad_simp = dnls.simple.unfold_k.run_bwd(patches_grad,inds,t,h,w)
     grad_nl = vid_nl.grad
     # print(grad_simp[0,0,:3,:3])
     # print(grad_nl[0,0,:3,:3])
@@ -242,8 +238,9 @@ def test_scatter_vs_simple(exact,ps,pt,k):
     if exact: tol = 1e-15
     else: tol = 1.
     error = th.mean(th.abs(grad_simp - grad_nl)/(grad_simp.abs() + 1e-8)).item()
-    if error >= tol: print("[scatter_vs_simple] Mean Error: ",error)
-    assert error < tol
+    if exact:
+        if error >= tol: print("[unfold_k_vs_simple] Mean Error: ",error)
+        assert error < tol
 
     # -- viz --
     # args = th.where(th.abs(grad_simp)>1.)
@@ -257,13 +254,14 @@ def test_scatter_vs_simple(exact,ps,pt,k):
     else: tol = 1.
     args = th.where(th.abs(grad_simp)>1.)
     error = th.max(th.abs(grad_simp[args] - grad_nl[args])/grad_simp[args].abs()).item()
-    if error >= tol: print("[scatter_vs_simple] Max Error: ",error)
-    # assert error < tol
+    if exact:
+        if error >= tol: print("[unfold_k_vs_simple] Max Error: ",error)
+        assert error < tol
     th.cuda.synchronize()
     nb.cuda.synchronize()
 
 
-def test_scatter_vs_unfold(exact,ps,pt,k):
+def test_unfold_k_vs_unfold(exact,ps,pt,k):
 
     # -- get args --
     dname,sigma,comp_flow,args = setup()
@@ -296,8 +294,8 @@ def test_scatter_vs_unfold(exact,ps,pt,k):
     nbatches = (nsearch-1) // qSize + 1
     vid = vid.contiguous()
 
-    # -- exec scatter fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,exact=exact)
+    # -- exec unfold_k fxns --
+    unfold_k = dnls.UnfoldK(ps,pt,exact=exact)
 
     # -- get [patches & inds] --
     index = 0
@@ -319,7 +317,7 @@ def test_scatter_vs_unfold(exact,ps,pt,k):
 
     # -- run forward --
     patches_nn = run_unfold(vid_nn,ps,dil=dil)
-    patches_nl = scatter_nl(vid_nl,inds[:,[0]])
+    patches_nl = unfold_k(vid_nl,inds[:,[0]])
     # print(vid_nn.shape)
     # print(inds.shape)
     # print(patches_nn.shape)
@@ -363,8 +361,9 @@ def test_scatter_vs_unfold(exact,ps,pt,k):
     if exact: tol = 1e-6
     else: tol = 1.
     error = th.mean(th.abs(grad_nn - grad_nl)/(grad_nn.abs() + 1e-8)).item()
-    if error >= tol: print("Mean Error: ",error)
-    assert error < tol
+    if exact:
+        if error >= tol: print("Mean Error: ",error)
+        assert error < tol
 
     # -- viz --
     args = th.where(th.abs(grad_nn)>1.)
@@ -378,8 +377,9 @@ def test_scatter_vs_unfold(exact,ps,pt,k):
     else: tol = 1.
     args = th.where(th.abs(grad_nn)>1.)
     error = th.max(th.abs(grad_nn[args] - grad_nl[args])/grad_nn[args].abs()).item()
-    if error >= tol: print("Max Error: ",error)
-    # assert error < tol
+    if exact:
+        if error >= tol: print("Max Error: ",error)
+        assert error < tol
     th.cuda.synchronize()
     nb.cuda.synchronize()
 

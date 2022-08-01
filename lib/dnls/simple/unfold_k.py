@@ -10,15 +10,15 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- scatter --
-from .scatter_bwd import run_bwd
+# -- unfold_k --
+from .unfold_k_bwd import run_bwd
 
 def run(vid,inds,ps,pt=1,dilation=1):
 
     # -- allocate patches --
     patches = allocate_patches(vid,inds,ps,pt)
 
-    # -- exec scatter --
+    # -- exec unfold_k --
     numba_launcher(patches,vid,inds,dilation)
 
     return patches
@@ -58,11 +58,11 @@ def numba_launcher(patches,vid,inds,dilation):
     nthreads = (n_kthreads,ps,ps)
 
     # -- exec kernel --
-    numba_scatter[nblocks,nthreads](patches_nba,vid_nba,inds_nba,dilation,kpt,qpb)
+    numba_unfold_k[nblocks,nthreads](patches_nba,vid_nba,inds_nba,dilation,kpt,qpb)
 
 # -- reflect padding --
 @cuda.jit(debug=False,max_registers=64)
-def numba_scatter(patches,vid,inds,dilation,kpt,qpb):
+def numba_unfold_k(patches,vid,inds,dilation,kpt,qpb):
 
     # -- reflective boundary --
     # def bounds(val,lim):
@@ -133,7 +133,7 @@ def numba_scatter(patches,vid,inds,dilation,kpt,qpb):
 
 # -- zero padding --
 @cuda.jit(debug=False,max_registers=64)
-def numba_scatter_zp(patches,vid,inds,dilation,kpt,qpb):
+def numba_unfold_k_zp(patches,vid,inds,dilation,kpt,qpb):
 
     # -- reflective boundary --
     def bounds(val,lim):

@@ -2,9 +2,13 @@
 # -- python --
 import torch as th
 import numpy as np
+from einops import repeat
 
 # -- padding --
 from dnls.utils.pads import comp_pads
+
+# -- cpp cuda kernel --
+import dnls_cuda
 
 def get_topk(l2_vals,l2_inds,vals,inds):
 
@@ -22,6 +26,25 @@ def get_topk(l2_vals,l2_inds,vals,inds):
     vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
+
+def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
+    nq,k = dists.shape
+    mask = th.zeros((nq,k),device=dists.device,dtype=th.bool)
+    dnls_cuda.remove_self_from_search(inds,mask,qstart,stride,n_h,n_w)
+    mask = th.logical_not(mask)
+    # print(dists.shape)
+    # print(mask.sum(1))
+    # args = th.where(mask.sum(1)==k)
+    # mask[args,-1] = 0
+    # print(mask.sum(1))
+    # print(th.all(mask.sum(1)==1))
+    rm_dists = th.masked_select(dists,mask)
+    # print(rm_dists.shape)
+    rm_dists = th.masked_select(dists,mask).view(nq,k-1)
+    mask = repeat(mask,'a b -> a b c',c=3)
+    rm_inds = th.masked_select(inds,mask).view(nq,k-1,3)
+
+    return rm_dists,rm_inds
 
 def run_remove_self(dists,inds,qinds):
     q,k,_ = inds.shape
@@ -52,8 +75,11 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_bufs(nq,t,ws_h,ws_w,device):
-    bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
+def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
+    if wt <= 0:
+        bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
+    else:
+        bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
 
 def allocate_exh(nq,wt,ws_h,ws_w,device):
