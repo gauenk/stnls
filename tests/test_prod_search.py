@@ -27,7 +27,7 @@ from torch.nn.functional import fold,unfold,pad
 from torchvision.transforms.functional import center_crop
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/xsearch")
+SAVE_DIR = Path("./output/tests/prod_search")
 
 def pytest_generate_tests(metafunc):
     seed = 123
@@ -125,12 +125,12 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     use_adj = True
     # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
     # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow,
-                                         k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
-                                         chnls=-1,dilation=dil, stride=stride1,
-                                         reflect_bounds=reflect_bounds,use_k=False,
-                                         use_search_abs=True,use_adj=use_adj,
-                                         exact=exact)
+    search = dnls.search.init("prod",flows.fflow, flows.bflow,
+                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                               chnls=-1,dilation=dil, stride=stride1,
+                               reflect_bounds=reflect_bounds,use_k=False,
+                               use_search_abs=True,use_adj=use_adj,
+                               exact=exact)
     # -- query inds --
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -150,7 +150,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # vid[th.where(th.abs(vid) < 1)] = 0
 
     # ones = th.ones_like(vid)
-    score_te,inds_te = xsearch(vid,iqueries,vid1=vidr)
+    score_te,inds_te = search(vid,iqueries,vid1=vidr)
 
     # -- flip cu --
     # print(score_te.shape)
@@ -158,8 +158,8 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
 
     # -- run search --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,mode=mode,
-                                               dilation=dil,vid1=vidr)
+    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid,ps,stride=stride0,mode=mode,
+                                                   dilation=dil,vid1=vidr)
     # print(score_gt.shape)
     # print(score_te.shape)
 
@@ -271,11 +271,11 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- exec fold fxns --
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                         ws, wt, oh0, ow0, oh1, ow1,
-                                         chnls=chnls,dilation=dil, stride=stride1,
-                                         reflect_bounds=reflect_bounds,use_k=False,
-                                         exact=exact,use_search_abs=True)
+    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, oh0, ow0, oh1, ow1,
+                              chnls=chnls,dilation=dil, stride=stride1,
+                              reflect_bounds=reflect_bounds,use_k=False,
+                              exact=exact,use_search_abs=True)
     # -- query inds
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -319,22 +319,22 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     #
 
     # -- run cu --
-    score_te,inds_te = xsearch(vid_te,iqueries,vid1=vidr_te)
+    score_te,inds_te = search(vid_te,iqueries,vid1=vidr_te)
     score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid_gt,ps,stride=stride0,
-                                               dilation=dil,vid1=vidr_gt,
-                                               mode=mode)
+    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,
+                                                   dilation=dil,vid1=vidr_gt,
+                                                   mode=mode)
     # -- vis --
     # diff = th.abs(score_te - score_gt)
     # args = th.where(diff>1e-10)
     # for i in range(len(args)):
     #     print(i,th.unique(args[i]))
     # if diff.max() > 1e-10: diff /= diff.max()
-    # dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
-    # dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
+    # dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/prod_search/","diff")
+    # dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/prod_search/","diff_d00")
 
     # -- compare fwd --
     max_error = th.abs(score_te - score_gt).max().item()
@@ -458,11 +458,11 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     use_adj = True
     # use_adj = False
     # oh0, ow0, oh1, ow1 = 0,0,0,0
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                         ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
-                                         chnls=-1,dilation=dil, stride=stride1,
-                                         reflect_bounds=reflect_bounds,
-                                         use_k=False,exact=exact,use_search_abs=True)
+    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
+                              chnls=-1,dilation=dil, stride=stride1,
+                              reflect_bounds=reflect_bounds,
+                              use_k=False,exact=exact,use_search_abs=True)
     # -- query inds
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -543,13 +543,13 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     #
 
     # -- run cu --
-    score_te,inds_te = xsearch(vid0_te,iqueries,vid1=vid1_te)
+    score_te,inds_te = search(vid0_te,iqueries,vid1=vid1_te)
     score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid0_gt,ps,stride=stride0,
-                                               dilation=dil,vid1=vid1_gt,mode=mode)
+    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid0_gt,ps,stride=stride0,
+                                                   dilation=dil,vid1=vid1_gt,mode=mode)
     # -- vis --
     diff = th.abs(score_te - score_gt)/(score_gt.abs()+1e-10)
     args = th.where(diff>1e-10)
@@ -557,8 +557,8 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # for i in range(len(args)):
     #     print(i,th.unique(args[i]))
     # if diff.max() > 1e-10: diff /= diff.max()
-    # save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
-    # save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
+    # save_burst(diff[0,0][None,None],"./output/tests/prod_search/","diff")
+    # save_burst(diff[:,:,0,0][None,None],"./output/tests/prod_search/","diff_d00")
 
     # -- compare fwd --
     diff = th.abs(score_te - score_gt)
@@ -673,9 +673,9 @@ def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
     # n_w = (sq_w-1)//stride0+1
 
     # -- run search --
-    score_simp,_ = dnls.simple.xsearch_nn.run(vid,ps,stride=stride0,dilation=dil)
+    score_simp,_ = dnls.simple.prod_search_nn.run(vid,ps,stride=stride0,dilation=dil)
     # print("iqueries.shape: ",iqueries.shape)
-    score_te,inds_te = dnls.simple.xsearch.run(vid,iqueries,flows,k,
+    score_te,inds_te = dnls.simple.prod_search.run(vid,iqueries,flows,k,
                                                    ps,pt,ws,wt,chnls,
                                                    stride0=stride0,stride1=stride1,
                                                    dilation=dil,
@@ -752,11 +752,11 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- exec fold fxns --
-    xsearch_nl = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                            ws, wt, oh0, ow0, oh1, ow1,
-                                            chnls=chnls,dilation=dil, stride=stride1,
-                                            use_k=use_k,use_search_abs=use_search_abs)
-    fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
+    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, oh0, ow0, oh1, ow1,
+                              chnls=chnls,dilation=dil, stride=stride1,
+                              use_k=use_k,use_search_abs=use_search_abs)
+    fold_nl = dnls.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"start-exec")
 
@@ -766,12 +766,12 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                                                 coords,t,device)
 
     # -- run search --
-    score_te,inds_te = xsearch_nl(vid,iqueries)
-    score_simp,inds_simp = dnls.simple.xsearch.run(vid,iqueries,flows,k,
-                                                   ps,pt,ws,wt,chnls,
-                                                   stride0=stride0,stride1=stride1,
-                                                   dilation=dil,use_k=use_k,
-                                                   use_search_abs=use_search_abs)
+    score_te,inds_te = search(vid,iqueries)
+    score_simp,inds_simp = dnls.simple.prod_search.run(vid,iqueries,flows,k,
+                                                       ps,pt,ws,wt,chnls,
+                                                       stride0=stride0,stride1=stride1,
+                                                       dilation=dil,use_k=use_k,
+                                                       use_search_abs=use_search_abs)
 
     # -- reshape --
     nq = iqueries.shape[0]
@@ -845,13 +845,13 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- exec fold fxns --
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                         ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
-                                         chnls=-1,dilation=dil, stride=stride1,
-                                         reflect_bounds=reflect_bounds,
-                                         use_k=False,exact=exact,use_search_abs=True)
+    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
+                              chnls=-1,dilation=dil, stride=stride1,
+                              reflect_bounds=reflect_bounds,
+                              use_k=False,exact=exact,use_search_abs=True)
 
-    # -- run xsearch over batches --
+    # -- run prod_search over batches --
     score_te = []
     for index in range(nbatches):
 
@@ -863,13 +863,13 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
         iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
                                                      coords,t,device)
 
-        # -- run xsearch --
-        score_te_i,inds_te = xsearch(vid_te,iqueries,vid1=vidr_te)
+        # -- run prod_search --
+        score_te_i,inds_te = search(vid_te,iqueries,vid1=vidr_te)
         score_te.append(score_te_i)
 
     # -- forward reference --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.xsearch_nn.run_nn(vid_gt,ps,stride=stride0,mode=mode,
+    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,mode=mode,
                                                dilation=dil,vid1=vidr_gt)
     score_gt = score_gt.view(h*w,-1).T
 

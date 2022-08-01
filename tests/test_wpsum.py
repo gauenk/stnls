@@ -348,16 +348,11 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     _grads_gt = [scores_gt.grad,scores_s_gt.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
-        # print(grads_te[:3,:3])
-        # print(grads_gt[:3,:3])
-        # args = th.where(grads_gt.abs() > 1e-5)
-        # print(grads_te[args][:5])
-        # print(grads_gt[args][:5])
-        args = th.where(grads_gt.abs() > 1e-10)
-        print(len(args[0]),len(grads_gt.ravel()),grads_gt.abs().mean())
-        diff = th.abs((grads_te - grads_gt)/(grads_gt.abs()+1e-10))
-        args2 = th.where(diff[args] > 0.003)
-        print(grads_gt[args][args2],grads_te[args][args2])
+        # diff = th.abs((grads_te - grads_gt)/(grads_gt.abs()+1e-10))
+        # args = th.where(grads_gt.abs() > 1e-1)
+        # print(len(args[0]),len(grads_gt.ravel()),grads_gt.abs().mean())
+        # args2 = th.where(diff[args] > 0.003)
+        # print(grads_gt[args][args2],grads_te[args][args2])
 
         error = diff.mean().item()
         if exact:

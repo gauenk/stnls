@@ -70,8 +70,8 @@ class TestPairScatterFold(unittest.TestCase):
         vid = th.randn_like(vid)
 
         # -- exec unfold fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),stride=stride,dilation=dil)
+        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
         # -- prepare videos --
         psHalf = ps//2
@@ -175,8 +175,8 @@ class TestPairScatterFold(unittest.TestCase):
         vid = th.randn_like(vid)
 
         # -- exec unfold fxns --
-        scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=True)
-        fold_nl = dnls.fold.Fold((t,c,h,w),stride=stride,dilation=dil)
+        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
         # -- prepare videos --
         psHalf = ps//2

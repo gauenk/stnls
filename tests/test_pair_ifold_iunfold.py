@@ -108,8 +108,8 @@ def test_nn(ps,stride,dilation):
     #
     # -- test logic --
     #
-    unfold = dnls.iunfold.iUnfold(ps,coords,stride=stride,dilation=dil,adj=adj)
-    fold = dnls.iunfold.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
+    unfold = dnls.iUnfold(ps,coords,stride=stride,dilation=dil,adj=adj)
+    fold = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
 
     # -- run through --
     patches_nl = unfold(vid,0)
