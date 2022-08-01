@@ -209,8 +209,8 @@ def numba_search(vid0,vid1,iqueries,dists,inds,fflow,bflow,
     bsize,st,ws,ws = dists.shape
     bsize,st,ws,ws,_ = inds.shape
     Z = ps*ps*pt*chnls
-    psHalf = int((ps-1)//2)
-    wsHalf = (ws-1)//2
+    psHalf = int((ps)//2)
+    wsHalf = (ws)//2
     adj = psHalf if use_adj else 0
 
     # -- cuda threads --

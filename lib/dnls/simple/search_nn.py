@@ -36,3 +36,4 @@ def run_nn(vid,ps,stride=4,dilation=1,mode="reflect",vid1=None,vid2=None,stride1
 
 
     return score[0]
+

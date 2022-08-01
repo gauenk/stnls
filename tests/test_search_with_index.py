@@ -18,6 +18,7 @@ from einops import rearrange,repeat
 import dnls
 import dnls.utils.gpu_mem as gpu_mem
 from dnls.utils.pads import comp_pads
+from dnls.utils.inds import get_batching_info
 
 # -- check if reordered --
 from scipy import optimize
@@ -108,53 +109,44 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     vshape = vid.shape
     chnls = vid.shape[1]
 
-    # -- sub square --
-    top,btm,left,right = 0,h,0,w
-    coords = [top,left,btm,right]
-    # sq_h = coords[2] - coords[0]
-    # sq_w = coords[3] - coords[1]
-
-    # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
-
-    # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h * n_w
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
+    # -- unpack --
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- exec fold fxns --
     use_adj = True
     h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
     h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
-    search = dnls.search.init("l2",flows.fflow, flows.bflow, k, ps, pt,
-                              ws, wt, dilation=dil, stride=stride1,
+    search = dnls.search.init("l2_with_index",
+                              flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, dilation=dil,
+                              stride0=stride0, stride1=stride1,
                               use_k = use_k,use_adj=use_adj,
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,exact=exact,
                               h0_off=h0_off,w0_off=w0_off,
                               h1_off=h1_off,w1_off=w1_off)
 
+    # -- batching info --
+    n_h0,n_w0 = search.query_batch_info(vid.shape) # just showing api
+    ntotal = t * n_h0 * n_w0
+    nbatch = ntotal
+    nbatches = (ntotal-1) // nbatch + 1
+
     # -- query inds --
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
 
     # -- run search --
     mode = "reflect" if reflect_bounds else "zero"
     score_gt = dnls.simple.search_nn.run_nn(vid,ps,stride=stride0,mode=mode,
-                                              dilation=dil,vid1=vidr,stride1=stride1)
-    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+                                            dilation=dil,vid1=vidr,stride1=stride1)
+    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
 
     # -- testing code --
-    score_te,inds_te = search(vid,iqueries,vid1=vidr)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+    score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- compare --
     tol = 1e-5
@@ -218,43 +210,35 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
     vshape = vid.shape
     chnls = vid.shape[1]
 
-    # -- sub square --
-    top,btm,left,right = 0,h,0,w
-    coords = [top,left,btm,right]
-    # sq_h = coords[2] - coords[0]
-    # sq_w = coords[3] - coords[1]
-
-    # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
-
-    # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h * n_w
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
+    # -- batching --
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- exec fold fxns --
     h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
     h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
-    search = dnls.search.init("l2",flows.fflow, flows.bflow, k, ps, pt,
-                              ws, wt, dilation=dil, stride=stride1,
+    search = dnls.search.init("l2_with_index",
+                              flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, dilation=dil,
+                              stride0=stride0, stride1=stride1,
                               use_k = use_k,use_adj=use_adj,
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,exact=exact,
                               h0_off=h0_off,w0_off=w0_off,
                               h1_off=h1_off,w1_off=w1_off)
 
+    # -- batching info --
+    n_h0,n_w0 = search.query_batch_info(vid.shape) # just showing api
+    ntotal = t * n_h0 * n_w0
+    nbatch = ntotal
+    nbatches = (ntotal-1) // nbatch + 1
+
     # -- query inds --
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
 
     # -- run search --
+    iqueries = dnls.utils.inds.get_query_batch(qindex,nbatch,stride0,t,h,w,device)
     score_gt,_ = dnls.simple.search.run(vid,iqueries,flows,k,ps,pt,ws,wt,chnls,
                                         dilation=dil,stride=stride1,use_adj=use_adj,
                                         reflect_bounds=reflect_bounds,
@@ -264,7 +248,7 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
                                         vid1=vidr)
 
     # -- testing code --
-    score_te,inds_te = search(vid,iqueries,vid1=vidr)
+    score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
 
     # -- viz --
     # print(score_te[0,:3])
@@ -335,32 +319,12 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
     vshape = vid.shape
     chnls = vid.shape[1]
 
-    # -- sub square --
-    top,btm,left,right = 0,h,0,w
-    coords = [top,left,btm,right]
-    # sq_h = coords[2] - coords[0]
-    # sq_w = coords[3] - coords[1]
-
-    # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
-
-    # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h * n_w
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
-
     # -- exec fold fxns --
-    h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
-    h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
     h0_off,w0_off,h1_off,w1_off = 0,0,0,0
-    search = dnls.search.init("l2",flows.fflow, flows.bflow, k, ps, pt,
-                              ws, wt, dilation=dil, stride=stride1,
+    search = dnls.search.init("l2_with_index",
+                              flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, dilation=dil,
+                              stride0=stride0, stride1=stride1,
                               use_k = use_k,use_adj=use_adj,
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,
@@ -368,20 +332,22 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
                               h0_off=h0_off,w0_off=w0_off,
                               h1_off=h1_off,w1_off=w1_off)
 
-    # -- query inds --
-    qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
+    # -- batching info --
+    n_h0,n_w0 = search.query_batch_info(vid.shape) # just showing api
+    ntotal = t * n_h0 * n_w0
+    nbatch = ntotal
+    nbatches = (ntotal-1) // nbatch + 1
+
     # -- viz for testing --
-    vid_search = dnls.simple.search_full_ws.run(vid,ws,stride0,0,0,0)
-    print(th.sum(vid_search))
-    dnls.testing.data.save_burst(vid_search,"./output","vid_ss_00")
-    vid_search = dnls.simple.search_full_ws.run(vid,ws,stride0,0,128-4,128-4)
-    print(th.sum(vid_search))
-    dnls.testing.data.save_burst(vid_search,"./output","vid_ss_br")
-    vid_search = dnls.simple.search_full_ws.run(vid,ws,stride0,0,127,127)
-    print(th.sum(vid_search))
-    dnls.testing.data.save_burst(vid_search,"./output","vid_ss_-1-1")
+    # vid_search = dnls.simple.search_full_ws.run(vid,ws,stride0,0,0,0)
+    # print(th.sum(vid_search))
+    # dnls.testing.data.save_burst(vid_search,"./output","vid_ss_00")
+    # vid_search = dnls.simple.search_full_ws.run(vid,ws,stride0,0,128-4,128-4)
+    # print(th.sum(vid_search))
+    # dnls.testing.data.save_burst(vid_search,"./output","vid_ss_br")
+    # vid_search = dnls.simple.search_full_ws.run(vid,ws,stride0,0,127,127)
+    # print(th.sum(vid_search))
+    # dnls.testing.data.save_burst(vid_search,"./output","vid_ss_-1-1")
     # vid_search = dnls.simple.search_full_ws.run(vid,ws,stride0,0,32,32)
     # print(th.sum(vid_search))
     # dnls.testing.data.save_burst(vid_search,"./output","vid_ss_mid")
@@ -392,12 +358,9 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # print(score_te[1])
 
     # -- testing code --
-    print(iqueries[:3])
-    score_te,inds_te = search(vid,iqueries,vid1=vidr)
-    print(score_te[0])
-    print(th.where(score_te > 10000.))
+    qindex = 0
+    score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
     assert th.all(score_te<th.inf).item()
-
 
 #
 # -- Backward Testing --
@@ -475,17 +438,13 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # sq_h = coords[2] - coords[0]
     # sq_w = coords[3] - coords[1]
 
-    # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
+    # -- batching --
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -493,27 +452,26 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     use_adj = True
     h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
     h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
-    search = dnls.search.init("l2",flows.fflow, flows.bflow, k, ps, pt,
-                              ws, wt, dilation=dil, stride=stride1,
+    search = dnls.search.init("l2_with_index",
+                              flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, dilation=dil,
+                              stride0=stride0, stride1=stride1,
                               use_k = use_k,use_adj=use_adj,
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,exact=exact,
                               h0_off=h0_off,w0_off=w0_off,
                               h1_off=h1_off,w1_off=w1_off)
 
-    # -- query inds --
-    qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
     # -- run search --
-    score_te,inds_te = search(vid0_te,iqueries,vid1=vid1_te)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+    qindex = 0
+    score_te,inds_te = search(vid0_te,qindex,ntotal,vid1=vid1_te)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- comparison --
     mode = "reflect" if reflect_bounds else "zero"
     score_gt = dnls.simple.search_nn.run_nn(vid0_gt,ps,stride=stride0,mode=mode,
                                             dilation=dil,vid1=vid1_gt,stride1=stride1)
-    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- compute gradient --
     score_grad = th.rand_like(score_gt)
@@ -527,6 +485,14 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     grad1_gt = vid1_gt.grad
 
 
+    # -- viz --
+    diff = th.abs((grad0_te - grad0_gt)/(grad0_gt.abs()+1e-5))
+    diff /= diff.max()
+    dnls.testing.data.save_burst(diff,"./output/tests/test_search_with_index/","grad0")
+    diff = th.abs((grad1_te - grad1_gt)/(grad1_gt.abs()+1e-5))
+    diff /= diff.max()
+    dnls.testing.data.save_burst(diff,"./output/tests/test_search_with_index/","grad1")
+
     #
     # -- Backward Step --
     #
@@ -534,7 +500,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- tolerances --
     small_thresh = 1e-2
     tol_mean = 1e-4
-    tol_max = 1e-3
+    tol_max = 5e-3
 
     # -- check 0 --
     args = th.where(grad0_gt.abs() > small_thresh)
@@ -551,5 +517,4 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     assert error < tol_mean
     error = diff[args].max().item()
     assert error < tol_max
-
 

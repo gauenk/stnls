@@ -4,7 +4,7 @@
 
 // CUDA forward declarations
 
-void dnls_cuda_xsearch_forward(
+void search_prod_forward_cuda(
     torch::Tensor vid0,torch::Tensor vid1,torch::Tensor queryInds,
     torch::Tensor fflow,torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
@@ -16,7 +16,7 @@ void dnls_cuda_xsearch_forward(
     torch::Tensor n_tranges,torch::Tensor min_tranges);
 
 
-void dnls_cuda_xsearch_backward(
+void search_prod_backward_cuda(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor qinds, torch::Tensor nlDists, torch::Tensor nlInds,
@@ -29,7 +29,7 @@ void dnls_cuda_xsearch_backward(
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-void dnls_xsearch_forward(
+void search_prod_forward(
     torch::Tensor vid0,torch::Tensor vid1,torch::Tensor queryInds,
     torch::Tensor fflow,torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
@@ -50,14 +50,14 @@ void dnls_xsearch_forward(
   CHECK_INPUT(tranges);
   CHECK_INPUT(n_tranges);
   CHECK_INPUT(min_tranges);
-  dnls_cuda_xsearch_forward(vid0,vid1,queryInds,fflow,bflow,nlDists,nlInds,
+  search_prod_forward_cuda(vid0,vid1,queryInds,fflow,bflow,nlDists,nlInds,
                             ps,pt,ws_h,ws_w,wt,chnls,stride,dilation,
                             use_search_abs, use_bounds, use_adj,
                             oh0, ow0, oh1, ow1,
                             bufs,tranges,n_tranges,min_tranges);
 }
 
-void dnls_xsearch_backward(
+void search_prod_backward(
     torch::Tensor vid0_grad,
     torch::Tensor vid1_grad,
     torch::Tensor vid0,
@@ -74,14 +74,14 @@ void dnls_xsearch_backward(
   CHECK_INPUT(qinds);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  dnls_cuda_xsearch_backward(vid0_grad,vid1_grad,vid0,vid1,qinds,
+  search_prod_backward_cuda(vid0_grad,vid1_grad,vid0,vid1,qinds,
                              nlDists,nlInds,oh0,ow0,oh1,ow1,
                              ps,pt,lam,use_bounds,exact);
 }
 
 // python bindings
-void init_xsearch(py::module &m){
-  m.def("xsearch_forward", &dnls_xsearch_forward, "DNLS Xsearch Forward (CUDA)");
-  m.def("xsearch_backward", &dnls_xsearch_backward, "DNLS Xsearch Backward (CUDA)");
+void init_prod_search(py::module &m){
+  m.def("search_prod_forward", &search_prod_forward, "DNLS Search (Prod) Forward (CUDA)");
+  m.def("search_prod_backward", &search_prod_backward, "DNLS Search (Prod) Backward (CUDA)");
 }
 

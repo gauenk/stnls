@@ -32,7 +32,7 @@ __inline__ __device__ int bounds(int val, int lim ){
 // }
 
 template <typename scalar_t>
-__global__ void dnls_xsearch_forward_kernel(
+__global__ void search_prod_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid1,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> queryInds,
@@ -289,7 +289,7 @@ __global__ void dnls_xsearch_forward_kernel(
   }
 }
 
-void dnls_cuda_xsearch_forward(
+void search_prod_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1, torch::Tensor queryInds,
     torch::Tensor fflow, torch::Tensor bflow, torch::Tensor nlDists, torch::Tensor nlInds,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride, int dilation,
@@ -322,7 +322,7 @@ void dnls_cuda_xsearch_forward(
      
     // launch kernel
     AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_forward_kernel", ([&] {
-       dnls_xsearch_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+       search_prod_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
          vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
          vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
          queryInds.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
@@ -348,7 +348,7 @@ void dnls_cuda_xsearch_forward(
 ****************************/
 
 template <typename scalar_t>
-__global__ void dnls_xsearch_backward_kernel(
+__global__ void search_prod_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0_grad,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid1_grad,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
@@ -462,7 +462,7 @@ __global__ void dnls_xsearch_backward_kernel(
   }
 }
 
-void dnls_cuda_xsearch_backward(
+void search_prod_backward_cuda(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor qinds, torch::Tensor nlDists, torch::Tensor nlInds,
@@ -505,7 +505,7 @@ void dnls_cuda_xsearch_backward(
   
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_backward_kernel", ([&] {
-    dnls_xsearch_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+    search_prod_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid0_grad.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         vid1_grad.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),

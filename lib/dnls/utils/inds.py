@@ -8,6 +8,9 @@ from einops import rearrange,repeat
 import numba
 from numba import njit,prange
 
+# -- local --
+from .pads import comp_pads
+
 def get_exh_inds(vid,stride=1):
     t,c,h,w = vid.shape
     qSearch = t*h*w // stride
@@ -175,4 +178,21 @@ def compute_stride_offsets(stride,t,h,w,device):
         delta[ti] = (hw - final_ind) % stride
     return delta
 
+def get_batching_info(vshape,stride0,stride1,ps,dil):
+
+    # -- padding --
+    oh0,ow0,hp0,wp0 = comp_pads(vshape, ps, stride0, dil)
+    oh1,ow1,hp1,wp1 = comp_pads(vshape, ps, stride1, dil)
+
+    # -- num each spatial direction --
+    n_h0 = (hp0 - (ps-1)*dil - 1)//stride0 + 1
+    n_w0 = (wp0 - (ps-1)*dil - 1)//stride0 + 1
+    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
+    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
+
+    # -- total --
+    t = vshape[0]
+    ntotal0 = t * n_h0 * n_w0
+    ntotal1 = t * n_h0 * n_w0
+    return ntotal0,ntotal1,(n_h0,n_w0),(n_h1,n_w1)
 

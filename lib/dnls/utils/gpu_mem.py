@@ -1,25 +1,31 @@
 import torch as th
 
-def print_gpu_stats(gpu_stats,name):
-    fmt_all = "[%s] Memory Allocated: %2.3f"
-    fmt_res = "[%s] Memory Reserved: %2.3f"
-    if gpu_stats:
-        th.cuda.empty_cache()
-        th.cuda.synchronize()
-        mem = th.cuda.memory_allocated() / 1024**3
-        print(fmt_all % (name,mem))
-        mem = th.cuda.memory_reserved() / 1024**3
-        print(fmt_res % (name,mem))
-
-def print_peak_gpu_stats(gpu_stats,name,reset=True):
+def print_gpu_stats(verbose,name,reset=True):
+    fmt_all = "[%s] Memory Allocated [GB]: %2.3f"
+    fmt_res = "[%s] Memory Reserved [GB]: %2.3f"
     th.cuda.empty_cache()
     th.cuda.synchronize()
-    mem = th.cuda.max_memory_allocated(0)
-    mem_gb = mem / (1024.**3)
+    mem_alloc = th.cuda.memory_allocated() / 1024**3
+    mem_res = th.cuda.memory_reserved() / 1024**3
+    if verbose:
+        print(fmt_all % (name,mem_alloc))
+        print(fmt_res % (name,mem_res))
     if reset: th.cuda.reset_peak_memory_stats()
-    if gpu_stats:
-        print("Max Mem (GB): %2.3f" % mem_gb)
-    return mem_gb
+    return mem_alloc,mem_res
+
+def reset_peak_gpu_stats():
+    th.cuda.reset_max_memory_allocated()
+
+def print_peak_gpu_stats(verbose,name,reset=True):
+    fmt = "[%s] Peak Memory Allocated [GB]: %2.3f"
+    mem_alloc = th.cuda.max_memory_allocated(0) / (1024.**3)
+    mem_res = th.cuda.max_memory_reserved(0) / (1024.**3)
+    if verbose:
+        th.cuda.empty_cache()
+        th.cuda.synchronize()
+        print(fmt % (name,mem_alloc))
+    if reset: th.cuda.reset_peak_memory_stats()
+    return mem_alloc,mem_res
 
 def reset():
     th.cuda.reset_peak_memory_stats()
@@ -27,13 +33,14 @@ def reset():
 class GpuRecord():
 
     def __init__(self):
-        self.mems = []
+        self.mems = [] # reserved
+        self.mems_alloc = [] # allocated
         self.names = []
 
     def __str__(self):
         msg = "--- Gpu Mems ---\n"
-        for k,m in self.items():
-            msg += "\n%s: %2.3f\n" % (k,m)
+        for k,mem_res,mem_alloc in self.items(True):
+            msg += "\n%s: %2.3f, %2.3f\n" % (k,mem_res,mem_alloc)
         return msg
 
     def __getitem__(self,name):
@@ -41,13 +48,17 @@ class GpuRecord():
         gpu_mem = self.mems[idx]
         return gpu_mem
 
-    def items(self):
-        return zip(self.names,self.mems)
+    def items(self,both=False):
+        if both:
+            return zip(self.names,self.mems,self.mems_alloc)
+        else:
+            return zip(self.names,self.mems)
 
     def reset(self):
         print_peak_gpu_stats(False,"",True)
 
     def snap(self,name):
-        mem_gb = print_peak_gpu_stats(False,"",True)
+        mem_alloc,mem_res = print_peak_gpu_stats(False,"",True)
         self.names.append(name)
-        self.mems.append(mem_gb)
+        self.mems.append(mem_res)
+        self.mems_alloc.append(mem_alloc)

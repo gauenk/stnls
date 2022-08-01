@@ -31,7 +31,7 @@ __inline__ __device__ int bounds(int val, int lim ){
 // }
 
 template <typename scalar_t>
-__global__ void dnls_search_forward_kernel(
+__global__ void search_l2_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid1,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> qinds,
@@ -42,7 +42,7 @@ __global__ void dnls_search_forward_kernel(
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride,
-    bool use_adj, bool reflect_bounds, bool search_abs,
+    bool use_adj, bool reflect_bounds, bool search_abs, bool full_ws,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> bufs,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
@@ -63,10 +63,12 @@ __global__ void dnls_search_forward_kernel(
   float inf = __int_as_float(0x7f800000);
 
   // offsets
-  int psHalf = (ps-1)/2;
-  int wsHalf_h = (ws_h-1)/2;
-  int wsHalf_w = (ws_w-1)/2;
+  int psHalf = (ps)/2;
+  int wsHalf_h = (ws_h)/2;
+  int wsHalf_w = (ws_w)/2;
   int numQueries = qinds.size(0);
+  int wsMax_h = stride*(ws_h-1-wsHalf_h);
+  int wsMax_w = stride*(ws_w-1-wsHalf_w);
 
   // column index
   int blkDimX = blockDim.x; // num threads in x-block
@@ -85,6 +87,7 @@ __global__ void dnls_search_forward_kernel(
   bool valid_ti,valid_hi,valid_wi,valid_anchor;
   bool valid_n_ti,valid_n_hi,valid_n_wi,valid_n;
   bool eq_ti,eq_hi,eq_wi,eq_dim;
+  int wsOff_h,wsOff_w;
 
   float cw0,ch0,ct0,cw_f,ch_f;
   int l_cw0,l_ch0,l_ct0;
@@ -111,6 +114,21 @@ __global__ void dnls_search_forward_kernel(
     valid_hi = (hi < height) && (hi >= 0);
     valid_wi = (wi < width) && (wi >= 0);
     valid_anchor = valid_ti && valid_hi && valid_wi;
+
+    // -- search offset --
+    if(full_ws){
+      wsOff_h = (hi-max(hi-stride*wsHalf_h,0))/stride;
+      wsOff_w = (wi-max(wi-stride*wsHalf_w,0))/stride;
+      if ((hi+wsMax_h) >= height){
+        wsOff_h+=(hi+wsMax_h-min(hi+stride*wsMax_h,height-1)-1)/stride + 1;
+      }
+      if ((wi+wsMax_w) >= width){
+        wsOff_w+=(wi+wsMax_w-min(wi+stride*wsMax_w,width-1)-1)/stride + 1;
+      }
+    }else{
+      wsOff_h = wsHalf_h;
+      wsOff_w = wsHalf_w;
+    }
 
     // ---------------------------------------
     //     searching loop for (ti,top,left)
@@ -192,8 +210,8 @@ __global__ void dnls_search_forward_kernel(
             n_hi = stride * ws_i;
             n_wi = stride * ws_j;
           }else{
-            n_hi = ch + stride * (ws_i - wsHalf_h);
-            n_wi = cw + stride * (ws_j - wsHalf_w);
+            n_hi = ch + stride * (ws_i - wsOff_h);
+            n_wi = cw + stride * (ws_j - wsOff_w);
           }
 
           // ---------------------------
@@ -288,14 +306,14 @@ __global__ void dnls_search_forward_kernel(
   }
 }
 
-void dnls_cuda_search_forward(
+void search_l2_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1, torch::Tensor qinds,
     torch::Tensor fflow, torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride,
-    bool use_adj, bool reflect_bounds, bool search_abs,
+    bool use_adj, bool reflect_bounds, bool search_abs, bool full_ws,
     torch::Tensor bufs, torch::Tensor tranges,
     torch::Tensor n_tranges, torch::Tensor min_tranges){
 
@@ -319,7 +337,7 @@ void dnls_cuda_search_forward(
     
    // launch kernel
    AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_forward_kernel", ([&] {
-      dnls_search_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+      search_l2_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         qinds.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
@@ -329,7 +347,7 @@ void dnls_cuda_search_forward(
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         h0_off, w0_off, h1_off, w1_off,
         ps, pt, ws_h, ws_w, wt, chnls, dilation, stride,
-        use_adj, reflect_bounds, search_abs,
+        use_adj, reflect_bounds, search_abs, full_ws,
         bufs.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
         n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -346,7 +364,7 @@ void dnls_cuda_search_forward(
 ****************************/
 
 template <typename scalar_t>
-__global__ void dnls_search_backward_kernel(
+__global__ void search_l2_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid0,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid1,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
@@ -466,7 +484,7 @@ __global__ void dnls_search_backward_kernel(
   }
 }
 
-void dnls_cuda_search_backward(
+void search_l2_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor grad_dists, torch::Tensor inds, torch::Tensor qinds,
@@ -532,7 +550,7 @@ void dnls_cuda_search_backward(
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {
-    dnls_search_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+    search_l2_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         grad_vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
