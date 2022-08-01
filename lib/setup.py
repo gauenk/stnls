@@ -27,6 +27,8 @@ setup(name='dnls',
               'csrc/tile/iunfold_kernel.cu',
               'csrc/reducers/wpsum_cuda.cpp',
               'csrc/reducers/wpsum_kernel.cu',
+              'csrc/reducers/wpsum_heads_cuda.cpp',
+              'csrc/reducers/wpsum_heads_kernel.cu',
               'csrc/pybind.cpp',
           ])
       ],

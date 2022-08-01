@@ -10,6 +10,7 @@ void init_prod_search(py::module &);
 
 // -- reducing --
 void init_wpsum(py::module &);
+void init_wpsum_heads(py::module &);
 
 // -- patch db --
 void init_gather(py::module &);
@@ -28,6 +29,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_prod_search(m);
 
   init_wpsum(m);
+  init_wpsum_heads(m);
 
   init_gather(m);
   init_scatter(m);

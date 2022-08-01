@@ -5,5 +5,5 @@ from . import wpsum_heads
 
 # -- functions --
 from .wpsum import WeightedPatchSum
-# from . import wpsum_heads
+from .wpsum_heads import WeightedPatchSumHeads
 

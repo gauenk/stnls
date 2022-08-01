@@ -12,9 +12,9 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_patches(inds,ps,pt,c):
+def allocate_patches(inds,ps,pt,c,nheads):
     device = inds.device
-    nq,k = inds.shape[0],1
+    nq,k = inds.shape[0],nheads
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
@@ -38,9 +38,11 @@ class WpSumHeadsFunction(th.autograd.Function):
         pt = patchsize_time (forward only)
         """
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
-        patches = allocate_patches(inds,ps,pt,vid.shape[1])
+        nheads = dists.shape[-1]
+        patches = allocate_patches(inds,ps,pt,vid.shape[1],nheads)
         dnls_cuda.wpsum_heads_forward(vid, patches, dists, inds,
-                                      h_off,w_off,dilation,adj,reflect_bounds)
+                                      h_off,w_off,dilation,adj,
+                                      reflect_bounds)
         # print("dists._version: ",dists._version)
         # print("inds._version: ",inds._version)
         ctx.save_for_backward(dists,inds,vid)
@@ -75,13 +77,17 @@ class WpSumHeadsFunction(th.autograd.Function):
 
         # -- gradient for video --
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
-        dnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,dists,inds,
-                                     h_off,w_off,dilation,adj,reflect_bounds,exact)
+        dnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
+                                           dists,inds,
+                                           h_off,w_off,dilation,adj,
+                                           reflect_bounds,exact)
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
-        dnls_cuda.wpsum_backward_dists(grad_dists,grad_patches,vid,inds,
-                                       h_off,w_off,dilation,adj,reflect_bounds,exact)
+        dnls_cuda.wpsum_heads_backward_dists(grad_dists,grad_patches,
+                                             vid,inds,
+                                             h_off,w_off,dilation,adj,
+                                             reflect_bounds,exact)
 
         # -- stop timer --
         # th.cuda.synchronize()
@@ -90,12 +96,12 @@ class WpSumHeadsFunction(th.autograd.Function):
 
         return grad_vid,grad_dists,None,None,None,None,None,None,None,None,None
 
-class WeightedPatchSum(th.nn.Module):
+class WeightedPatchSumHeads(th.nn.Module):
     # [video -> patches] @ inds
 
     def __init__(self, ps, pt=1, h_off=0, w_off=0, dilation=1,
                  adj=0, reflect_bounds = True, exact=False):
-        super(WeightedPatchSum, self).__init__()
+        super(WeightedPatchSumHeads, self).__init__()
         self.ps = ps
         self.pt = pt
 
@@ -113,6 +119,7 @@ class WeightedPatchSum(th.nn.Module):
                                            self.dilation,self.adj,
                                            self.reflect_bounds, self.exact)
         nq,_,_,c,ph,pw = patches.shape
-        patches = patches.view(nq,c,ph,pw)
+        nheads = dists.shape[-1]
+        patches = patches.view(nq,nheads,c,ph,pw)
         return patches
 

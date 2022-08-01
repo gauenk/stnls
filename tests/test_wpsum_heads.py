@@ -1,13 +1,18 @@
 """
 
-Weighted-Patch (Inplace) Sum
+Weighted-Patch (Inplace) Sum "Heads"
 
 
 Verbose Psuedo-Code:
-   yi = softmax(dists)
+
    patches_i = unfold_k(b2,nlInds_cu).type(th.float64)
    patches_i = rearrange(patches_i,'n k 1 c h w -> n k (c h w)')
-   zi = th.sum(yi * patches_i,1).type(th.float32) # n (c h w), this code!
+   zpatches = []
+   for ki in range(k):
+      yi = softmax(dists[ki])
+      zi = th.sum(yi * patches_i,1).type(th.float32) # n (c h w), this code!
+      zpatches.append(zi)
+   zpatches = th.stack(zpatches)
 
 """
 
@@ -58,12 +63,21 @@ def pytest_generate_tests(metafunc):
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def simple_run(vid,scores_s,inds,ps,pt,reflect_bounds,exact):
+def scores_to_heads(scores,nheads,seed=None):
+    if not(seed is None):
+        th.manual_seed(seed)
+    score_heads = []
+    for head in range(nheads):
+        scores_h = softmax(scores*10  + th.randn_like(scores) ,1)
+        score_heads.append(scores_h)
+    score_heads = th.stack(score_heads,-1) # a b nheads
+    return score_heads
+
+def simple_run(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
     unfold_k = dnls.UnfoldK(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
     patches_i = unfold_k(vid,inds).type(th.float64)
-    patches_i = rearrange(patches_i,'n k 1 c h w -> n k (c h w)')
-    scores_s = scores_s[...,None].type(th.float64)
-    wpatches_i = th.sum(scores_s * patches_i,1).type(th.float32)
+    patches_i = rearrange(patches_i,'n k 1 c h w -> n k 1 (c h w)')
+    wpatches_i = th.sum(score_heads[...,None] * patches_i,1).type(th.float32)
     return wpatches_i
 
 def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
@@ -76,6 +90,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     stride1 = 1
     ws = -1 if k == -1 else 10
     wt = 0 if k == -1 else 5
+    nheads = 5
 
     # -- init vars --
     device = "cuda:0"
@@ -85,7 +100,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     reflect_bounds = False
     use_search_abs = ws == -1
     use_k = k != -1
-    use_unfold = k == -1
+    use_unfold = False
     t = 1 if use_unfold else 3
     adj = ps//2 if use_unfold else 0
 
@@ -144,23 +159,19 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.reducers.WeightedPatchSum(ps, pt, h_off=h_off,w_off=w_off,
-                                           dilation=dil, reflect_bounds=reflect_bounds,
-                                           adj=adj, exact=exact)
+    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off,w_off=w_off,
+                                                dilation=dil,
+                                                reflect_bounds=reflect_bounds,
+                                                adj=adj, exact=exact)
 
-    # -- run search & wpsum --
+    # -- run search --
     scores,inds = search(vid,iqueries,vid1=vid)
-    scores_s = softmax(scores*10,dim=1)
-    wpatches_te = wpsum(vid,scores_s,inds).view(iqueries.shape[0],-1)
-    # print(wpatches_te.shape)
+    scores_s = scores_to_heads(scores,nheads)
 
-    # -- run simple forward for testing --
-    if use_unfold:
-        mode = "reflect" if reflect_bounds else "zero"
-        scores_gt,wpatches_gt = dnls.simple.prod_search_nn.run_nn(vid,ps,stride=stride0,dilation=dil,vid1=vid,mode=mode)
-        wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
-    else:
-        wpatches_gt = simple_run(vid,scores_s,inds,ps,pt,reflect_bounds,exact)
+    # -- two methods for comparison --
+    nq = iqueries.shape[0]
+    wpatches_te = wpsum(vid,scores_s,inds).view(nq,nheads,-1)
+    wpatches_gt = simple_run(vid,scores_s,inds,ps,pt,reflect_bounds,exact)
 
     # -- vis [scores] --
     # scores = scores.view(n_h,n_w,h,w)
@@ -178,12 +189,12 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # dnls.testing.data.save_burst(diff,SAVE_DIR,"diff_%d" % use_unfold)
 
     # -- compare --
-    tol = 1e-5 if use_unfold else 1e-7
+    tol = 1e-7
     error = th.abs(wpatches_gt - wpatches_te).mean().item()
     if error > tol: print(error)
     assert error < tol
 
-    tol = 1e-4 if use_unfold else 1e-6
+    tol = 1e-6
     error = th.abs(wpatches_gt - wpatches_te).max().item()
     if error > tol: print(error)
     assert error < tol
@@ -198,6 +209,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     stride1 = 1
     ws = -1 if k == -1 else 10
     wt = 0 if k == -1 else 5
+    nheads = 5
 
     # -- init vars --
     device = "cuda:0"
@@ -269,9 +281,10 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.reducers.WeightedPatchSum(ps, pt, h_off=h_off, w_off=w_off,
-                                           dilation=dil, reflect_bounds=reflect_bounds,
-                                           adj=adj, exact=exact)
+    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
+                                                dilation=dil,
+                                                reflect_bounds=reflect_bounds,
+                                                adj=adj, exact=exact)
 
     # -- run search --
 
@@ -292,41 +305,27 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # vid2_te.requires_grad_(True)
     # vid2_gt.requires_grad_(True)
 
-    # -- forward passes --
-    # scores,inds = search(vid0_te,iqueries,vid1=vid1_te)
-    # scores_s = softmax(scores*10,dim=1)
-    # # scores_s = scores_s.detach()
-    # wpatches_te = wpsum(vid2_te,scores_s,inds).view(iqueries.shape[0],-1)
-
-
     #
-    # -- forward pass [v2] --
+    # -- forward pass --
     #
 
-    # -- inds --
-    # vid0_te.requires_grad_(False)
-    _,inds = search(vid0_te,iqueries,vid1=vid1_te)
-    # vid0_te.requires_grad_(True)
-
-    # -- scores --
-    mode = "reflect" if reflect_bounds else "zero"
-    # vid2_te.requires_grad_(False)
-    scores_te,wpatches_te = dnls.simple.prod_search_nn.run_nn(vid0_te,ps,stride=stride0,dilation=dil,vid1=vid1_te,vid2=vid2_te,mode=mode)
-    wpatches_te = wpatches_te.view(iqueries.shape[0],-1)
-    scores_te = rearrange(scores_te,'h w nh nw -> (nh nw) (h w)')
+    # -- compute score --
+    scores,inds = search(vid0_te,iqueries,vid1=vid1_te)
+    scores_te = scores.clone()
+    scores_gt = scores.clone()
     scores_te.requires_grad_(True)
-    scores_s_te = softmax(scores_te*10,dim=1)
-    scores_s_te.requires_grad_(True)
+    scores_gt.requires_grad_(True)
+    scores_s_te = scores_to_heads(scores_te,nheads,seed=123)
+    scores_s_gt = scores_to_heads(scores_gt,nheads,seed=123)
     scores_s_te.retain_grad()
+    scores_s_gt.retain_grad()
 
-    # -- patches --
-    wpatches_te = wpsum(vid2_te,scores_s_te,inds).view(iqueries.shape[0],-1)
+    # -- forward test --
+    nq = iqueries.shape[0]
+    wpatches_te = wpsum(vid2_te,scores_s_te,inds).view(nq,nheads,-1)
 
-    # -- run simple forward for testing --
-    mode = "reflect" if reflect_bounds else "zero"
-    scores_gt,scores_s_gt,wpatches_gt = dnls.simple.prod_search_nn.run_nn_v2(vid0_gt,ps,stride=stride0,
-                                                                         dilation=dil,vid1=vid1_gt,vid2=vid2_gt,mode=mode)
-    wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
+    # -- forward gt --
+    wpatches_gt = simple_run(vid2_gt,scores_s_gt,inds,ps,pt,reflect_bounds,exact)
 
     # -- confirm fwd --
     tol = 1e-5 if use_unfold else 1e-7
@@ -378,6 +377,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     stride1 = 1
     ws = -1 if k == -1 else 10
     wt = 0 if k == -1 else 5
+    nheads = 5
 
     # -- init vars --
     device = "cuda:0"
@@ -448,9 +448,10 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.reducers.WeightedPatchSum(ps, pt, h_off=h_off, w_off=w_off,
-                                           dilation=dil,reflect_bounds=reflect_bounds,
-                                           adj=adj, exact=exact)
+    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
+                                                dilation=dil,
+                                                reflect_bounds=reflect_bounds,
+                                                adj=adj, exact=exact)
 
     # -- run search --
 
@@ -471,22 +472,21 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     vid2_te.requires_grad_(True)
     vid2_gt.requires_grad_(True)
 
-    # -- forward passes --
-    scores,inds = prod_search(vid0_te,iqueries,vid1=vid1_te)
-    scores_s = softmax(scores*10,dim=1)
-    # scores_s = scores_s.detach()
-    wpatches_te = wpsum(vid2_te,scores_s,inds).view(iqueries.shape[0],-1)
 
-    # -- run simple forward for testing --
-    soft_score = None
-    if use_unfold:
-        mode = "reflect" if reflect_bounds else "zero"
-        scores_gt,wpatches_gt = dnls.simple.prod_search_nn.run_nn(vid0_gt,ps,stride=stride0,dilation=dil,vid1=vid1_gt,vid2=vid2_gt,mode=mode)
-        wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
-    else:
-        scores_gt,inds = prod_search(vid_gt_0,iqueries,vid1=vid_gt_0)
-        soft_score = th.nn.functional.softmax(scores_gt*10,1)
-        wpatches_gt = simple_run(vid_gt,soft_score,inds,ps,pt,reflect_bounds,exact)
+    #
+    # -- forward pass --
+    #
+
+    # -- forward test --
+    nq = iqueries.shape[0]
+    scores,inds = prod_search(vid0_te,iqueries,vid1=vid1_te)
+    scores_s = scores_to_heads(scores,nheads,seed=123)
+    wpatches_te = wpsum(vid2_te,scores_s,inds).view(nq,nheads,-1)
+
+    # -- forward gt --
+    scores,inds = prod_search(vid0_gt,iqueries,vid1=vid1_gt)
+    scores_s = scores_to_heads(scores,nheads,seed=123)
+    wpatches_gt = simple_run(vid2_gt,scores_s,inds,ps,pt,reflect_bounds,exact)
 
     # -- viz --
     # print(wpatches_te[:3,:3])
@@ -494,7 +494,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
 
 
     # -- confirm fwd --
-    tol = 1e-5 if use_unfold else 1e-7
+    tol = 1e-7
     error = th.abs(wpatches_te - wpatches_gt).mean().item()
     if error > tol: print(error)
     assert error < tol
