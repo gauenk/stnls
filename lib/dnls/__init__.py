@@ -2,7 +2,7 @@
 
 # -- submodules --
 from . import search
-from . import reduce
+from . import reducers
 from . import tile
 from . import tile_k
 from . import simple

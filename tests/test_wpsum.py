@@ -59,8 +59,8 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize(key,val)
 
 def simple_run(vid,scores_s,inds,ps,pt,reflect_bounds,exact):
-    scatter = dnls.scatter.ScatterNl(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
-    patches_i = scatter(vid,inds).type(th.float64)
+    unfold_k = dnls.UnfoldK(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
+    patches_i = unfold_k(vid,inds).type(th.float64)
     patches_i = rearrange(patches_i,'n k 1 c h w -> n k (c h w)')
     scores_s = scores_s[...,None].type(th.float64)
     wpatches_i = th.sum(scores_s * patches_i,1).type(th.float32)
@@ -129,10 +129,11 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow,
-                                         k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
-                                         dilation=dil, stride=stride1, use_k=use_k,
-                                         reflect_bounds=reflect_bounds, use_search_abs=use_search_abs)
+    xsearch = dnls.search.init("prod",flows.fflow, flows.bflow,
+                                k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                                dilation=dil, stride=stride1, use_k=use_k,
+                                reflect_bounds=reflect_bounds,
+                                use_search_abs=use_search_abs)
 
     # -- query inds --
     qindex = 0
@@ -143,15 +144,15 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.wpsum.WeightedPatchSum(ps, pt, h_off=h_off,w_off=w_off,
-                                        dilation=dil, reflect_bounds=reflect_bounds,
-                                        adj=adj, exact=exact)
+    wpsum = dnls.reducers.WeightedPatchSum(ps, pt, h_off=h_off,w_off=w_off,
+                                           dilation=dil, reflect_bounds=reflect_bounds,
+                                           adj=adj, exact=exact)
 
     # -- run xsearch & wpsum --
     scores,inds = xsearch(vid,iqueries,vid1=vid)
     scores_s = softmax(scores*10,dim=1)
     wpatches_te = wpsum(vid,scores_s,inds).view(iqueries.shape[0],-1)
-    print(wpatches_te.shape)
+    # print(wpatches_te.shape)
 
     # -- run simple forward for testing --
     if use_unfold:
@@ -253,10 +254,11 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                         ws, wt, oh0, ow0, oh1, ow1,
-                                         dilation=dil, stride=stride1, reflect_bounds=reflect_bounds,
-                                         use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+    xsearch = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+                               ws, wt, oh0, ow0, oh1, ow1,
+                               dilation=dil, stride=stride1,
+                               reflect_bounds=reflect_bounds,
+                               use_k=use_k,use_search_abs=use_search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0
@@ -267,8 +269,9 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.wpsum.WeightedPatchSum(ps, pt, h_off=h_off, w_off=w_off, dilation=dil,
-                                        reflect_bounds=reflect_bounds, adj=adj, exact=exact)
+    wpsum = dnls.reducers.WeightedPatchSum(ps, pt, h_off=h_off, w_off=w_off,
+                                           dilation=dil, reflect_bounds=reflect_bounds,
+                                           adj=adj, exact=exact)
 
     # -- run search --
 
@@ -336,22 +339,35 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     th.autograd.backward(wpatches_te,wpatches_grad)
     th.autograd.backward(wpatches_gt,wpatches_grad)
 
+    # -- set tol --
+    tol_mean = 1e-5
+    tol_max = 1e-3
+
     # -- grab grads --
     _grads_te = [scores_te.grad,scores_s_te.grad]
     _grads_gt = [scores_gt.grad,scores_s_gt.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
-        print(grads_te[:3,:3])
-        print(grads_gt[:3,:3])
-        args = th.where(grads_gt.abs() > 1e-5)
-        print(grads_te[args][:5])
-        print(grads_gt[args][:5])
+        # print(grads_te[:3,:3])
+        # print(grads_gt[:3,:3])
+        # args = th.where(grads_gt.abs() > 1e-5)
+        # print(grads_te[args][:5])
+        # print(grads_gt[args][:5])
+        args = th.where(grads_gt.abs() > 1e-10)
+        print(len(args[0]),len(grads_gt.ravel()),grads_gt.abs().mean())
+        diff = th.abs((grads_te - grads_gt)/(grads_gt.abs()+1e-10))
+        args2 = th.where(diff[args] > 0.003)
+        print(grads_gt[args][args2],grads_te[args][args2])
 
-        error = th.abs((grads_te - grads_gt)/(grads_gt.abs()+1e-10)).mean().item()
-        print("mean error: ",error)
+        error = diff.mean().item()
+        if exact:
+            if error > tol_mean: print("mean error: ",error)
+            assert error < tol_mean
 
-        error = th.abs((grads_te - grads_gt)/(grads_gt.abs()+1e-10)).max().item()
-        print("max error: ",error)
+        error = diff[args].max().item()
+        if exact:
+            if error > tol_max: print("max error: ",error)
+            assert error < tol_max
 
 
 def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
@@ -418,10 +434,11 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
-                                         ws, wt, oh0, ow0, oh1, ow1,
-                                         dilation=dil, stride=stride1, reflect_bounds=reflect_bounds,
-                                         use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+    xsearch = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+                               ws, wt, oh0, ow0, oh1, ow1,
+                               dilation=dil, stride=stride1,
+                               reflect_bounds=reflect_bounds,
+                               use_k=use_k,use_search_abs=use_search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0
@@ -432,8 +449,9 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.wpsum.WeightedPatchSum(ps, pt, h_off=h_off, w_off=w_off, dilation=dil,
-                                        reflect_bounds=reflect_bounds, adj=adj, exact=exact)
+    wpsum = dnls.reducers.WeightedPatchSum(ps, pt, h_off=h_off, w_off=w_off,
+                                           dilation=dil,reflect_bounds=reflect_bounds,
+                                           adj=adj, exact=exact)
 
     # -- run search --
 
@@ -511,8 +529,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
         wpatches_gt = simple_run(vid_gt,soft_score,inds,ps,pt,reflect_bounds,exact)
 
     # -- viz --
-    print(wpatches_te[:3,:3])
-    print(wpatches_gt[:3,:3])
+    # print(wpatches_te[:3,:3])
+    # print(wpatches_gt[:3,:3])
 
 
     # -- confirm fwd --
@@ -551,15 +569,15 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
         diff = (grad_te - grad_gt).abs()/(grad_gt.abs()+1e-10)
         args = th.where(grad_gt.abs() < 1e-2)
         args = th.where(diff > 1e-3)
-        print(grad_te[args][:5])
-        print(grad_gt[args][:5])
-        print(diff.mean().item())
-        print(diff.max().item())
+        # print(grad_te[args][:5])
+        # print(grad_gt[args][:5])
+        # print(diff.mean().item())
+        # print(diff.max().item())
         Z = 1e-5 if idx > 0 else 1e-2
         # diff /= diff.max()
-        diff /= Z
-        if idx ==0: diff = diff.clamp(0.,1.)
-        dnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d_%d" % (use_unfold,idx))
+        # diff /= Z
+        # if idx ==0: diff = diff.clamp(0.,1.)
+        # dnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d_%d"%(use_unfold,idx))
 
         # -- compare --
         error = th.abs((grad_te - grad_gt)).mean().item()

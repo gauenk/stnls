@@ -208,7 +208,7 @@ class ProductSearch(th.nn.Module):
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1,stride=1, dilation=1, lam = 1., use_search_abs=False,
                  reflect_bounds=True, use_adj=True, use_k=True, exact=True):
-        super(CrossSearchNl, self).__init__()
+        super(ProductSearch, self).__init__()
         self.k = k
         self.ps = ps
         self.pt = pt
@@ -261,7 +261,7 @@ class ProductSearch(th.nn.Module):
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
-        return ProductSearch.apply(vid0,vid1,iqueries,self.fflow,self.bflow,
+        return ProductSearchFunction.apply(vid0,vid1,iqueries,self.fflow,self.bflow,
                                            k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
                                            self.stride,self.dilation,self.lam,
                                            self.use_search_abs,self.reflect_bounds,
