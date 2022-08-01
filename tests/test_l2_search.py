@@ -393,10 +393,10 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # print(score_te[1])
 
     # -- testing code --
-    print(iqueries[:3])
+    # print(iqueries[:3])
     score_te,inds_te = search(vid,iqueries,vid1=vidr)
-    print(score_te[0])
-    print(th.where(score_te > 10000.))
+    # print(score_te[0])
+    # print(th.where(score_te > 10000.))
     assert th.all(score_te<th.inf).item()
 
 
@@ -535,7 +535,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- tolerances --
     small_thresh = 1e-2
     tol_mean = 1e-4
-    tol_max = 1e-3
+    tol_max = 5*1e-3
 
     # -- check 0 --
     args = th.where(grad0_gt.abs() > small_thresh)
@@ -547,7 +547,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- check 1 --
     args = th.where(grad1_gt.abs() > small_thresh)
-    diff = th.abs((grad1_te - grad1_gt)/(grad1_gt.abs()+1e-10))
+    diff = th.abs((grad1_te - grad1_gt)/(grad1_gt.abs()+1e-5))
     error = diff.mean().item()
     assert error < tol_mean
     error = diff[args].max().item()

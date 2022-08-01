@@ -68,7 +68,7 @@ class UnfoldK(th.nn.Module):
     # [video -> patches] @ nlInds
 
     def __init__(self, ps, pt=1, dilation=1, btype="default", exact=False,
-                 adj=0, reflect_bounds = True):
+                 adj=0, reflect_bounds = True, device="cuda:0"):
         super(UnfoldK, self).__init__()
         self.ps = ps
         self.pt = pt
@@ -77,6 +77,7 @@ class UnfoldK(th.nn.Module):
         self.btype = btype
         self.adj = adj
         self.reflect_bounds = reflect_bounds
+        self.device = device
 
     def forward(self, vid, nlInds):
         return unfold_k.apply(vid,nlInds,self.ps,self.pt,

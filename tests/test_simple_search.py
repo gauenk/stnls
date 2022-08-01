@@ -85,7 +85,7 @@ class TestSimpleSearch(unittest.TestCase):
         queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
+        patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
         patches = rearrange(patches[:,0,0],'(t q) c h w -> t (c h w) q',t=t)
 
         # -- get patches with unfold --
@@ -157,7 +157,7 @@ class TestSimpleSearch(unittest.TestCase):
         queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,flow,k,
                                                 ps,pt,ws,wt,chnls)
-        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
+        patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
 
         # -- test topk index --
         dinds = th.sum((nlInds[:,0] - queryInds)**2).item()
@@ -204,7 +204,7 @@ class TestSimpleSearch(unittest.TestCase):
                                                         t,h,w,device)
             nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                     flow,k,ps,pt,ws,wt,chnls)
-            patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
+            patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
 
             # -- torch mean --
             patches = rearrange(patches,'q k t c h w -> q k (t c h w)')
@@ -254,7 +254,7 @@ class TestSimpleSearch(unittest.TestCase):
         queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean/255.,queryInds,flow,k,
                                                 ps,pt,ws,wt,3)
-        patches = dnls.simple.scatter.run(clean/255.,nlInds,ps,pt)
+        patches = dnls.simple.unfold_k.run(clean/255.,nlInds,ps,pt)
 
         # -- unfold for comp --
         pad = ps//2

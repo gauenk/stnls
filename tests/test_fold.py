@@ -70,7 +70,7 @@ class TestFold(unittest.TestCase):
         vid = vid.contiguous()
 
         # -- exec fold fxns --
-        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
         fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
         # -- get [patches & nlInds] --
@@ -79,7 +79,7 @@ class TestFold(unittest.TestCase):
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = scatter_nl(vid,nlInds)
+        patches = unfold_k(vid,nlInds)
         # patches_uf = self.run_unfold(vid,ps,stride=stride,dil=dil)
         # assert th.sum((patches-patches_uf)**2).item() < 1e-10
         # th.cuda.synchronize()
@@ -209,7 +209,7 @@ class TestFold(unittest.TestCase):
             print("[pre-def] GPU Max: %2.4f" % (gpu_max))
 
         # -- exec fold fxns --
-        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
         fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
         agg_patches = []
         # vid_nl = th.zeros((t,c,h,w),device=device)
@@ -228,7 +228,7 @@ class TestFold(unittest.TestCase):
                                                         t,h,w,device)
             nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                     flow,k,ps,pt,ws,wt,chnls)
-            patches_nl = scatter_nl(vid,nlInds)
+            patches_nl = unfold_k(vid,nlInds)
             del queryInds,nlDists,nlInds
             th.cuda.empty_cache()
 
@@ -292,15 +292,15 @@ class TestFold(unittest.TestCase):
             gpu_max = th.cuda.memory_allocated()/(1024**3)
             print("[post-search] GPU Max: %2.4f" % (gpu_max))
 
-        # -- scatter --
-        patches = scatter_nl(vid,nlInds)
+        # -- unfold_k --
+        patches = unfold_k(vid,nlInds)
         th.cuda.synchronize()
 
         # -- vis --
         if gpu_stats:
             th.cuda.empty_cache()
             gpu_max = th.cuda.memory_allocated()/(1024**3)
-            print("[post-scatter] GPU Max: %2.4f" % (gpu_max))
+            print("[post-unfold_k] GPU Max: %2.4f" % (gpu_max))
 
         # -- run nn --
         patches_nn = patches.clone()

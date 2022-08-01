@@ -173,11 +173,10 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # print(score_te[0,0,16:18,16:18])
     # print(score_gt[0,0,16:18,16:18])
 
-
-    diff = th.abs(score_te - score_gt).mean((-1,-2))
-    if diff.max() > 1e-5: diff /= diff.max()
-    diff = repeat(diff,'h w -> 1 c h w',c=3)
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+    # diff = th.abs(score_te - score_gt).mean((-1,-2))
+    # if diff.max() > 1e-5: diff /= diff.max()
+    # diff = repeat(diff,'h w -> 1 c h w',c=3)
+    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
     # diff = th.abs(score_te - score_gt).mean((0,1))
     # if diff.max() > 1e-5: diff /= diff.max()

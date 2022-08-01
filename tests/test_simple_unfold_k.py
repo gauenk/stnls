@@ -30,7 +30,7 @@ SAVE_DIR = Path("./output/tests/")
 # -- Primary Testing Class --
 #
 
-class TestSimpleScatter(unittest.TestCase):
+class TestSimpleUnfoldK(unittest.TestCase):
 
     #
     # -- Primary Testing Loop --
@@ -38,7 +38,7 @@ class TestSimpleScatter(unittest.TestCase):
 
     def exec_patch_strided_test(self,dname,sigma,flow_args,args):
         """
-        Check equality for patch-strided scatter
+        Check equality for patch-strided unfold_k
         """
 
         # -- misc --
@@ -86,7 +86,7 @@ class TestSimpleScatter(unittest.TestCase):
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls,
                                                 stride=1)#args.stride)
-        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
+        patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
         patches = patches[:,[0]]
         nlDists = nlDists[:,[0]]
         nlInds = nlInds[:,[0]]
@@ -102,7 +102,7 @@ class TestSimpleScatter(unittest.TestCase):
         hp,wp = h+2*pad,w+2*pad
         ones = th.ones_like(patches_uf)
         Z = fold(ones,(hp,wp),(ps,ps),dilation=dil)
-        vid,wvid = dnls.simple.gather.run(patches,nlDists,nlInds,shape=shape)
+        vid,wvid = dnls.simple.fold_k.run(patches,nlDists,nlInds,shape=shape)
         vid_ss = vid / wvid
         vid_uf = fold(patches_uf,(hp,wp),(ps,ps),dilation=dil) / Z
 
@@ -130,7 +130,7 @@ class TestSimpleScatter(unittest.TestCase):
 
     def exec_query_strided_test(self,dname,sigma,flow_args,args):
         """
-        Check equality for strided scatter
+        Check equality for strided unfold_k
         """
 
         # -- misc --
@@ -176,7 +176,7 @@ class TestSimpleScatter(unittest.TestCase):
         # -- nl search --
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
+        patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
         patches = patches[:,[0]]
         nlDists = nlDists[:,[0]]
         nlInds = nlInds[:,[0]]
@@ -192,7 +192,7 @@ class TestSimpleScatter(unittest.TestCase):
         hp,wp = h+2*pad,w+2*pad
         ones = th.ones_like(patches_uf)
         Z = fold(ones,(hp,wp),(ps,ps))
-        vid,wvid = dnls.simple.gather.run(patches,nlDists,nlInds,shape=shape)
+        vid,wvid = dnls.simple.fold_k.run(patches,nlDists,nlInds,shape=shape)
         vid_ss = vid / wvid
         vid_uf = fold(patches_uf,(hp,wp),(ps,ps)) / Z
 
@@ -220,7 +220,7 @@ class TestSimpleScatter(unittest.TestCase):
 
     def exec_folding_test(self,dname,sigma,flow_args,args):
         """
-        Check that "fold" === "scatter" in exh search?
+        Check that "fold" === "fold_k" in exh search?
         """
 
         # -- load data --
@@ -256,7 +256,7 @@ class TestSimpleScatter(unittest.TestCase):
         queryInds = dnls.utils.inds.get_query_batch(index,qSearch,qStride,t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = dnls.simple.scatter.run(clean,nlInds,ps,pt)
+        patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
         patches = rearrange(patches[:,0,0],'(t q) c h w -> t (c h w) q',t=t)
 
         # -- get patches with unfold --

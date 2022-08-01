@@ -73,7 +73,7 @@ class TestUnfold(unittest.TestCase):
         vid = th.randn_like(vid)
 
         # -- exec unfold fxns --
-        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
         unfold_nl = dnls.Unfold(ps,stride=stride,dilation=dil)
 
         #

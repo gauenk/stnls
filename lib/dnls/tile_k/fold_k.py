@@ -50,7 +50,7 @@ class FoldK(th.nn.Module):
     # [patches -> video] @ nlInds
 
     def __init__(self, vid_shape, ws, wt, dilation=1, lam=0.,
-                 exact=False, use_race=True, device="cuda"):
+                 exact=False, use_race=True, device="cuda:0"):
         super(FoldK, self).__init__()
         self.vid_shape = vid_shape
         self.vid,self.wvid = self.allocate_vid(vid_shape,device)
@@ -60,6 +60,7 @@ class FoldK(th.nn.Module):
         self.use_race = use_race
         self.ws = ws
         self.wt = wt
+        self.device = device
 
     def allocate_vid(self,vid_shape,device):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)

@@ -42,8 +42,10 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[8],"stride":[8],"dilation":[1],
     #               "top":[0],"btm":[64],"left":[0],"right":[64]}
-    test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
-                  "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
+    test_lists = {"ps":[3,4,5,6,],"stride":[1,2,3,4],"dilation":[1,2,3,4],
+                  "top":[11],"btm":[50],"left":[7],"right":[57]}
+    # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
+    #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -203,7 +205,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- exec fold fxns --
-    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
     fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
 
     # -- patches for ifold --
@@ -214,7 +216,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
                                             ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)
     assert th.sum(queryInds - nlInds[:,0]) < 1e-10
-    patches_nl = scatter_nl(vid,nlInds)
+    patches_nl = unfold_k(vid,nlInds)
     patches_nn = patches_nl.clone()
     patches_nn = patches_nn.requires_grad_(True)
     patches_nl = patches_nl.requires_grad_(True)
@@ -309,7 +311,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- exec fold fxns --
-    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
     fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"pre-loop")
@@ -326,7 +328,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
                                                 ps,pt,ws,wt,chnls,
                                                 stride=stride,dilation=dil)
-        patches_nl_i = scatter_nl(vid,nlInds)
+        patches_nl_i = unfold_k(vid,nlInds)
         del queryInds,nlDists,nlInds
         th.cuda.empty_cache()
 
@@ -346,7 +348,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,k,
                                             ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)
-    patches_nn = scatter_nl(vid,nlInds)
+    patches_nn = unfold_k(vid,nlInds)
     patches_nn.requires_grad_(True)
     gpu_mem.print_gpu_stats(gpu_stats,"post-search")
     vid_nn,_ = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
@@ -438,7 +440,7 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- exec fold fxns --
-    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
     fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
     shift_fold_nl = dnls.iFold(shift_vshape,shift_coords,
                                      stride=stride,dilation=dil)
@@ -451,7 +453,7 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
                                             ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)
     assert th.sum(queryInds - nlInds[:,0]) < 1e-10
-    patches_nl = scatter_nl(vid,nlInds)
+    patches_nl = unfold_k(vid,nlInds)
     patches_nn = patches_nl.clone()
     patches_nn = patches_nn.requires_grad_(True)
     patches_nl = patches_nl.requires_grad_(True)
@@ -551,7 +553,7 @@ def test_shrink_search():
     # vid_pad = pad(vid,[padf,]*4,mode="reflect")
 
     # -- get folds --
-    scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
     fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
     wfold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
 
@@ -562,7 +564,7 @@ def test_shrink_search():
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,flow,
                                             k,ps,pt,ws,wt,chnls,
                                             stride=stride,dilation=dil)
-    patches = scatter_nl(vid,nlInds[:,[0]])
+    patches = unfold_k(vid,nlInds[:,[0]])
     ones = th.ones_like(patches)
     vid_f = fold_nl(patches,0)
     wvid_f = wfold_nl(ones,0)

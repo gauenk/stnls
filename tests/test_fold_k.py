@@ -45,7 +45,7 @@ def pytest_generate_tests(metafunc):
 
 # -----------------------------------------
 #
-#   Testing Efficient vs. Simple Gather
+#   Testing Efficient vs. Simple FoldK
 #
 # -----------------------------------------
 
@@ -80,13 +80,13 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
     noisy = vid + sigma * th.randn_like(vid)
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
-    # -- gather/scatter decl --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,
-                                        exact=True,device=device)
-    gather_simp = dnls.gather.GatherNl(vid.shape,ws,wt,dilation=dilation,
-                                       exact=exact,device=device)
-    gather_eff = dnls.gather.GatherNl(vid.shape,ws,wt,dilation=dilation,
-                                      use_race=False,device=device)
+    # -- unfold/fold k decl --
+    unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
+                            exact=True,device=device)
+    fold_k_simp = dnls.FoldK(vid.shape,ws,wt,dilation=dilation,
+                             exact=exact,device=device)
+    fold_k_eff = dnls.FoldK(vid.shape,ws,wt,dilation=dilation,
+                            use_race=False,device=device)
 
     # -- timer --
     timer = dnls.utils.timer.ExpTimer()
@@ -112,7 +112,7 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = scatter_nl(vid,nlInds)
+        patches = unfold_k(vid,nlInds)
         patches[...] = 1.
         # print(nlInds[64*64-1])
         # print(nlInds[64*64])
@@ -127,23 +127,23 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
         # print(nlInds[...,1][args])
         # print(nlInds[...,2][args])
 
-        # -- reset gather --
+        # -- reset fold_k --
         if clear_each:
-            gather_simp.vid[...] = 0
-            gather_simp.wvid[...] = 0
-            gather_eff.vid[...] = 0
-            gather_eff.wvid[...] = 0
+            fold_k_simp.vid[...] = 0
+            fold_k_simp.wvid[...] = 0
+            fold_k_eff.vid[...] = 0
+            fold_k_eff.wvid[...] = 0
 
         # -- testing forward --
         timer.start("simp")
-        vid_simp,wvid_simp = dnls.simple.gather.run(patches,nlDists,
+        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,nlDists,
                                                     nlInds,dilation=dilation,
                                                     shape=shape)
-        # vid_simp,wvid_simp = gather_simp(patches,nlDists,nlInds)
+        # vid_simp,wvid_simp = fold_k_simp(patches,nlDists,nlInds)
         th.cuda.synchronize()
         timer.stop("simp")
         timer.start("eff")
-        vid_eff,wvid_eff = gather_eff(patches,nlDists,nlInds)
+        vid_eff,wvid_eff = fold_k_eff(patches,nlDists,nlInds)
         th.cuda.synchronize()
         timer.stop("eff")
         # print(timer)
@@ -175,7 +175,7 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
 
 # --------------------------------------
 #
-#   Testing Gather vs. Simple Code
+#   Testing Fold_K vs. Simple Code
 #
 # -------------------------------------
 
@@ -202,11 +202,11 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     noisy = vid + sigma * th.randn_like(vid)
     flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
-    # -- gather/scatter decl --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,
-                                        exact=True,device=device)
-    gather_nl = dnls.gather.GatherNl(vid.shape,ws,wt,dilation=dilation,
-                                     exact=exact,device=device)
+    # -- fold_k/unfold_k decl --
+    unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
+                            exact=True,device=device)
+    fold_k = dnls.FoldK(vid.shape,ws,wt,dilation=dilation,
+                           exact=exact,device=device)
 
     # -- batching info --
     device = noisy.device
@@ -228,15 +228,15 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
                                                     t,h,w,device)
         nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = scatter_nl(vid,nlInds)
+        patches = unfold_k(vid,nlInds)
 
-        # -- reset gather --
-        gather_nl.vid[...] = 0
-        gather_nl.wvid[...] = 0
+        # -- reset fold_k --
+        fold_k.vid[...] = 0
+        fold_k.wvid[...] = 0
 
         # -- testing forward --
-        vid_nl,wvid_nl = gather_nl(patches,nlDists,nlInds)
-        vid_simp,wvid_simp = dnls.simple.gather.run(patches,nlDists,
+        vid_nl,wvid_nl = fold_k(patches,nlDists,nlInds)
+        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,nlDists,
                                                     nlInds,dilation=dilation,
                                                     shape=shape)
         error = th.mean((vid_nl - vid_simp)**2).item()
@@ -251,7 +251,7 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     th.cuda.synchronize()
 
 #
-# -- Test Gather & Fold --
+# -- Test Fold_K & Fold --
 #
 
 # @pytest.mark.skip()
@@ -286,10 +286,10 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
     nbatches = (ntotal-1) // qSize + 1
     vid = vid.contiguous()
 
-    # -- exec gather fxns --
-    scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,
-                                        exact=True,device=device)
-    gather_nl = dnls.gather.GatherNl((t,c,h,w),ws,wt,dilation=dilation,
+    # -- exec fold_k fxns --
+    unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
+                            exact=True,device=device)
+    fold_k = dnls.FoldK((t,c,h,w),ws,wt,dilation=dilation,
                                      exact=exact,device=device)
 
     # -- get [patches & nlInds] --
@@ -298,7 +298,7 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
                                                 t,h,w,device)
     nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
-    patches = scatter_nl(vid,nlInds)
+    patches = unfold_k(vid,nlInds)
 
     #
     # -- test logic --
@@ -312,7 +312,7 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
 
     # -- run forward --
     vid_nn,wvid_nn = run_fold(patches_nn,t,h,w,stride,dilation)
-    vid_nl,wvid_nl = gather_nl(patches_nl,nlDists,nlInds)
+    vid_nl,wvid_nl = fold_k(patches_nl,nlDists,nlInds)
 
     # -- reweight --
     args = th.where(wvid_nl>0)

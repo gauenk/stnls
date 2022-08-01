@@ -5,9 +5,9 @@ Weighted-Patch (Inplace) Sum
 
 Verbose Psuedo-Code:
    yi = softmax(dists)
-   patches_i = scatter(b2,nlInds_cu).type(th.float64)
+   patches_i = unfold_k(b2,nlInds_cu).type(th.float64)
    patches_i = rearrange(patches_i,'n k 1 c h w -> n k (c h w)')
-   zi = th.sum(yi * patches_i,1).type(th.float32) # n (c h w)
+   zi = th.sum(yi * patches_i,1).type(th.float32) # n (c h w), this code!
 
 """
 
@@ -129,11 +129,11 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    xsearch = dnls.search.init("prod",flows.fflow, flows.bflow,
-                                k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
-                                dilation=dil, stride=stride1, use_k=use_k,
-                                reflect_bounds=reflect_bounds,
-                                use_search_abs=use_search_abs)
+    search = dnls.search.init("prod",flows.fflow, flows.bflow,
+                              k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                              dilation=dil, stride=stride1, use_k=use_k,
+                              reflect_bounds=reflect_bounds,
+                              use_search_abs=use_search_abs)
 
     # -- query inds --
     qindex = 0
@@ -148,8 +148,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
                                            dilation=dil, reflect_bounds=reflect_bounds,
                                            adj=adj, exact=exact)
 
-    # -- run xsearch & wpsum --
-    scores,inds = xsearch(vid,iqueries,vid1=vid)
+    # -- run search & wpsum --
+    scores,inds = search(vid,iqueries,vid1=vid)
     scores_s = softmax(scores*10,dim=1)
     wpatches_te = wpsum(vid,scores_s,inds).view(iqueries.shape[0],-1)
     # print(wpatches_te.shape)
@@ -157,7 +157,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # -- run simple forward for testing --
     if use_unfold:
         mode = "reflect" if reflect_bounds else "zero"
-        scores_gt,wpatches_gt = dnls.simple.xsearch_nn.run_nn(vid,ps,stride=stride0,dilation=dil,vid1=vid,mode=mode)
+        scores_gt,wpatches_gt = dnls.simple.prod_search_nn.run_nn(vid,ps,stride=stride0,dilation=dil,vid1=vid,mode=mode)
         wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
     else:
         wpatches_gt = simple_run(vid,scores_s,inds,ps,pt,reflect_bounds,exact)
@@ -253,12 +253,12 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
-    # -- init xsearch --
-    xsearch = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
-                               ws, wt, oh0, ow0, oh1, ow1,
-                               dilation=dil, stride=stride1,
-                               reflect_bounds=reflect_bounds,
-                               use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+    # -- init search --
+    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, oh0, ow0, oh1, ow1,
+                              dilation=dil, stride=stride1,
+                              reflect_bounds=reflect_bounds,
+                              use_k=use_k,use_search_abs=use_search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0
@@ -293,7 +293,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # vid2_gt.requires_grad_(True)
 
     # -- forward passes --
-    # scores,inds = xsearch(vid0_te,iqueries,vid1=vid1_te)
+    # scores,inds = search(vid0_te,iqueries,vid1=vid1_te)
     # scores_s = softmax(scores*10,dim=1)
     # # scores_s = scores_s.detach()
     # wpatches_te = wpsum(vid2_te,scores_s,inds).view(iqueries.shape[0],-1)
@@ -305,13 +305,13 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- inds --
     # vid0_te.requires_grad_(False)
-    _,inds = xsearch(vid0_te,iqueries,vid1=vid1_te)
+    _,inds = search(vid0_te,iqueries,vid1=vid1_te)
     # vid0_te.requires_grad_(True)
 
     # -- scores --
     mode = "reflect" if reflect_bounds else "zero"
     # vid2_te.requires_grad_(False)
-    scores_te,wpatches_te = dnls.simple.xsearch_nn.run_nn(vid0_te,ps,stride=stride0,dilation=dil,vid1=vid1_te,vid2=vid2_te,mode=mode)
+    scores_te,wpatches_te = dnls.simple.prod_search_nn.run_nn(vid0_te,ps,stride=stride0,dilation=dil,vid1=vid1_te,vid2=vid2_te,mode=mode)
     wpatches_te = wpatches_te.view(iqueries.shape[0],-1)
     scores_te = rearrange(scores_te,'h w nh nw -> (nh nw) (h w)')
     scores_te.requires_grad_(True)
@@ -324,7 +324,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- run simple forward for testing --
     mode = "reflect" if reflect_bounds else "zero"
-    scores_gt,scores_s_gt,wpatches_gt = dnls.simple.xsearch_nn.run_nn_v2(vid0_gt,ps,stride=stride0,
+    scores_gt,scores_s_gt,wpatches_gt = dnls.simple.prod_search_nn.run_nn_v2(vid0_gt,ps,stride=stride0,
                                                                          dilation=dil,vid1=vid1_gt,vid2=vid2_gt,mode=mode)
     wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
 
@@ -348,12 +348,16 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     _grads_gt = [scores_gt.grad,scores_s_gt.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
-        # diff = th.abs((grads_te - grads_gt)/(grads_gt.abs()+1e-10))
-        # args = th.where(grads_gt.abs() > 1e-1)
+        # -- compute error --
+        diff = th.abs((grads_te - grads_gt)/(grads_gt.abs()+1e-10))
+        args = th.where(grads_gt.abs() > 1e-1)
+
+        # -- viz --
         # print(len(args[0]),len(grads_gt.ravel()),grads_gt.abs().mean())
         # args2 = th.where(diff[args] > 0.003)
         # print(grads_gt[args][args2],grads_te[args][args2])
 
+        # -- compare --
         error = diff.mean().item()
         if exact:
             if error > tol_mean: print("mean error: ",error)
@@ -429,7 +433,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    xsearch = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+    prod_search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
                                ws, wt, oh0, ow0, oh1, ow1,
                                dilation=dil, stride=stride1,
                                reflect_bounds=reflect_bounds,
@@ -468,7 +472,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     vid2_gt.requires_grad_(True)
 
     # -- forward passes --
-    # scores,inds = xsearch(vid0_te,iqueries,vid1=vid1_te)
+    # scores,inds = prod_search(vid0_te,iqueries,vid1=vid1_te)
     # scores_s = softmax(scores*10,dim=1)
     # # scores_s = scores_s.detach()
     # wpatches_te = wpsum(vid2_te,scores_s,inds).view(iqueries.shape[0],-1)
@@ -480,14 +484,14 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- inds --
     vid0_te.requires_grad_(False)
-    _,inds = xsearch(vid0_te,iqueries,vid1=vid1_te)
+    _,inds = prod_search(vid0_te,iqueries,vid1=vid1_te)
     vid0_te.requires_grad_(True)
 
 
     # -- scores --
     mode = "reflect" if reflect_bounds else "zero"
     vid2_te.requires_grad_(False)
-    scores_te,wpatches_te = dnls.simple.xsearch_nn.run_nn(vid0_te,ps,stride=stride0,dilation=dil,vid1=vid1_te,vid2=vid2_te,mode=mode)
+    scores_te,wpatches_te = dnls.simple.prod_search_nn.run_nn(vid0_te,ps,stride=stride0,dilation=dil,vid1=vid1_te,vid2=vid2_te,mode=mode)
     wpatches_te = wpatches_te.view(iqueries.shape[0],-1)
 
     scores_te = rearrange(scores_te,'h w nh nw -> (nh nw) (h w)')
@@ -516,10 +520,10 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     soft_score = None
     if use_unfold:
         mode = "reflect" if reflect_bounds else "zero"
-        scores_gt,wpatches_gt = dnls.simple.xsearch_nn.run_nn(vid0_gt,ps,stride=stride0,dilation=dil,vid1=vid1_gt,vid2=vid2_gt,mode=mode)
+        scores_gt,wpatches_gt = dnls.simple.prod_search_nn.run_nn(vid0_gt,ps,stride=stride0,dilation=dil,vid1=vid1_gt,vid2=vid2_gt,mode=mode)
         wpatches_gt = wpatches_gt.view(iqueries.shape[0],-1)
     else:
-        scores_gt,inds = xsearch(vid_gt_0,iqueries,vid1=vid_gt_0)
+        scores_gt,inds = prod_search(vid_gt_0,iqueries,vid1=vid_gt_0)
         soft_score = th.nn.functional.softmax(scores_gt*10,1)
         wpatches_gt = simple_run(vid_gt,soft_score,inds,ps,pt,reflect_bounds,exact)
 

@@ -29,7 +29,7 @@ SAVE_DIR = Path("./output/tests/")
 # -- Primary Testing Class --
 #
 
-class TestPairScatterFold(unittest.TestCase):
+class TestPairUnfoldKFoldK(unittest.TestCase):
 
     #
     # -- Test v.s. NN --
@@ -70,7 +70,7 @@ class TestPairScatterFold(unittest.TestCase):
         vid = th.randn_like(vid)
 
         # -- exec unfold fxns --
-        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
         fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
         # -- prepare videos --
@@ -105,7 +105,7 @@ class TestPairScatterFold(unittest.TestCase):
         # -- run forward --
         assert k == 1,"Must have k == 1 for test."
         patches_nn = self.run_unfold(vid_nn,ps,stride,dil)
-        patches_nl = scatter_nl(vid_nl_cc,nlInds[:,[0]])
+        patches_nl = unfold_k(vid_nl_cc,nlInds[:,[0]])
         assert th.sum((patches_nn - patches_nl)**2).item() < 1e-10
         # patches_nl = unfold_nl(vid_nl_cc,0,qTotal) # k == 1 only
 
@@ -175,7 +175,7 @@ class TestPairScatterFold(unittest.TestCase):
         vid = th.randn_like(vid)
 
         # -- exec unfold fxns --
-        scatter_nl = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+        unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
         fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
         # -- prepare videos --
@@ -206,7 +206,7 @@ class TestPairScatterFold(unittest.TestCase):
 
             # -- run forward --
             assert k == 1,"Must have k == 1 for test."
-            patches_nl_i = scatter_nl(vid_nl_cc,nlInds[:,[0]])
+            patches_nl_i = unfold_k(vid_nl_cc,nlInds[:,[0]])
 
             # -- modifiy --
             wpatches_nl_i = weight_nl * patches_nl_i
