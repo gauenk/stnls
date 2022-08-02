@@ -12,13 +12,7 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_patches(inds,ps,pt,c,nheads):
-    device = inds.device
-    nq,k = inds.shape[0],nheads
-    patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
-    return patches
-
-def allocate_iunfold_patches(nq,k,ps,pt,c,device):
+def allocate_patches(nq,k,ps,pt,c,device):
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
@@ -32,14 +26,20 @@ class WpSumHeadsFunction(th.autograd.Function):
     def forward(ctx, vid, dists, inds, ps, pt=1,
                 h_off=0,w_off=0,dilation=1,adj=0,reflect_bounds=True,exact=False):
         """
-        vid = [T,C,H,W]
-        inds = [NumQueries,K,3]
+        vid = [nHeads or 1,T,C,H,W]
+        dists = [nHeads,NumQueries,K]
+        inds = [nHeads or 1,NumQueries,K,3]
         ps = patchsize
         pt = patchsize_time (forward only)
         """
+        # -- add head dim if 1 --
+        if vid.ndim == 4: vid = vid[None,:]
+        if inds.ndim == 3: inds = inds[None,:]
+
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
-        nheads = dists.shape[-1]
-        patches = allocate_patches(inds,ps,pt,vid.shape[1],nheads)
+        device = dists.device
+        nheads,nq,k = dists.shape
+        patches = allocate_patches(nq,nheads,ps,pt,vid.shape[2],device)
         dnls_cuda.wpsum_heads_forward(vid, patches, dists, inds,
                                       h_off,w_off,dilation,adj,
                                       reflect_bounds)
@@ -74,8 +74,10 @@ class WpSumHeadsFunction(th.autograd.Function):
         # -- start timer --
         # timer = ExpTimer()
         # timer.start("wpsum_heads_bwd")
+        print(grad_patches.shape)
 
         # -- gradient for video --
+        print(vid_shape,inds.shape,dists.shape,vid.shape)
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         dnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
                                            dists,inds,
@@ -118,8 +120,9 @@ class WeightedPatchSumHeads(th.nn.Module):
                                            self.h_off,self.w_off,
                                            self.dilation,self.adj,
                                            self.reflect_bounds, self.exact)
+        print(patches.shape)
+        nheads = dists.shape[0]
         nq,_,_,c,ph,pw = patches.shape
-        nheads = dists.shape[-1]
         patches = patches.view(nq,nheads,c,ph,pw)
         return patches
 
