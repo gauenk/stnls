@@ -17,7 +17,7 @@ from .search_utils import *
 def get_topk(l2_vals,l2_inds,vals,inds):
 
     # -- reshape exh --
-    nq,st,ws,ws = l2_vals.shape
+    nq = l2_vals.shape[0]
     l2_vals = l2_vals.view(nq,-1)
     l2_inds = l2_inds.view(nq,-1,3)
 
@@ -92,26 +92,25 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     min_tranges = th.IntTensor(min_tranges).to(device).type(th.int32)
     return tranges,n_tranges,min_tranges
 
-class ProductSearchFunction(th.autograd.Function):
+class ProductSearchFunction_with_index(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, qinds, fflow, bflow,
+    def forward(ctx, vid0, vid1, fflow, bflow, qstart, nqueries,
                 k, ps, pt, ws_h, ws_w, wt, chnls,
-                stride,dilation,lam,
+                stride0, stride1, dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
-                oh0, ow0, oh1, ow1, exact):
+                oh0, ow0, oh1, ow1, remove_self, exact):
         """
         vid = [T,C,H,W]
-        qinds = [NumQueries,K,3]
         ws = xsearch Window Spatial (ws)
         wt = xsearch Window Time (wt)
         """
 
         # -- unpack --
-        device = qinds.device
-        nq = qinds.shape[0]
+        device = vid0.device
+        nq = nqueries
         t,c,h,w = vid0.shape
-        qinds = qinds.type(th.int32)
+        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
 
         # -- allocs --
         bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
@@ -121,26 +120,26 @@ class ProductSearchFunction(th.autograd.Function):
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
         # -- forward --
-        dnls_cuda.search_prod_forward(vid0, vid1, qinds, fflow, bflow,
-                                  dists_exh, inds_exh,
-                                  ps, pt, ws_h, ws_w, wt, chnls, stride, dilation,
-                                  use_search_abs, reflect_bounds, use_adj,
-                                  oh0, ow0, oh1, ow1,
-                                  bufs,tranges,n_tranges,min_tranges)
-        # th.cuda.synchronize()
-        # th.cuda.empty_cache()
-        # print(dists_exh[:3,:3,:3])
-        # print("dists_exh._version:",dists_exh._version)
-        # print("inds_exh._version:",inds_exh._version)
+        dnls_cuda.search_prod_with_index_forward(
+            vid0, vid1, fflow, bflow,
+            dists_exh, inds_exh,
+            qstart, stride0, n_h0, n_w0,
+            ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation,
+            use_search_abs, reflect_bounds, use_adj,
+            oh0, ow0, oh1, ow1,
+            bufs,tranges,n_tranges,min_tranges)
 
-        # -- topk --
-        # b = dists_exh.shape[0]
-        # dists=dists_exh.view(b,-1)#.contiguous()
-        # inds=inds_exh.view(b,-1,3)#.contiguous()
-        # print(dists_exh[0],use_search_abs)
-        # print(k, ps, pt, ws_h, ws_w, wt, chnls, use_search_abs, use_adj, reflect_bounds)
-        # print(oh0, ow0, oh1, ow1)
+        # -- shape for output --
+        b = dists_exh.shape[0]
+        dists_exh=dists_exh.view(b,-1)#.contiguous()
+        inds_exh=inds_exh.view(b,-1,3)#.contiguous()
 
+        # -- remove self --
+        if remove_self:
+            dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qstart,
+                                                      stride0,n_h0,n_w0)
+
+        # -- top k --
         if use_k:
             dists,inds = allocate_rtn(nq,k,device)
             get_topk(dists_exh,inds_exh,dists,inds)
@@ -155,8 +154,7 @@ class ProductSearchFunction(th.autograd.Function):
         # print(dists)
 
         # -- for backward --
-        ctx.save_for_backward(dists,inds,
-                              qinds,vid0,vid1)
+        ctx.save_for_backward(dists,inds,vid0,vid1)
         ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt = ps,pt
         ctx.lam = lam
@@ -167,49 +165,49 @@ class ProductSearchFunction(th.autograd.Function):
         ctx.ow0 = ow0
         ctx.oh1 = oh1
         ctx.ow1 = ow1
+        ctx.dilation = dilation
+        ctx.stride0 = stride0
+        ctx.qstart = qstart
 
         return dists,inds
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
-        dists,inds,qinds,vid0,vid1 = ctx.saved_tensors
+
+        # -- unpack --
+        dists,inds,vid0,vid1 = ctx.saved_tensors
         vid_shape,exact = ctx.vid_shape,ctx.exact
-        lam,ps,pt = ctx.lam,ctx.ps,ctx.pt
+        lam,ps,pt,dil = ctx.lam,ctx.ps,ctx.pt,ctx.dilation
+        qstart,stride0 = ctx.qstart,ctx.stride0
         oh0 = ctx.oh0
         ow0 = ctx.ow0
         oh1 = ctx.oh1
         ow1 = ctx.ow1
-        # print("oh0, ow0, oh1, ow1: ",oh0, ow0, oh1, ow1)
         reflect_bounds = ctx.reflect_bounds
-
-        # -- start timer --
-        # timer = ExpTimer()
-        # timer.start("xsearch_bwd")
+        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dil)
 
         # -- gradient --
         vid0_grad = allocate_vid(vid_shape,grad_dists.device)
         vid1_grad = allocate_vid(vid_shape,grad_dists.device)
-        # th.cuda.synchronize()
-        dnls_cuda.search_prod_backward(vid0_grad,vid1_grad,vid0,vid1,
-                                   qinds,grad_dists,inds,
-                                   oh0,ow0,oh1,ow1,
-                                   ps,pt,lam,reflect_bounds,exact)
-
-        # -- stop timer --
-        # th.cuda.synchronize()
-        # timer.stop("xsearch_bwd")
-        # print(timer)
-
+        dnls_cuda.search_prod_with_index_backward(
+            vid0_grad,vid1_grad,vid0,vid1,
+            grad_dists,inds,
+            qstart,stride0,n_h0,n_w0,
+            ps,pt,lam,reflect_bounds,
+            oh0,ow0,oh1,ow1,exact)
 
         # th.cuda.synchronize()
-        return vid0_grad,vid1_grad,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None
+        return vid0_grad,vid1_grad,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None
 
-class ProductSearch(th.nn.Module):
+class ProductSearch_with_index(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
-                 chnls=-1,stride=1, dilation=1, lam = 1., use_search_abs=False,
-                 reflect_bounds=True, use_adj=True, use_k=True, exact=True):
-        super(ProductSearch, self).__init__()
+                 chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
+                 use_search_abs=False, reflect_bounds=True,
+                 use_adj=True, use_k=True, remove_self=False, exact=True):
+        super(ProductSearch_with_index, self).__init__()
         self.k = k
         self.ps = ps
         self.pt = pt
@@ -218,7 +216,8 @@ class ProductSearch(th.nn.Module):
         self.fflow = fflow
         self.bflow = bflow
         self.chnls = chnls
-        self.stride = stride
+        self.stride0 = stride0
+        self.stride1 = stride1
         self.dilation = dilation
         self.lam = lam
         self.use_search_abs = use_search_abs
@@ -229,18 +228,16 @@ class ProductSearch(th.nn.Module):
         self.ow0 = ow0
         self.oh1 = oh1
         self.ow1 = ow1
+        self.remove_self = remove_self
         self.exact = exact
 
     def _get_args(self,vshape):
         # -- unpack --
         ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
-        ps,stride,dil = self.ps,self.stride,self.dilation
         t,c,h,w = vshape
 
         # -- compute --
-        _,_,hp,wp = comp_pads(vshape, ps, stride, dil)
-        n_h = (hp - (ps-1)*dil - 1)//stride + 1
-        n_w = (wp - (ps-1)*dil - 1)//stride + 1
+        n_h,n_w = get_num_img(vshape,self.stride1,self.ps,self.dilation)
         ws_h,ws_w = ws,ws
         if ws == -1:
             ws_h = n_h
@@ -258,14 +255,14 @@ class ProductSearch(th.nn.Module):
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
-    def forward(self, vid0, iqueries, vid1=None):
+    def forward(self, vid0, qstart, nqueries, vid1=None):
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
-        return ProductSearchFunction.apply(vid0,vid1,iqueries,self.fflow,self.bflow,
-                                           k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
-                                           self.stride,self.dilation,self.lam,
-                                           self.use_search_abs,self.reflect_bounds,
-                                           self.use_adj,self.use_k,
-                                           self.oh0,self.ow0,self.oh1,self.ow1,
-                                           self.exact)
+        return ProductSearchFunction_with_index.apply(
+            vid0,vid1,self.fflow,self.bflow,qstart,nqueries,
+            k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
+            self.stride0,self.stride1,self.dilation,self.lam,
+            self.use_search_abs,self.reflect_bounds,
+            self.use_adj,self.use_k,self.oh0,self.ow0,
+            self.oh1,self.ow1,self.remove_self,self.exact)

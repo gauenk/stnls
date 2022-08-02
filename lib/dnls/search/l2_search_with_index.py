@@ -10,7 +10,7 @@ from dnls.utils.pads import comp_pads
 import dnls_cuda
 
 # -- local --
-from .l2_utils import *
+from .search_utils import *
 
 class L2SearchFunction_with_index(th.autograd.Function):
 

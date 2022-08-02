@@ -7,6 +7,7 @@
 void init_l2_search(py::module &);
 void init_l2_with_index_search(py::module &);
 void init_prod_search(py::module &);
+void init_prod_with_index_search(py::module &);
 
 // -- reducing --
 void init_wpsum(py::module &);
@@ -27,6 +28,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_l2_search(m);
   init_l2_with_index_search(m);
   init_prod_search(m);
+  init_prod_with_index_search(m);
 
   init_wpsum(m);
   init_wpsum_heads(m);
