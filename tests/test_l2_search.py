@@ -18,6 +18,7 @@ from einops import rearrange,repeat
 import dnls
 import dnls.utils.gpu_mem as gpu_mem
 from dnls.utils.pads import comp_pads
+from dnls.utils.inds import get_batching_info
 
 # -- check if reordered --
 from scipy import optimize
@@ -117,14 +118,13 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- pads --
     oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- batching info --
     npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -149,12 +149,12 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     mode = "reflect" if reflect_bounds else "zero"
     score_gt = dnls.simple.search_nn.run_nn(vid,ps,stride=stride0,mode=mode,
                                               dilation=dil,vid1=vidr,stride1=stride1)
-    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
 
     # -- testing code --
     score_te,inds_te = search(vid,iqueries,vid1=vidr)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- compare --
     tol = 1e-5
@@ -227,14 +227,13 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
     # -- pads --
     oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- batching info --
     npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -344,14 +343,13 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- pads --
     oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- batching info --
     npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -479,14 +477,13 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- pads --
     oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,hp1,wp1 = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
-    n_h1 = (hp1 - (ps-1)*dil - 1)//stride1 + 1
-    n_w1 = (wp1 - (ps-1)*dil - 1)//stride1 + 1
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- batching info --
     npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -508,13 +505,13 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
                                                 coords,t,device)
     # -- run search --
     score_te,inds_te = search(vid0_te,iqueries,vid1=vid1_te)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- comparison --
     mode = "reflect" if reflect_bounds else "zero"
     score_gt = dnls.simple.search_nn.run_nn(vid0_gt,ps,stride=stride0,mode=mode,
                                             dilation=dil,vid1=vid1_gt,stride1=stride1)
-    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=n_h1)
+    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- compute gradient --
     score_grad = th.rand_like(score_gt)

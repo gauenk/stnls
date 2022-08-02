@@ -40,8 +40,8 @@ __global__ void search_prod_with_index_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> nlDists,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
-    int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride, int dilation, 
-    bool use_search_abs, bool use_bounds, bool use_adj,
+    int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride1, int dilation, 
+    bool search_abs, bool use_bounds, bool use_adj, bool full_ws,
     int h0_off, int w0_off, int h1_off, int w1_off,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> bufs,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
@@ -59,15 +59,17 @@ __global__ void search_prod_with_index_forward_kernel(
   w = vid0.size(3);
   height = h;
   width = w;
+  int numQueries = nlDists.size(0);
 
   // offsets
   int psHalf = ps/2;
-  int wsHalf_h = (ws_h-1)/2;
-  int wsHalf_w = (ws_w-1)/2;
-  int numQueries = nlDists.size(0);
+  int wsHalf_h = (ws_h)/2;
+  int wsHalf_w = (ws_w)/2;
+  int wsMax_h = stride1*(ws_h-1-wsHalf_h);
+  int wsMax_w = stride1*(ws_w-1-wsHalf_w);
   int adj = use_adj ? psHalf : 0;
   int n_hw0 = n_h0 * n_w0;
-  // int adj = psHalf;
+
 
   // column index
   int blkDimX = blockDim.x; // num threads in x-block
@@ -87,6 +89,7 @@ __global__ void search_prod_with_index_forward_kernel(
   bool nvalid_t,nvalid_h,nvalid_w;
   bool valid_ti,valid_hi,valid_wi,valid_anchor;
   bool valid_n_ti,valid_n_hi,valid_n_wi,valid_n;
+  int wsOff_h,wsOff_w;
   // bool eq_ti,eq_hi,eq_wi,eq_dim;
 
   float cw0,ch0,ct0,cw_f,ch_f;
@@ -117,6 +120,21 @@ __global__ void search_prod_with_index_forward_kernel(
     valid_hi = (hi < height) && (hi >= 0);
     valid_wi = (wi < width) && (wi >= 0);
     valid_anchor = valid_ti && valid_hi && valid_wi;
+
+    // -- search offset --
+    if(full_ws){
+      wsOff_h = (hi-max(hi-stride1*wsHalf_h,0))/stride1;
+      wsOff_w = (wi-max(wi-stride1*wsHalf_w,0))/stride1;
+      if ((hi+wsMax_h) >= height){
+        wsOff_h+=(hi+wsMax_h-min(hi+stride1*wsMax_h,height-1)-1)/stride1 + 1;
+      }
+      if ((wi+wsMax_w) >= width){
+        wsOff_w+=(wi+wsMax_w-min(wi+stride1*wsMax_w,width-1)-1)/stride1 + 1;
+      }
+    }else{
+      wsOff_h = wsHalf_h;
+      wsOff_w = wsHalf_w;
+    }
 
     // ---------------------------------------
     //     xsearching loop for (ti,top,left)
@@ -193,12 +211,12 @@ __global__ void search_prod_with_index_forward_kernel(
           // -----------------
           //    spatial dir
           // -----------------
-          if (use_search_abs){
-            n_hi = stride * (ws_i - 0);
-            n_wi = stride * (ws_j - 0);
+          if (search_abs){
+            n_hi = stride1 * ws_i;
+            n_wi = stride1 * ws_j;
           }else{
-            n_hi = ch + stride * (ws_i - wsHalf_h);
-            n_wi = cw + stride * (ws_j - wsHalf_w);
+            n_hi = ch + stride1 * (ws_i - wsOff_h);
+            n_wi = cw + stride1 * (ws_j - wsOff_w);
           }
 
           // ---------------------------
@@ -298,8 +316,8 @@ void search_prod_with_index_forward_cuda(
     torch::Tensor fflow, torch::Tensor bflow,
     torch::Tensor nlDists, torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
-    int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride, int dilation,
-    bool use_search_abs, bool use_bounds, bool use_adj,
+    int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride1, int dilation,
+    bool use_search_abs, bool use_bounds, bool use_adj, bool full_ws,
     int h0_off, int w0_off, int h1_off, int w1_off,
     torch::Tensor bufs, torch::Tensor tranges, torch::Tensor n_tranges,
     torch::Tensor min_tranges){
@@ -336,8 +354,8 @@ void search_prod_with_index_forward_cuda(
          nlDists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
          nlInds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
          qstart, stride0, n_h0, n_w0,
-         ps, pt, ws_h, ws_w, wt, chnls, stride, dilation, 
-         use_search_abs, use_bounds, use_adj, h0_off, w0_off, h1_off, w1_off,
+         ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation, 
+         use_search_abs, use_bounds, use_adj, full_ws, h0_off, w0_off, h1_off, w1_off,
          bufs.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
          tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
          n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -363,7 +381,7 @@ __global__ void search_prod_with_index_backward_kernel(
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int qstart, int stride0, int n_h0, int n_w0,
-    int ps, int pt, float lam, bool use_bounds,
+    int ps, int pt, float lam, bool use_bounds, bool full_ws,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int bpb, int npt, int cpt) {
 
@@ -480,7 +498,7 @@ void search_prod_with_index_backward_cuda(
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, float lam, bool use_bounds,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    bool exact) {
+    bool full_ws, bool exact) {
 
   // unpack
   int num0 = nlInds.size(0);
@@ -527,7 +545,7 @@ void search_prod_with_index_backward_cuda(
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0,
-        ps,pt,lam,use_bounds,
+        ps,pt,lam,use_bounds,full_ws,
         h0_off,w0_off,h1_off,w1_off,
         bpb,npt,cpt);
   }));

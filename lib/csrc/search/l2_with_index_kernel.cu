@@ -76,6 +76,7 @@ __global__ void l2_search_with_index_forward_kernel(
   int wsHalf_w = (ws_w)/2;
   int wsMax_h = stride1*(ws_h-1-wsHalf_h);
   int wsMax_w = stride1*(ws_w-1-wsHalf_w);
+  int adj = use_adj ? psHalf : 0;
 
   // column index
   int blkDimX = blockDim.x; // num threads in x-block
@@ -84,7 +85,6 @@ __global__ void l2_search_with_index_forward_kernel(
   int cu_tidY = threadIdx.y;
   int block_start = blockIdx.x*bpb;
   int bidx,ws_i,ws_j,dtd;
-  int adj = use_adj ? psHalf : 0;
 
   // decls
   int ti,hi,wi;

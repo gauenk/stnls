@@ -99,7 +99,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride0, stride1, dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
-                oh0, ow0, oh1, ow1, remove_self, exact):
+                oh0, ow0, oh1, ow1, remove_self, full_ws, exact):
         """
         vid = [T,C,H,W]
         ws = xsearch Window Spatial (ws)
@@ -125,7 +125,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             dists_exh, inds_exh,
             qstart, stride0, n_h0, n_w0,
             ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation,
-            use_search_abs, reflect_bounds, use_adj,
+            use_search_abs, reflect_bounds, use_adj, full_ws,
             oh0, ow0, oh1, ow1,
             bufs,tranges,n_tranges,min_tranges)
 
@@ -160,6 +160,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         ctx.lam = lam
         ctx.use_k = use_k
         ctx.reflect_bounds = reflect_bounds
+        ctx.full_ws = full_ws
         ctx.exact = exact
         ctx.oh0 = oh0
         ctx.ow0 = ow0
@@ -179,6 +180,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         vid_shape,exact = ctx.vid_shape,ctx.exact
         lam,ps,pt,dil = ctx.lam,ctx.ps,ctx.pt,ctx.dilation
         qstart,stride0 = ctx.qstart,ctx.stride0
+        full_ws = ctx.full_ws
         oh0 = ctx.oh0
         ow0 = ctx.ow0
         oh1 = ctx.oh1
@@ -194,7 +196,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             grad_dists,inds,
             qstart,stride0,n_h0,n_w0,
             ps,pt,lam,reflect_bounds,
-            oh0,ow0,oh1,ow1,exact)
+            oh0,ow0,oh1,ow1,full_ws,exact)
 
         # th.cuda.synchronize()
         return vid0_grad,vid1_grad,None,None,None,None,\
@@ -205,8 +207,8 @@ class ProductSearch_with_index(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
-                 use_search_abs=False, reflect_bounds=True,
-                 use_adj=True, use_k=True, remove_self=False, exact=True):
+                 use_search_abs=False, reflect_bounds=True, use_adj=True,
+                 use_k=True, remove_self=False, full_ws=False, exact=True):
         super(ProductSearch_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -229,6 +231,7 @@ class ProductSearch_with_index(th.nn.Module):
         self.oh1 = oh1
         self.ow1 = ow1
         self.remove_self = remove_self
+        self.full_ws = full_ws
         self.exact = exact
 
     def _get_args(self,vshape):
@@ -265,4 +268,4 @@ class ProductSearch_with_index(th.nn.Module):
             self.stride0,self.stride1,self.dilation,self.lam,
             self.use_search_abs,self.reflect_bounds,
             self.use_adj,self.use_k,self.oh0,self.ow0,
-            self.oh1,self.ow1,self.remove_self,self.exact)
+            self.oh1,self.ow1,self.remove_self,self.full_ws,self.exact)

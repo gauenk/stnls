@@ -18,6 +18,7 @@ from einops import rearrange,repeat
 import dnls
 import dnls.utils.gpu_mem as gpu_mem
 from dnls.utils.pads import comp_pads
+from dnls.utils.inds import get_batching_info
 
 # -- meshgrid --
 import cache_io
@@ -112,12 +113,13 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # -- pads --
     oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
 
     # -- batching info --
     npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -153,7 +155,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
 
     # -- flip cu --
     # print(score_te.shape)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
 
     # -- run search --
     mode = "reflect" if reflect_bounds else "zero"
@@ -255,12 +257,12 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # -- pads --
     oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
+    n_h0 = (hp - (ps-1)*dil - 1)//stride0 + 1
+    n_w0 = (wp - (ps-1)*dil - 1)//stride0 + 1
 
     # -- batching info --
     npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -318,7 +320,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # -- run cu --
     qindex = 0
     score_te,inds_te = search(vid_te,qindex,nbatch,vid1=vidr_te)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
@@ -439,12 +441,12 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # -- pads --
     oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
+    n_h0 = (hp - (ps-1)*dil - 1)//stride0 + 1
+    n_w0 = (wp - (ps-1)*dil - 1)//stride0 + 1
 
     # -- batching info --
     npix = t * h * w
-    ntotal = t * n_h * n_w
+    ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
@@ -540,7 +542,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # -- run cu --
     qindex = 0
     score_te,inds_te = search(vid0_te,qindex,nbatch,vid1=vid1_te)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h,h=h)
+    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
@@ -605,94 +607,6 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
         # print("Mean Error: ",error)
         assert error < tol
 
-
-
-# @pytest.mark.skip(reason="too long right now")
-def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
-
-
-    # -- get args --
-    dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
-    chnls,k,pt = 3,1,1
-    ws,wt = 10,0
-    ws = -1
-    k = -1
-
-    # -- init vars --
-    device = "cuda:0"
-    clean_flow = True
-    comp_flow = False
-    gpu_stats = False
-    adj = False
-
-    # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()/255.
-    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
-    vid[...] = th.randn_like(vid)
-
-    # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    t,color,h,w = shape
-    vshape = vid.shape
-
-    # -- sub square --
-    top,left,btm,right=0,0,h,w
-    coords = [top,left,btm,right]
-    sq_h = coords[2] - coords[0]
-    sq_w = coords[3] - coords[1]
-
-    # -- batching info --
-    stride0 = stride
-    stride1 = 1
-    npix = t * h * w
-    nh = (sq_h-1)//stride0+1
-    nw = (sq_w-1)//stride0+1
-    ntotal = t * nh * nw
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
-
-    # -- query inds --
-    qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
-
-    # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
-    # n_h = (sq_h-1)//stride0+1 # corrected
-    # n_w = (sq_w-1)//stride0+1
-
-    # -- run search --
-    score_simp,_ = dnls.simple.prod_search_nn.run(vid,ps,stride=stride0,dilation=dil)
-    # print("iqueries.shape: ",iqueries.shape)
-    score_te,inds_te = dnls.simple.prod_search.run(vid,iqueries,flows,k,
-                                                   ps,pt,ws,wt,chnls,
-                                                   stride0=stride0,stride1=stride1,
-                                                   dilation=dil,
-                                                   use_search_abs=True,use_k=False)
-    # print(score_simp.shape)
-    # print(score_te.shape)
-    score_te = rearrange(score_te,'(nh nw) (h w) -> h w nh nw',h=h,nh=nh)
-    # score_te = rearrange(score_te,'(h w) (nh nw) -> h w nh nw',h=h,nh=nh)
-    # print(score_te.shape)
-
-    # -- viz --
-    # print(score_simp[8,8,:3,:3])
-    # print(score_te[8,8,:3,:3])
-
-    # -- compare --
-    error = th.sum(th.abs(score_te - score_simp)).item()
-    assert error < 1e-10
-
-    # perc_neq = th.mean((inds_te != inds_simp)*1.)
-    # print("perc_neq: ",perc_neq)
-    # assert perc_neq < 0.05
 
 def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
 

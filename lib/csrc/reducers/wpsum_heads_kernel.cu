@@ -135,7 +135,7 @@ void cuda_wpsum_heads_forward(
 
   // -- kernel blocks --
   int nqueries = inds.size(0);
-  int qpt = 10;
+  int qpt = 4;
   int query_nblocks = (nqueries-1)/qpt+1;
   int nheads = dists.size(2);
   int head_nblocks = nheads;

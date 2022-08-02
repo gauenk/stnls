@@ -17,6 +17,7 @@ from . import utils
 from .tile.fold import fold,Fold
 from .tile.unfold import unfold,Unfold
 from .tile.ifold import ifold,iFold
+from .tile.ifoldz import ifoldz,iFoldz
 from .tile.iunfold import iunfold,iUnfold
 
 # -- tiling k --

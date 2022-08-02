@@ -12,6 +12,7 @@ void init_prod_with_index_search(py::module &);
 // -- reducing --
 void init_wpsum(py::module &);
 void init_wpsum_heads(py::module &);
+void init_wpsum_heads_2vid(py::module &);
 
 // -- patch db --
 void init_gather(py::module &);
@@ -20,6 +21,7 @@ void init_scatter(py::module &);
 // -- batched fold/unfold --
 void init_fold(py::module &);
 void init_ifold(py::module &);
+void init_ifoldz(py::module &);
 void init_unfold(py::module &);
 void init_iunfold(py::module &);
 
@@ -32,12 +34,14 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
   init_wpsum(m);
   init_wpsum_heads(m);
+  init_wpsum_heads_2vid(m);
 
   init_gather(m);
   init_scatter(m);
 
   init_fold(m);
   init_ifold(m);
+  init_ifoldz(m);
   init_unfold(m);
   init_iunfold(m);
 

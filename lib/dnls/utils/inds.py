@@ -178,6 +178,23 @@ def compute_stride_offsets(stride,t,h,w,device):
         delta[ti] = (hw - final_ind) % stride
     return delta
 
+def get_nums_hw(vshape,stride,ps,dil,pad_same=True,only_full=True):
+
+    # -- padding --
+    _,_,h,w = vshape
+    if pad_same:
+        _,_,h,w = comp_pads(vshape, ps, stride, dil)
+
+    # -- num each spatial direction --
+    if only_full:
+        n_h = (h - (ps-1)*dil - 1)//stride + 1
+        n_w = (w - (ps-1)*dil - 1)//stride + 1
+    else:
+        n_h = (h - 1)//stride + 1
+        n_w = (w - 1)//stride + 1
+
+    return n_h,n_w
+
 def get_batching_info(vshape,stride0,stride1,ps,dil):
 
     # -- padding --

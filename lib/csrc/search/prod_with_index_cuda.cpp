@@ -12,7 +12,7 @@ void search_prod_with_index_forward_cuda(
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
-    int oh0, int ow0, int oh1, int ow1,
+    bool full_ws, int oh0, int ow0, int oh1, int ow1,
     torch::Tensor bufs,torch::Tensor tranges,
     torch::Tensor n_tranges,torch::Tensor min_tranges);
 
@@ -23,7 +23,7 @@ void search_prod_with_index_backward_cuda(
     torch::Tensor nlDists, torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, float lam, bool use_bounds,
-    int oh0, int ow0, int oh1, int ow1, bool exact);
+    int oh0, int ow0, int oh1, int ow1, bool full_ws, bool exact);
 
 
 // C++ interface
@@ -40,7 +40,7 @@ void search_prod_with_index_forward(
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
-    int oh0, int ow0, int oh1, int ow1,
+    bool full_ws, int oh0, int ow0, int oh1, int ow1,
     torch::Tensor bufs,torch::Tensor tranges,
     torch::Tensor n_tranges,torch::Tensor min_tranges){
   CHECK_INPUT(vid0);
@@ -58,7 +58,8 @@ void search_prod_with_index_forward(
           qstart, stride0, n_h0, n_w0,
           ps,pt,ws_h,ws_w,wt,chnls,stride,dilation,
           use_search_abs, use_bounds, use_adj,
-          oh0, ow0, oh1, ow1, bufs,tranges,n_tranges,min_tranges);
+          full_ws, oh0, ow0, oh1, ow1, bufs,
+          tranges, n_tranges, min_tranges);
 }
 
 void search_prod_with_index_backward(
@@ -67,7 +68,7 @@ void search_prod_with_index_backward(
     torch::Tensor nlDists, torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps,int pt,float lam, bool use_bounds,
-    int oh0, int ow0, int oh1, int ow1, bool exact) {
+    int oh0, int ow0, int oh1, int ow1, bool full_ws, bool exact) {
   CHECK_INPUT(vid0_grad);
   CHECK_INPUT(vid1_grad);
   CHECK_INPUT(vid0);
@@ -78,7 +79,7 @@ void search_prod_with_index_backward(
       vid0_grad,vid1_grad,vid0,vid1,nlDists,nlInds,
       qstart, stride0, n_h0, n_w0,
       ps, pt, lam, use_bounds,
-      oh0, ow0, oh1, ow1, exact);
+      oh0, ow0, oh1, ow1, full_ws, exact);
 }
 
 // python bindings
