@@ -6,30 +6,42 @@ import torch as th
 import dnls_cuda
 
 
-def allocate_patches(nlInds,ps,pt,c):
-    device = nlInds.device
-    nq,k = nlInds.shape[:2]
+
+def allocate_vid(vid_shape,device):
+    vid = th.zeros(vid_shape,device=device,dtype=th.float32)
+    wvid = th.zeros(vid_shape,device=device,dtype=th.float32)
+    return vid,wvid
+
+def allocate_patches(inds,ps,pt,c):
+    device = inds.device
+    nq,k = inds.shape[:2]
     patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
 class fold_k(th.autograd.Function):
     """
-    [patches -> video] @ nlInds
+    [patches -> video] @ inds
 
-    nlInds.shape = [NumQueries,K,3]
+    inds.shape = [NumQueries,K,3]
     patches.shape = [NumQueries,K,pt,c,ps,ps]
     """
 
     @staticmethod
-    def forward(ctx, patches, nlDists, nlInds, vid, wvid,
-                ws, wt, dilation, lam, exact, use_race):
-        if use_race:
-            dnls_cuda.gather_forward_race(vid, wvid, patches, nlDists, nlInds,
-                                          dilation, lam, exact)
-        else:
-            dnls_cuda.gather_forward(vid, wvid, patches, nlDists, nlInds,
-                                     ws, wt, dilation, lam)
-        ctx.save_for_backward(nlInds)
+    def forward(ctx, patches, dists, inds, vid, wvid,
+                dilation, use_rand, exact, nreps):
+        assert nreps >= 0
+        print(nreps)
+        if nreps == 1:
+            dnls_cuda.gather_forward_race(vid, wvid, patches, dists, inds,
+                                          dilation, use_rand, exact)
+        elif nreps > 1:
+            for i in range(nreps):
+                _vid,_wvid = allocate_vid(vid.shape,vid.device)
+                dnls_cuda.gather_forward_race(_vid, _wvid, patches, dists, inds,
+                                              dilation, use_rand, exact)
+                vid,wvid = vid+_vid,wvid+_wvid
+            vid,wvid = vid/nreps,wvid/nreps
+        ctx.save_for_backward(dists,inds)
         ctx.dilation = dilation
         ctx.pt = patches.shape[2]
         ctx.ps = patches.shape[5]
@@ -37,42 +49,33 @@ class fold_k(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_vid, grad_wvid):
-        nlInds = ctx.saved_tensors[0]
+        dists,inds = ctx.saved_tensors
         grad_vid = grad_vid.contiguous()
         dilation = ctx.dilation
         ps,pt = ctx.ps,ctx.pt
-        patches = allocate_patches(nlInds,ps,pt,grad_vid.shape[1])
-        ones = th.ones_like(nlInds[:,:,0]).type(th.float32)
-        dnls_cuda.gather_backward(grad_vid,patches,ones,nlInds,dilation)
+        patches = allocate_patches(inds,ps,pt,grad_vid.shape[1])
+        dnls_cuda.gather_backward(grad_vid,patches,dists,inds,dilation)
         return patches,None,None,None,None,None,None,None,None,None,None
 
 class FoldK(th.nn.Module):
-    # [patches -> video] @ nlInds
+    # [patches -> video] @ inds
 
-    def __init__(self, vid_shape, ws, wt, dilation=1, lam=0.,
-                 exact=False, use_race=True, device="cuda:0"):
+    def __init__(self, vid_shape, dilation=1, use_rand=True,
+                 exact=False, nreps=1, device="cuda:0"):
         super(FoldK, self).__init__()
         self.vid_shape = vid_shape
-        self.vid,self.wvid = self.allocate_vid(vid_shape,device)
+        self.vid,self.wvid = allocate_vid(vid_shape,device)
         self.dilation = dilation
-        self.lam = lam
+        self.use_rand = use_rand
         self.exact = exact
-        self.use_race = use_race
-        self.ws = ws
-        self.wt = wt
+        self.nreps = nreps
         self.device = device
 
-    def allocate_vid(self,vid_shape,device):
-        vid = th.zeros(vid_shape,device=device,dtype=th.float32)
-        wvid = th.zeros(vid_shape,device=device,dtype=th.float32)
-        return vid,wvid
-
-    def forward(self, patches, nlDists, nlInds):
-        vid,wvid = self.allocate_vid(self.vid_shape,self.device)
-        vid,wvid = fold_k.apply(patches,nlDists,nlInds,vid,wvid,
-                                self.ws, self.wt,
-                                self.dilation,self.lam,
-                                self.exact,self.use_race)
+    def forward(self, patches, dists, inds):
+        vid,wvid = allocate_vid(self.vid_shape,self.device)
+        vid,wvid = fold_k.apply(patches,dists,inds,vid,wvid,
+                                self.dilation,self.use_rand,self.exact,
+                                self.nreps)
         self.vid += vid
         self.wvid += wvid
         return self.vid,self.wvid

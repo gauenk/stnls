@@ -21,7 +21,8 @@ class L2SearchFunction_with_index(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 dilation=1,stride1=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
-                full_ws=False,remove_self=False,exact=False):
+                full_ws=False,remove_self=False,
+                nbwd=1,use_rand=True,exact=False):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -41,9 +42,19 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
+        # print(fflow.shape,bflow.shape)
         # print(tranges)
+        # print(n_tranges)
+        # print(min_tranges)
+        # print(th.all(fflow.abs()<1e-10),th.all(bflow.abs()<1e-10))
 
         # -- forward --
+
+        gpuid = th.cuda.current_device()
+        # print(gpuid,device)
+        fflow = fflow.to(device)
+        bflow = bflow.to(device)
+        th.cuda.set_device(device)
         dnls_cuda.l2_search_with_index_forward(vid0, vid1, fflow, bflow,
                                                dists_exh, inds_exh,
                                                qstart, nqueries, stride0,
@@ -53,6 +64,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                wt, chnls, dilation, stride1, use_adj,
                                                reflect_bounds, search_abs, full_ws,
                                                bufs, tranges, n_tranges, min_tranges)
+
         # -- shape for output --
         b = dists_exh.shape[0]
         dists_exh=dists_exh.view(b,-1)#.contiguous()
@@ -76,19 +88,20 @@ class L2SearchFunction_with_index(th.autograd.Function):
         ctx.qstart,ctx.stride0 = qstart,stride0
         ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
-        ctx.exact,ctx.qstart = exact,qstart
-        ctx.use_adj = use_adj
+        ctx.use_rand,ctx.exact = use_rand,exact
+        ctx.use_adj,ctx.nbwd = use_adj,nbwd
         ctx.n_h0,ctx.n_w0 = n_h0,n_w0
         ctx.h0_off,ctx.w0_off = h0_off, w0_off
         ctx.h1_off,ctx.w1_off = h1_off, w1_off
         return dists,inds
 
     @staticmethod
-    def backward(ctx, grad_dists, grad_inds):
+    def backward(ctx, grad_dists, grad_inds_is_none):
         inds,vid0,vid1 = ctx.saved_tensors
-        vid_shape = ctx.vid_shape
+        vid_shape,nbwd = ctx.vid_shape,ctx.nbwd
         qstart,stride0 = ctx.qstart,ctx.stride0
         ps,pt,dil = ctx.ps,ctx.pt,ctx.dil
+        use_rand = ctx.use_rand
         exact,use_adj = ctx.exact,ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         n_h0,n_w0 = ctx.n_h0,ctx.n_w0
@@ -96,25 +109,44 @@ class L2SearchFunction_with_index(th.autograd.Function):
         h1_off, w1_off = ctx.h1_off,ctx.w1_off
         grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
         grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
-        dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
-                                                vid0,vid1,
-                                                grad_dists,inds,
-                                                qstart,stride0,n_h0,n_w0,
-                                                h0_off, w0_off, h1_off, w1_off,
-                                                ps,pt,dil, use_adj,reflect_bounds,exact)
-        th.cuda.synchronize()
+
+        # -- allow for repeated exec --
+        if nbwd == 1:
+            dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
+                                                    vid0,vid1,
+                                                    grad_dists,inds,
+                                                    qstart,stride0,n_h0,n_w0,
+                                                    h0_off, w0_off, h1_off, w1_off,
+                                                    ps,pt,dil, use_adj,
+                                                    reflect_bounds,use_rand,exact)
+        else:
+            for _ in range(nbwd):
+                grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
+                grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
+                dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
+                                                        vid0,vid1,
+                                                        grad_dists,inds,
+                                                        qstart,stride0,n_h0,n_w0,
+                                                        h0_off, w0_off, h1_off, w1_off,
+                                                        ps,pt,dil, use_adj,
+                                                        reflect_bounds,use_rand,exact)
+                grad_vid0 += grad_vid0_i
+                grad_vid1 += grad_vid1_i
+            grad_vid0 /= nbwd
+            grad_vid1 /= nbwd
 
         return grad_vid0,grad_vid1,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None
 
 class L2Search_with_index(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, chnls=-1,
                  dilation=1, stride0=1, stride1=1,
                  use_k=True, use_adj=True, reflect_bounds=True,
-                 search_abs=False, full_ws = False, exact=False,
-                 h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False):
+                 search_abs=False, full_ws = False, nbwd=1, exact=False,
+                 h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
+                 use_rand=True):
         super(L2Search_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -137,7 +169,9 @@ class L2Search_with_index(th.nn.Module):
         self.search_abs = search_abs
         self.full_ws = full_ws
         self.remove_self = remove_self
+        self.nbwd = nbwd
         self.exact = exact
+        self.use_rand = use_rand
 
     def query_batch_info(self,vshape):
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation)
@@ -158,7 +192,7 @@ class L2Search_with_index(th.nn.Module):
 
     def _update_flow(self,vshape,device):
         t,c,h,w = vshape
-        zflow = th.ones((t,2,h,w),device=device)
+        zflow = th.zeros((t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
         for i in [0,2,3]:
@@ -179,5 +213,5 @@ class L2Search_with_index(th.nn.Module):
                                                  self.use_k,self.use_adj,
                                                  self.reflect_bounds,self.search_abs,
                                                  self.full_ws,self.remove_self,
-                                                 self.exact)
+                                                 self.nbwd,self.use_rand,self.exact)
 

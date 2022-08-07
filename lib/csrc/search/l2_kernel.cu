@@ -328,8 +328,8 @@ void search_l2_forward_cuda(
    // launch params 
    int bpb = 10;
    int nqueries = qinds.size(0);
-   int ws_h_threads = std::min(ws_h,32);
-   int ws_w_threads = std::min(ws_w,32);
+   int ws_h_threads = std::min(ws_h,29);
+   int ws_w_threads = std::min(ws_w,29);
    int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);

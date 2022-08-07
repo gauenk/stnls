@@ -74,10 +74,10 @@ class WpSumHeadsFunction(th.autograd.Function):
         # -- start timer --
         # timer = ExpTimer()
         # timer.start("wpsum_heads_bwd")
-        print(grad_patches.shape)
+        # print(grad_patches.shape)
 
         # -- gradient for video --
-        print(vid_shape,inds.shape,dists.shape,vid.shape)
+        # print(vid_shape,inds.shape,dists.shape,vid.shape)
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         dnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
                                            dists,inds,
@@ -120,7 +120,6 @@ class WeightedPatchSumHeads(th.nn.Module):
                                            self.h_off,self.w_off,
                                            self.dilation,self.adj,
                                            self.reflect_bounds, self.exact)
-        print(patches.shape)
         nheads = dists.shape[0]
         nq,_,_,c,ph,pw = patches.shape
         patches = patches.view(nq,nheads,c,ph,pw)

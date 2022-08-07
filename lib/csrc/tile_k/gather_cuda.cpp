@@ -14,23 +14,22 @@ void dnls_cuda_gather_forward(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds,
-    int ws, int wt,
-    int dilation, float lam);
+    torch::Tensor dists,
+    torch::Tensor inds,
+    int ws, int wt, int dilation);
 
 void dnls_cuda_gather_forward_race(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds,
-    int dilation, float lam, bool exact);
+    torch::Tensor dists,
+    torch::Tensor inds,
+    int dilation, bool use_rand, bool exact);
 
 void dnls_cuda_gather_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
-    torch::Tensor nlInds,
+    torch::Tensor inds,
     int dilation);
 
 // C++ interface
@@ -43,16 +42,15 @@ void dnls_gather_forward(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds,
-    int ws, int wt,
-    int dilation, float lam) {
+    torch::Tensor dists,
+    torch::Tensor inds,
+    int ws, int wt, int dilation) {
   CHECK_INPUT(vid);
   CHECK_INPUT(wvid);
   CHECK_INPUT(patches);
-  CHECK_INPUT(nlDists);
-  CHECK_INPUT(nlInds);
-  dnls_cuda_gather_forward(vid,wvid,patches,nlDists,nlInds,ws,wt,dilation,lam);
+  CHECK_INPUT(dists);
+  CHECK_INPUT(inds);
+  dnls_cuda_gather_forward(vid,wvid,patches,dists,inds,ws,wt,dilation);
 }
 
 
@@ -60,28 +58,29 @@ void dnls_gather_forward_race(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds,
-    int dilation, float lam, bool exact) {
+    torch::Tensor dists,
+    torch::Tensor inds,
+    int dilation, bool use_rand, bool exact) {
   CHECK_INPUT(vid);
   CHECK_INPUT(wvid);
   CHECK_INPUT(patches);
-  CHECK_INPUT(nlDists);
-  CHECK_INPUT(nlInds);
-  dnls_cuda_gather_forward_race(vid,wvid,patches,nlDists,nlInds,dilation,lam,exact);
+  CHECK_INPUT(dists);
+  CHECK_INPUT(inds);
+  dnls_cuda_gather_forward_race(vid,wvid,patches,dists,inds,
+                                dilation,use_rand,exact);
 }
 
 void dnls_gather_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
-    torch::Tensor nlDists,
-    torch::Tensor nlInds,
+    torch::Tensor dists,
+    torch::Tensor inds,
     int dilation) {
   CHECK_INPUT(grad_vid);
   CHECK_INPUT(patches);
-  CHECK_INPUT(nlDists);
-  CHECK_INPUT(nlInds);
-  dnls_cuda_gather_backward(grad_vid,patches,nlInds,dilation);
+  CHECK_INPUT(dists);
+  CHECK_INPUT(inds);
+  dnls_cuda_gather_backward(grad_vid,patches,inds,dilation);
 }
 
 

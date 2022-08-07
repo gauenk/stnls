@@ -1,3 +1,5 @@
+
+# -- api --
 from . import inds
 from . import mask
 from . import color
@@ -6,3 +8,6 @@ from . import gpu_mem
 from . import pads
 from . import misc
 from . import bench
+
+# -- specific funcs --
+from .inds import get_nums_hw

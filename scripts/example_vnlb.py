@@ -14,7 +14,7 @@ import torch as th
 from einops import rearrange,repeat
 
 # -- load video --
-sigma = 30.
+sigma = 50.
 device = "cuda:0"
 th.cuda.set_device(device)
 vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
@@ -24,13 +24,25 @@ noisy = vid + sigma * th.randn_like(vid)
 # -- params --
 vshape = vid.shape
 t,c,h,w = vid.shape
-ps = 7 # patch size
 pt = 1 # patch size across time
-stride = 1 # spacing between patch centers
+stride0 = 2 # spacing between patch centers to search
+stride1 = 1 # spacing between patch centers when searching
 dilation = 1 # spacing between kernels
-batch_size = 1024 # num of patches per batch
-coords = [0,0,h,w] # full image
-# coords = [4,8,60,50] # interior rectangle to processes (top,left,btm,right)
+batch_size = 32*1024 # num of patches per batch
+
+# -- race condition params --
+# use_rand,nreps_1,nreps_2 = False,1,1
+# use_rand,nreps_1,nreps_2 = True,1,1
+use_rand,nreps_1,nreps_2 = True,5,5
+
+# -- search params --
+flow = None # no flow
+k = 100 # number of neighbors
+ws = 27 # spatial-search space in each 2-dim direction
+wt = 3 # time-search space across in each fwd-bwd direction
+chnls = 1 # number of channels to use for search
+verbose = True
+ps_s,ps_d = 11,11
 
 # -- helper --
 def yuv2rgb(burst):
@@ -43,6 +55,7 @@ def yuv2rgb(burst):
     burst[:,0,...] = w[0] * y + w[1] * u + w[2] * 0.5 * v
     burst[:,1,...] = w[0] * y - w[2] * v
     burst[:,2,...] = w[0] * y - w[1] * u + w[2] * 0.5 * v
+
 def rgb2yuv(burst):
     # -- weights --
     t,c,h,w = burst.shape
@@ -58,45 +71,18 @@ def rgb2yuv(burst):
 # -- convert --
 rgb2yuv(noisy)
 
-# -- search params --
-flow = None # no flow
-k = 100 # number of neighbors
-ws = 10 # spatial-search space in each 2-dim direction
-wt = 5 # time-search space across in each fwd-bwd direction
-chnls = 1 # number of channels to use for search
-verbose = True
-
-# -- compute interior square size --
-sq_h = coords[2] - coords[0]
-sq_w = coords[3] - coords[1]
-sq_hw = sq_h * sq_w
-
 # -- init iunfold and ifold --
-scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation,device=device)
-gather_nl = dnls.gather.GatherNl(vid.shape,device=device)
+search = dnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,
+                          stride0=stride0,stride1=stride1,dilation=dilation)
+unfold = dnls.UnfoldK(ps_d,pt,dilation=dilation,device=device)
+fold = dnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps_1,device=device)
 
-# -- compute number of batches --
-n_h = (sq_h-1)//stride+1
-n_w = (sq_w-1)//stride+1
-n_total = t * n_h * n_w
-nbatches = (n_total-1) // batch_size + 1
+# -- batching info --
+nh,nw = dnls.utils.get_nums_hw(vid.shape,stride0,ps_s,dilation)
+ntotal = t * nh * nw
+nbatches = (ntotal-1) // batch_size + 1
 
 # -- example function --
-def viz_cov(patches_nl_i,dists):
-    p = rearrange(patches_nl_i[0],'k pt c ph pw -> c k (pt ph pw)')
-    p /= 255.
-    mu = p.mean(0,True)
-    p_zc = p - mu
-    # print(p_zc.transpose(2,1).shape)
-    C = th.matmul(p_zc.transpose(2,1), p_zc)
-    C = th.abs(C)
-    for ci in range(3):
-        Ci = repeat(C[ci],'h w -> c h w',c=3)
-        Ci /= Ci.max()
-        Ci = Ci * 255.
-        dnls.testing.data.save_image(Ci,"patch_cov_%d_%d.png" % (k,ci))
-    exit(0)
-
 def apply_fxn(npatches,bpatches,dists,step):
     """
     n = noisy, b = basic
@@ -110,7 +96,7 @@ def apply_fxn(npatches,bpatches,dists,step):
     rank = 39
     thresh = 2.7 if step == 1 else 0.7
     sigma2 = (sigma/255.)**2
-    sigmab2 = sigma2 if step == 1 else (sigma/(255.*10))**2
+    sigmab2 = sigma2 if step == 1 else sigma2/100.
 
     # -- reshape --
     b,k,pt,c,ph,pw = npatches.shape
@@ -176,37 +162,34 @@ def apply_fxn(npatches,bpatches,dists,step):
 
 for batch in tqdm.tqdm(range(nbatches)):
 
-    # -- batch info --
-    index = min(batch_size * batch,n_total)
-    batch_size_i = min(batch_size,n_total-index)
+    # -- get batch --
+    index = min(batch_size * batch,ntotal)
+    nbatch_i = min(batch_size,ntotal-index)
+
+    # -- search patches --
+    dists,inds = search(noisy,index,nbatch_i)
 
     # -- get patches --
-    queries = dnls.utils.inds.get_iquery_batch(index,batch_size_i,
-                                               stride,coords,t,device)
-    dists,inds = dnls.simple.search.run(noisy,queries,flow,k,
-                                        ps,pt,ws,wt,chnls,
-                                        stride=stride,dilation=dilation)
-    # -- get patches --
-    noisy_patches_i = scatter_nl(noisy,inds)
-    basic_patches_i = scatter_nl(noisy,inds)
+    noisy_patches_i = unfold(noisy,inds)
+    basic_patches_i = unfold(noisy,inds)
 
     # -- process --
     patches_mod_i = apply_fxn(noisy_patches_i,basic_patches_i,dists,1)
 
     # -- regroup --
-    zeros = th.zeros_like(dists)
-    gather_nl(patches_mod_i,zeros,inds)
-
+    zeros = th.ones_like(dists)
+    fold(patches_mod_i,zeros,inds)
 
 # -- post processing --
-basic,weights = gather_nl.vid,gather_nl.wvid
+basic,weights = fold.vid,fold.wvid
 basic /= weights
 zargs = th.where(weights == 0)
 basic[zargs] = noisy[zargs]
 
 # -- setup for 2nd step --
 k = 60
-gather_nl = dnls.gather.GatherNl(vid.shape,device=device)
+fold = dnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps_2,device=device)
+search.k = k
 
 #
 # -- Step 2 --
@@ -215,28 +198,25 @@ gather_nl = dnls.gather.GatherNl(vid.shape,device=device)
 for batch in tqdm.tqdm(range(nbatches)):
 
     # -- batch info --
-    index = min(batch_size * batch,n_total)
-    batch_size_i = min(batch_size,n_total-index)
+    index = min(batch_size * batch,ntotal)
+    nbatch_i = min(batch_size,ntotal-index)
+
+    # -- search patches --
+    dists,inds = search(basic,index,nbatch_i)
 
     # -- get patches --
-    queries = dnls.utils.inds.get_iquery_batch(index,batch_size_i,
-                                               stride,coords,t,h,w,device)
-    dists,inds = dnls.simple.search.run(basic,queries,flow,k,
-                                        ps,pt,ws,wt,chnls,
-                                        stride=stride,dilation=dilation)
-    # -- get patches --
-    noisy_patches_i = scatter_nl(noisy,inds)
-    basic_patches_i = scatter_nl(basic,inds)
+    noisy_patches_i = unfold(noisy,inds)
+    basic_patches_i = unfold(basic,inds)
 
     # -- process --
     patches_mod_i = apply_fxn(noisy_patches_i,basic_patches_i,dists,2)
 
     # -- regroup --
-    zeros = th.zeros_like(dists)
-    gather_nl(patches_mod_i,zeros,inds)
+    zeros = th.ones_like(dists)
+    fold(patches_mod_i,zeros,inds)
 
 # -- format final image --
-deno,weights = gather_nl.vid,gather_nl.wvid
+deno,weights = fold.vid,fold.wvid
 deno /= weights
 zargs = th.where(weights == 0)
 deno[zargs] = basic[zargs]

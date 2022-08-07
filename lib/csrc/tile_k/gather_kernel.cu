@@ -47,9 +47,9 @@ __global__ void dnls_gather_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
-    int ws, int wt, int dilation, float lam, int qpt) {
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    int ws, int wt, int dilation, int qpt) {
 
   // shared mem
   static __shared__ float shared[32*3*2];
@@ -95,7 +95,7 @@ __global__ void dnls_gather_forward_kernel(
 
   // get thread's center
   int q0 = bidx;
-  int q_start = 0; // must be linked to nlInds[min]
+  int q_start = 0; // must be linked to inds[min]
   int index = q0 + q_start;
 
   // compute p0
@@ -143,10 +143,10 @@ __global__ void dnls_gather_forward_kernel(
   
   // accumulate over K neighbors
   for (int ki = 0; ki < k; ki++){
-    weight = __expf(-lam * nlDists[q1][ki]);
-    int t1_i = nlInds[q1][ki][0];
-    int h1_i = nlInds[q1][ki][1];
-    int w1_i = nlInds[q1][ki][2];
+    weight = dists[q1][ki];
+    int t1_i = inds[q1][ki][0];
+    int h1_i = inds[q1][ki][1];
+    int w1_i = inds[q1][ki][2];
 
     for (int pk = 0; pk < pt; pk++){
       for (int pi = 0; pi < ps; pi++){
@@ -219,12 +219,12 @@ __global__ void dnls_gather_forward_kernel(
 
 void dnls_cuda_gather_forward(
     torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
-    torch::Tensor nlDists,torch::Tensor nlInds,
-    int ws, int wt, int dilation, float lam) {
+    torch::Tensor dists,torch::Tensor inds,
+    int ws, int wt, int dilation) {
 
   // launch params
-  int numQueries = nlInds.size(0);
-  int k = nlDists.size(1);
+  int numQueries = inds.size(0);
+  int k = dists.size(1);
   int pt = patches.size(2);
   int color = patches.size(3);
   int ps = patches.size(4);
@@ -251,9 +251,9 @@ void dnls_cuda_gather_forward(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        ws,wt,dilation,lam,qpt);
+        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        ws,wt,dilation,qpt);
       }));
 }
 
@@ -270,9 +270,9 @@ __global__ void dnls_gather_forward_kernel_dist(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
-    int ws, int wt, int dilation, float lam, int qpt) {
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    int ws, int wt, int dilation, int qpt) {
 
   // shared mem
   static __shared__ float shared[32*3*2];
@@ -318,7 +318,7 @@ __global__ void dnls_gather_forward_kernel_dist(
 
   // get thread's center
   int q0 = bidx;
-  int q_start = 0; // must be linked to nlInds[min]
+  int q_start = 0; // must be linked to inds[min]
   int index = q0 + q_start;
 
   // compute p0
@@ -366,10 +366,10 @@ __global__ void dnls_gather_forward_kernel_dist(
   
   // accumulate over K neighbors
   for (int ki = 0; ki < k; ki++){
-    weight = __expf(-lam * nlDists[q1][ki]);
-    int t1_i = nlInds[q1][ki][0];
-    int h1_i = nlInds[q1][ki][1];
-    int w1_i = nlInds[q1][ki][2];
+    weight = dists[q1][ki];
+    int t1_i = inds[q1][ki][0];
+    int h1_i = inds[q1][ki][1];
+    int w1_i = inds[q1][ki][2];
 
     for (int pk = 0; pk < pt; pk++){
       for (int pi = 0; pi < ps; pi++){
@@ -442,12 +442,12 @@ __global__ void dnls_gather_forward_kernel_dist(
 
 void dnls_cuda_gather_forward_dist(
     torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
-    torch::Tensor nlDists,torch::Tensor nlInds,
-    int ws, int wt, int dilation, float lam) {
+    torch::Tensor dists,torch::Tensor inds,
+    int ws, int wt, int dilation) {
 
   // launch params
-  int numQueries = nlInds.size(0);
-  int k = nlDists.size(1);
+  int numQueries = inds.size(0);
+  int k = dists.size(1);
   int pt = patches.size(2);
   int color = patches.size(3);
   int ps = patches.size(4);
@@ -474,9 +474,9 @@ void dnls_cuda_gather_forward_dist(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        ws,wt,dilation,lam,qpt);
+        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        ws,wt,dilation,qpt);
       }));
 }
 
@@ -492,9 +492,10 @@ __global__ void dnls_gather_forward_kernel_race(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> nlDists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
-    int dilation, float lam, int qpt) {
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
+    int dilation, int qpt, int cpt) {
 
   // shape
   int nq =    patches.size(0);
@@ -517,6 +518,15 @@ __global__ void dnls_gather_forward_kernel_race(
   bool valid;
   float pix;
 
+  // -- endpoints --
+  int c0_start = threadIdx.y * cpt;
+  int c0_end = min(c0_start + cpt,colors);
+
+  // -- color offset --
+  int ci = 0;
+  int c0_dist = c0_end - c0_start;
+  int c0_offset = 0;
+
   // get indices
   int tidx = threadIdx.x;
   int bidx = blockIdx.x;
@@ -524,18 +534,20 @@ __global__ void dnls_gather_forward_kernel_race(
 
   for (int _qi = 0; _qi < qpt; _qi++){
     qi = q_start + _qi;
+    c0_offset = __float2int_rd(c0_dist * rand_nums[qi][0][0]);
+
     if (qi < nq){
       // iterate
       for (int ki = 0; ki < k; ki++){
-        weight = __expf(-lam * nlDists[qi][ki]);
+        weight = dists[qi][ki];
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
 
               // prop ind
-              ti = nlInds[qi][ki][0] + pk;
-              hi = nlInds[qi][ki][1] + dilation*(pi - psHalf);
-              wi = nlInds[qi][ki][2] + dilation*(pj - psHalf);
+              ti = inds[qi][ki][0] + pk;
+              hi = inds[qi][ki][1] + dilation*(pi - psHalf);
+              wi = inds[qi][ki][2] + dilation*(pj - psHalf);
 
               // valid
               valid = (ti >= 0) && (ti < nframes);
@@ -543,7 +555,8 @@ __global__ void dnls_gather_forward_kernel_race(
               valid = valid && (wi >= 0) && (wi < width);
 
               // fill
-              for (int ci = 0; ci < colors; ci++){
+              for (int _c0 = c0_start; _c0 < c0_end; _c0++){
+                ci = (_c0 + c0_offset) % c0_dist + c0_start;
                 pix = patches[qi][ki][pk][ci][pi][pj];
                 if (valid){
                   vid[ti][ci][hi][wi] += weight * pix;
@@ -560,36 +573,53 @@ __global__ void dnls_gather_forward_kernel_race(
 
 void dnls_cuda_gather_forward_race(
     torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
-    torch::Tensor nlDists,torch::Tensor nlInds,
-    int dilation, float lam, bool exact) {
+    torch::Tensor dists,torch::Tensor inds,
+    int dilation, bool use_rand, bool exact) {
 
   // launch params
-  int numQueries = nlInds.size(0);
-  int k = nlDists.size(1);
+  int nqueries = inds.size(0);
+  int k = dists.size(1);
   int pt = patches.size(2);
   int color = patches.size(3);
   int ps = patches.size(4);
   assert(pt == 1);
 
-  int qpt = 10;
-  int nthreads = 1024;
-  int queries_per_block = nthreads * qpt;
-  int nblocks = ((numQueries - 1) / queries_per_block) + 1;
+  int cpt = exact ? 1 : color;
+  int nthreads_color = (color - 1)/cpt + 1;
+  int qpt = 2;
+  int nthreads_blocks = 1024;
+  int queries_per_block = nthreads_blocks * qpt;
+  int nblocks = ((nqueries - 1) / queries_per_block) + 1;
   if (exact){
-    nthreads = 1;
+    nthreads_blocks = 1;
     nblocks = 1;
-    qpt = numQueries;
+    qpt = nqueries;
   }
+  dim3 nthreads(nthreads_blocks,nthreads_color);
+
+  // -- allocate random values --
+  auto cu_index = vid.device().index();
+  auto options = torch::TensorOptions().device(
+                        torch::kCUDA,cu_index).dtype(torch::kFloat32);
+  torch::Tensor rand_nums;
+  if (use_rand){
+    rand_nums = torch::rand({nqueries,1,1},options);
+  }else{
+    rand_nums = torch::zeros({nqueries,1,1},options);
+  }
+  fprintf(stdout,"nthreads_blocks,nthreads_color,nblocks,use_rand: %d,%d,%d,%d\n",
+          nthreads_blocks,nthreads_color,nblocks,use_rand);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_gather_forward_kernel_race", ([&] {
     dnls_gather_forward_kernel_race<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        nlDists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        dilation,lam,qpt);
+        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        dilation,qpt,cpt);
       }));
 }
 
@@ -604,7 +634,7 @@ template <typename scalar_t>
 __global__ void dnls_gather_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
+    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
     int dilation, int qpt, int kpt) {
 
     // -- shapes --
@@ -646,9 +676,9 @@ __global__ void dnls_gather_backward_kernel(
         if (ki >= k){ continue; }
 
         // -- fill --
-        ti = nlInds[qi][ki][0];
-        hi = nlInds[qi][ki][1];
-        wi = nlInds[qi][ki][2];
+        ti = inds[qi][ki][0];
+        hi = inds[qi][ki][1];
+        wi = inds[qi][ki][2];
 
         // -- fill across cuda threads --
         vi_h = hi+dilation*(pi - psHalf);
@@ -683,14 +713,14 @@ __global__ void dnls_gather_backward_kernel(
 }
 
 void dnls_cuda_gather_backward(
-  torch::Tensor grad_vid,torch::Tensor patches,torch::Tensor nlInds,
+  torch::Tensor grad_vid,torch::Tensor patches,torch::Tensor inds,
   int dilation) {
 
   // -- kernel blocks --
-  int numQueries = nlInds.size(0);
-  int k = nlInds.size(1);
+  int nqueries = inds.size(0);
+  int k = inds.size(1);
   int qpt = 10;
-  int nblocks = (numQueries-1)/qpt+1;
+  int nblocks = (nqueries-1)/qpt+1;
 
   // -- kernel threads --
   int ps = patches.size(5);
@@ -705,7 +735,7 @@ void dnls_cuda_gather_backward(
     dnls_gather_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
         dilation,qpt,kpt);
   }));
 

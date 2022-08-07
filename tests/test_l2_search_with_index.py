@@ -1,3 +1,11 @@
+"""
+Write "inds" check;
+verify the correct meshgrid is included in the exhaustive search
+
+see pacnet's test for details.
+
+
+"""
 
 # -- python --
 import cv2,tqdm,copy,pytest

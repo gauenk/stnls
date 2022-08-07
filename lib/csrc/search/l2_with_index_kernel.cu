@@ -172,8 +172,8 @@ __global__ void l2_search_with_index_forward_kernel(
             ct0 = 1.*bufs[bidx][2][dtd][ws_i][ws_j];
 
             // -- legalize access --
-            l_cw0 = int(max(0,min(w-1,int(cw0))));
-            l_ch0 = int(max(0,min(h-1,int(ch0))));
+            l_cw0 = int(max(0,min(width-1,int(cw0))));
+            l_ch0 = int(max(0,min(height-1,int(ch0))));
             l_ct0 = int(max(0,min(nframes-1,int(ct0))));
 
             // -- access flows --
@@ -184,8 +184,10 @@ __global__ void l2_search_with_index_forward_kernel(
               cw_f = cw0 + bflow[l_ct0][0][l_ch0][l_cw0];
               ch_f = ch0 + bflow[l_ct0][1][l_ch0][l_cw0];
             }
-            cw_i = int(cw_f+0.5);
-            ch_i = int(ch_f+0.5);
+            cw_f = cw0;
+            ch_f = ch0;
+            cw_i = int(cw_f + 0.5);
+            ch_i = int(ch_f + 0.5);
 
             // -- rounding --
             cw = max(0,min(width-1,cw_i));
@@ -338,9 +340,10 @@ void l2_search_with_index_forward_cuda(
     // nblocks = (nq-1)//batches_per_block+1
 
    // fprintf(stdout,"qstart, nqueries: %d,%d\n",qstart,nqueries);
-   // launch params 
-   int ws_h_threads = std::min(ws_h,32);
-   int ws_w_threads = std::min(ws_w,32);
+   // launch params
+   // our many (too many?) registers limit the number of threads
+   int ws_h_threads = std::min(ws_h,29);
+   int ws_w_threads = std::min(ws_w,29);
    int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
@@ -353,6 +356,7 @@ void l2_search_with_index_forward_cuda(
    // fprintf(stdout,"bpb,nblocks,w_threads: %d,%d,%d,%d\n",
    //         bpb,nblocks,ws_h_threads,ws_w_threads);
    // fprintf(stdout,"reflect_bounds,search_abs: %d,%d\n",reflect_bounds,search_abs);
+   // fprintf(stdout,"ws_h_iters,ws_w_iters: %d,%d\n",ws_h_iters,ws_w_iters);
     
    // launch kernel
    AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_forward_kernel", ([&] {
@@ -511,7 +515,8 @@ void l2_search_with_index_backward_cuda(
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int dilation,
-    bool use_adj, bool reflect_bounds, bool exact) {
+    bool use_adj, bool reflect_bounds, bool use_rand,
+    bool exact) {
 
   // -- unpack --
   int nframes = vid0.size(0);
@@ -567,7 +572,12 @@ void l2_search_with_index_backward_cuda(
   auto cu_index = grad_vid0.device().index();
   auto options = torch::TensorOptions().device(torch::kCUDA,
                                                cu_index).dtype(torch::kFloat32);
-  torch::Tensor rand_nums = torch::rand({nqueries,1,1},options);
+  torch::Tensor rand_nums;
+  if (use_rand){
+    rand_nums = torch::rand({nqueries,1,1},options);
+  }else{
+    rand_nums = torch::zeros({nqueries,1,1},options);
+  }
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {

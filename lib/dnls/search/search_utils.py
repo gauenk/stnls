@@ -79,7 +79,8 @@ def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
     if wt <= 0:
         bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
     else:
-        bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
+        st = min(t,2*wt+1)
+        bufs = th.zeros(nq,3,st,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
 
 def allocate_exh(nq,wt,ws_h,ws_w,device):

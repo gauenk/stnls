@@ -30,7 +30,8 @@ class WpSumFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid, dists, inds, ps, pt=1,
-                h_off=0,w_off=0,dilation=1,adj=0,reflect_bounds=True,exact=False):
+                h_off=0,w_off=0,dilation=1,adj=0,
+                reflect_bounds=True,nbwd=1,exact=False):
         """
         vid = [T,C,H,W]
         inds = [NumQueries,K,3]
@@ -51,6 +52,7 @@ class WpSumFunction(th.autograd.Function):
         ctx.w_off = w_off
         ctx.adj = adj
         ctx.reflect_bounds = reflect_bounds
+        ctx.nbwd = nbwd
         ctx.exact = exact
 
         return patches
@@ -65,7 +67,7 @@ class WpSumFunction(th.autograd.Function):
         h_off = ctx.h_off
         w_off = ctx.w_off
         dilation = ctx.dilation
-        adj = ctx.adj
+        adj,nbwd = ctx.adj,ctx.nbwd
         reflect_bounds = ctx.reflect_bounds
         exact = ctx.exact
 
@@ -75,8 +77,17 @@ class WpSumFunction(th.autograd.Function):
 
         # -- gradient for video --
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
-        dnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,dists,inds,
-                                     h_off,w_off,dilation,adj,reflect_bounds,exact)
+        if nbwd == 1:
+            dnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,dists,inds,
+                                         h_off,w_off,dilation,adj,reflect_bounds,exact)
+        else:
+            for _ in range(nbwd):
+                grad_vid_i = allocate_vid(vid_shape,grad_patches.device)
+                dnls_cuda.wpsum_backward_vid(grad_vid_i,grad_patches,dists,inds,
+                                             h_off,w_off,dilation,adj,
+                                             reflect_bounds,exact)
+                grad_vid += grad_vid_i
+            grad_vid /= nbwd
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
@@ -94,7 +105,7 @@ class WeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds
 
     def __init__(self, ps, pt=1, h_off=0, w_off=0, dilation=1,
-                 adj=0, reflect_bounds = True, exact=False):
+                 adj=0, reflect_bounds = True, nbwd=1, exact=False):
         super(WeightedPatchSum, self).__init__()
         self.ps = ps
         self.pt = pt
@@ -105,13 +116,14 @@ class WeightedPatchSum(th.nn.Module):
         self.dilation = int(dilation)
         self.adj = int(adj)
         self.reflect_bounds = reflect_bounds
+        self.nbwd = nbwd
         self.exact = exact
 
     def forward(self, vid, dists, inds):
         patches = WpSumFunction.apply(vid,dists,inds,self.ps,self.pt,
                                       self.h_off,self.w_off,
                                       self.dilation,self.adj,
-                                      self.reflect_bounds, self.exact)
+                                      self.reflect_bounds, self.nbwd, self.exact)
         nq,_,_,c,ph,pw = patches.shape
         patches = patches.view(nq,c,ph,pw)
         return patches

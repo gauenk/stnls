@@ -23,7 +23,7 @@ void l2_search_with_index_backward_cuda(
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int dilation, bool use_adj,
-    bool reflect_bounds, bool exact);
+    bool reflect_bounds, bool use_rand, bool exact);
 
 void remove_self_from_search_cuda(
     torch::Tensor dists, torch::Tensor mask,
@@ -71,7 +71,8 @@ void l2_search_with_index_backward(
     torch::Tensor dists, torch::Tensor inds,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps,int pt, int dilation, bool use_adj, bool reflect_bounds, bool exact) {
+    int ps,int pt, int dilation, bool use_adj, bool reflect_bounds,
+    bool use_rand, bool exact) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
   CHECK_INPUT(vid0);
@@ -82,7 +83,8 @@ void l2_search_with_index_backward(
                                      dists,inds,
                                      qstart,stride0,n_h0,n_w0,
                                      h0_off,w0_off,h1_off,w1_off,
-                                     ps,pt,dilation,use_adj,reflect_bounds,exact);
+                                     ps,pt,dilation,use_adj,reflect_bounds,
+                                     use_rand,exact);
 }
 
 void remove_self_from_search(

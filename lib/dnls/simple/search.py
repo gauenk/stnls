@@ -146,7 +146,7 @@ def numba_search_launcher(vid0,vid1,iqueries,dists,inds,
     t = vid0.shape[0]
     nq = inds.shape[0]
     device = inds.device
-    bufs = th.zeros(nq,3,t,ws,ws,dtype=th.int32,device=device)
+    bufs = th.zeros(nq,3,2*wt+1,ws,ws,dtype=th.int32,device=device)
 
     # -- pre-computed search offsets --
     tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)

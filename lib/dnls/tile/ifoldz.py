@@ -28,6 +28,7 @@ class ifoldz(th.autograd.Function):
     def forward(ctx, patches, vid, zvid, coords, qStart, stride, dilation, adj,
                 only_full,use_reflect):
         top,left,btm,right = coords
+        patches = patches.contiguous()
         dnls_cuda.ifoldz_forward(vid, zvid, patches, top, left, btm, right,
                                  qStart, stride, dilation, adj, only_full, use_reflect)
         ctx.coords = coords

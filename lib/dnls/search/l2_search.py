@@ -21,7 +21,7 @@ class L2SearchFunction(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 dilation=1,stride=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
-                full_ws=False,remove_self=False,exact=False):
+                full_ws=False,remove_self=False,nbwd=1,exact=False):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -72,16 +72,16 @@ class L2SearchFunction(th.autograd.Function):
         ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
-        ctx.exact = exact
+        ctx.nbwd,ctx.exact = nbwd,exact
         ctx.use_adj = use_adj
         ctx.h0_off,ctx.w0_off = h0_off, w0_off
         ctx.h1_off,ctx.w1_off = h1_off, w1_off
         return dists,inds
 
     @staticmethod
-    def backward(ctx, grad_dists, grad_inds):
+    def backward(ctx, grad_dists, grad_inds_is_none):
         qinds,inds,vid0,vid1 = ctx.saved_tensors
-        vid_shape = ctx.vid_shape
+        vid_shape,nbwd = ctx.vid_shape,ctx.nbwd
         ps,pt,dil = ctx.ps,ctx.pt,ctx.dil
         exact,use_adj = ctx.exact,ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
@@ -89,11 +89,26 @@ class L2SearchFunction(th.autograd.Function):
         h1_off, w1_off = ctx.h1_off,ctx.w1_off
         grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
         grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
-        dnls_cuda.search_l2_backward(grad_vid0,grad_vid1,vid0,vid1,
-                                  grad_dists,inds,qinds,
-                                  h0_off, w0_off, h1_off, w1_off,
-                                  ps,pt,dil, use_adj,reflect_bounds,exact)
-        th.cuda.synchronize()
+
+        # -- allow for repeated exec --
+        if nbwd == 1:
+            dnls_cuda.search_l2_backward(grad_vid0,grad_vid1,vid0,vid1,
+                                         grad_dists,inds,qinds,
+                                         h0_off, w0_off, h1_off, w1_off,
+                                         ps,pt,dil, use_adj,reflect_bounds,exact)
+        else:
+            for _ in range(nbwd):
+                grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
+                grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
+                dnls_cuda.search_l2_backward(grad_vid0_i,grad_vid1_i,vid0,vid1,
+                                             grad_dists,inds,qinds,
+                                             h0_off, w0_off, h1_off, w1_off,
+                                             ps,pt,dil, use_adj,reflect_bounds,exact)
+                grad_vid0 += grad_vid0_i
+                grad_vid1 += grad_vid1_i
+            grad_vid0 /= nbwd
+            grad_vid1 /= nbwd
+        # th.cuda.synchronize()
 
         return grad_vid0,grad_vid1,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,\
@@ -105,7 +120,8 @@ class L2Search(th.nn.Module):
                  dilation=1, stride=1,
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, exact=False,
-                 h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False):
+                 h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
+                 nbwd=1):
         super(L2Search, self).__init__()
         self.k = k
         self.ps = ps
@@ -127,6 +143,7 @@ class L2Search(th.nn.Module):
         self.search_abs = search_abs
         self.full_ws = full_ws
         self.remove_self = remove_self
+        self.nbwd = nbwd
         self.exact = exact
 
     def _get_args(self,vshape):
@@ -147,7 +164,7 @@ class L2Search(th.nn.Module):
 
     def _update_flow(self,vshape,device):
         t,c,h,w = vshape
-        zflow = th.ones((t,2,h,w),device=device)
+        zflow = th.zeros((t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
         for i in [0,2,3]:
@@ -164,5 +181,6 @@ class L2Search(th.nn.Module):
                                       self.dilation,self.stride,
                                       self.use_k,self.use_adj,
                                       self.reflect_bounds,self.search_abs,
-                                      self.full_ws,self.remove_self,self.exact)
+                                      self.full_ws,self.remove_self,
+                                      self.nbwd,self.exact)
 

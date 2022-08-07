@@ -99,7 +99,7 @@ class ProductSearchFunction(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride,dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
-                oh0, ow0, oh1, ow1, exact):
+                oh0, ow0, oh1, ow1, nbwd, exact):
         """
         vid = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -159,6 +159,7 @@ class ProductSearchFunction(th.autograd.Function):
                               qinds,vid0,vid1)
         ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt = ps,pt
+        ctx.nbwd = nbwd
         ctx.lam = lam
         ctx.use_k = use_k
         ctx.reflect_bounds = reflect_bounds
@@ -171,16 +172,14 @@ class ProductSearchFunction(th.autograd.Function):
         return dists,inds
 
     @staticmethod
-    def backward(ctx, grad_dists, grad_inds):
+    def backward(ctx, grad_dists, grad_inds_is_none):
         dists,inds,qinds,vid0,vid1 = ctx.saved_tensors
         vid_shape,exact = ctx.vid_shape,ctx.exact
-        lam,ps,pt = ctx.lam,ctx.ps,ctx.pt
-        oh0 = ctx.oh0
-        ow0 = ctx.ow0
-        oh1 = ctx.oh1
-        ow1 = ctx.ow1
-        # print("oh0, ow0, oh1, ow1: ",oh0, ow0, oh1, ow1)
+        lam,ps,pt,nbwd = ctx.lam,ctx.ps,ctx.pt,ctx.nbwd
+        oh0,ow0 = ctx.oh0,ctx.ow0
+        oh1,ow1 = ctx.oh1,ctx.ow1
         reflect_bounds = ctx.reflect_bounds
+        # print("oh0, ow0, oh1, ow1: ",oh0, ow0, oh1, ow1)
 
         # -- start timer --
         # timer = ExpTimer()
@@ -190,16 +189,25 @@ class ProductSearchFunction(th.autograd.Function):
         vid0_grad = allocate_vid(vid_shape,grad_dists.device)
         vid1_grad = allocate_vid(vid_shape,grad_dists.device)
         # th.cuda.synchronize()
-        dnls_cuda.search_prod_backward(vid0_grad,vid1_grad,vid0,vid1,
-                                   qinds,grad_dists,inds,
-                                   oh0,ow0,oh1,ow1,
-                                   ps,pt,lam,reflect_bounds,exact)
 
-        # -- stop timer --
-        # th.cuda.synchronize()
-        # timer.stop("xsearch_bwd")
-        # print(timer)
-
+        # -- allow for repeated exec --
+        if nbwd == 1:
+            dnls_cuda.search_prod_backward(vid0_grad,vid1_grad,vid0,vid1,
+                                           qinds,grad_dists,inds,
+                                           oh0,ow0,oh1,ow1,
+                                           ps,pt,lam,reflect_bounds,exact)
+        else:
+            for _ in range(nbwd):
+                grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
+                grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
+                dnls_cuda.search_prod_backward(vid0_grad_i,vid1_grad_i,vid0,vid1,
+                                               qinds,grad_dists,inds,
+                                               oh0,ow0,oh1,ow1,
+                                               ps,pt,lam,reflect_bounds,exact)
+                grad_vid0 += grad_vid0_i
+                grad_vid1 += grad_vid1_i
+            grad_vid0 /= nbwd
+            grad_vid1 /= nbwd
 
         # th.cuda.synchronize()
         return vid0_grad,vid1_grad,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None
@@ -208,7 +216,7 @@ class ProductSearch(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1,stride=1, dilation=1, lam = 1., use_search_abs=False,
-                 reflect_bounds=True, use_adj=True, use_k=True, exact=True):
+                 reflect_bounds=True, use_adj=True, use_k=True, nbwd=1, exact=True):
         super(ProductSearch, self).__init__()
         self.k = k
         self.ps = ps
@@ -229,6 +237,7 @@ class ProductSearch(th.nn.Module):
         self.ow0 = ow0
         self.oh1 = oh1
         self.ow1 = ow1
+        self.nbwd = nbwd
         self.exact = exact
 
     def _get_args(self,vshape):
@@ -251,7 +260,7 @@ class ProductSearch(th.nn.Module):
 
     def _update_flow(self,vshape,device):
         t,c,h,w = vshape
-        zflow = th.ones((t,2,h,w),device=device)
+        zflow = th.zeros((t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
         for i in [0,2,3]:
@@ -268,4 +277,4 @@ class ProductSearch(th.nn.Module):
                                            self.use_search_abs,self.reflect_bounds,
                                            self.use_adj,self.use_k,
                                            self.oh0,self.ow0,self.oh1,self.ow1,
-                                           self.exact)
+                                           self.nbwd, self.exact)
