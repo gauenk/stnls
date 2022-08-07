@@ -24,8 +24,8 @@ sq_w = coords[3] - coords[1]
 sq_hw = sq_h * sq_w
 
 # -- init iunfold and ifold --
-fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dilation)
-unfold_nl = dnls.iunfold.iUnfold(ps,coords,stride=stride,dilation=dilation)
+fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dilation)
+unfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dilation)
 
 # -- compute number of batches --
 n_h = (sq_h-1)//stride+1

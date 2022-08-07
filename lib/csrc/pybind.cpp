@@ -14,9 +14,9 @@ void init_wpsum(py::module &);
 void init_wpsum_heads(py::module &);
 void init_wpsum_heads_2vid(py::module &);
 
-// -- patch db --
-void init_gather(py::module &);
-void init_scatter(py::module &);
+// -- tile k --
+void init_foldk(py::module &);
+void init_unfoldk(py::module &);
 
 // -- batched fold/unfold --
 void init_fold(py::module &);
@@ -36,8 +36,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_wpsum_heads(m);
   init_wpsum_heads_2vid(m);
 
-  init_gather(m);
-  init_scatter(m);
+  init_foldk(m);
+  init_unfoldk(m);
 
   init_fold(m);
   init_ifold(m);

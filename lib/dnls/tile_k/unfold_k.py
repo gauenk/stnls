@@ -31,7 +31,7 @@ class unfold_k(th.autograd.Function):
         """
         patches = allocate_patches(inds,ps,pt,vid.shape[1])
         inds = inds.contiguous()
-        dnls_cuda.scatter_forward(vid, patches, inds, dilation, adj, reflect_bounds)
+        dnls_cuda.unfoldk_forward(vid, patches, inds, dilation, adj, reflect_bounds)
         # print("inds.shape: ",inds.shape)
         ctx.save_for_backward(inds)
         ctx.ps,ctx.pt = ps,pt
@@ -56,13 +56,13 @@ class unfold_k(th.autograd.Function):
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         grad_patches = grad_patches.contiguous()
         if btype in "default" or btype in "simple":
-            dnls_cuda.scatter_backward(grad_vid,grad_patches,inds,
+            dnls_cuda.unfoldk_backward(grad_vid,grad_patches,inds,
                                               dilation,exact,adj,reflect_bounds)
         elif btype in "efficient":
-            dnls_cuda.scatter_backward_eff(grad_vid,grad_patches,inds,
+            dnls_cuda.unfoldk_backward_eff(grad_vid,grad_patches,inds,
                                            dilation,exact,adj,reflect_bounds)
         else:
-            raise ValueError(f"Uknown backward type for scatter [{btype}]")
+            raise ValueError(f"Uknown backward type for unfoldk [{btype}]")
         return grad_vid,None,None,None,None,None,None,None,None
 
 class UnfoldK(th.nn.Module):

@@ -19,21 +19,23 @@ device = "cuda:0"
 th.cuda.set_device(device)
 vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
 vid = th.from_numpy(vid).to(device)
+vid = th.cat([vid,vid],-1)
+vid = th.cat([vid,vid],-2)
 noisy = vid + sigma * th.randn_like(vid)
 
 # -- params --
 vshape = vid.shape
 t,c,h,w = vid.shape
 pt = 1 # patch size across time
-stride0 = 2 # spacing between patch centers to search
+stride0 = 5 # spacing between patch centers to search
 stride1 = 1 # spacing between patch centers when searching
 dilation = 1 # spacing between kernels
 batch_size = 32*1024 # num of patches per batch
 
 # -- race condition params --
-# use_rand,nreps_1,nreps_2 = False,1,1
+use_rand,nreps_1,nreps_2 = False,1,1
 # use_rand,nreps_1,nreps_2 = True,1,1
-use_rand,nreps_1,nreps_2 = True,5,5
+# use_rand,nreps_1,nreps_2 = True,25,25
 
 # -- search params --
 flow = None # no flow
@@ -44,7 +46,16 @@ chnls = 1 # number of channels to use for search
 verbose = True
 ps_s,ps_d = 11,11
 
-# -- helper --
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#       Helper Functions
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def yuv2rgb_patches(patches):
+    patches_rs = rearrange(patches,'b k pt c ph pw -> (b k pt) c ph pw')
+    yuv2rgb(patches_rs)
+
 def yuv2rgb(burst):
     # -- weights --
     t,c,h,w = burst.shape
@@ -68,22 +79,8 @@ def rgb2yuv(burst):
     burst[:,1,...] = weights[1] * (r - b)
     burst[:,2,...] = weights[2] * (.25 * r - 0.5 * g + .25 * b)
 
-# -- convert --
-rgb2yuv(noisy)
-
-# -- init iunfold and ifold --
-search = dnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,
-                          stride0=stride0,stride1=stride1,dilation=dilation)
-unfold = dnls.UnfoldK(ps_d,pt,dilation=dilation,device=device)
-fold = dnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps_1,device=device)
-
-# -- batching info --
-nh,nw = dnls.utils.get_nums_hw(vid.shape,stride0,ps_s,dilation)
-ntotal = t * nh * nw
-nbatches = (ntotal-1) // batch_size + 1
-
-# -- example function --
-def apply_fxn(npatches,bpatches,dists,step):
+# -- vnlb denoiser --
+def run_denoiser(npatches,bpatches,dists,step):
     """
     n = noisy, b = basic
     npatches.shape = (batch_size,k,pt,c,ps,ps)
@@ -156,6 +153,26 @@ def apply_fxn(npatches,bpatches,dists,step):
     patches = patches.contiguous()
     return patches
 
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#       Primary Logic Starts Here
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# -- convert --
+rgb2yuv(noisy)
+
+# -- init iunfold and ifold --
+search = dnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,
+                          stride0=stride0,stride1=stride1,dilation=dilation)
+unfold = dnls.UnfoldK(ps_d,pt,dilation=dilation,device=device)
+fold = dnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps_1,device=device)
+
+# -- batching info --
+nh,nw = dnls.utils.get_nums_hw(vid.shape,stride0,ps_s,dilation)
+ntotal = t * nh * nw
+nbatches = (ntotal-1) // batch_size + 1
+
 #
 # -- Step 1 --
 #
@@ -174,11 +191,11 @@ for batch in tqdm.tqdm(range(nbatches)):
     basic_patches_i = unfold(noisy,inds)
 
     # -- process --
-    patches_mod_i = apply_fxn(noisy_patches_i,basic_patches_i,dists,1)
+    patches_mod_i = run_denoiser(noisy_patches_i,basic_patches_i,dists,1)
 
     # -- regroup --
-    zeros = th.ones_like(dists)
-    fold(patches_mod_i,zeros,inds)
+    ones = th.ones_like(dists)
+    fold(patches_mod_i,ones,inds)
 
 # -- post processing --
 basic,weights = fold.vid,fold.wvid
@@ -209,18 +226,23 @@ for batch in tqdm.tqdm(range(nbatches)):
     basic_patches_i = unfold(basic,inds)
 
     # -- process --
-    patches_mod_i = apply_fxn(noisy_patches_i,basic_patches_i,dists,2)
+    patches_mod_i = run_denoiser(noisy_patches_i,basic_patches_i,dists,2)
+
+    # -- convert colors to show race condition in rgb --
+    print(patches_mod_i[0,0,0,0])
+    yuv2rgb_patches(patches_mod_i)
+    print(patches_mod_i[0,0,0,0])
 
     # -- regroup --
-    zeros = th.ones_like(dists)
-    fold(patches_mod_i,zeros,inds)
+    ones = th.ones_like(dists)
+    fold(patches_mod_i,ones,inds)
 
 # -- format final image --
 deno,weights = fold.vid,fold.wvid
 deno /= weights
 zargs = th.where(weights == 0)
 deno[zargs] = basic[zargs]
-yuv2rgb(deno)
+# yuv2rgb(deno)
 
 #
 # -- Save Results --
@@ -229,5 +251,8 @@ yuv2rgb(deno)
 # -- compute psnr and save --
 psnr = -10 * th.log10(th.mean((deno/255. - vid/255.)**2)).item()
 print("PSNR: %2.3f" % psnr)
+for i in range(3):
+    psnr = -10 * th.log10(th.mean((deno[:,i]/255. - vid[:,i]/255.)**2)).item()
+    print("[%d] PSNR: %2.3f" % (i,psnr))
 dnls.testing.data.save_burst(noisy/255.,"./output/","noisy")
 dnls.testing.data.save_burst(deno/255.,"./output/","deno")
