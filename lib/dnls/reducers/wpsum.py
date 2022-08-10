@@ -99,7 +99,8 @@ class WpSumFunction(th.autograd.Function):
         # timer.stop("wpsum_bwd")
         # print(timer)
 
-        return grad_vid,grad_dists,None,None,None,None,None,None,None,None,None
+        return grad_vid,grad_dists,None,None,None,\
+            None,None,None,None,None,None,None
 
 class WeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds

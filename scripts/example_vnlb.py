@@ -17,15 +17,13 @@ from einops import rearrange,repeat
 sigma = 50.
 device = "cuda:0"
 th.cuda.set_device(device)
-vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
-vid = th.from_numpy(vid).to(device)
-vid = th.cat([vid,vid],-1)
-vid = th.cat([vid,vid],-2)
-noisy = vid + sigma * th.randn_like(vid)
+clean = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
+clean = th.from_numpy(clean).to(device)
+noisy = clean + sigma * th.randn_like(clean)
 
 # -- params --
-vshape = vid.shape
-t,c,h,w = vid.shape
+vshape = clean.shape
+t,c,h,w = clean.shape
 pt = 1 # patch size across time
 stride0 = 5 # spacing between patch centers to search
 stride1 = 1 # spacing between patch centers when searching
@@ -163,13 +161,13 @@ def run_denoiser(npatches,bpatches,dists,step):
 rgb2yuv(noisy)
 
 # -- init iunfold and ifold --
-search = dnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,
+search = dnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,chnls=chnls,
                           stride0=stride0,stride1=stride1,dilation=dilation)
 unfold = dnls.UnfoldK(ps_d,pt,dilation=dilation,device=device)
-fold = dnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps_1,device=device)
+fold = dnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps_1,device=device)
 
 # -- batching info --
-nh,nw = dnls.utils.get_nums_hw(vid.shape,stride0,ps_s,dilation)
+nh,nw = dnls.utils.get_nums_hw(clean.shape,stride0,ps_s,dilation)
 ntotal = t * nh * nw
 nbatches = (ntotal-1) // batch_size + 1
 
@@ -205,7 +203,7 @@ basic[zargs] = noisy[zargs]
 
 # -- setup for 2nd step --
 k = 60
-fold = dnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps_2,device=device)
+fold = dnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps_2,device=device)
 search.k = k
 
 #
@@ -229,9 +227,7 @@ for batch in tqdm.tqdm(range(nbatches)):
     patches_mod_i = run_denoiser(noisy_patches_i,basic_patches_i,dists,2)
 
     # -- convert colors to show race condition in rgb --
-    print(patches_mod_i[0,0,0,0])
     yuv2rgb_patches(patches_mod_i)
-    print(patches_mod_i[0,0,0,0])
 
     # -- regroup --
     ones = th.ones_like(dists)
@@ -249,10 +245,10 @@ deno[zargs] = basic[zargs]
 #
 
 # -- compute psnr and save --
-psnr = -10 * th.log10(th.mean((deno/255. - vid/255.)**2)).item()
+psnr = -10 * th.log10(th.mean((deno/255. - clean/255.)**2)).item()
 print("PSNR: %2.3f" % psnr)
 for i in range(3):
-    psnr = -10 * th.log10(th.mean((deno[:,i]/255. - vid[:,i]/255.)**2)).item()
+    psnr = -10 * th.log10(th.mean((deno[:,i]/255. - clean[:,i]/255.)**2)).item()
     print("[%d] PSNR: %2.3f" % (i,psnr))
 dnls.testing.data.save_burst(noisy/255.,"./output/","noisy")
 dnls.testing.data.save_burst(deno/255.,"./output/","deno")

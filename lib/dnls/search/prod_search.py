@@ -210,7 +210,9 @@ class ProductSearchFunction(th.autograd.Function):
             grad_vid1 /= nbwd
 
         # th.cuda.synchronize()
-        return vid0_grad,vid1_grad,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None
+        return vid0_grad,vid1_grad,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None
 
 class ProductSearch(th.nn.Module):
 

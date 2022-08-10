@@ -128,7 +128,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                         grad_dists,inds,
                                                         qstart,stride0,n_h0,n_w0,
                                                         h0_off, w0_off, h1_off, w1_off,
-                                                        ps,pt,dil, use_adj,
+                                                        ps,pt,dil,use_adj,
                                                         reflect_bounds,use_rand,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
@@ -136,7 +136,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
             grad_vid1 /= nbwd
 
         return grad_vid0,grad_vid1,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
 
 class L2Search_with_index(th.nn.Module):
