@@ -110,6 +110,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
         grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
 
+        print("inds.shape: ",inds.shape)
         # -- allow for repeated exec --
         if nbwd == 1:
             dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
@@ -173,8 +174,9 @@ class L2Search_with_index(th.nn.Module):
         self.exact = exact
         self.use_rand = use_rand
 
-    def query_batch_info(self,vshape):
-        n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation)
+    def query_batch_info(self,vshape,only_full=True,use_pad=True):
+        n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,
+                              only_full,use_pad)
         return n_h,n_w
 
     def _get_args(self,vshape):

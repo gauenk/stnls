@@ -37,6 +37,7 @@ def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride0=4,stride1=1,dilation=1,
 
     # -- patches of topk --
     if use_k:
+        print(use_k)
         nlDists,nlInds = allocate_k(nq,k,device)
         get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
     else:
@@ -211,7 +212,7 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,stride,dilation
     bsize,st,ws,ws,_ = inds.shape
     Z = ps*ps*pt*chnls
     psHalf = int(ps//2)
-    wsHalf = (ws-1)//2
+    wsHalf = (ws)//2
     adj = psHalf if use_adj else 0
 
     # -- cuda threads --

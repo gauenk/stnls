@@ -619,6 +619,7 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     use_search_abs = k == -1
     use_k = not(k == -1)
     # print(ws,k,use_search_abs,use_k)
+    use_adj = True#k==-1
 
     # -- init vars --
     device = "cuda:0"
@@ -666,7 +667,8 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                               ws, wt, oh0, ow0, oh1, ow1,
                               chnls=chnls,dilation=dil,
                               stride0=stride0, stride1=stride1,
-                              use_k=use_k,use_search_abs=use_search_abs)
+                              use_k=use_k,use_search_abs=use_search_abs,
+                              reflect_bounds=True,exact=True,use_adj=use_adj)
     fold_nl = dnls.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"start-exec")
@@ -682,12 +684,23 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                                                        ps,pt,ws,wt,chnls,
                                                        stride0=stride0,stride1=stride1,
                                                        dilation=dil,use_k=use_k,
+                                                       use_bound=True,
                                                        use_search_abs=use_search_abs)
 
     # -- reshape --
     nq = iqueries.shape[0]
     score_te = score_te.view(nq,-1)
     score_simp = score_simp.view(nq,-1)
+
+    # -- viz --
+    # diff2 = th.abs(score_te - score_simp)
+    # nh = 32#np.sqrt(diff2.shape[0])
+    # print(diff2.shape)
+    # diff2 = rearrange(diff2,'(h w) k -> k 1 h w',h=nh)
+    # print(diff2.shape)
+    # dnls.testing.data.save_burst(diff2,SAVE_DIR,"diff")
+    # print(score_te[:3,:])
+    # print(score_simp[:3,:])
 
     # -- compare --
     error = th.mean(th.abs(score_te - score_simp)).item()

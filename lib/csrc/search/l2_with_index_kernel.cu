@@ -85,6 +85,7 @@ __global__ void l2_search_with_index_forward_kernel(
   int cu_tidY = threadIdx.y;
   int block_start = blockIdx.x*bpb;
   int bidx,ws_i,ws_j,dtd;
+  bool swap_dir = false;
 
   // decls
   int ti,hi,wi;
@@ -441,6 +442,9 @@ __global__ void l2_search_with_index_backward_kernel(
   int c0 = 0;
   int c0_dist = c0_end - c0_start;
   int c0_offset = 0;
+  // if (threadIdx.x == 0){
+  //   printf("c0_dist,c0_start,c0_end: %d,%d,%d\n",c0_dist,c0_start,c0_end);
+  // }
 
   // -- each region --
   for (int i0=i0_start; i0 < i0_end; i0++){
@@ -451,6 +455,7 @@ __global__ void l2_search_with_index_backward_kernel(
     wk_a = ((i_mod % n_w0) * stride0) % width ;
     hk_a = ((i_mod / n_w0) * stride0) % height;
     c0_offset = __float2int_rd(c0_dist * rand_nums[i0][0][0]);
+    // printf("c0_offset: %d\n",c0_offset);
 
     // k neighbors
     for (int i1=i1_start; i1 < i1_end; i1++){
@@ -487,6 +492,7 @@ __global__ void l2_search_with_index_backward_kernel(
             valid_wk = (wk >= 0) && (wk < width);
             valid_k = valid_hk && valid_wk;
 
+            // __syncthreads();
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
               pix0 =  valid_k ? vid0[tk][c0][hk][wk] : 0.;
@@ -528,10 +534,10 @@ void l2_search_with_index_backward_cuda(
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
-  int npt = 8;
+  int npt = 4;
   int neigh_nthreads = (k-1) / npt + 1;
-  if (neigh_nthreads > 64){
-    neigh_nthreads = 64;
+  if (neigh_nthreads > 32){
+    neigh_nthreads = 32;
     npt = (k-1)/neigh_nthreads + 1;
   }
   if (exact){
@@ -546,7 +552,7 @@ void l2_search_with_index_backward_cuda(
   // -- compute number of blocks --
   //    [think: parallelization over "nqueries"]
   int bpt = 2;
-  int query_nthreads = 16;
+  int query_nthreads = 32;
   int total_per_block = bpt * query_nthreads;
   int nblocks = ((nqueries - 1) / total_per_block) + 1;
   if (exact){

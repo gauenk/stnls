@@ -498,7 +498,7 @@ void search_prod_with_index_backward_cuda(
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, float lam, bool use_bounds,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    bool full_ws, bool exact) {
+    bool full_ws, bool use_rand, bool exact) {
 
   // unpack
   int num0 = nlInds.size(0);
@@ -532,7 +532,12 @@ void search_prod_with_index_backward_cuda(
   auto cu_index = vid0_grad.device().index();
   auto options = torch::TensorOptions().device(torch::kCUDA,
                                                cu_index).dtype(torch::kFloat32);
-  torch::Tensor rand_nums = torch::rand({num0,1,1},options);
+  torch::Tensor rand_nums;
+  if (use_rand){
+    rand_nums = torch::rand({num0,1,1},options);
+  }else{
+    rand_nums = torch::zeros({num0,1,1},options);
+  }
   
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_backward_kernel", ([&] {

@@ -1,4 +1,5 @@
 from . import search
+from . import search_bwd
 from . import search_full_ws
 from . import search_nn
 from . import prod_search

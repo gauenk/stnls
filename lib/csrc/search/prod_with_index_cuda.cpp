@@ -23,7 +23,8 @@ void search_prod_with_index_backward_cuda(
     torch::Tensor nlDists, torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, float lam, bool use_bounds,
-    int oh0, int ow0, int oh1, int ow1, bool full_ws, bool exact);
+    int oh0, int ow0, int oh1, int ow1, bool full_ws,
+    bool use_rand, bool exact);
 
 
 // C++ interface
@@ -68,7 +69,8 @@ void search_prod_with_index_backward(
     torch::Tensor nlDists, torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps,int pt,float lam, bool use_bounds,
-    int oh0, int ow0, int oh1, int ow1, bool full_ws, bool exact) {
+    int oh0, int ow0, int oh1, int ow1, bool full_ws,
+    bool use_rand,bool exact) {
   CHECK_INPUT(vid0_grad);
   CHECK_INPUT(vid1_grad);
   CHECK_INPUT(vid0);
@@ -79,7 +81,7 @@ void search_prod_with_index_backward(
       vid0_grad,vid1_grad,vid0,vid1,nlDists,nlInds,
       qstart, stride0, n_h0, n_w0,
       ps, pt, lam, use_bounds,
-      oh0, ow0, oh1, ow1, full_ws, exact);
+      oh0, ow0, oh1, ow1, full_ws, use_rand, exact);
 }
 
 // python bindings

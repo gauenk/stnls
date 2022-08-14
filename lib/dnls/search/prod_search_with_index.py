@@ -99,7 +99,8 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride0, stride1, dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
-                oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd, exact):
+                oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+                use_rand, exact):
         """
         vid = [T,C,H,W]
         ws = xsearch Window Spatial (ws)
@@ -140,6 +141,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                                                       stride0,n_h0,n_w0)
 
         # -- top k --
+        print(use_k)
         if use_k:
             dists,inds = allocate_rtn(nq,k,device)
             get_topk(dists_exh,inds_exh,dists,inds)
@@ -157,6 +159,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         ctx.save_for_backward(dists,inds,vid0,vid1)
         ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt = ps,pt
+        ctx.use_rand = use_rand
         ctx.nbwd = nbwd
         ctx.lam = lam
         ctx.use_k = use_k
@@ -182,6 +185,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         lam,ps,pt,dil = ctx.lam,ctx.ps,ctx.pt,ctx.dilation
         qstart,stride0 = ctx.qstart,ctx.stride0
         full_ws,nbwd = ctx.full_ws,ctx.nbwd
+        use_rand = ctx.use_rand
         oh0 = ctx.oh0
         ow0 = ctx.ow0
         oh1 = ctx.oh1
@@ -200,7 +204,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 grad_dists,inds,
                 qstart,stride0,n_h0,n_w0,
                 ps,pt,lam,reflect_bounds,
-                oh0,ow0,oh1,ow1,full_ws,exact)
+                oh0,ow0,oh1,ow1,full_ws,use_rand,exact)
         else:
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
@@ -210,23 +214,24 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                     grad_dists,inds,
                     qstart,stride0,n_h0,n_w0,
                     ps,pt,lam,reflect_bounds,
-                    oh0,ow0,oh1,ow1,full_ws,exact)
+                    oh0,ow0,oh1,ow1,full_ws,use_rand,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
             grad_vid0 /= nbwd
             grad_vid1 /= nbwd
 
         # th.cuda.synchronize()
-        return vid0_grad,vid1_grad,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None
+        return vid0_grad,vid1_grad,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None
 
 class ProductSearch_with_index(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
                  use_search_abs=False, reflect_bounds=True, use_adj=True,
-                 use_k=True, remove_self=False, full_ws=False, nbwd=1, exact=True):
+                 use_k=True, remove_self=False, full_ws=False, nbwd=1,
+                 use_rand=True, exact=True):
         super(ProductSearch_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -251,6 +256,7 @@ class ProductSearch_with_index(th.nn.Module):
         self.remove_self = remove_self
         self.full_ws = full_ws
         self.nbwd = nbwd
+        self.use_rand = use_rand
         self.exact = exact
 
     def _get_args(self,vshape):
@@ -264,7 +270,7 @@ class ProductSearch_with_index(th.nn.Module):
         if ws == -1:
             ws_h = n_h
             ws_w = n_w
-        if k == -1: k = ws**2 * (2*wt + 1)
+        if k == -1: k = ws_h**2 * (2*wt + 1)
         if chnls <= 0: chnls = c
         return ws_h,ws_w,wt,k,chnls
 
@@ -288,4 +294,4 @@ class ProductSearch_with_index(th.nn.Module):
             self.use_search_abs,self.reflect_bounds,
             self.use_adj,self.use_k,self.oh0,self.ow0,
             self.oh1,self.ow1,self.remove_self,
-            self.full_ws,self.nbwd,self.exact)
+            self.full_ws,self.nbwd,self.use_rand,self.exact)

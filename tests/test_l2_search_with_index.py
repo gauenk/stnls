@@ -37,7 +37,7 @@ SAVE_DIR = Path("./output/tests/l2_search_with_index")
 #
 
 def pytest_generate_tests(metafunc):
-    seed = 123
+    seed = 234
     th.manual_seed(seed)
     np.random.seed(seed)
     # test_lists = {"ps":[3],"stride":[1],"dilation":[1,2],
@@ -174,7 +174,7 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
     k,pt = 1,1
-    wt = 0
+    wt = 3
     ws = -1
     # stride0 = stride
     # stride1 = 1
@@ -194,14 +194,14 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = th.from_numpy(vid).to(device)[:3].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
-    vid = th.cat([vid,vid],-2)
+    # vid = th.cat([vid,vid],-2)
 
     # -- normalize --
     vid /= vid.max()
@@ -273,6 +273,131 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 
+def test_exact_bwd(ps,k,stride0,stride1,dilation,reflect_bounds):
+
+
+    # -- get args --
+    dil = dilation
+    dname,ext = "davis_baseball_64x64","jpg"
+    k,pt = 10,1
+    wt = 3
+    ws = -1
+    # stride0 = stride
+    # stride1 = 1
+    search_abs = k<=0
+    use_k = k>0
+    if ws == -1 and k > 0: ws = 10
+    exact = True
+    use_adj = False
+    use_rand = False
+
+    # -- init vars --
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    gpu_stats = False
+    only_full = True
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = th.from_numpy(vid).to(device)[:3].contiguous()
+    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+
+    # -- grow img --
+    # vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-2)
+    # vid = th.cat([vid,vid],-2)
+
+    # -- normalize --
+    vid /= vid.max()
+    # vidr = th.ones_like(vid)
+    vidr = th.rand_like(vid)
+
+    # -- compute flow --
+    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+
+    # -- unpack image --
+    device = vid.device
+    shape = vid.shape
+    t,color,h,w = shape
+    vshape = vid.shape
+    chnls = vid.shape[1]
+
+    # -- batching --
+    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
+
+    # -- exec fold fxns --
+    h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
+    h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
+    h0_off,w0_off = 0,0
+    h1_off,w1_off = 0,0
+    search = dnls.search.init("l2_with_index",
+                              flows.fflow, flows.bflow, k, ps, pt,
+                              ws, wt, dilation=dil,
+                              stride0=stride0, stride1=stride1,
+                              use_k = use_k,use_adj=use_adj,
+                              reflect_bounds=reflect_bounds,
+                              search_abs=search_abs,exact=exact,
+                              use_rand=use_rand,
+                              h0_off=h0_off,w0_off=w0_off,
+                              h1_off=h1_off,w1_off=w1_off)
+
+    # -- batching info --
+    n_h0,n_w0 = search.query_batch_info(vid.shape,False,False) # just showing api
+    ntotal = t * n_h0 * n_w0
+    nbatch = ntotal
+    nbatches = (ntotal-1) // nbatch + 1
+
+    # -- query inds --
+    qindex = 0
+
+    # -- run my search --
+    vid_te = vid.clone()
+    vid_te.requires_grad_(True)
+    score_te,inds_te = search(vid_te,qindex,ntotal,vid1=vid)
+    print(n_h0,n_w0)
+    print(score_te.shape)
+    score_grad = th.rand_like(score_te)
+    th.autograd.backward(score_te,score_grad)
+    grad_te = vid_te.grad
+    print(th.all(grad_te.abs() < 1e-5))
+
+    # -- run search --
+    grad0,grad1 = dnls.simple.search_bwd.run(score_grad,vid,vid,inds_te,qindex,
+                                             stride0,ps,pt,dilation,
+                                             use_adj,reflect_bounds)
+    grad_gt = grad0# + grad1
+    print(grad_te[0,0,:3,:3])
+    print(grad0[0,0,:3,:3])
+    print(grad1[0,0,:3,:3])
+    print(grad_gt[0,0,:3,:3])
+
+    # -- viz --
+    diff2 = (grad_gt - grad_te)**2
+    # diff2 = th.abs(grad_te - grad_gt)/(grad_gt.abs()+1e-5)
+    print(diff2.max())
+    diff2 /= diff2.max().item()
+    rand_s = "rand" if use_rand else "norand"
+    fn = "grad_exact_diff_%s" % rand_s
+    dnls.testing.data.save_burst(diff2,SAVE_DIR,fn)
+    # print(score_te[0,:3])
+    # print(score_gt[0,:3])
+
+    # -- compare --
+    tol = 1e-5
+    error = th.mean(th.abs(grad_te - grad_gt)/(grad_gt.abs()+1e-5)).item()
+    if error > tol: print("error: ",error)
+    assert error < tol
+
+    tol = 1e-4
+    max_error = th.abs((grad_te - grad_gt)/(grad_gt.abs()+1e-5)).max().item()
+    if max_error > tol: print("max error: ",max_error)
+    assert max_error < tol
+
+
 def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
 
@@ -333,6 +458,7 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, dilation=dil,
                               stride0=stride0, stride1=stride1,
+
                               use_k = use_k,use_adj=use_adj,
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,

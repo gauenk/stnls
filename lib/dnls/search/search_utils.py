@@ -130,8 +130,17 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     min_tranges = th.IntTensor(min_tranges).to(device).type(th.int32)
     return tranges,n_tranges,min_tranges
 
-def get_num_img(vshape,stride,ps,dil):
-    _,_,hp,wp = comp_pads(vshape, ps, stride, dil)
-    n_h = (hp - (ps-1)*dil - 1)//stride + 1
-    n_w = (wp - (ps-1)*dil - 1)//stride + 1
+def get_num_img(vshape,stride,ps,dil,only_full=True,use_pad=True):
+    if use_pad:
+        _,_,h,w = comp_pads(vshape, ps, stride, dil)
+    else:
+        _,_,h,w = vshape
+
+    if only_full:
+        n_h = (h - (ps-1)*dil - 1)//stride + 1
+        n_w = (w - (ps-1)*dil - 1)//stride + 1
+    else:
+        t,c,h,w = vshape
+        n_h = (h - 1)//stride + 1
+        n_w = (w - 1)//stride + 1
     return n_h,n_w
