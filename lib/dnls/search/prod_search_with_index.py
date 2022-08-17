@@ -141,7 +141,6 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                                                       stride0,n_h0,n_w0)
 
         # -- top k --
-        print(use_k)
         if use_k:
             dists,inds = allocate_rtn(nq,k,device)
             get_topk(dists_exh,inds_exh,dists,inds)

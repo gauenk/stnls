@@ -37,7 +37,6 @@ def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride0=4,stride1=1,dilation=1,
 
     # -- patches of topk --
     if use_k:
-        print(use_k)
         nlDists,nlInds = allocate_k(nq,k,device)
         get_topk(nlDists_exh,nlInds_exh,nlDists,nlInds)
     else:
