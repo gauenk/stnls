@@ -71,11 +71,6 @@ class L2SearchFunction_with_index(th.autograd.Function):
         dists_exh=dists_exh.view(b,-1)#.contiguous()
         inds_exh=inds_exh.view(b,-1,3)#.contiguous()
 
-        # -- fill if anchored --
-        if anchor_self:
-            args = th.where(dists_exh == -100)
-            dists_exh[args] = 0.
-
         # -- remove self --
         if remove_self:
             dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qstart,
@@ -87,6 +82,11 @@ class L2SearchFunction_with_index(th.autograd.Function):
             get_topk(dists_exh,inds_exh,dists,inds)
         else:
             dists,inds = dists_exh,inds_exh
+
+        # -- fill if anchored --
+        if anchor_self:
+            args = th.where(dists == -100)
+            dists[args] = 0.
 
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
