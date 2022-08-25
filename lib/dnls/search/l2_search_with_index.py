@@ -116,7 +116,6 @@ class L2SearchFunction_with_index(th.autograd.Function):
         grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
         grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
 
-        print("inds.shape: ",inds.shape)
         # -- allow for repeated exec --
         if nbwd == 1:
             dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
