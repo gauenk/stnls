@@ -21,7 +21,7 @@ class L2SearchFunction(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 dilation=1,stride=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
-                full_ws=False,remove_self=False,nbwd=1,exact=False):
+                full_ws=False,anchor_self=False,remove_self=False,nbwd=1,exact=False):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -45,16 +45,21 @@ class L2SearchFunction(th.autograd.Function):
 
         # -- forward --
         dnls_cuda.search_l2_forward(vid0, vid1, qinds, fflow, bflow,
-                                 dists_exh, inds_exh,
-                                 h0_off, w0_off, h1_off, w1_off,
-                                 ps, pt, ws_h, ws_w,
-                                 wt, chnls, dilation, stride, use_adj,
-                                 reflect_bounds, search_abs,  full_ws,
-                                 bufs, tranges, n_tranges, min_tranges)
+                                    dists_exh, inds_exh,
+                                    h0_off, w0_off, h1_off, w1_off,
+                                    ps, pt, ws_h, ws_w,
+                                    wt, chnls, dilation, stride, use_adj,
+                                    reflect_bounds, search_abs,  full_ws,
+                                    anchor_self, bufs, tranges, n_tranges, min_tranges)
         # -- shape for output --
         b = dists_exh.shape[0]
         dists_exh=dists_exh.view(b,-1)#.contiguous()
         inds_exh=inds_exh.view(b,-1,3)#.contiguous()
+
+        # -- fill if anchored --
+        if anchor_self:
+            args = th.where(dists_exh == -100)
+            dists_exh[args] = 0.
 
         # -- remove self --
         if remove_self:
@@ -112,7 +117,7 @@ class L2SearchFunction(th.autograd.Function):
 
         return grad_vid0,grad_vid1,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None
 
 class L2Search(th.nn.Module):
 
@@ -121,7 +126,7 @@ class L2Search(th.nn.Module):
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
-                 nbwd=1):
+                 anchor_self=False,nbwd=1):
         super(L2Search, self).__init__()
         self.k = k
         self.ps = ps
@@ -142,6 +147,7 @@ class L2Search(th.nn.Module):
         self.reflect_bounds = reflect_bounds
         self.search_abs = search_abs
         self.full_ws = full_ws
+        self.anchor_self = anchor_self
         self.remove_self = remove_self
         self.nbwd = nbwd
         self.exact = exact
@@ -181,6 +187,7 @@ class L2Search(th.nn.Module):
                                       self.dilation,self.stride,
                                       self.use_k,self.use_adj,
                                       self.reflect_bounds,self.search_abs,
-                                      self.full_ws,self.remove_self,
+                                      self.full_ws,self.anchor_self,
+                                      self.remove_self,
                                       self.nbwd,self.exact)
 

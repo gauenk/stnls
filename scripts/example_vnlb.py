@@ -1,8 +1,6 @@
 """
 
-An example script for a non-local means.
-
-Still in progress... scatter/gather coming soon.
+An example script for a video non-local bayes.
 
 """
 

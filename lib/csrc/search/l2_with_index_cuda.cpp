@@ -12,7 +12,8 @@ void l2_search_with_index_forward_cuda(
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls,
     int dilation, int stride1, bool use_adj,
-    bool reflect_bounds, bool search_abs, bool full_ws,
+    bool reflect_bounds, bool search_abs,
+    bool full_ws, bool anchor_self,
     torch::Tensor bufs, torch::Tensor tranges,
     torch::Tensor n_tranges, torch::Tensor min_tranges);
 
@@ -44,7 +45,8 @@ void l2_search_with_index_forward(
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride1,
-    bool use_adj, bool reflect_bounds, bool search_abs, bool full_ws,
+    bool use_adj, bool reflect_bounds, bool search_abs,
+    bool full_ws, bool anchor_self,
     torch::Tensor bufs,torch::Tensor tranges,
     torch::Tensor n_tranges,torch::Tensor min_tranges){
   CHECK_INPUT(vid0);
@@ -61,7 +63,8 @@ void l2_search_with_index_forward(
                                     qstart, nqueries, stride0, n_h0, n_w0,
                                     h0_off,w0_off,h1_off,w1_off,
                                     ps,pt,ws_h,ws_w,wt,chnls,dilation,stride1,
-                                    use_adj,reflect_bounds,search_abs,full_ws,
+                                    use_adj,reflect_bounds,search_abs,
+                                    full_ws,anchor_self,
                                     bufs,tranges,n_tranges,min_tranges);
 }
 

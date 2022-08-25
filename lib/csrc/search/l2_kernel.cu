@@ -42,7 +42,8 @@ __global__ void search_l2_forward_kernel(
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride,
-    bool use_adj, bool reflect_bounds, bool search_abs, bool full_ws,
+    bool use_adj, bool reflect_bounds, bool search_abs,
+    bool full_ws, bool anchor_self,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> bufs,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
@@ -293,14 +294,17 @@ __global__ void search_l2_forward_kernel(
           inds[bidx][wt_k][ws_i][ws_j][2] = n_wi;
 
           // -- final check [put self@index 0] --
-          // eq_ti = n_ti == ti;
-          // eq_hi = n_hi == hi;
-          // eq_wi = n_wi == wi;
-          // eq_dim = eq_ti && eq_hi && eq_wi;
-          // dist = dists[bidx][wt_k][ws_i][ws_j];
-          // if (eq_dim){
-          //   dists[bidx][wt_k][ws_i][ws_j] = -100;
-          // }
+          if (anchor_self){
+              eq_ti = n_ti == ti;
+              eq_hi = n_hi == hi;
+              eq_wi = n_wi == wi;
+              eq_dim = eq_ti && eq_hi && eq_wi;
+              dist = dists[bidx][wt_k][ws_i][ws_j];
+              if (eq_dim){
+                dists[bidx][wt_k][ws_i][ws_j] = -100;
+              }
+          }
+
 
         }
       }
@@ -315,7 +319,8 @@ void search_l2_forward_cuda(
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride,
-    bool use_adj, bool reflect_bounds, bool search_abs, bool full_ws,
+    bool use_adj, bool reflect_bounds, bool search_abs,
+    bool full_ws, bool anchor_self,
     torch::Tensor bufs, torch::Tensor tranges,
     torch::Tensor n_tranges, torch::Tensor min_tranges){
 
@@ -349,7 +354,7 @@ void search_l2_forward_cuda(
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         h0_off, w0_off, h1_off, w1_off,
         ps, pt, ws_h, ws_w, wt, chnls, dilation, stride,
-        use_adj, reflect_bounds, search_abs, full_ws,
+        use_adj, reflect_bounds, search_abs, full_ws, anchor_self,
         bufs.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
         n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),

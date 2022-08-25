@@ -11,6 +11,7 @@ void init_prod_with_index_search(py::module &);
 
 // -- reducing --
 void init_wpsum(py::module &);
+void init_iwpsum(py::module &);
 void init_wpsum_heads(py::module &);
 void init_wpsum_heads_2vid(py::module &);
 
@@ -33,6 +34,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_prod_with_index_search(m);
 
   init_wpsum(m);
+  init_iwpsum(m);
   init_wpsum_heads(m);
   init_wpsum_heads_2vid(m);
 
