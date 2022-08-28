@@ -37,9 +37,6 @@ SAVE_DIR = Path("./output/tests/l2_search_with_index")
 #
 
 def pytest_generate_tests(metafunc):
-    seed = 234
-    th.manual_seed(seed)
-    np.random.seed(seed)
     # test_lists = {"ps":[3],"stride":[1],"dilation":[1,2],
     #               "top":[3],"btm":[62],"left":[2],"right":[62]}
     # test_lists = {"ps":[4],"stride":[1,2],"dilation":[2],
@@ -48,15 +45,18 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    test_lists = {"ps":[7],"stride0":[4],"stride1":[4],"dilation":[1],"wt":[0],
-                  "ws":[-1],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1],
-                  "exact":[True],"reflect_bounds":[False]}
+    test_lists = {"ps":[7],"stride0":[2,4],"stride1":[4],"dilation":[1],"wt":[1,3],
+                  "ws":[15,32],"k":[30],"exact":[True],"reflect_bounds":[True],
+                  "seed":[123,234,0,1,2,3,4]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
+def set_seed(seed):
+    th.manual_seed(seed)
+    np.random.seed(seed)
 
 #
 # -- forward testing --
@@ -73,13 +73,13 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
-    k,pt = 1,1
+    pt = 1
     wt = 0
     ws = -1
     k = -1
     # stride0 = stride
     # stride1 = 1
-    search_abs = True
+    search_abs = ws == -1
     use_k = k>0
     exact = True
 
@@ -109,6 +109,8 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows.fflow = 5*th.randn_like(flows.fflow)
+    flows.bflow = 5*th.randn_like(flows.bflow)
 
     # -- unpack image --
     device = vid.device
@@ -122,7 +124,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     n_h0,n_w0 = n0[0],n0[1]
     n_h1,n_w1 = n1[0],n1[1]
 
-    # -- exec fold fxns --
+    # -- init --
     use_adj = True
     h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
     h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
@@ -149,12 +151,14 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     mode = "reflect" if reflect_bounds else "zero"
     score_gt = dnls.simple.search_nn.run_nn(vid,ps,stride=stride0,mode=mode,
                                             dilation=dil,vid1=vidr,stride1=stride1)
-    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
+    if ws == -1:
+        score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
 
     # -- testing code --
     score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
+    if ws == -1:
+        score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- compare --
     tol = 1e-5
@@ -167,20 +171,22 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 
-def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
+def test_cu_vs_simp_fwd(ws,wt,k,ps,stride0,stride1,dilation,reflect_bounds,exact,
+                        seed):
 
+    # -- set seed --
+    set_seed(seed)
 
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
-    k,pt = 1,1
-    wt = 3
-    ws = -1
+    pt = 1
+    # wt = 3
+    # ws = -1
     # stride0 = stride
     # stride1 = 1
     search_abs = k<=0
     use_k = k>0
-    if ws == -1 and k > 0: ws = 10
     exact = True
     use_adj = True
 
@@ -194,22 +200,32 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:3].contiguous()
+    vid = th.from_numpy(vid).to(device)[:5].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
     # vid = th.cat([vid,vid],-1)
-    # vid = th.cat([vid,vid],-1)
+    vid = th.cat([vid,vid],-1)
+    vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
-    # vid = th.cat([vid,vid],-2)
+    print("vid.shape: ",vid.shape)
 
     # -- normalize --
     vid /= vid.max()
     # vidr = th.ones_like(vid)
     vidr = th.rand_like(vid)
+    vidr = th.rand_like(vid)
+    print(ws,wt,k,ps,stride0,stride1)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows.fflow = (10*th.randn_like(flows.fflow)).int().float()
+    flows.bflow = (10*th.randn_like(flows.bflow)).int().float()
+    # print(flows.fflow.abs().max())
+    # print(flows.bflow.abs().max())
+    # flows.fflow = 10*th.randn_like(flows.fflow).float()
+    # flows.bflow = 10*th.randn_like(flows.bflow).float()
+
 
     # -- unpack image --
     device = vid.device
@@ -247,29 +263,54 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- run search --
     iqueries = dnls.utils.inds.get_query_batch(qindex,nbatch,stride0,t,h,w,device)
-    score_gt,_ = dnls.simple.search.run(vid,iqueries,flows,k,ps,pt,ws,wt,chnls,
-                                        dilation=dil,stride=stride1,use_adj=use_adj,
-                                        reflect_bounds=reflect_bounds,
-                                        search_abs=search_abs,
-                                        h0_off=h0_off,w0_off=w0_off,
-                                        h1_off=h1_off,w1_off=w1_off,
-                                        vid1=vidr)
+    score_gt,inds_gt = dnls.simple.search.run(vid,iqueries,flows,k,ps,pt,ws,wt,chnls,
+                                              dilation=dil,stride=stride1,
+                                              use_adj=use_adj,
+                                              reflect_bounds=reflect_bounds,
+                                              search_abs=search_abs,
+                                              h0_off=h0_off,w0_off=w0_off,
+                                              h1_off=h1_off,w1_off=w1_off,
+                                              vid1=vidr)
 
     # -- testing code --
     score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
 
     # -- viz --
+    # print(ws)
     # print(score_te[0,:3])
     # print(score_gt[0,:3])
+    # args = th.where(th.abs(score_te - score_gt) > 1e-3)
+    # print(args)
+    # print(score_te[args])
+    # print(score_gt[args])
+    # print("-"*10)
+    # print(inds_te[63,:3])
+    # print(inds_gt[63,:3])
+    # print(inds_te[1055,:3])
+    # print(inds_gt[1055,:3])
+    # print("-"*10)
+    # print(inds_te[...,0][args])
+    # print(inds_te[...,1][args])
+    # print(inds_te[...,2][args])
+    # print("-"*10)
+    # print(inds_gt[...,0][args])
+    # print(inds_gt[...,1][args])
+    # print(inds_gt[...,2][args])
+    # print("-"*10)
 
     # -- compare --
+    eps = 1e-5
     tol = 1e-5
-    error = th.mean(th.abs(score_te - score_gt)/score_gt.abs()).item()
+    diff = th.abs(score_te - score_gt)/(score_gt.abs()+eps)
+    args = th.where(score_gt.abs()>eps)
+
+    error = diff.mean().item()
     if error > tol: print("error: ",error)
     assert error < tol
 
     tol = 1e-4
-    max_error = th.abs((score_te - score_gt)/score_gt.abs()).max().item()
+    diff = th.abs(score_te - score_gt)
+    max_error = diff.max().item()
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 

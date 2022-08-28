@@ -45,12 +45,12 @@ def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
         bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
 
-def allocate_exh(nq,ws_h,ws_w,wt,device):
-    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
-    dists[...] = -float("inf")
-    inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
-    inds[...] = -1
-    return dists,inds
+# def allocate_exh(nq,ws_h,ws_w,wt,device):
+#     dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
+#     dists[...] = -float("inf")
+#     inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
+#     inds[...] = -1
+#     return dists,inds
 
 def allocate_rtn(nq,k,device):
     dists = th.zeros((nq,k),device=device,dtype=th.float32)
@@ -115,7 +115,7 @@ class ProductSearchFunction(th.autograd.Function):
 
         # -- allocs --
         bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
-        dists_exh,inds_exh = allocate_exh(nq,ws_h,ws_w,wt,device)
+        dists_exh,inds_exh = allocate_exh_prod(nq,ws_h,ws_w,wt,device)
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)

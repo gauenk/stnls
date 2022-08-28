@@ -14,25 +14,6 @@ from dnls.utils.timer import ExpTimer
 # -- local --
 from .search_utils import *
 
-def get_topk(l2_vals,l2_inds,vals,inds):
-
-    # -- reshape exh --
-    nq = l2_vals.shape[0]
-    l2_vals = l2_vals.view(nq,-1)
-    l2_inds = l2_inds.view(nq,-1,3)
-
-    # -- shape info --
-    b,_ = l2_vals.shape
-    _,k = vals.shape
-
-    # -- fill nan --
-    l2_vals[th.where(th.isnan(l2_vals))] = -th.inf # fix nan
-
-    # -- take mins --
-    order = th.argsort(l2_vals,dim=1,descending=True)
-    vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
-    for i in range(inds.shape[-1]):
-        inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
 
 def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
@@ -45,12 +26,12 @@ def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
         bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
 
-def allocate_exh(nq,ws_h,ws_w,wt,device):
-    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
-    dists[...] = -float("inf")
-    inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
-    inds[...] = -1
-    return dists,inds
+# def allocate_exh(nq,ws_h,ws_w,wt,device):
+#     dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
+#     dists[...] = -float("inf")
+#     inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
+#     inds[...] = -1
+#     return dists,inds
 
 def allocate_rtn(nq,k,device):
     dists = th.zeros((nq,k),device=device,dtype=th.float32)
@@ -114,8 +95,8 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
 
         # -- allocs --
-        bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
-        dists_exh,inds_exh = allocate_exh(nq,ws_h,ws_w,wt,device)
+        # bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
+        dists_exh,inds_exh = allocate_exh_prod(nq,wt,ws_h,ws_w,device)
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -128,8 +109,9 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation,
             use_search_abs, reflect_bounds, use_adj, full_ws,
             oh0, ow0, oh1, ow1,
-            bufs,tranges,n_tranges,min_tranges)
+            tranges,n_tranges,min_tranges)
 
+        th.cuda.synchronize()
         # -- shape for output --
         b = dists_exh.shape[0]
         dists_exh=dists_exh.view(b,-1)#.contiguous()
@@ -143,7 +125,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         # -- top k --
         if use_k:
             dists,inds = allocate_rtn(nq,k,device)
-            get_topk(dists_exh,inds_exh,dists,inds)
+            get_topk_prod(dists_exh,inds_exh,dists,inds)
             dists = dists.contiguous()
             inds = inds.contiguous()
         else:
@@ -152,7 +134,6 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             b = dists_exh.shape[0]
             dists=dists_exh.view(b,-1)#.contiguous()
             inds=inds_exh.view(b,-1,3)#.contiguous()
-        # print(dists)
 
         # -- for backward --
         ctx.save_for_backward(dists,inds,vid0,vid1)

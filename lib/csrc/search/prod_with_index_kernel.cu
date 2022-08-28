@@ -43,7 +43,6 @@ __global__ void search_prod_with_index_forward_kernel(
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride1, int dilation, 
     bool search_abs, bool use_bounds, bool use_adj, bool full_ws,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> bufs,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
@@ -70,6 +69,11 @@ __global__ void search_prod_with_index_forward_kernel(
   int adj = use_adj ? psHalf : 0;
   int n_hw0 = n_h0 * n_w0;
 
+  // accumulate time offsets
+  bool dir_fwd = true; // forward
+  bool swap_dir = false;
+  int prev_h,prev_w,prev_t;
+  int min_t;
 
   // column index
   int blkDimX = blockDim.x; // num threads in x-block
@@ -114,6 +118,7 @@ __global__ void search_prod_with_index_forward_kernel(
     ti = qindex / n_hw0;
     wi = ((i_mod % n_w0) * stride0) % width ;
     hi = ((i_mod / n_w0) * stride0) % height;
+    min_t = min_tranges[ti];
 
     // -- valid (anchor pixel) --
     valid_ti = (ti < nframes) && (ti >= 0);
@@ -151,21 +156,39 @@ __global__ void search_prod_with_index_forward_kernel(
         ws_j = cu_tidY + blkDimY*_yi;
         if (ws_j >= ws_w){ continue; }
 
+        // -- reset flow search --
+        dir_fwd = true;
+        swap_dir = false;
         for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
           int n_ti = tranges[ti][wt_k];
-          int dt = n_ti - min_tranges[ti];
+          int dt = n_ti - min_t;
 
           // ------------------------
           //      init direction
           // ------------------------
+
+          // -- init direction --
           int direction = max(-1,min(1,n_ti - ti));
+
+          // -- reset to anchor when swapping directions --
+          swap_dir = (dir_fwd == true) && (direction == -1);
+          dir_fwd = swap_dir ? false : dir_fwd;
+          prev_w = swap_dir ? wi : prev_w;
+          prev_h = swap_dir ? hi : prev_h;
+          prev_t = swap_dir ? ti : prev_t;
+
+          // -- compute optical flow --
           if (direction != 0){
 
             // -- get offset at index --
-            int dtd = int(dt-direction);
-            cw0 = 1.*bufs[bidx][0][dtd][ws_i][ws_j];
-            ch0 = 1.*bufs[bidx][1][dtd][ws_i][ws_j];
-            ct0 = 1.*bufs[bidx][2][dtd][ws_i][ws_j];
+            cw0 = 1.*prev_w;
+            ch0 = 1.*prev_h;
+            ct0 = 1.*prev_t;
+            
+            // int dtd = int(dt-direction);
+            // cw0 = 1.*bufs[bidx][0][dtd][ws_i][ws_j];
+            // ch0 = 1.*bufs[bidx][1][dtd][ws_i][ws_j];
+            // ct0 = 1.*bufs[bidx][2][dtd][ws_i][ws_j];
 
             // -- legalize access --
             l_cw0 = int(max(0,min(w-1,int(cw0))));
@@ -194,14 +217,19 @@ __global__ void search_prod_with_index_forward_kernel(
             ct = ti;
           }
 
+
           // ----------------
           //     update
           // ----------------
-          if (wt > 0){
-            bufs[bidx][0][dt][ws_i][ws_j] = cw;
-            bufs[bidx][1][dt][ws_i][ws_j] = ch;
-            bufs[bidx][2][dt][ws_i][ws_j] = ct;
-          }
+          prev_w = cw;
+          prev_h = ch;
+          prev_t = ct;
+
+          // if (wt > 0){
+          //   bufs[bidx][0][dt][ws_i][ws_j] = cw;
+          //   bufs[bidx][1][dt][ws_i][ws_j] = ch;
+          //   bufs[bidx][2][dt][ws_i][ws_j] = ct;
+          // }
 
           // --------------------
           //      init dists
@@ -228,7 +256,6 @@ __global__ void search_prod_with_index_forward_kernel(
           valid_n_wi = (n_wi < width) && (n_wi >= 0);
           valid_n = valid_n_ti && valid_n_hi && valid_n_wi;
           valid = valid_n && valid_anchor;
-          // valid = valid_anchor;
 
           // ---------------------------------
           //
@@ -264,7 +291,7 @@ __global__ void search_prod_with_index_forward_kernel(
 
                 // -- propose width --
                 nW = (n_wi-w1_off) + dilation*(pj - psHalf + adj);
-                nW = use_bounds ? bounds(nW,height) : nW;
+                nW = use_bounds ? bounds(nW,width) : nW;
                 nvalid_w = (nW < width) && (nW >= 0);
 
                 // -- check valid --
@@ -319,7 +346,7 @@ void search_prod_with_index_forward_cuda(
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride1, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj, bool full_ws,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    torch::Tensor bufs, torch::Tensor tranges, torch::Tensor n_tranges,
+    torch::Tensor tranges, torch::Tensor n_tranges,
     torch::Tensor min_tranges){
 
     // # -- launch params --
@@ -356,7 +383,6 @@ void search_prod_with_index_forward_cuda(
          qstart, stride0, n_h0, n_w0,
          ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation, 
          use_search_abs, use_bounds, use_adj, full_ws, h0_off, w0_off, h1_off, w1_off,
-         bufs.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
          tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
          n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
          min_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),

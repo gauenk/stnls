@@ -635,6 +635,8 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows.fflow = 10*th.randn_like(flows.fflow)
+    flows.bflow = 10*th.randn_like(flows.fflow)
 
     # -- unpack image --
     device = vid.device

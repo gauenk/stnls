@@ -13,7 +13,7 @@ void search_prod_with_index_forward_cuda(
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
     bool full_ws, int oh0, int ow0, int oh1, int ow1,
-    torch::Tensor bufs,torch::Tensor tranges,
+    torch::Tensor tranges,
     torch::Tensor n_tranges,torch::Tensor min_tranges);
 
 
@@ -42,7 +42,7 @@ void search_prod_with_index_forward(
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
     bool full_ws, int oh0, int ow0, int oh1, int ow1,
-    torch::Tensor bufs,torch::Tensor tranges,
+    torch::Tensor tranges,
     torch::Tensor n_tranges,torch::Tensor min_tranges){
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
@@ -50,7 +50,6 @@ void search_prod_with_index_forward(
   CHECK_INPUT(bflow);
   CHECK_INPUT(nlDists);
   CHECK_INPUT(nlInds);
-  CHECK_INPUT(bufs);
   CHECK_INPUT(tranges);
   CHECK_INPUT(n_tranges);
   CHECK_INPUT(min_tranges);
@@ -59,7 +58,7 @@ void search_prod_with_index_forward(
           qstart, stride0, n_h0, n_w0,
           ps,pt,ws_h,ws_w,wt,chnls,stride,dilation,
           use_search_abs, use_bounds, use_adj,
-          full_ws, oh0, ow0, oh1, ow1, bufs,
+          full_ws, oh0, ow0, oh1, ow1,
           tranges, n_tranges, min_tranges);
 }
 

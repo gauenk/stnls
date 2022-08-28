@@ -2,6 +2,7 @@
 # -- python --
 import torch as th
 import numpy as np
+from einops import rearrange
 
 # -- padding --
 from dnls.utils.pads import comp_pads
@@ -12,11 +13,11 @@ import dnls_cuda
 # -- local --
 from .search_utils import *
 
-class L2SearchFunction_with_index(th.autograd.Function):
+class WindowSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
-                qstart, nqueries, stride0,
+                qstart, nqueries, nheads, stride0,
                 h0_off, w0_off, h1_off, w1_off,
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 dilation=1,stride1=1,use_k=True,use_adj=True,
@@ -35,39 +36,45 @@ class L2SearchFunction_with_index(th.autograd.Function):
         t,c,h,w = vid0.shape
         n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
 
+        # -- reshape with heads --
+        assert c % nheads == 0,"must be multiple of each other."
+        vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads)
+        vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads)
+
         # -- allocs --
-        nq = nqueries
-        dists_exh,inds_exh = allocate_exh(nq,wt,ws_h,ws_w,device)
+        B = nqueries*nheads
+        dists_exh,inds_exh = allocate_exh_prod(B,wt,ws_h,ws_w,device)
+        dists_exh = dists_exh.view(nheads,nqueries,-1,ws_h,ws_w)
+        inds_exh = inds_exh.view(nheads,nqueries,-1,ws_h,ws_w,3)
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
-        # print(fflow.shape,bflow.shape)
-        # print(tranges)
-        # print(n_tranges)
-        # print(min_tranges)
-        # print(th.all(fflow.abs()<1e-10),th.all(bflow.abs()<1e-10))
+        partition = create_window_partition(*vid0.shape[-2:],ws_h,ws_w,device)
 
-        # -- forward --
-        gpuid = th.cuda.current_device()
-        # print(gpuid,device)
+        # -- flow to device --
+        device = vid0.device
         fflow = fflow.to(device)
         bflow = bflow.to(device)
+
+        # -- set kernel device --
+        # gpuid = th.cuda.current_device()
         th.cuda.set_device(device)
-        dnls_cuda.l2_search_with_index_forward(vid0, vid1, fflow, bflow,
-                                               dists_exh, inds_exh,
-                                               qstart, nqueries, stride0,
-                                               n_h0, n_w0,
-                                               h0_off, w0_off, h1_off, w1_off,
-                                               ps, pt, ws_h, ws_w,
-                                               wt, chnls, dilation, stride1, use_adj,
-                                               reflect_bounds, search_abs, full_ws,
-                                               anchor_self, tranges,
-                                               n_tranges, min_tranges)
+
+        # -- forward --
+        dnls_cuda.window_search_forward(vid0, vid1, fflow, bflow,
+                                        dists_exh, inds_exh,
+                                        qstart, stride0, n_h0, n_w0,
+                                        h0_off, w0_off, h1_off, w1_off,
+                                        ps, pt, ws_h, ws_w,
+                                        wt, chnls, dilation, stride1, use_adj,
+                                        reflect_bounds, search_abs, full_ws,
+                                        anchor_self, tranges, n_tranges,
+                                        min_tranges, partition)
 
         # -- shape for output --
-        b = dists_exh.shape[0]
-        dists_exh=dists_exh.view(b,-1)#.contiguous()
-        inds_exh=inds_exh.view(b,-1,3)#.contiguous()
+        H,b = dists_exh.shape[:2]
+        dists_exh=dists_exh.view(H*b,-1)#.contiguous()
+        inds_exh=inds_exh.view(H*b,-1,3)#.contiguous()
 
         # -- remove self --
         if remove_self:
@@ -76,15 +83,21 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- topk --
         if use_k:
-            dists,inds = allocate_rtn(nq,k,device)
+            HB = dists_exh.shape[0]
+            dists,inds = allocate_rtn(HB,k,device)
             get_topk(dists_exh,inds_exh,dists,inds)
         else:
+            args = th.where(th.isnan(dists_exh))
+            dists_exh[args] = -th.inf # fix nan
             dists,inds = dists_exh,inds_exh
 
         # -- fill if anchored --
         if anchor_self:
-            args = th.where(dists == -100)
-            dists[args] = 0.
+            raise ValueError("Still unknown how to fix the 'self' position.")
+
+        # -- shape with heads -
+        dists = dists.view(H,b,-1)
+        inds = inds.view(H,b,-1,3)
 
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
@@ -116,24 +129,24 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
-                                                    vid0,vid1,
-                                                    grad_dists,inds,
-                                                    qstart,stride0,n_h0,n_w0,
-                                                    h0_off, w0_off, h1_off, w1_off,
-                                                    ps,pt,dil, use_adj,
-                                                    reflect_bounds,use_rand,exact)
+            dnls_cuda.window_search_backward(grad_vid0,grad_vid1,
+                                             vid0,vid1,
+                                             grad_dists,inds,
+                                             qstart,stride0,n_h0,n_w0,
+                                             h0_off, w0_off, h1_off, w1_off,
+                                             ps,pt,dil, use_adj,
+                                             reflect_bounds,use_rand,exact)
         else:
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
-                                                        vid0,vid1,
-                                                        grad_dists,inds,
-                                                        qstart,stride0,n_h0,n_w0,
-                                                        h0_off, w0_off, h1_off, w1_off,
-                                                        ps,pt,dil,use_adj,
-                                                        reflect_bounds,use_rand,exact)
+                dnls_cuda.window_search_backward(grad_vid0_i,grad_vid1_i,
+                                                 vid0,vid1,
+                                                 grad_dists,inds,
+                                                 qstart,stride0,n_h0,n_w0,
+                                                 h0_off, w0_off, h1_off, w1_off,
+                                                 ps,pt,dil,use_adj,
+                                                 reflect_bounds,use_rand,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
             grad_vid0 /= nbwd
@@ -143,20 +156,21 @@ class L2SearchFunction_with_index(th.autograd.Function):
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
-class L2Search_with_index(th.nn.Module):
+class WindowSearch(th.nn.Module):
 
-    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, chnls=-1,
-                 dilation=1, stride0=1, stride1=1,
+    def __init__(self, fflow, bflow, k, ps, pt, ws, wt, nheads,
+                 chnls=-1, dilation=1, stride0=1, stride1=1,
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, nbwd=1, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
                  anchor_self=False,use_rand=True):
-        super(L2Search_with_index, self).__init__()
+        super().__init__()
         self.k = k
         self.ps = ps
         self.pt = pt
         self.ws = ws
         self.wt = wt
+        self.nheads = nheads
         self.fflow = fflow
         self.bflow = bflow
         self.chnls = chnls
@@ -209,16 +223,17 @@ class L2Search_with_index(th.nn.Module):
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
-        return L2SearchFunction_with_index.apply(vid0,vid1,
-                                                 self.fflow,self.bflow,
-                                                 qstart,nqueries,self.stride0,
-                                                 self.h0_off,self.w0_off,
-                                                 self.h1_off,self.w1_off,
-                                                 k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
-                                                 self.dilation,self.stride1,
-                                                 self.use_k,self.use_adj,
-                                                 self.reflect_bounds,self.search_abs,
-                                                 self.full_ws,self.anchor_self,
-                                                 self.remove_self,
-                                                 self.nbwd,self.use_rand,self.exact)
+        return WindowSearchFunction.apply(vid0,vid1,
+                                          self.fflow,self.bflow,
+                                          qstart,nqueries,self.nheads,
+                                          self.stride0,
+                                          self.h0_off,self.w0_off,
+                                          self.h1_off,self.w1_off,
+                                          k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
+                                          self.dilation,self.stride1,
+                                          self.use_k,self.use_adj,
+                                          self.reflect_bounds,self.search_abs,
+                                          self.full_ws,self.anchor_self,
+                                          self.remove_self,
+                                          self.nbwd,self.use_rand,self.exact)
 

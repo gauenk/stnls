@@ -2,7 +2,7 @@
 # -- python --
 import torch as th
 import numpy as np
-from einops import repeat
+from einops import rearrange,repeat
 
 # -- padding --
 from dnls.utils.pads import comp_pads
@@ -23,6 +23,26 @@ def get_topk(l2_vals,l2_inds,vals,inds):
 
     # -- take mins --
     order = th.argsort(l2_vals,dim=1,descending=False)
+    vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
+    for i in range(inds.shape[-1]):
+        inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
+
+def get_topk_prod(l2_vals,l2_inds,vals,inds):
+
+    # -- reshape exh --
+    nq = l2_vals.shape[0]
+    l2_vals = l2_vals.view(nq,-1)
+    l2_inds = l2_inds.view(nq,-1,3)
+
+    # -- shape info --
+    b,_ = l2_vals.shape
+    _,k = vals.shape
+
+    # -- fill nan --
+    l2_vals[th.where(th.isnan(l2_vals))] = -th.inf # fix nan
+
+    # -- take mins --
+    order = th.argsort(l2_vals,dim=1,descending=True)
     vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
@@ -82,6 +102,13 @@ def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
         st = min(t,2*wt+1)
         bufs = th.zeros(nq,3,st,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
+
+def allocate_exh_prod(nq,wt,ws_h,ws_w,device):
+    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
+    dists[...] = -float("inf")
+    inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
+    inds[...] = -1
+    return dists,inds
 
 def allocate_exh(nq,wt,ws_h,ws_w,device):
     dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
@@ -144,3 +171,33 @@ def get_num_img(vshape,stride,ps,dil,only_full=True,use_pad=True):
         n_h = (h - 1)//stride + 1
         n_w = (w - 1)//stride + 1
     return n_h,n_w
+
+def create_window_partition(h,w,ws_h,ws_w,device):
+
+    # -- create index image --
+    img = np.arange(h*w).reshape(h,w)
+    img_h = img // w
+    img_w = img % w
+    img = np.stack([img_h,img_w])
+
+    # -- unravel to windows --
+    shape_str = 'two (nh h) (nw w) -> two nh nw h w'
+    img = rearrange(img,shape_str,h=ws_h,w=ws_w)
+    _,nh,nw,_,_ = img.shape
+    img = img.reshape(2,nh*nw,-1)
+
+    # -- set each region to min --
+    h_min = np.min(img[0,:,:],1)
+    w_min = np.min(img[1,:,:],1)
+    img[0,:,:] = h_min[:,None]
+    img[1,:,:] = w_min[:,None]
+
+    # -- finalize format --
+    shape_str = 'two (nh nw) (h w) -> (nh h) (nw w) two'
+    img = rearrange(img,shape_str,nh=nh,nw=nw,h=ws_h,w=ws_w)
+
+    # -- to tensor --
+    img = img.astype(np.int32)
+    img = th.from_numpy(img).to(device)
+
+    return img

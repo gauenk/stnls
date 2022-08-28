@@ -4,7 +4,7 @@ from . import search_full_ws
 from . import search_nn
 from . import prod_search
 from . import prod_search_nn
-
+from . import window_search
 
 from . import fold_k_1d
 from . import fold_k

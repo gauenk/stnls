@@ -1,5 +1,6 @@
 
 # -- python-only kernel --
+import math
 from numba import cuda,jit
 from numba.core.errors import NumbaPerformanceWarning
 import warnings
@@ -308,8 +309,8 @@ def numba_search(vid0,vid1,iqueries,dists,inds,fflow,bflow,
                         ch_f = ch0 + flow[l_ct0,1,l_ch0,l_cw0]
 
                         # -- round --
-                        cw_f = int(cw_f + 0.5)
-                        ch_f = int(ch_f + 0.5)
+                        cw_f = int(math.floor(cw_f + 0.5))
+                        ch_f = int(math.floor(ch_f + 0.5))
 
                         # -- bounds --
                         cw = max(0,min(width-1,cw_f))
@@ -403,8 +404,8 @@ def numba_search(vid0,vid1,iqueries,dists,inds,fflow,bflow,
                                         n_pix = 0.
 
                                     # -- compute dist --
-                                    if valid:
-                                        dist += (v_pix - n_pix)**2
+                                    # if valid:
+                                    dist += (v_pix - n_pix)**2
 
                     # -- dists --
                     if not(valid): dist = np.inf
