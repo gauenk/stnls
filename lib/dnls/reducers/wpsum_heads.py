@@ -40,6 +40,18 @@ class WpSumHeadsFunction(th.autograd.Function):
         device = dists.device
         nheads,nq,k = dists.shape
         patches = allocate_patches(nq,nheads,ps,pt,vid.shape[2],device)
+
+        print(vid.shape)
+        print(patches.shape)
+        print(dists.shape)
+        print(inds.shape)
+        print("-"*10)
+
+        # void cuda_wpsum_heads_forward(
+        #     torch::Tensor vid, torch::Tensor patches,
+        #     torch::Tensor dists, torch::Tensor inds,
+        #     int h_off, int w_off, int dilation, int adj, bool reflect_bounds){
+        print(h_off,w_off,dilation,adj,reflect_bounds)
         dnls_cuda.wpsum_heads_forward(vid, patches, dists, inds,
                                       h_off,w_off,dilation,adj,
                                       reflect_bounds)

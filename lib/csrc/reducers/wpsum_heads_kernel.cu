@@ -153,11 +153,12 @@ void cuda_wpsum_heads_forward(
   int ps = patches.size(5);
   int MAX_THREADS = 1024;
   int dim = ps*ps;
-  int cpb = MAX_THREADS/dim; // num of colors per block
-  int cpt = ((colors - 1)/cpb) + 1; // num of colors per thread
-  dim3 nthreads(cpb,ps,ps);
-  // printf("colors: %d, cpt: %d, cpb: %d, ps: %d, nblocks: %d, rbounds: %d\n",
-  //        colors,cpt,cpb,ps,nblocks,(int)reflect_bounds);
+  int color_nthreads = MAX_THREADS/dim; // num of colors per block
+  color_nthreads = min(color_nthreads,colors);
+  int cpt = ((colors - 1)/color_nthreads) + 1; // num of colors per thread
+  dim3 nthreads(color_nthreads,ps,ps);
+  printf("colors: %d, cpt: %d, cpb: %d, ps: %d, nblocks: %d,%d, rbounds: %d\n",
+         colors,cpt,color_nthreads,ps,query_nblocks,head_nblocks,reflect_bounds);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "wpsum_heads_forward_kernel", ([&] {

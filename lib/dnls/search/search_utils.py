@@ -185,6 +185,7 @@ def create_window_partition(h,w,ws_h,ws_w,device):
     img = rearrange(img,shape_str,h=ws_h,w=ws_w)
     _,nh,nw,_,_ = img.shape
     img = img.reshape(2,nh*nw,-1)
+    print("img.shape: ",img.shape)
 
     # -- set each region to min --
     h_min = np.min(img[0,:,:],1)
@@ -199,5 +200,13 @@ def create_window_partition(h,w,ws_h,ws_w,device):
     # -- to tensor --
     img = img.astype(np.int32)
     img = th.from_numpy(img).to(device)
+    print("img.shape: ",img.shape)
+    # for i in range(10):
+    #     print(i,img[8*i,8*i])
+    # i = 16
+    # print(i,img[8*i,8*i])
+    # print(img[:8,:8])
+    # print(img[::8,::8,0])
+    # print(img[::8,::8,1])
 
     return img

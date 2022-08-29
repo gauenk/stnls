@@ -28,6 +28,9 @@ import dnls.utils.gpu_mem as gpu_mem
 from dnls.utils.pads import comp_pads
 from dnls.utils.inds import get_batching_info
 
+# -- misc --
+import torch.nn.functional as nnf
+
 # -- check if reordered --
 from scipy import optimize
 SAVE_DIR = Path("./output/tests/window_search")
@@ -48,7 +51,7 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    test_lists = {"ps":[7],"stride0":[4],"stride1":[1],"dilation":[1],"wt":[0],
+    test_lists = {"ps":[1],"stride0":[1],"stride1":[1],"dilation":[1],"wt":[0],
                   "ws":[-1],"k":[-1],"exact":[True],"reflect_bounds":[False],
                   "nheads":[1]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
@@ -146,32 +149,124 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     #
 
     # -- ground-truth --
-    vid_gt = dnls.simple.window_search.run(vid,8)
+    vid_gt,dists_gt = dnls.simple.window_search.run(vid,8,nheads)
+    dists_gt = rearrange(dists_gt,'1 (b d1) d2 -> b d1 d2',d1=8*8)
 
     # -- vid ours --
-    dists,inds = search(vid,0,ntotal)
-    print(dists[0,0,:10])
-    print(inds[0,0,:10])
-    patches = wpsum(vid,dists,inds)
-    patches = rearrange(patches,'b H c h w -> b 1 1 (H c) h w')
-    print(patches.shape)
-    fold(patches,0)
-    print(th.where(fold.zvid == 0))
-    print(fold.zvid)
-    vid_te = fold.vid# / fold.zvid
-    vid_te /= ps*ps*color
+    dists_te,inds_te = search(vid,0,ntotal)
+    dists = dists_te
+    dists_te = rearrange(dists_te,'H (h w) d2 -> H h w d2',h=n_h0)
+    dists_te = rearrange(dists_te,'H (nh rh) (nw rw) d2 -> H (nh nw) (rh rw) d2',
+                         rh=8,rw=8)
+    H,N,R,D = dists_te.shape
+    # dists_s = dists_te
+    dists_s = nnf.softmax(dists_te.view(H,N*R,D),-1).view(H,N,R,D)
+    dists_s = rearrange(dists_s,'H (nh nw) (rh rw) d2 -> H (nh rh) (nw rw) d2',
+                        rh=8,rw=8,nh=16)
+    dists_s = rearrange(dists_s,'H h w d2 -> H (h w) d2')
+    # print("diff: ",th.abs(dists_s - dists).mean().item())
 
-    print(vid_te[0,0,:3,:3]/vid_gt[0,0,:3,:3])
-    print(vid_te[0,0,:3,:3])
-    print(vid_gt[0,0,:3,:3])
+    # print(dists[0,0,:10])
+    # print(inds[0,0,:10])
+    vid_m = vid.clone()
+    # vid_m[...] = 1
+    # print("wpsum shapes: ",vid_m.shape,dists_s.shape,inds_te.shape)
+    patches = wpsum(vid_m,dists_s,inds_te)
+
+    # -- no fold --
+    # patches = rearrange(patches,'b H c 1 1 -> b (H c)')
+    # vid_te = rearrange(patches,'(h w) c -> 1 c h w',h=128)
+
+    # print("patches.shape: ",patches.shape)
+    # patches = rearrange(patches,'(b d1) 1 1 c 1 1 -> b d1 c',d1=64)
+    # t,h,w = 1,128,128
+    # win_size = 8
+    # windows = patches.view(t, h // win_size, w // win_size, win_size, win_size, -1)
+    # vid_te = windows.permute(0, 1, 3, 2, 4, 5)
+    # vid_te = vid_te.contiguous().view(t, h, w, -1)
+    # vid_te = rearrange(vid_te,'t h w c -> t c h w')
+
+    # vid_te = rearrange(patches,'(nh nw) (rh rw) c -> 1 c (nh rh) (nw rw)',
+    #                    nh=16,rh=8)
+    # print(vid_te.shape)
+    # print(vid_gt.shape)
+    # exit(0)
+    # print(patches.shape)
+    patches = rearrange(patches,'b H c 1 1 -> b 1 1 (H c) 1 1')
+    fold(patches,0)
+    # print(th.where(fold.zvid == 0))
+    # print(fold.zvid)
+    vid_te = fold.vid / fold.zvid
+    # vid_te /= ps*ps*color
+
+    # -- shape to match --
+    # inds_te = rearrange(inds_te,'1 (h w) d2 tr -> h w d2 tr',h=n_h0)
+    # inds_te = rearrange(inds_te,'(nh rh) (nw rw) d2 tr -> (nh nw) (rh rw) d2 tr',
+    #                      rh=8,rw=8)
+    # print(inds_te[0,0])
+    # print(inds_te[0,63])
+    # -- viz --
+    # diff = th.abs(dists_gt - dists_te).mean(-1)[0]
+    # diff = rearrange(diff,'(h w) -> 1 1 h w',h=h,w=w)
+    # diff_s = diff / diff.max()
+    # dnls.testing.data.save_burst(diff_s,SAVE_DIR,'dists_diff')
+    # for j in [0,10,100]:
+    #     for i in range(dists_gt.shape[-1]):
+    #         print((j,i),dists_gt[0,j,i].item(),dists_te[0,j,i].item())
+
+
+    # dists_te = rearrange(dists_te,'1 (b d1) d2 -> b d1 d2',d1=64)
+    # inds_te = rearrange(inds_te,'1 (b d1) d2 tr -> b d1 d2 tr',d1=64)
+
+    # for b in range(256):
+    #     diff_b = th.abs(dists_gt[b] - dists_te[b]).sum().item()
+    #     print(b,diff_b)
+    #     for j in range(64):
+    #         diff_bj = th.abs(dists_gt[b,j] - dists_te[b,j]).sum().item()
+    #         print((b,j),diff_bj)
+    #         # for i in range(3):
+    #         #     diff_bji = th.abs(dists_gt[b,j,i] - dists_te[b,j,i]).sum().item()
+    #         #     print((b,j,i),diff_bji)
+    # print(dists_gt[0,7,:3])
+    # print(dists_te[0,7,:3])
+    # print(inds_te[0,7,:3])
+
+    # print(dists_gt[0,8,:3])
+    # print(dists_te[0,8,:3])
+    # print(inds_te[0,8,:3])
+
+    # print(inds_te[0,:16,0])
+    # print(inds_te[0,:32,0])
+    # print(inds_te.shape)
+    # print(inds_te[0,256:256+16,0])
+    # print(inds_te[1,:16,0])
+
 
     # -- viz --
     vid_gt_s = vid_gt / vid_gt.max()
     dnls.testing.data.save_burst(vid_gt_s[:,:3],SAVE_DIR,'vid_gt')
     vid_te_s = vid_te / vid_te.max()
     dnls.testing.data.save_burst(vid_te_s[:,:3],SAVE_DIR,'vid_te')
+    diff = th.abs(vid_gt - vid_te).mean(1,keepdim=True)
+    # print(diff[0,0,:3,:3])
+    diff_s = diff / diff.max()
+    dnls.testing.data.save_burst(diff_s,SAVE_DIR,'vid_diff')
+    # print(vid_gt[0,0,:3,:3])
+    # print(vid_te[0,0,:3,:3])
+    # print(vid_gt[0,0,32:36,32:36])
+    # print(vid_te[0,0,32:36,32:36])
 
-    # -- testing --
+    # -- testing [dists] --
+    print(dists_gt.shape, dists_te.shape)
+    diff = th.abs(dists_gt - dists_te)/(dists_gt.abs()+1e-5)
+
+    error = diff.mean().item()
+    assert error < 1e-5
+
+    error = diff.max().item()
+    assert error < 1e-4
+
+    # -- testing [vid] --
     diff = th.abs(vid_gt - vid_te)/(vid_gt.abs()+1e-5)
 
     error = diff.mean().item()
