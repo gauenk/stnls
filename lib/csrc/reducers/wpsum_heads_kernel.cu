@@ -414,10 +414,10 @@ void cuda_wpsum_heads_backward_dists(
   int nq = dists_grad.size(1);
   int k = dists_grad.size(2);
   dim3 threadsPerBlock(32,32);
-  dim3 blocksPerGrid(1, 1);
+  dim3 blocksPerGrid(1, 1, nheads);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
-  blocksPerGrid.z = nheads;
+  // blocksPerGrid.z = nheads;
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "wpsum_heads_backward_dists_kernel", ([&] {

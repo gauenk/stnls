@@ -102,6 +102,7 @@ class WindowSearchFunction(th.autograd.Function):
         # -- shape with heads -
         dists = dists.view(H,b,-1)
         inds = inds.view(H,b,-1,3)
+        # print("fwd.")
 
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
@@ -131,6 +132,15 @@ class WindowSearchFunction(th.autograd.Function):
         grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
         grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
 
+        # -- info --
+        # print("bwd.")
+        # print(grad_vid0.shape)
+        # print(grad_vid1.shape)
+        # print(grad_dists.shape)
+        # print(inds.shape)
+        # print(vid0.shape)
+        # print(vid1.shape)
+
         # -- allow for repeated exec --
         if nbwd == 1:
             dnls_cuda.window_search_backward(grad_vid0,grad_vid1,
@@ -156,7 +166,11 @@ class WindowSearchFunction(th.autograd.Function):
             grad_vid0 /= nbwd
             grad_vid1 /= nbwd
 
-        return grad_vid0,grad_vid1,None,None,None,None,None,\
+        # -- finalize shape --
+        grad_vid0 = rearrange(grad_vid0,'H t c h w -> t (H c) h w')
+        grad_vid1 = rearrange(grad_vid1,'H t c h w -> t (H c) h w')
+
+        return grad_vid0,grad_vid1,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -211,18 +225,36 @@ class WindowSearch(th.nn.Module):
         dists = rearrange(dists,'H h w d2 -> H (h w) d2')
         return dists
 
-    def match_simple(self,dists,inds,vshape):
+    def match_simple_dists(self,dists,vshape):
+        dists = dists[...,None]
+        return self.match_simple(dists,vshape)[...,0]
 
+    def match_simple_inds(self,inds,vshape):
+        return self.match_simple(inds,vshape)
+
+    def match_simple(self,tensor,vshape):
+        ndim3 = False
+        if tensor.ndim == 3:
+            ndim3 = True
+            tensor = tensor[...,None]
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,False,False)
         wsize = self.ws
-        dists = rearrange(dists,'H (h w) d2 -> H h w d2',h=n_h)
-        dists = rearrange(dists,'H (nh rh) (nw rw) d2 -> H (nh nw) (rh rw) d2',
+        # print(tensor.shape)
+        tensor = rearrange(tensor,'H (h w) d2 x -> H h w d2 x',h=n_h)
+        tensor = rearrange(tensor,'H (nh rh) (nw rw) d2 x -> H (nh nw) (rh rw) d2 x',
                           rh=wsize,rw=wsize)
+        if ndim3:
+            tensor = tensor[...,0]
+        return tensor
 
-        inds = rearrange(inds,'H (h w) d2 tr -> H h w d2 tr',h=n_h)
-        inds = rearrange(inds,'H (nh rh) (nw rw) d2 tr -> H (nh nw) (rh rw) d2 tr',
-                         rh=wsize,rw=wsize)
-        return dists,inds
+    def match_search(self,dists,vshape):
+        wsize = self.ws
+        n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,False,False)
+        nh_r = n_h//wsize
+        dists = rearrange(dists,'H (nh nw) (rh rw) d2 -> H (nh rh) (nw rw) d2',
+                          nh=nh_r,rw=wsize)
+        dists = rearrange(dists,'H h w d2 -> H (h w) d2')
+        return dists
 
     def query_batch_info(self,vshape,only_full=True,use_pad=True):
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,

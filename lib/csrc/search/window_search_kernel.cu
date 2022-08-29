@@ -424,12 +424,13 @@ __global__ void window_search_backward_kernel(
     int bpt, int npt, int cpt) {
 
   // -- shape --
-  int nq = grad_dists.size(0);
-  int k =  grad_dists.size(1);
-  int nframes = vid0.size(0);
-  int colors = vid0.size(1);
-  int height = vid0.size(2);
-  int width = vid0.size(3);
+  int nheads = grad_dists.size(0);
+  int nq = grad_dists.size(1);
+  int k =  grad_dists.size(2);
+  int nframes = vid0.size(1);
+  int colors = vid0.size(2);
+  int height = vid0.size(3);
+  int width = vid0.size(4);
   int n_hw0 = n_h0 * n_w0;
 
   // -- fwd decl registers --
@@ -447,8 +448,8 @@ __global__ void window_search_backward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // -- limits --
-  int i0_max = inds.size(0);
-  int i1_max = inds.size(1);
+  int i0_max = inds.size(1);
+  int i1_max = inds.size(2);
 
   // -- get indices --
   int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.x);
@@ -518,8 +519,8 @@ __global__ void window_search_backward_kernel(
             // __syncthreads();
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-              pix0 =  valid_k ? vid0[head][tk][c0][hk][wk] : 0.;
-              pix1 =  valid_j ? vid1[head][tj][c0][hj][wj] : 0.;
+              pix0 =  valid_k ? weight*vid0[head][tk][c0][hk][wk] : 0.;
+              pix1 =  valid_j ? weight*vid1[head][tj][c0][hj][wj] : 0.;
 
               if (valid_j){
                 grad_vid1[head][tj][c0][hj][wj] += pix0;

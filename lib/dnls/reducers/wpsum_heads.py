@@ -86,6 +86,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         adj = ctx.adj
         reflect_bounds = ctx.reflect_bounds
         exact = ctx.exact
+        # print("wpsum_heads: bwd.")
 
         # -- start timer --
         # timer = ExpTimer()
@@ -106,6 +107,9 @@ class WpSumHeadsFunction(th.autograd.Function):
                                              vid,inds,
                                              h_off,w_off,dilation,adj,
                                              reflect_bounds,exact)
+
+        # -- final shaping --
+        grad_vid = rearrange(grad_vid,'H t c h w -> t (H c) h w')
 
         # -- stop timer --
         # th.cuda.synchronize()
