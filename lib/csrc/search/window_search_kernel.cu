@@ -368,7 +368,7 @@ void window_search_forward_cuda(
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
 
-   int rem_blocks = (65535-1)/nheads+1;
+   int rem_blocks = (65535-1)/nheads;
    int bpt = 2;
    int nquery_blocks = ((nqueries - 1) / bpt) + 1;
    nquery_blocks = min(nquery_blocks,rem_blocks);

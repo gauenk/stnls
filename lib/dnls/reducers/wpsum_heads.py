@@ -1,10 +1,12 @@
 
 # -- python --
 import torch as th
+from einops import rearrange
 
 # -- cpp cuda kernel --
 import dnls_cuda
 
+# -- misc --
 from dnls.utils.timer import ExpTimer
 
 
@@ -33,7 +35,9 @@ class WpSumHeadsFunction(th.autograd.Function):
         pt = patchsize_time (forward only)
         """
         # -- add head dim if 1 --
-        if vid.ndim == 4: vid = vid[None,:]
+        nheads = dists.shape[0]
+        if vid.ndim == 4:
+            vid = rearrange(vid,'t (H c) h w -> H t c h w',H=nheads)
         if inds.ndim == 3: inds = inds[None,:]
 
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
@@ -41,17 +45,17 @@ class WpSumHeadsFunction(th.autograd.Function):
         nheads,nq,k = dists.shape
         patches = allocate_patches(nq,nheads,ps,pt,vid.shape[2],device)
 
-        print(vid.shape)
-        print(patches.shape)
-        print(dists.shape)
-        print(inds.shape)
-        print("-"*10)
+        # print(vid.shape)
+        # print(patches.shape)
+        # print(dists.shape)
+        # print(inds.shape)
+        # print("-"*10)
 
         # void cuda_wpsum_heads_forward(
         #     torch::Tensor vid, torch::Tensor patches,
         #     torch::Tensor dists, torch::Tensor inds,
         #     int h_off, int w_off, int dilation, int adj, bool reflect_bounds){
-        print(h_off,w_off,dilation,adj,reflect_bounds)
+        # print(h_off,w_off,dilation,adj,reflect_bounds)
         dnls_cuda.wpsum_heads_forward(vid, patches, dists, inds,
                                       h_off,w_off,dilation,adj,
                                       reflect_bounds)

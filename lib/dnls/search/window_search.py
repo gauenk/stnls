@@ -4,6 +4,9 @@ import torch as th
 import numpy as np
 from einops import rearrange
 
+# -- softmax --
+import torch.nn.functional as nnf
+
 # -- padding --
 from dnls.utils.pads import comp_pads
 
@@ -59,6 +62,7 @@ class WindowSearchFunction(th.autograd.Function):
         # -- set kernel device --
         # gpuid = th.cuda.current_device()
         th.cuda.set_device(device)
+        # print("vid0.shape: ",vid0.shape)
 
         # -- forward --
         dnls_cuda.window_search_forward(vid0, vid1, fflow, bflow,
@@ -192,6 +196,34 @@ class WindowSearch(th.nn.Module):
         self.exact = exact
         self.use_rand = use_rand
 
+    def window_softmax(self,dists,vshape):
+        wsize = self.ws
+        n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,False,False)
+        nh_r = n_h//wsize
+        shape_str = 'H (h w) d2 -> H h w d2'
+        dists = rearrange(dists,shape_str,h=n_h)
+        shape_str = 'H (nh rh) (nw rw) d2 -> H (nh nw) (rh rw) d2'
+        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize)
+        H,N,R,D = dists.shape
+        dists = nnf.softmax(dists.view(H,N*R,D),-1).view(H,N,R,D)
+        shape_str = 'H (nh nw) (rh rw) d2 -> H (nh rh) (nw rw) d2'
+        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize,nh=nh_r)
+        dists = rearrange(dists,'H h w d2 -> H (h w) d2')
+        return dists
+
+    def match_simple(self,dists,inds,vshape):
+
+        n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,False,False)
+        wsize = self.ws
+        dists = rearrange(dists,'H (h w) d2 -> H h w d2',h=n_h)
+        dists = rearrange(dists,'H (nh rh) (nw rw) d2 -> H (nh nw) (rh rw) d2',
+                          rh=wsize,rw=wsize)
+
+        inds = rearrange(inds,'H (h w) d2 tr -> H h w d2 tr',h=n_h)
+        inds = rearrange(inds,'H (nh rh) (nw rw) d2 tr -> H (nh nw) (rh rw) d2 tr',
+                         rh=wsize,rw=wsize)
+        return dists,inds
+
     def query_batch_info(self,vshape,only_full=True,use_pad=True):
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,
                               only_full,use_pad)
@@ -207,7 +239,8 @@ class WindowSearch(th.nn.Module):
         ws_h,ws_w = ws,ws
         if ws == -1: ws_h,ws_w = n_h,n_w
         if k == -1: k = ws**2 * (2*wt + 1)
-        if chnls <= 0: chnls = c
+        if chnls <= 0: chnls = c//self.nheads
+        assert chnls * self.nheads == c,"must be divisible."
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):

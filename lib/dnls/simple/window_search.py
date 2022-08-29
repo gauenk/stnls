@@ -20,7 +20,7 @@ def run(vid,win_size=8,nheads=4):
     return vid,dists
 
 def qkv(x,nheads):
-    xh = rearrange(x,'t hw (H c) -> t H hw c',H=nheads)
+    xh = rearrange(x,'n ww (H c) -> n H ww c',H=nheads)
     return xh.clone(),xh.clone(),xh.clone()
 
 def window_partition(vid, win_size):
@@ -52,17 +52,14 @@ def window_attn(x,nheads=4,scale=10):
 
     # -- attn map --
     q = q * scale
-    print("q.shape: ",q.shape)
     attn = (q @ k.transpose(-2, -1))
 
     # -- create [dists] output for testing --
-    # print("attn.shape: ",attn.shape)
     dists = attn.clone()
     dists = rearrange(attn,'b H d1 d2 -> H (b d1) d2')
 
     # -- ave over v --
     attn = nnf.softmax(attn,-1)
     x = (attn @ v).transpose(1, 2)
-    # print("x.shape: ",x.shape)
     x = x.reshape(B_, N, C)
     return x,dists

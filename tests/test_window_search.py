@@ -53,7 +53,7 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[1],"stride0":[1],"stride1":[1],"dilation":[1],"wt":[0],
                   "ws":[-1],"k":[-1],"exact":[True],"reflect_bounds":[False],
-                  "nheads":[1]}
+                  "nheads":[2]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
@@ -98,7 +98,8 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
-    vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:32] # want 32 channels
+    vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:16] # want 32 channels
+    vid = th.cat([vid,vid],1)
     vid = th.cat([vid,vid],-1)
     vid = th.cat([vid,vid],-2)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -149,115 +150,41 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     #
 
     # -- ground-truth --
-    vid_gt,dists_gt = dnls.simple.window_search.run(vid,8,nheads)
-    dists_gt = rearrange(dists_gt,'1 (b d1) d2 -> b d1 d2',d1=8*8)
+    vid_gt,dists_gt = dnls.simple.window_search.run(vid,ws,nheads)
+    dists_gt = rearrange(dists_gt,'H (b d1) d2 -> H b d1 d2',d1=ws*ws)
 
     # -- vid ours --
     dists_te,inds_te = search(vid,0,ntotal)
-    dists = dists_te
-    dists_te = rearrange(dists_te,'H (h w) d2 -> H h w d2',h=n_h0)
-    dists_te = rearrange(dists_te,'H (nh rh) (nw rw) d2 -> H (nh nw) (rh rw) d2',
-                         rh=8,rw=8)
-    H,N,R,D = dists_te.shape
     # dists_s = dists_te
-    dists_s = nnf.softmax(dists_te.view(H,N*R,D),-1).view(H,N,R,D)
-    dists_s = rearrange(dists_s,'H (nh nw) (rh rw) d2 -> H (nh rh) (nw rw) d2',
-                        rh=8,rw=8,nh=16)
-    dists_s = rearrange(dists_s,'H h w d2 -> H (h w) d2')
-    # print("diff: ",th.abs(dists_s - dists).mean().item())
+    dists_s = search.window_softmax(dists_te,vid.shape)
+    patches = wpsum(vid,dists_s,inds_te)
 
-    # print(dists[0,0,:10])
-    # print(inds[0,0,:10])
-    vid_m = vid.clone()
-    # vid_m[...] = 1
-    # print("wpsum shapes: ",vid_m.shape,dists_s.shape,inds_te.shape)
-    patches = wpsum(vid_m,dists_s,inds_te)
-
-    # -- no fold --
+    # -- folding [v1] --
     # patches = rearrange(patches,'b H c 1 1 -> b (H c)')
     # vid_te = rearrange(patches,'(h w) c -> 1 c h w',h=128)
 
-    # print("patches.shape: ",patches.shape)
-    # patches = rearrange(patches,'(b d1) 1 1 c 1 1 -> b d1 c',d1=64)
-    # t,h,w = 1,128,128
-    # win_size = 8
-    # windows = patches.view(t, h // win_size, w // win_size, win_size, win_size, -1)
-    # vid_te = windows.permute(0, 1, 3, 2, 4, 5)
-    # vid_te = vid_te.contiguous().view(t, h, w, -1)
-    # vid_te = rearrange(vid_te,'t h w c -> t c h w')
-
-    # vid_te = rearrange(patches,'(nh nw) (rh rw) c -> 1 c (nh rh) (nw rw)',
-    #                    nh=16,rh=8)
-    # print(vid_te.shape)
-    # print(vid_gt.shape)
-    # exit(0)
-    # print(patches.shape)
+    # -- folding [v2] --
     patches = rearrange(patches,'b H c 1 1 -> b 1 1 (H c) 1 1')
     fold(patches,0)
-    # print(th.where(fold.zvid == 0))
-    # print(fold.zvid)
     vid_te = fold.vid / fold.zvid
-    # vid_te /= ps*ps*color
 
     # -- shape to match --
-    # inds_te = rearrange(inds_te,'1 (h w) d2 tr -> h w d2 tr',h=n_h0)
-    # inds_te = rearrange(inds_te,'(nh rh) (nw rw) d2 tr -> (nh nw) (rh rw) d2 tr',
-    #                      rh=8,rw=8)
-    # print(inds_te[0,0])
-    # print(inds_te[0,63])
-    # -- viz --
-    # diff = th.abs(dists_gt - dists_te).mean(-1)[0]
-    # diff = rearrange(diff,'(h w) -> 1 1 h w',h=h,w=w)
-    # diff_s = diff / diff.max()
-    # dnls.testing.data.save_burst(diff_s,SAVE_DIR,'dists_diff')
-    # for j in [0,10,100]:
-    #     for i in range(dists_gt.shape[-1]):
-    #         print((j,i),dists_gt[0,j,i].item(),dists_te[0,j,i].item())
-
-
-    # dists_te = rearrange(dists_te,'1 (b d1) d2 -> b d1 d2',d1=64)
-    # inds_te = rearrange(inds_te,'1 (b d1) d2 tr -> b d1 d2 tr',d1=64)
-
-    # for b in range(256):
-    #     diff_b = th.abs(dists_gt[b] - dists_te[b]).sum().item()
-    #     print(b,diff_b)
-    #     for j in range(64):
-    #         diff_bj = th.abs(dists_gt[b,j] - dists_te[b,j]).sum().item()
-    #         print((b,j),diff_bj)
-    #         # for i in range(3):
-    #         #     diff_bji = th.abs(dists_gt[b,j,i] - dists_te[b,j,i]).sum().item()
-    #         #     print((b,j,i),diff_bji)
-    # print(dists_gt[0,7,:3])
-    # print(dists_te[0,7,:3])
-    # print(inds_te[0,7,:3])
-
-    # print(dists_gt[0,8,:3])
-    # print(dists_te[0,8,:3])
-    # print(inds_te[0,8,:3])
-
-    # print(inds_te[0,:16,0])
-    # print(inds_te[0,:32,0])
-    # print(inds_te.shape)
-    # print(inds_te[0,256:256+16,0])
-    # print(inds_te[1,:16,0])
-
+    dists_te,_ = search.match_simple(dists_te,inds_te,vid.shape)
 
     # -- viz --
     vid_gt_s = vid_gt / vid_gt.max()
-    dnls.testing.data.save_burst(vid_gt_s[:,:3],SAVE_DIR,'vid_gt')
+    dnls.testing.data.save_burst(vid_gt_s[:,-3:],SAVE_DIR,'vid_gt')
     vid_te_s = vid_te / vid_te.max()
-    dnls.testing.data.save_burst(vid_te_s[:,:3],SAVE_DIR,'vid_te')
-    diff = th.abs(vid_gt - vid_te).mean(1,keepdim=True)
-    # print(diff[0,0,:3,:3])
-    diff_s = diff / diff.max()
-    dnls.testing.data.save_burst(diff_s,SAVE_DIR,'vid_diff')
-    # print(vid_gt[0,0,:3,:3])
-    # print(vid_te[0,0,:3,:3])
-    # print(vid_gt[0,0,32:36,32:36])
-    # print(vid_te[0,0,32:36,32:36])
+    dnls.testing.data.save_burst(vid_te_s[:,-3:],SAVE_DIR,'vid_te')
+
+    # diff = th.abs(vid_gt - vid_te)
+    # args = th.where(diff > 1e-3)
+
+    # diff = th.abs(vid_gt - vid_te).mean(1,keepdim=True)
+    # diff_s = diff / diff.max()
+    # dnls.testing.data.save_burst(diff_s,SAVE_DIR,'vid_diff')
 
     # -- testing [dists] --
-    print(dists_gt.shape, dists_te.shape)
     diff = th.abs(dists_gt - dists_te)/(dists_gt.abs()+1e-5)
 
     error = diff.mean().item()
@@ -341,7 +268,6 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     wpsum = dnls.reducers.WeightedPatchSum(ps,pt,dilation=dil,adj=adj,
                                            reflect_bounds=reflect_bounds,
                                            nbwd=1,exact=exact)
-    print("vid.shape: ",vid.shape)
     fold = dnls.iFoldz(vid.shape,None,stride=stride0,dilation=dil,
                        adj=adj,only_full=only_full,
                        use_reflect=reflect_bounds,device=device)
