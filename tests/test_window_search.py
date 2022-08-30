@@ -331,8 +331,8 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
     grad_gt = dists_gt.grad
 
     dists_grad = search.match_search(dists_grad,vid.shape) # shape grad
-    print("dists_te.shape: ",dists_te.shape)
-    print("dists_grad.shape: ",dists_grad.shape)
+    # print("dists_te.shape: ",dists_te.shape)
+    # print("dists_grad.shape: ",dists_grad.shape)
     th.autograd.backward(dists_te,dists_grad)
     grad_te = dists_te.grad
     grad_te = search.match_simple_dists(grad_te,vid.shape)
@@ -492,7 +492,6 @@ def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exac
     # print(grad_te[0,0,:3,:3])
     # print(grad_gt[0,0,32:36,32:36])
     # print(grad_te[0,0,32:36,32:36])
-
 
     # -- testing --
     check_tensors(grad_gt,grad_te,eps=1e-5,mean_eps=1e-5,max_eps=2*1e-3)

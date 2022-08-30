@@ -44,6 +44,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         device = dists.device
         nheads,nq,k = dists.shape
         patches = allocate_patches(nq,nheads,ps,pt,vid.shape[2],device)
+        vid = vid.contiguous()
 
         # print(vid.shape)
         # print(patches.shape)

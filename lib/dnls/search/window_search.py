@@ -41,8 +41,8 @@ class WindowSearchFunction(th.autograd.Function):
 
         # -- reshape with heads --
         assert c % nheads == 0,"must be multiple of each other."
-        vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads)
-        vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads)
+        vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+        vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
 
         # -- allocs --
         B = nqueries*nheads
@@ -211,18 +211,19 @@ class WindowSearch(th.nn.Module):
         self.use_rand = use_rand
 
     def window_softmax(self,dists,vshape):
+        t,c,h,w = vshape
         wsize = self.ws
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,False,False)
         nh_r = n_h//wsize
-        shape_str = 'H (h w) d2 -> H h w d2'
-        dists = rearrange(dists,shape_str,h=n_h)
-        shape_str = 'H (nh rh) (nw rw) d2 -> H (nh nw) (rh rw) d2'
+        shape_str = 'H (t h w) d2 -> H t h w d2'
+        dists = rearrange(dists,shape_str,h=n_h,t=t)
+        shape_str = 'H t (nh rh) (nw rw) d2 -> (H t) (nh nw) (rh rw) d2'
         dists = rearrange(dists,shape_str,rh=wsize,rw=wsize)
         H,N,R,D = dists.shape
         dists = nnf.softmax(dists.view(H,N*R,D),-1).view(H,N,R,D)
-        shape_str = 'H (nh nw) (rh rw) d2 -> H (nh rh) (nw rw) d2'
-        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize,nh=nh_r)
-        dists = rearrange(dists,'H h w d2 -> H (h w) d2')
+        shape_str = '(H t) (nh nw) (rh rw) d2 -> H t (nh rh) (nw rw) d2'
+        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize,nh=nh_r,t=t)
+        dists = rearrange(dists,'H t h w d2 -> H (t h w) d2')
         return dists
 
     def match_simple_dists(self,dists,vshape):
