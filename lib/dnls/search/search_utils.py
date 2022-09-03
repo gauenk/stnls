@@ -172,7 +172,14 @@ def get_num_img(vshape,stride,ps,dil,only_full=True,use_pad=True):
         n_w = (w - 1)//stride + 1
     return n_h,n_w
 
-def create_window_partition(h,w,ws_h,ws_w,device):
+def create_window_partition(in_h,in_w,ws_h,ws_w,device):
+
+
+    # -- add padding if needed --
+    h_pad = ws_h - (in_h % ws_h)
+    w_pad = ws_w - (in_w % ws_w)
+    h = in_h + h_pad
+    w = in_w + w_pad
 
     # -- create index image --
     img = np.arange(h*w).reshape(h,w)
@@ -199,5 +206,8 @@ def create_window_partition(h,w,ws_h,ws_w,device):
     # -- to tensor --
     img = img.astype(np.int32)
     img = th.from_numpy(img).to(device)
+
+    # -- remove padding --
+    img = img[:in_h,:in_w]
 
     return img

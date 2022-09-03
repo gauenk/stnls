@@ -209,7 +209,7 @@ class ProductSearch_with_index(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
-                 use_search_abs=False, reflect_bounds=True, use_adj=True,
+                 search_abs=False, reflect_bounds=True, use_adj=True,
                  use_k=True, remove_self=False, full_ws=False, nbwd=1,
                  use_rand=True, exact=True):
         super(ProductSearch_with_index, self).__init__()
@@ -225,7 +225,7 @@ class ProductSearch_with_index(th.nn.Module):
         self.stride1 = stride1
         self.dilation = dilation
         self.lam = lam
-        self.use_search_abs = use_search_abs
+        self.search_abs = search_abs
         self.reflect_bounds = reflect_bounds
         self.use_adj = use_adj
         self.use_k = use_k
@@ -271,7 +271,7 @@ class ProductSearch_with_index(th.nn.Module):
             vid0,vid1,self.fflow,self.bflow,qstart,nqueries,
             k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
             self.stride0,self.stride1,self.dilation,self.lam,
-            self.use_search_abs,self.reflect_bounds,
+            self.search_abs,self.reflect_bounds,
             self.use_adj,self.use_k,self.oh0,self.ow0,
             self.oh1,self.ow1,self.remove_self,
             self.full_ws,self.nbwd,self.use_rand,self.exact)

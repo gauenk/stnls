@@ -4,6 +4,9 @@ import torch as th
 import numpy as np
 from einops import rearrange
 
+# -- softmax --
+import torch.nn.functional as nnf
+
 # -- padding --
 from dnls.utils.pads import comp_pads
 
@@ -23,7 +26,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                 dilation=1,stride1=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
                 full_ws=False,anchor_self=False,remove_self=False,
-                nbwd=1,use_rand=True,exact=False):
+                nbwd=1,rbwd=True,exact=False):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -38,8 +41,8 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- reshape with heads --
         assert c % nheads == 0,"must be multiple of each other."
-        vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads)
-        vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads)
+        vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+        vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
 
         # -- allocs --
         B = nqueries*nheads
@@ -94,7 +97,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- shape with heads -
         dists = dists.view(H,b,-1)
-        inds = inds.view(H,b,-1)
+        inds = inds.view(H,b,-1,3)
 
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
@@ -103,7 +106,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         ctx.qstart,ctx.stride0 = qstart,stride0
         ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
-        ctx.use_rand,ctx.exact = use_rand,exact
+        ctx.rbwd,ctx.exact = rbwd,exact
         ctx.use_adj,ctx.nbwd = use_adj,nbwd
         ctx.n_h0,ctx.n_w0 = n_h0,n_w0
         ctx.h0_off,ctx.w0_off = h0_off, w0_off
@@ -117,7 +120,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         vid_shape,nbwd = ctx.vid_shape,ctx.nbwd
         qstart,stride0 = ctx.qstart,ctx.stride0
         ps,pt,dil = ctx.ps,ctx.pt,ctx.dil
-        use_rand = ctx.use_rand
+        rbwd = ctx.rbwd
         exact,use_adj = ctx.exact,ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         n_h0,n_w0 = ctx.n_h0,ctx.n_w0
@@ -134,7 +137,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                                                       qstart,nheads,stride0,n_h0,n_w0,
                                                       h0_off, w0_off, h1_off, w1_off,
                                                       ps,pt,dil, use_adj,
-                                                      reflect_bounds,use_rand,exact)
+                                                      reflect_bounds,rbwd,exact)
         else:
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
@@ -147,13 +150,17 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                                                           h0_off, w0_off,
                                                           h1_off, w1_off,
                                                           ps,pt,dil,use_adj,
-                                                          reflect_bounds,use_rand,exact)
+                                                          reflect_bounds,rbwd,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
             grad_vid0 /= nbwd
             grad_vid1 /= nbwd
 
-        return grad_vid0,grad_vid1,None,None,None,None,None,\
+        # -- finalize shape --
+        grad_vid0 = rearrange(grad_vid0,'H t c h w -> t (H c) h w')
+        grad_vid1 = rearrange(grad_vid1,'H t c h w -> t (H c) h w')
+
+        return grad_vid0,grad_vid1,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -164,7 +171,7 @@ class ProdSearchWithHeads(th.nn.Module):
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, nbwd=1, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
-                 anchor_self=False,use_rand=True):
+                 anchor_self=False,rbwd=True):
         super().__init__()
         self.k = k
         self.ps = ps
@@ -191,12 +198,52 @@ class ProdSearchWithHeads(th.nn.Module):
         self.remove_self = remove_self
         self.nbwd = nbwd
         self.exact = exact
-        self.use_rand = use_rand
+        self.rbwd = rbwd
 
     def query_batch_info(self,vshape,only_full=True,use_pad=True):
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,
                               only_full,use_pad)
         return n_h,n_w
+
+    def window_attn_mod(self,dists,rel_pos,mask,vshape):
+        t,c,h,w = vshape
+        wsize = 8#self.ws
+        # print(self.stride0,self.ps,self.ws,self.dilation,vshape)
+        # exit(0)
+        n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,False,False)
+        nh_r = n_h//wsize
+        shape_str = 'H (t h w) d2 -> H t h w d2'
+        dists = rearrange(dists,shape_str,h=n_h,t=t)
+        shape_str = 'H t (nh rh) (nw rw) d2 -> (t nh nw) H (rh rw) d2'
+        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize)
+        N,H,R,D = dists.shape
+
+        if not(rel_pos is None):
+            ratio = dists.shape[-1] // rel_pos.shape[-1]
+            # print("dists.shape: ",dists.shape)
+            # print("rel_pos.shape: ",rel_pos.shape)
+            rel_pos = repeat(rel_pos,'a b c -> a b (c r)',r=ratio)
+            dists = dists + rel_pos.unsqueeze(0)
+
+        if not(mask is None):
+            ratio = dists.shape[-1] // mask.shape[-1]
+            # print(t,n_h,nh_r,self.stride0,self.ps,self.ws)
+            dists = rearrange(dists,'(t n) H d1 d2 -> t n H d1 d2',t=t)
+            mask = repeat(mask, 'nW m n -> nW m (n d)',d = ratio)
+            mshape = mask.shape
+            mask = mask.unsqueeze(1).unsqueeze(0)
+            # print("mask: ",dists.shape,mshape,mask.shape)#,ratio)
+            # print("dists.shape: ",dists.shape)
+            # print("masks.shape: ",mask.shape)
+            dists = dists + mask
+            dists = rearrange(dists,'t n H d1 d2 -> (t n) H d1 d2')
+
+        dists = nnf.softmax(dists,-1)
+        shape_str = '(t nh nw) H (rh rw) d2 -> H t (nh rh) (nw rw) d2'
+        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize,nh=nh_r,t=t)
+        dists = rearrange(dists,'H t h w d2 -> H (t h w) d2')
+
+        return dists
 
     def _get_args(self,vshape):
         # -- unpack --
@@ -237,4 +284,4 @@ class ProdSearchWithHeads(th.nn.Module):
                                          self.reflect_bounds,self.search_abs,
                                          self.full_ws,self.anchor_self,
                                          self.remove_self,
-                                         self.nbwd,self.use_rand,self.exact)
+                                         self.nbwd,self.rbwd,self.exact)

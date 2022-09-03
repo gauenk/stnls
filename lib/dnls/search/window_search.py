@@ -26,7 +26,7 @@ class WindowSearchFunction(th.autograd.Function):
                 dilation=1,stride1=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
                 full_ws=False,anchor_self=False,remove_self=False,
-                nbwd=1,use_rand=True,exact=False):
+                nbwd=1,rbwd=True,exact=False):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -89,7 +89,7 @@ class WindowSearchFunction(th.autograd.Function):
         if use_k:
             HB = dists_exh.shape[0]
             dists,inds = allocate_rtn(HB,k,device)
-            get_topk(dists_exh,inds_exh,dists,inds)
+            get_topk_prod(dists_exh,inds_exh,dists,inds)
         else:
             args = th.where(th.isnan(dists_exh))
             dists_exh[args] = -th.inf # fix nan
@@ -110,7 +110,7 @@ class WindowSearchFunction(th.autograd.Function):
         ctx.qstart,ctx.stride0 = qstart,stride0
         ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
-        ctx.use_rand,ctx.exact = use_rand,exact
+        ctx.rbwd,ctx.exact = rbwd,exact
         ctx.use_adj,ctx.nbwd = use_adj,nbwd
         ctx.n_h0,ctx.n_w0 = n_h0,n_w0
         ctx.h0_off,ctx.w0_off = h0_off, w0_off
@@ -123,7 +123,7 @@ class WindowSearchFunction(th.autograd.Function):
         vid_shape,nbwd = ctx.vid_shape,ctx.nbwd
         qstart,stride0 = ctx.qstart,ctx.stride0
         ps,pt,dil = ctx.ps,ctx.pt,ctx.dil
-        use_rand = ctx.use_rand
+        rbwd = ctx.rbwd
         exact,use_adj = ctx.exact,ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         n_h0,n_w0 = ctx.n_h0,ctx.n_w0
@@ -149,7 +149,7 @@ class WindowSearchFunction(th.autograd.Function):
                                              qstart,stride0,n_h0,n_w0,
                                              h0_off, w0_off, h1_off, w1_off,
                                              ps,pt,dil, use_adj,
-                                             reflect_bounds,use_rand,exact)
+                                             reflect_bounds,rbwd,exact)
         else:
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
@@ -160,7 +160,7 @@ class WindowSearchFunction(th.autograd.Function):
                                                  qstart,stride0,n_h0,n_w0,
                                                  h0_off, w0_off, h1_off, w1_off,
                                                  ps,pt,dil,use_adj,
-                                                 reflect_bounds,use_rand,exact)
+                                                 reflect_bounds,rbwd,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
             grad_vid0 /= nbwd
@@ -177,11 +177,11 @@ class WindowSearchFunction(th.autograd.Function):
 class WindowSearch(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, nheads,
-                 chnls=-1, dilation=1, stride0=1, stride1=1,
+                 chnls=-1, dilation=1, stride0=1, stride1=1, nframes=-1,
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, nbwd=1, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
-                 anchor_self=False,use_rand=True):
+                 anchor_self=False,rbwd=True):
         super().__init__()
         self.k = k
         self.ps = ps
@@ -192,6 +192,7 @@ class WindowSearch(th.nn.Module):
         self.fflow = fflow
         self.bflow = bflow
         self.chnls = chnls
+        self.nframes = nframes
         self.dilation = dilation
         self.stride0 = stride0
         self.stride1 = stride1
@@ -208,7 +209,7 @@ class WindowSearch(th.nn.Module):
         self.remove_self = remove_self
         self.nbwd = nbwd
         self.exact = exact
-        self.use_rand = use_rand
+        self.rbwd = rbwd
 
     def window_softmax(self,dists,vshape):
         t,c,h,w = vshape
@@ -224,6 +225,45 @@ class WindowSearch(th.nn.Module):
         shape_str = '(H t) (nh nw) (rh rw) d2 -> H t (nh rh) (nw rw) d2'
         dists = rearrange(dists,shape_str,rh=wsize,rw=wsize,nh=nh_r,t=t)
         dists = rearrange(dists,'H t h w d2 -> H (t h w) d2')
+        return dists
+
+    def window_attn_mod(self,dists,rel_pos,mask,vshape):
+        t,c,h,w = vshape
+        wsize = self.ws
+        # print(self.stride0,self.ps,self.ws,self.dilation,vshape)
+        # exit(0)
+        n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,False,False)
+        nh_r = n_h//wsize
+        shape_str = 'H (t h w) d2 -> H t h w d2'
+        dists = rearrange(dists,shape_str,h=n_h,t=t)
+        shape_str = 'H t (nh rh) (nw rw) d2 -> (t nh nw) H (rh rw) d2'
+        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize)
+        N,H,R,D = dists.shape
+
+        ratio = dists.shape[-1] // rel_pos.shape[-1]
+        if not(rel_pos is None):
+            # print("dists.shape: ",dists.shape)
+            # print("rel_pos.shape: ",rel_pos.shape)
+            rel_pos = repeat(rel_pos,'a b c -> a b (c r)',r=ratio)
+            dists = dists + rel_pos.unsqueeze(0)
+
+        if not(mask is None):
+            # print(t,n_h,nh_r,self.stride0,self.ps,self.ws)
+            dists = rearrange(dists,'(t n) H d1 d2 -> t n H d1 d2',t=t)
+            mask = repeat(mask, 'nW m n -> nW m (n d)',d = ratio)
+            mshape = mask.shape
+            mask = mask.unsqueeze(1).unsqueeze(0)
+            # print("mask: ",dists.shape,mshape,mask.shape)#,ratio)
+            # print("dists.shape: ",dists.shape)
+            # print("masks.shape: ",mask.shape)
+            dists = dists + mask
+            dists = rearrange(dists,'t n H d1 d2 -> (t n) H d1 d2')
+
+        dists = nnf.softmax(dists,-1)
+        shape_str = '(t nh nw) H (rh rw) d2 -> H t (nh rh) (nw rw) d2'
+        dists = rearrange(dists,shape_str,rh=wsize,rw=wsize,nh=nh_r,t=t)
+        dists = rearrange(dists,'H t h w d2 -> H (t h w) d2')
+
         return dists
 
     def match_simple_dists(self,dists,vshape):
@@ -301,5 +341,5 @@ class WindowSearch(th.nn.Module):
                                           self.reflect_bounds,self.search_abs,
                                           self.full_ws,self.anchor_self,
                                           self.remove_self,
-                                          self.nbwd,self.use_rand,self.exact)
+                                          self.nbwd,self.rbwd,self.exact)
 
