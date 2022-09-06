@@ -74,9 +74,10 @@ def numba_search_bwd(grad_vid0,grad_vid1,grad_dists,vid0,vid1,inds,
 
     # -- "inline" function --
     def bounds(val,lim):
-        if val < 0: val = -val
-        if val >= lim: val = 2*(lim-1) - val
-        return int(val)
+        vval = val
+        if val < 0: vval = -val
+        if val >= lim: vval = 2*(lim-1) - val
+        return int(vval)
 
     # -- shapes --
     t,c,h,w = vid0.shape
@@ -113,15 +114,15 @@ def numba_search_bwd(grad_vid0,grad_vid1,grad_dists,vid0,vid1,inds,
                         ti = bounds(_ti + pk,t)
                         hi = _hi+dilation*(pi - psHalf)
                         wi = _wi+dilation*(pj - psHalf)
-                        hi = bounds(_hi,h) if rbounds else hi
-                        wi = bounds(_wi,w) if rbounds else wi
+                        hi = bounds(hi,h) if rbounds else hi
+                        wi = bounds(wi,w) if rbounds else wi
 
                         # -- [search] --
                         tj = bounds(_tj + pk,t)
                         hj = _hj+dilation*(pi - psHalf)
                         wj = _wj+dilation*(pj - psHalf)
-                        hj = bounds(_hj,h) if rbounds else hj
-                        wj = bounds(_wj,w) if rbounds else wj
+                        hj = bounds(hj,h) if rbounds else hj
+                        wj = bounds(wj,w) if rbounds else wj
 
                         # -- check valid --
                         valid_tj = (tj >= 0) and (tj < t)

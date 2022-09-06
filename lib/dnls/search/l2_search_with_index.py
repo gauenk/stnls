@@ -22,7 +22,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                 dilation=1,stride1=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
                 full_ws=False,anchor_self=False,remove_self=False,
-                nbwd=1,use_rand=True,exact=False):
+                nbwd=1,rbwd=True,exact=False):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -92,7 +92,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         ctx.qstart,ctx.stride0 = qstart,stride0
         ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
-        ctx.use_rand,ctx.exact = use_rand,exact
+        ctx.rbwd,ctx.exact = rbwd,exact
         ctx.use_adj,ctx.nbwd = use_adj,nbwd
         ctx.n_h0,ctx.n_w0 = n_h0,n_w0
         ctx.h0_off,ctx.w0_off = h0_off, w0_off
@@ -105,7 +105,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         vid_shape,nbwd = ctx.vid_shape,ctx.nbwd
         qstart,stride0 = ctx.qstart,ctx.stride0
         ps,pt,dil = ctx.ps,ctx.pt,ctx.dil
-        use_rand = ctx.use_rand
+        rbwd = ctx.rbwd
         exact,use_adj = ctx.exact,ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         n_h0,n_w0 = ctx.n_h0,ctx.n_w0
@@ -122,7 +122,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                     qstart,stride0,n_h0,n_w0,
                                                     h0_off, w0_off, h1_off, w1_off,
                                                     ps,pt,dil, use_adj,
-                                                    reflect_bounds,use_rand,exact)
+                                                    reflect_bounds,rbwd,exact)
         else:
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
@@ -133,7 +133,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                         qstart,stride0,n_h0,n_w0,
                                                         h0_off, w0_off, h1_off, w1_off,
                                                         ps,pt,dil,use_adj,
-                                                        reflect_bounds,use_rand,exact)
+                                                        reflect_bounds,rbwd,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
             grad_vid0 /= nbwd
@@ -150,7 +150,7 @@ class L2Search_with_index(th.nn.Module):
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, nbwd=1, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
-                 anchor_self=False,use_rand=True):
+                 anchor_self=False,rbwd=True):
         super(L2Search_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -176,7 +176,7 @@ class L2Search_with_index(th.nn.Module):
         self.remove_self = remove_self
         self.nbwd = nbwd
         self.exact = exact
-        self.use_rand = use_rand
+        self.rbwd = rbwd
 
     def query_batch_info(self,vshape,only_full=True,use_pad=True):
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,
@@ -220,5 +220,5 @@ class L2Search_with_index(th.nn.Module):
                                                  self.reflect_bounds,self.search_abs,
                                                  self.full_ws,self.anchor_self,
                                                  self.remove_self,
-                                                 self.nbwd,self.use_rand,self.exact)
+                                                 self.nbwd,self.rbwd,self.exact)
 

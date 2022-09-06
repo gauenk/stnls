@@ -34,15 +34,17 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         wt = search Window Time (wt)
         """
 
-        # -- unpack --
-        device = vid0.device
-        t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
-
         # -- reshape with heads --
-        assert c % nheads == 0,"must be multiple of each other."
-        vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
-        vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+        device = vid0.device
+        if vid0.ndim == 4:
+            c = vid0.shape[1]
+            assert c % nheads == 0,"must be multiple of each other."
+            vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+            vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+        assert vid0.shape[0] == nheads
+        assert vid1.shape[0] == nheads
+        H,t,c,h,w = vid0.shape
+        n_h0,n_w0 = get_num_img(vid0.shape[1:],stride0,ps,dilation)
 
         # -- allocs --
         B = nqueries*nheads
@@ -248,6 +250,7 @@ class ProdSearchWithHeads(th.nn.Module):
     def _get_args(self,vshape):
         # -- unpack --
         ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
+        vshape = vshape[-4:] # (t,c,h,w) NOT (H,t,c,h,w)
         t,c,h,w = vshape
 
         # -- compute number of searchable patches --
@@ -260,6 +263,8 @@ class ProdSearchWithHeads(th.nn.Module):
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):
+        vshape = vshape[-4:] # (t,c,h,w) NOT (H,t,c,h,w)
+        t,c,h,w = vshape
         t,c,h,w = vshape
         zflow = th.zeros((t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow

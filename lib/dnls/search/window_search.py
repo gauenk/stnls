@@ -19,7 +19,7 @@ from .search_utils import *
 class WindowSearchFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, fflow, bflow,
+    def forward(ctx, vid0, vid1, partition, fflow, bflow,
                 qstart, nqueries, nheads, stride0,
                 h0_off, w0_off, h1_off, w1_off,
                 k, ps, pt, ws_h, ws_w, wt, chnls,
@@ -34,15 +34,17 @@ class WindowSearchFunction(th.autograd.Function):
         wt = search Window Time (wt)
         """
 
-        # -- unpack --
-        device = vid0.device
-        t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
-
         # -- reshape with heads --
-        assert c % nheads == 0,"must be multiple of each other."
-        vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
-        vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+        device = vid0.device
+        if vid0.ndim == 4:
+            c = vid0.shape[1]
+            assert c % nheads == 0,"must be multiple of each other."
+            vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+            vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
+        assert vid0.shape[0] == nheads
+        assert vid1.shape[0] == nheads
+        H,t,c,h,w = vid0.shape
+        n_h0,n_w0 = get_num_img(vid0.shape[1:],stride0,ps,dilation)
 
         # -- allocs --
         B = nqueries*nheads
@@ -52,7 +54,6 @@ class WindowSearchFunction(th.autograd.Function):
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
-        partition = create_window_partition(*vid0.shape[-2:],ws_h,ws_w,device)
 
         # -- flow to device --
         device = vid0.device
@@ -171,7 +172,7 @@ class WindowSearchFunction(th.autograd.Function):
         grad_vid1 = rearrange(grad_vid1,'H t c h w -> t (H c) h w')
 
         return grad_vid0,grad_vid1,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
 class WindowSearch(th.nn.Module):
@@ -210,6 +211,7 @@ class WindowSearch(th.nn.Module):
         self.nbwd = nbwd
         self.exact = exact
         self.rbwd = rbwd
+        self.partition = None
 
     def window_softmax(self,dists,vshape):
         t,c,h,w = vshape
@@ -240,14 +242,15 @@ class WindowSearch(th.nn.Module):
         dists = rearrange(dists,shape_str,rh=wsize,rw=wsize)
         N,H,R,D = dists.shape
 
-        ratio = dists.shape[-1] // rel_pos.shape[-1]
         if not(rel_pos is None):
+            ratio = dists.shape[-1] // rel_pos.shape[-1]
             # print("dists.shape: ",dists.shape)
             # print("rel_pos.shape: ",rel_pos.shape)
             rel_pos = repeat(rel_pos,'a b c -> a b (c r)',r=ratio)
             dists = dists + rel_pos.unsqueeze(0)
 
         if not(mask is None):
+            ratio = dists.shape[-1] // mask.shape[-1]
             # print(t,n_h,nh_r,self.stride0,self.ps,self.ws)
             dists = rearrange(dists,'(t n) H d1 d2 -> t n H d1 d2',t=t)
             mask = repeat(mask, 'nW m n -> nW m (n d)',d = ratio)
@@ -305,6 +308,7 @@ class WindowSearch(th.nn.Module):
     def _get_args(self,vshape):
         # -- unpack --
         ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
+        vshape = vshape[-4:] # (t,c,h,w) NOT (H,t,c,h,w)
         t,c,h,w = vshape
 
         # -- compute number of searchable patches --
@@ -317,6 +321,7 @@ class WindowSearch(th.nn.Module):
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):
+        vshape = vshape[-4:] # (t,c,h,w) NOT (H,t,c,h,w)
         t,c,h,w = vshape
         zflow = th.zeros((t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
@@ -325,11 +330,24 @@ class WindowSearch(th.nn.Module):
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
+    def _update_parition(self,H,W,ws_h,ws_w,device):
+        if self.partition is None:
+            self.partition = create_window_partition(H,W,ws_h,ws_w,device)
+        else:
+            eq_h = self.partition.shape[0] == H
+            eq_w = self.partition.shape[1] == W
+            if not(eq_h and eq_w):
+                self.partition = create_window_partition(H,W,ws_h,ws_w,device)
+        assert self.partition.shape[0] == H
+        assert self.partition.shape[1] == W
+
     def forward(self, vid0, qstart, nqueries, vid1=None):
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
-        return WindowSearchFunction.apply(vid0,vid1,
+        self._update_parition(*vid0.shape[-2:],ws_h,ws_w,vid0.device)
+        # print(vid0.shape,self.partition.shape)
+        return WindowSearchFunction.apply(vid0,vid1,self.partition,
                                           self.fflow,self.bflow,
                                           qstart,nqueries,self.nheads,
                                           self.stride0,
