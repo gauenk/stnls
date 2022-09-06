@@ -38,7 +38,7 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 ****************************/
 
 template <typename scalar_t>
-__global__ void prod_search_with_heads_forward_kernel(
+__global__ void l2_search_with_heads_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> fflow,
@@ -306,7 +306,8 @@ __global__ void prod_search_with_heads_forward_kernel(
                   n_pix = nvalid ? vid1[head][nT][ci][nH][nW] : 0.;
 
                   // -- compute dist --
-                  dist += v_pix * n_pix;
+                  float _dists = (v_pix - n_pix);
+                  dist += _dists;
                   // if (valid){
                   // }
                 }
@@ -340,7 +341,7 @@ __global__ void prod_search_with_heads_forward_kernel(
   }
 }
 
-void prod_search_with_heads_forward_cuda(
+void l2_search_with_heads_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor fflow, torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
@@ -382,8 +383,8 @@ void prod_search_with_heads_forward_cuda(
    // fprintf(stdout,"ws_h_iters,ws_w_iters: %d,%d\n",ws_h_iters,ws_w_iters);
     
    // launch kernel
-   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "prod_seach_with_heads_forward_kernel", ([&] {
-      prod_search_with_heads_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "l2_seach_with_heads_forward_kernel", ([&] {
+      l2_search_with_heads_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         fflow.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
@@ -409,7 +410,7 @@ void prod_search_with_heads_forward_cuda(
 ****************************/
 
 template <typename scalar_t>
-__global__ void prod_search_with_heads_backward_kernel(
+__global__ void l2_search_with_heads_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid0,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid1,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
@@ -423,12 +424,12 @@ __global__ void prod_search_with_heads_backward_kernel(
     int bpt, int npt, int cpt) {
 
   // -- shape --
-  int nq = grad_dists.size(1);
-  int k =  grad_dists.size(2);
-  int nframes = vid0.size(1);
-  int colors = vid0.size(2);
-  int height = vid0.size(3);
-  int width = vid0.size(4);
+  int nq = grad_dists.size(0);
+  int k =  grad_dists.size(1);
+  int nframes = vid0.size(0);
+  int colors = vid0.size(1);
+  int height = vid0.size(2);
+  int width = vid0.size(3);
   int n_hw0 = n_h0 * n_w0;
 
   // -- fwd decl registers --
@@ -446,8 +447,8 @@ __global__ void prod_search_with_heads_backward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // -- limits --
-  int i0_max = inds.size(1);
-  int i1_max = inds.size(2);
+  int i0_max = inds.size(0);
+  int i1_max = inds.size(1);
 
   // -- get indices --
   int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.x);
@@ -514,17 +515,19 @@ __global__ void prod_search_with_heads_backward_kernel(
             valid_wk = (wk >= 0) && (wk < width);
             valid_k = valid_hk && valid_wk;
 
-
             // __syncthreads();
-            valid = valid_j && valid_k;
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-              if(valid){
-                pix0 = weight*vid0[head][tk][c0][hk][wk];
-                pix1 = weight*vid1[head][tj][c0][hj][wj];
+              pix0 =  valid_k ? vid0[head][tk][c0][hk][wk] : 0.;
+              pix1 =  valid_j ? vid1[head][tj][c0][hj][wj] : 0.;
+
+              if (valid_j){
                 grad_vid1[head][tj][c0][hj][wj] += pix0;
+              }
+              if (valid_k){
                 grad_vid0[head][tk][c0][hk][wk] += pix1;
               }
+
             }
           }
         }
@@ -533,7 +536,7 @@ __global__ void prod_search_with_heads_backward_kernel(
   }
 }
 
-void prod_search_with_heads_backward_cuda(
+void l2_search_with_heads_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor grad_dists, torch::Tensor inds,
@@ -544,12 +547,12 @@ void prod_search_with_heads_backward_cuda(
     bool exact) {
 
   // -- unpack --
-  int nframes = vid0.size(1);
-  int colors = vid0.size(2);
-  int height = vid0.size(3);
-  int width = vid0.size(4);
-  int nqueries = inds.size(1);
-  int k = inds.size(2);
+  int nframes = vid0.size(0);
+  int colors = vid0.size(1);
+  int height = vid0.size(2);
+  int width = vid0.size(3);
+  int nqueries = inds.size(0);
+  int k = grad_dists.size(1);
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
@@ -592,8 +595,6 @@ void prod_search_with_heads_backward_cuda(
   // fprintf(stdout,"bpt,npt,cpt: %d,%d,%d\n",bpt,npt,cpt);
   // fprintf(stdout,"h0_off,w0_off,h1_off,w1_off: %d,%d,%d,%d\n",
   //         h0_off,w0_off,h1_off,w1_off);
-  // fprintf(stdout,"use_adj,use_reflect: %d,%d\n",
-  //         use_adj,reflect_bounds);
   // fprintf(stdout,"ps,pt,dil: %d,%d,%d\n",ps,pt,dilation);
 
   // -- allocate random values --
@@ -608,8 +609,8 @@ void prod_search_with_heads_backward_cuda(
   }
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "prod_seach_with_heads_backward_kernel", ([&] {
-    prod_search_with_heads_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "l2_seach_with_heads_backward_kernel", ([&] {
+    l2_search_with_heads_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),

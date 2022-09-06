@@ -407,7 +407,7 @@ __global__ void search_prod_with_index_backward_kernel(
     const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> nlInds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int qstart, int stride0, int n_h0, int n_w0,
-    int ps, int pt, float lam, bool use_bounds, bool full_ws,
+    int ps, int pt, float lam, bool use_adj, bool use_bounds, bool full_ws,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int bpb, int npt, int cpt) {
 
@@ -442,7 +442,7 @@ __global__ void search_prod_with_index_backward_kernel(
   // misc
   // int h0_off,w0_off,h1_off,w1_off;
   int psHalf = ps/2;
-  int adj = psHalf;
+  int adj = use_adj ? psHalf : 0;
   int dilation = 1;
   int tj,hj,wj;
   bool valid_hj,valid_wj,valid_j;
@@ -522,7 +522,7 @@ void search_prod_with_index_backward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor nlDists, torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
-    int ps, int pt, float lam, bool use_bounds,
+    int ps, int pt, float lam, bool use_adj, bool use_bounds,
     int h0_off, int w0_off, int h1_off, int w1_off,
     bool full_ws, bool use_rand, bool exact) {
 
@@ -576,7 +576,7 @@ void search_prod_with_index_backward_cuda(
         nlInds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0,
-        ps,pt,lam,use_bounds,full_ws,
+        ps,pt,lam,use_adj,use_bounds,full_ws,
         h0_off,w0_off,h1_off,w1_off,
         bpb,npt,cpt);
   }));

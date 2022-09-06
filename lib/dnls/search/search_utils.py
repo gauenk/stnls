@@ -27,6 +27,9 @@ def get_topk(l2_vals,l2_inds,vals,inds):
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
 
+def get_topk_l2(l2_vals,l2_inds,vals,inds):
+    return get_topk(l2_vals,l2_inds,vals,inds)
+
 def get_topk_prod(l2_vals,l2_inds,vals,inds):
 
     # -- reshape exh --
@@ -109,6 +112,9 @@ def allocate_exh_prod(nq,wt,ws_h,ws_w,device):
     inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
+
+def allocate_exh_l2(nq,wt,ws_h,ws_w,device):
+    return allocate_exh(nq,wt,ws_h,ws_w,device)
 
 def allocate_exh(nq,wt,ws_h,ws_w,device):
     dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)

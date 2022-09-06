@@ -138,6 +138,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         # -- for backward --
         ctx.save_for_backward(dists,inds,vid0,vid1)
         ctx.vid_shape = vid0.shape
+        ctx.use_adj = use_adj
         ctx.ps,ctx.pt = ps,pt
         ctx.use_rand = use_rand
         ctx.nbwd = nbwd
@@ -170,6 +171,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         ow0 = ctx.ow0
         oh1 = ctx.oh1
         ow1 = ctx.ow1
+        use_adj = ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dil)
 
@@ -183,7 +185,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 vid0_grad,vid1_grad,vid0,vid1,
                 grad_dists,inds,
                 qstart,stride0,n_h0,n_w0,
-                ps,pt,lam,reflect_bounds,
+                ps,pt,lam,use_adj,reflect_bounds,
                 oh0,ow0,oh1,ow1,full_ws,use_rand,exact)
         else:
             for _ in range(nbwd):

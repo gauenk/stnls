@@ -7,6 +7,7 @@
 void init_l2_search(py::module &);
 void init_l2_dists(py::module &);
 void init_l2_with_index_search(py::module &);
+void init_l2_search_with_heads(py::module &);
 void init_prod_search(py::module &);
 void init_prod_with_index_search(py::module &);
 void init_window_search(py::module &);
@@ -34,6 +35,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_l2_search(m);
   init_l2_dists(m);
   init_l2_with_index_search(m);
+  init_l2_search_with_heads(m);
   init_window_search(m);
   init_prod_search(m);
   init_prod_with_index_search(m);
