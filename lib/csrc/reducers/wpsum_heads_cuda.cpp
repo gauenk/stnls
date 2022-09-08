@@ -14,7 +14,8 @@ void cuda_wpsum_heads_backward_vid(
     torch::Tensor vid_grad, torch::Tensor patches_grad,
     torch::Tensor dists, torch::Tensor inds,
     int h_off, int w_off,
-    int dilation, int adj, bool reflect_bounds, bool exact);
+    int dilation, int adj, bool reflect_bounds,
+    bool use_rand, bool exact);
 
 void cuda_wpsum_heads_backward_dists(
     torch::Tensor dists_grad, torch::Tensor patches_grad,
@@ -45,13 +46,14 @@ void wpsum_heads_backward_vid(
   torch::Tensor vid_grad, torch::Tensor patches_grad,
   torch::Tensor dists, torch::Tensor inds,
   int h_off, int w_off, int dilation,
-  int adj, bool reflect_bounds, bool exact){
+  int adj, bool reflect_bounds, bool use_rand, bool exact){
   CHECK_INPUT(vid_grad);
   CHECK_INPUT(patches_grad);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   cuda_wpsum_heads_backward_vid(vid_grad,patches_grad,dists,inds,
-                           h_off,w_off,dilation,adj,reflect_bounds,exact);
+                                h_off,w_off,dilation,adj,reflect_bounds,
+                                use_rand,exact);
 }
 
 void wpsum_heads_backward_dists(

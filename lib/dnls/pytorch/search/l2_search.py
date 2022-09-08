@@ -113,7 +113,7 @@ class L2SearchFunction(th.autograd.Function):
         # th.cuda.synchronize()
 
         return grad_vid0,grad_vid1,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
 
 class L2Search(th.nn.Module):

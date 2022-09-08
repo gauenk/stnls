@@ -99,10 +99,10 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = False
-    t = 1 if use_unfold else 3
+    t = 1 if use_unfold else 1
     adj = ps//2 if use_unfold else 0
 
     # -- load data --
@@ -111,6 +111,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
+    # vid = th.cat([vid,]*nheads,1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
@@ -149,7 +150,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride=stride1, use_k=use_k,
                               reflect_bounds=reflect_bounds,
-                              use_search_abs=use_search_abs)
+                              search_abs=search_abs)
 
     # -- query inds --
     qindex = 0
@@ -168,10 +169,11 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # -- run search --
     scores,inds = search(vid,iqueries,vid1=vid)
     scores_s = scores_to_heads(scores,nheads)
+    # print("score_heads.shape: ",scores_s.shape)
 
     # -- two methods for comparison --
     nq = iqueries.shape[0]
-    wpatches_te = wpsum(vid,scores_s,inds).view(nq,nheads,-1)
+    wpatches_te = wpsum(vid[None,],scores_s,inds).view(nq,nheads,-1)
     wpatches_gt = simple_run(vid,scores_s,inds,ps,pt,reflect_bounds,exact)
 
     # -- vis [scores] --
@@ -218,21 +220,22 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = k == -1
-    t = 1 if use_unfold else 3
+    t = 1 if use_unfold else 1
     adj = ps//2 if use_unfold else 0
-    exact = True
+    exact = False
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
     h,w = 64,64
-    vid = th.from_numpy(vid).to(device)[[4],:,:h,:w].contiguous()
+    vid = th.from_numpy(vid).to(device)[[0],:,:h,:w].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
+    # vid = th.cat([vid,]*nheads,1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
@@ -271,7 +274,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
                               ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,
-                              use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+                              use_k=use_k,search_abs=search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0
@@ -323,7 +326,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- forward test --
     nq = iqueries.shape[0]
-    wpatches_te = wpsum(vid2_te,scores_s_te,inds).view(nq,nheads,-1)
+    wpatches_te = wpsum(vid2_te[None,:],scores_s_te,inds).view(nq,nheads,-1)
 
     # -- forward gt --
     wpatches_gt = simple_run(vid2_gt,scores_s_gt,inds,ps,pt,reflect_bounds,exact)
@@ -341,7 +344,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- set tol --
     tol_mean = 1e-5
-    tol_max = 1e-3
+    tol_max = 2*1e-3
 
     # -- grab grads --
     _grads_te = [scores_te.grad,scores_s_te.grad]
@@ -387,7 +390,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = k == -1
     t = 1 if use_unfold else 3
@@ -396,12 +399,12 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
-    vid = th.from_numpy(vid).to(device)[[4],].contiguous()
+    vid = th.from_numpy(vid).to(device)[[0],:,:32,:32].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    # vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,]*nheads,1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
@@ -439,7 +442,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
                                ws, wt, oh0, ow0, oh1, ow1,
                                dilation=dil, stride=stride1,
                                reflect_bounds=reflect_bounds,
-                               use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+                               use_k=use_k,search_abs=search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0
@@ -483,7 +486,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     nq = iqueries.shape[0]
     scores,inds = prod_search(vid0_te,iqueries,vid1=vid1_te)
     scores_s = scores_to_heads(scores,nheads,seed=123)
-    wpatches_te = wpsum(vid2_te,scores_s,inds).view(nq,nheads,-1)
+    wpatches_te = wpsum(vid2_te[None,],scores_s,inds).view(nq,nheads,-1)
 
     # -- forward gt --
     scores,inds = prod_search(vid0_gt,iqueries,vid1=vid1_gt)
@@ -496,7 +499,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
 
 
     # -- confirm fwd --
-    tol = 1e-7
+    tol = 1e-6
     error = th.abs(wpatches_te - wpatches_gt).mean().item()
     if error > tol: print(error)
     assert error < tol
@@ -553,3 +556,4 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
         if error > tol: print(error)
         assert error < tol
 
+    th.cuda.synchronize()

@@ -17,7 +17,7 @@ from ...utils.pads import comp_pads
 from torch.nn.functional import fold,unfold,pad
 
 def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride0=4,stride1=1,dilation=1,
-        use_search_abs=True,use_bound=True,use_adj=True,use_k=True):
+        search_abs=True,use_bound=True,use_adj=True,use_k=True):
 
     # -- handle "-1" --
     ws,wt,k = _get_args(vid.shape,ps,stride1,dilation,ws,wt,k)
@@ -33,7 +33,7 @@ def run(vid,iqueries,flow,k,ps,pt,ws,wt,chnls,stride0=4,stride1=1,dilation=1,
     # -- exec --
     numba_search_launcher(vid,iqueries,nlDists_exh,nlInds_exh,
                           fflow,bflow,k,ps,pt,ws,wt,chnls,stride0,stride1,
-                          dilation,use_search_abs,use_bound,use_adj)
+                          dilation,search_abs,use_bound,use_adj)
 
     # -- patches of topk --
     if use_k:
@@ -144,7 +144,7 @@ def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
 
 def numba_search_launcher(vid,iqueries,nlDists,nlInds,
                           fflow,bflow,k,ps,pt,ws,wt,chnls,stride0,stride1,
-                          dilation,use_search_abs,use_bound,use_adj):
+                          dilation,search_abs,use_bound,use_adj):
 
     # -- buffer for searching --
     t = vid.shape[0]
@@ -159,6 +159,7 @@ def numba_search_launcher(vid,iqueries,nlDists,nlInds,
     # -- pad image --
     oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
     oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride1, dil)
+    # print("inside: ",oh0,ow0,oh1,ow1)
 
     # -- numbify all params --
     vid_nba = cuda.as_cuda_array(vid)
@@ -188,14 +189,14 @@ def numba_search_launcher(vid,iqueries,nlDists,nlInds,
     numba_search[nblocks,nthreads](vid_nba,iqueries_nba,nlDists_nba,nlInds_nba,
                                    fflow_nba,bflow_nba,ps,pt,chnls,stride1,dilation,
                                    oh0,ow0,oh1,ow1,bufs_nba,tranges_nba,n_tranges_nba,
-                                   min_tranges_nba,ws_iters,bpb,use_search_abs,use_bound,use_adj)
+                                   min_tranges_nba,ws_iters,bpb,search_abs,use_bound,use_adj)
 
 
 # @cuda.jit(debug=True,max_registers=64,opt=False)
 @cuda.jit(debug=False,max_registers=64)
 def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,stride,dilation,
                  oh0,ow0,oh1,ow1,bufs,tranges,n_tranges,min_tranges,ws_iters,bpb,
-                 use_search_abs,use_bound,use_adj):
+                 search_abs,use_bound,use_adj):
 
     # -- reflective boundary --
     def bounds(val,lim):
@@ -211,7 +212,7 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,stride,dilation
     bsize,st,ws,ws,_ = inds.shape
     Z = ps*ps*pt*chnls
     psHalf = int(ps//2)
-    wsHalf = (ws)//2
+    wsHalf = (ws-1)//2
     adj = psHalf if use_adj else 0
 
     # -- cuda threads --
@@ -337,7 +338,7 @@ def numba_search(vid,iqueries,dists,inds,fflow,bflow,ps,pt,chnls,stride,dilation
                     # -----------------
                     #    spatial dir
                     # -----------------
-                    if use_search_abs:
+                    if search_abs:
                         n_hi = stride * ws_i
                         n_wi = stride * ws_j
                     else:

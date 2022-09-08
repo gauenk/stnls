@@ -82,6 +82,7 @@ def simple_run(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
 
 def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
 
+    pass
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
@@ -206,6 +207,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     assert error < tol
 
 def test_backward(ps,stride,dilation,top,btm,left,right,k):
+    pass
 
     # -- get args --
     pt,dil = 1,dilation

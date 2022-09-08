@@ -13,36 +13,36 @@ import dnls_cuda
 # -- local --
 from .search_utils import *
 
-def get_topk(l2_vals,l2_inds,vals,inds):
+# def get_topk(l2_vals,l2_inds,vals,inds):
 
-    # -- reshape exh --
-    nq,st,ws,ws = l2_vals.shape
-    l2_vals = l2_vals.view(nq,-1)
-    l2_inds = l2_inds.view(nq,-1,3)
+#     # -- reshape exh --
+#     nq,st,ws,ws = l2_vals.shape
+#     l2_vals = l2_vals.view(nq,-1)
+#     l2_inds = l2_inds.view(nq,-1,3)
 
-    # -- shape info --
-    b,_ = l2_vals.shape
-    _,k = vals.shape
+#     # -- shape info --
+#     b,_ = l2_vals.shape
+#     _,k = vals.shape
 
-    # -- fill nan --
-    l2_vals[th.where(th.isnan(l2_vals))] = -th.inf # fix nan
+#     # -- fill nan --
+#     l2_vals[th.where(th.isnan(l2_vals))] = -th.inf # fix nan
 
-    # -- take mins --
-    order = th.argsort(l2_vals,dim=1,descending=True)
-    vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
-    for i in range(inds.shape[-1]):
-        inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
+#     # -- take mins --
+#     order = th.argsort(l2_vals,dim=1,descending=True)
+#     vals[:b,:] = th.gather(l2_vals,1,order[:,:k])
+#     for i in range(inds.shape[-1]):
+#         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
 
 def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
-    if wt <= 0:
-        bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
-    else:
-        bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
-    return bufs
+# def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
+#     if wt <= 0:
+#         bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
+#     else:
+#         bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
+#     return bufs
 
 # def allocate_exh(nq,ws_h,ws_w,wt,device):
 #     dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
@@ -51,10 +51,10 @@ def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
 #     inds[...] = -1
 #     return dists,inds
 
-def allocate_rtn(nq,k,device):
-    dists = th.zeros((nq,k),device=device,dtype=th.float32)
-    inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
-    return dists,inds
+# def allocate_rtn(nq,k,device):
+#     dists = th.zeros((nq,k),device=device,dtype=th.float32)
+#     inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
+#     return dists,inds
 
 def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
     tranges,n_tranges,min_tranges = [],[],[]
@@ -97,7 +97,7 @@ class ProductSearchFunction(th.autograd.Function):
     def forward(ctx, vid0, vid1, qinds, fflow, bflow,
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride,dilation,lam,
-                use_search_abs, reflect_bounds, use_adj, use_k,
+                search_abs, reflect_bounds, use_adj, use_k,
                 oh0, ow0, oh1, ow1, nbwd, exact):
         """
         vid = [T,C,H,W]
@@ -114,35 +114,27 @@ class ProductSearchFunction(th.autograd.Function):
 
         # -- allocs --
         bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
-        dists_exh,inds_exh = allocate_exh_prod(nq,ws_h,ws_w,wt,device)
+        dists_exh,inds_exh = allocate_exh_prod(nq,wt,ws_h,ws_w,device)
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
         # -- forward --
         dnls_cuda.search_prod_forward(vid0, vid1, qinds, fflow, bflow,
-                                  dists_exh, inds_exh,
-                                  ps, pt, ws_h, ws_w, wt, chnls, stride, dilation,
-                                  use_search_abs, reflect_bounds, use_adj,
-                                  oh0, ow0, oh1, ow1,
-                                  bufs,tranges,n_tranges,min_tranges)
-        # th.cuda.synchronize()
-        # th.cuda.empty_cache()
-        # print(dists_exh[:3,:3,:3])
-        # print("dists_exh._version:",dists_exh._version)
-        # print("inds_exh._version:",inds_exh._version)
+                                      dists_exh, inds_exh,
+                                      ps, pt, ws_h, ws_w, wt, chnls, stride, dilation,
+                                      search_abs, reflect_bounds, use_adj,
+                                      oh0, ow0, oh1, ow1,
+                                      bufs,tranges,n_tranges,min_tranges)
 
         # -- topk --
-        # b = dists_exh.shape[0]
-        # dists=dists_exh.view(b,-1)#.contiguous()
-        # inds=inds_exh.view(b,-1,3)#.contiguous()
-        # print(dists_exh[0],use_search_abs)
-        # print(k, ps, pt, ws_h, ws_w, wt, chnls, use_search_abs, use_adj, reflect_bounds)
-        # print(oh0, ow0, oh1, ow1)
+        b = dists_exh.shape[0]
+        dists=dists_exh.view(b,-1)#.contiguous()
+        inds=inds_exh.view(b,-1,3)#.contiguous()
 
         if use_k:
             dists,inds = allocate_rtn(nq,k,device)
-            get_topk(dists_exh,inds_exh,dists,inds)
+            get_topk_prod(dists_exh,inds_exh,dists,inds)
             dists = dists.contiguous()
             inds = inds.contiguous()
         else:
@@ -151,11 +143,9 @@ class ProductSearchFunction(th.autograd.Function):
             b = dists_exh.shape[0]
             dists=dists_exh.view(b,-1)#.contiguous()
             inds=inds_exh.view(b,-1,3)#.contiguous()
-        # print(dists)
 
         # -- for backward --
-        ctx.save_for_backward(dists,inds,
-                              qinds,vid0,vid1)
+        ctx.save_for_backward(dists,inds,qinds,vid0,vid1)
         ctx.vid_shape = vid0.shape
         ctx.ps,ctx.pt = ps,pt
         ctx.nbwd = nbwd
@@ -216,7 +206,7 @@ class ProductSearchFunction(th.autograd.Function):
 class ProductSearch(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
-                 chnls=-1,stride=1, dilation=1, lam = 1., use_search_abs=False,
+                 chnls=-1,stride=1, dilation=1, lam = 1., search_abs=False,
                  reflect_bounds=True, use_adj=True, use_k=True, nbwd=1, exact=True):
         super(ProductSearch, self).__init__()
         self.k = k
@@ -230,7 +220,7 @@ class ProductSearch(th.nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.lam = lam
-        self.use_search_abs = use_search_abs
+        self.search_abs = search_abs
         self.reflect_bounds = reflect_bounds
         self.use_adj = use_adj
         self.use_k = use_k
@@ -275,7 +265,7 @@ class ProductSearch(th.nn.Module):
         return ProductSearchFunction.apply(vid0,vid1,iqueries,self.fflow,self.bflow,
                                            k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
                                            self.stride,self.dilation,self.lam,
-                                           self.use_search_abs,self.reflect_bounds,
+                                           self.search_abs,self.reflect_bounds,
                                            self.use_adj,self.use_k,
                                            self.oh0,self.ow0,self.oh1,self.ow1,
                                            self.nbwd, self.exact)

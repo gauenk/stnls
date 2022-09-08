@@ -85,10 +85,10 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
-    vid = th.cat([vid,vid],-2)
+    # vid = th.cat([vid,vid],-2)
 
     # -- normalize --
     vid /= vid.max()
@@ -129,7 +129,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
                                k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                chnls=-1,dilation=dil, stride=stride1,
                                reflect_bounds=reflect_bounds,use_k=False,
-                               use_search_abs=True,use_adj=use_adj,
+                               search_abs=True,use_adj=use_adj,
                                exact=exact)
     # -- query inds --
     qindex = 0
@@ -274,7 +274,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
                               ws, wt, oh0, ow0, oh1, ow1,
                               chnls=chnls,dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,use_k=False,
-                              exact=exact,use_search_abs=True)
+                              exact=exact,search_abs=True)
     # -- query inds
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -461,7 +461,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
                               ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
                               chnls=-1,dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,
-                              use_k=False,exact=exact,use_search_abs=True)
+                              use_k=False,exact=exact,search_abs=True)
     # -- query inds
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
@@ -678,7 +678,7 @@ def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
                                                    ps,pt,ws,wt,chnls,
                                                    stride0=stride0,stride1=stride1,
                                                    dilation=dil,
-                                                   use_search_abs=True,use_k=False)
+                                                   search_abs=True,use_k=False)
     # print(score_simp.shape)
     # print(score_te.shape)
     score_te = rearrange(score_te,'(nh nw) (h w) -> h w nh nw',h=h,nh=nh)
@@ -697,7 +697,7 @@ def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
     # print("perc_neq: ",perc_neq)
     # assert perc_neq < 0.05
 
-def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
+def test_cu_vs_simp_fwd(k,ps,stride,dilation,top,btm,left,right,exact):
 
 
     # -- get args --
@@ -705,9 +705,9 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     dname,ext = "davis_baseball_64x64","jpg"
     chnls,pt,wt = 3,1,0
     ws = -1 if k == -1 else 10
-    use_search_abs = k == -1
+    search_abs = k == -1
     use_k = not(k == -1)
-    # print(ws,k,use_search_abs,use_k)
+    # print(ws,k,search_abs,use_k)
 
     # -- init vars --
     device = "cuda:0"
@@ -754,7 +754,8 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,
                               chnls=chnls,dilation=dil, stride=stride1,
-                              use_k=use_k,use_search_abs=use_search_abs)
+                              use_k=use_k,search_abs=search_abs,
+                              reflect_bounds=True,use_adj=True)
     fold_nl = dnls.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"start-exec")
@@ -770,12 +771,22 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                                                        ps,pt,ws,wt,chnls,
                                                        stride0=stride0,stride1=stride1,
                                                        dilation=dil,use_k=use_k,
-                                                       use_search_abs=use_search_abs)
+                                                       search_abs=search_abs,
+                                                       use_bound=True,
+                                                       use_adj=True)
 
     # -- reshape --
     nq = iqueries.shape[0]
     score_te = score_te.view(nq,-1)
     score_simp = score_simp.view(nq,-1)
+
+    # -- viz --
+    diff = th.abs(score_simp - score_te)
+    args = th.where(diff>1e-1)
+    # print(score_te[:5,:5])
+    # print(score_simp[:5,:5])
+    # print(diff[:5,:5])
+    # print(args[0])
 
     # -- compare --
     error = th.mean(th.abs(score_te - score_simp)).item()
@@ -848,7 +859,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
                               ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
                               chnls=-1,dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,
-                              use_k=False,exact=exact,use_search_abs=True)
+                              use_k=False,exact=exact,search_abs=True)
 
     # -- run prod_search over batches --
     score_te = []

@@ -83,7 +83,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = k == -1
     t = 1 if use_unfold else 3
@@ -133,7 +133,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride=stride1, use_k=use_k,
                               reflect_bounds=reflect_bounds,
-                              use_search_abs=use_search_abs)
+                              search_abs=search_abs)
 
     # -- query inds --
     qindex = 0
@@ -205,7 +205,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = k == -1
     t = 1 if use_unfold else 3
@@ -258,7 +258,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
                               ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,
-                              use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+                              use_k=use_k,search_abs=search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0
@@ -385,7 +385,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = k == -1
     t = 1 if use_unfold else 3
@@ -437,7 +437,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
                                ws, wt, oh0, ow0, oh1, ow1,
                                dilation=dil, stride=stride1,
                                reflect_bounds=reflect_bounds,
-                               use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+                               use_k=use_k,search_abs=search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0

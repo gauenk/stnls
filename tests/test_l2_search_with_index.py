@@ -47,7 +47,7 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[7],"stride0":[2,4],"stride1":[4],"dilation":[1],"wt":[1,3],
                   "ws":[15,32],"k":[30],"exact":[True],"reflect_bounds":[True],
-                  "seed":[123,234,0,1,2,3,4]}
+                  "seed":[123,234]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
@@ -208,14 +208,14 @@ def test_cu_vs_simp_fwd(ws,wt,k,ps,stride0,stride1,dilation,reflect_bounds,exact
     vid = th.cat([vid,vid],-1)
     vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
 
     # -- normalize --
     vid /= vid.max()
     # vidr = th.ones_like(vid)
     vidr = th.rand_like(vid)
     vidr = th.rand_like(vid)
-    print(ws,wt,k,ps,stride0,stride1)
+    # print(ws,wt,k,ps,stride0,stride1)
 
     # -- compute flow --
     flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
@@ -402,12 +402,12 @@ def test_exact_bwd(ps,k,stride0,stride1,dilation,reflect_bounds):
     vid_te = vid.clone()
     vid_te.requires_grad_(True)
     score_te,inds_te = search(vid_te,qindex,ntotal,vid1=vid_te)
-    print(n_h0,n_w0)
-    print(score_te.shape)
+    # print(n_h0,n_w0)
+    # print(score_te.shape)
     score_grad = th.rand_like(score_te)
     th.autograd.backward(score_te,score_grad)
     grad_te = vid_te.grad
-    print(th.all(grad_te.abs() < 1e-5))
+    # print(th.all(grad_te.abs() < 1e-5))
 
     # -- run search --
     grad0,grad1 = dnls.simple.search_bwd.run(score_grad,vid,vid,inds_te,qindex,
@@ -416,13 +416,13 @@ def test_exact_bwd(ps,k,stride0,stride1,dilation,reflect_bounds):
     grad_gt = grad0 + grad1
 
     # -- viz --
-    diff2 = (grad_gt - grad_te)**2
+    # diff2 = (grad_gt - grad_te)**2
     # diff2 = th.abs(grad_te - grad_gt)/(grad_gt.abs()+1e-5)
-    print(diff2.max())
-    diff2 /= diff2.max().item()
-    rand_s = "rand" if rbwd else "norand"
-    fn = "grad_exact_diff_%s" % rand_s
-    dnls.testing.data.save_burst(diff2,SAVE_DIR,fn)
+    # print(diff2.max())
+    # diff2 /= diff2.max().item()
+    # rand_s = "rand" if rbwd else "norand"
+    # fn = "grad_exact_diff_%s" % rand_s
+    # dnls.testing.data.save_burst(diff2,SAVE_DIR,fn)
     # print(score_te[0,:3])
     # print(score_gt[0,:3])
 

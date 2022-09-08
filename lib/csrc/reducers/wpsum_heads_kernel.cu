@@ -269,7 +269,8 @@ __global__ void wpsum_heads_backward_vid_kernel(
 void cuda_wpsum_heads_backward_vid(
     torch::Tensor vid_grad, torch::Tensor patches_grad, 
     torch::Tensor dists, torch::Tensor inds,
-    int h_off, int w_off, int dilation, int adj, bool reflect_bounds, bool exact){
+    int h_off, int w_off, int dilation, int adj,
+    bool reflect_bounds, bool use_rand, bool exact){
 
   // unpack params
   int nheads = dists.size(0);
@@ -290,7 +291,10 @@ void cuda_wpsum_heads_backward_vid(
   dim3 nthreads = dim3(block_threads,color_threads);
 
   // -- head blocks --
-  int head_nblocks = exact ? 1 : nheads;
+  int nheads_vid = vid_grad.size(0);
+  bool span_heads = nheads_vid == nheads;
+  span_heads = span_heads || !exact;
+  int head_nblocks = span_heads ? nheads : 1;
   int hpb = exact ? nheads : 1;
 
   // -- query blocks --
@@ -319,8 +323,14 @@ void cuda_wpsum_heads_backward_vid(
 
   // -- allocate random memory --
   auto cu_index = vid_grad.device().index();
-  auto options = torch::TensorOptions().device(torch::kCUDA, cu_index).dtype(torch::kFloat32);
-  torch::Tensor rand_nums = torch::rand({numQueries,1,1},options);
+  auto options = torch::TensorOptions().device(torch::kCUDA,
+                                               cu_index).dtype(torch::kFloat32);
+  torch::Tensor rand_nums;
+  if (use_rand){
+    rand_nums = torch::rand({numQueries,1,1},options);
+  }else{
+    rand_nums = torch::zeros({numQueries,1,1},options);
+  }
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid_grad.type(), "wpsum_heads_backward_vid_kernel", ([&] {
