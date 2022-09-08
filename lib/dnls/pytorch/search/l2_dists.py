@@ -3,9 +3,6 @@
 import torch as th
 import numpy as np
 
-# -- padding --
-from dnls.utils.pads import comp_pads
-
 # -- cpp cuda kernel --
 import dnls_cuda
 

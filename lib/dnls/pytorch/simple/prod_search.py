@@ -11,7 +11,7 @@ import numpy as np
 from einops import rearrange,repeat
 
 # -- padding --
-from dnls.utils.pads import comp_pads
+from ...utils.pads import comp_pads
 
 # -- fold/unfold
 from torch.nn.functional import fold,unfold,pad

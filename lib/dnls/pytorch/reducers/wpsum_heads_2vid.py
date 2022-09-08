@@ -10,8 +10,8 @@ import torch as th
 # -- cpp cuda kernel --
 import dnls_cuda
 
-from dnls.utils.timer import ExpTimer
-from dnls.utils.inds import get_nums_hw
+from ...utils.timer import ExpTimer
+from ...utils.inds import get_nums_hw
 
 
 def allocate_vid(vid_shape,device):

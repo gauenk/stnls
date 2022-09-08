@@ -106,11 +106,8 @@ def numba_fold_k(vid,wvid,patches,vals,inds,lam,dilation):
                         if w1 < 0 or w1 >= width: continue
 
                         # -- weight --
-                        # pleft = (pi - psHalf)**2/psHalf2
-                        # pright = (pj - psHalf)**2/psHalf2
-                        # pdist = pleft + pright
-                        # weight = 1.#math.exp(-10000.*pdist)
-                        weight = math.exp(-lam*vals[bi,ni])
+                        # weight = math.exp(-lam*vals[bi,ni])
+                        weight = vals[bi,ni]
 
                         # -- fill --
                         for ci in range(color):

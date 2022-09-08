@@ -5,7 +5,7 @@ import numpy as np
 from einops import rearrange,repeat
 
 # -- padding --
-from dnls.utils.pads import comp_pads
+from ...utils.pads import comp_pads
 
 # -- cpp cuda kernel --
 import dnls_cuda

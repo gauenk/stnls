@@ -7,7 +7,7 @@ from einops import rearrange
 import dnls_cuda
 
 # -- misc --
-from dnls.utils.timer import ExpTimer
+from ...utils.timer import ExpTimer
 
 
 def allocate_vid(vid_shape,device):

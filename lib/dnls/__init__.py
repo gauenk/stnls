@@ -1,2 +1,35 @@
+
+# -- api --
 from . import pytorch
-from .pytorch import * # backward compat.
+from . import utils
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#     Init submodules for Pytorch
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# -- submodules --
+from .pytorch import search
+from .pytorch import reducers
+from .pytorch import tile
+from .pytorch import tile_k
+from .pytorch import simple
+from .pytorch import testing
+
+#
+# -- unpack functions into namespace --
+#
+
+# -- tiling --
+from .pytorch.tile.fold import fold,Fold
+from .pytorch.tile.unfold import unfold,Unfold
+from .pytorch.tile.ifold import ifold,iFold
+from .pytorch.tile.ifoldz import ifoldz,iFoldz
+from .pytorch.tile.iunfold import iunfold,iUnfold
+
+# -- tiling k --
+from .pytorch.tile_k.fold_k import fold_k,FoldK
+from .pytorch.tile_k.unfold_k import unfold_k,UnfoldK
+
+

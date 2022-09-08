@@ -83,10 +83,10 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
     # -- unfold/fold k decl --
     unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
                             exact=True,device=device)
-    fold_k_simp = dnls.FoldK(vid.shape,ws,wt,dilation=dilation,
+    fold_k_simp = dnls.FoldK(vid.shape,dilation=dilation,
                              exact=exact,device=device)
-    fold_k_eff = dnls.FoldK(vid.shape,ws,wt,dilation=dilation,
-                            use_race=False,device=device)
+    fold_k_eff = dnls.FoldK(vid.shape,dilation=dilation,
+                            rand=True,nreps=1,device=device)
 
     # -- timer --
     timer = dnls.utils.timer.ExpTimer()
@@ -107,25 +107,25 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
     # -- nbatches --
     for index in range(nbatches):
 
-        # -- get [patches & nlInds] --
+        # -- get [patches & inds] --
         queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
                                                     t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
-                                                flow,k,ps,pt,ws,wt,chnls)
-        patches = unfold_k(vid,nlInds)
+        dists,inds = dnls.simple.search.run(vid,queryInds,
+                                            flow,k,ps,pt,ws,wt,chnls)
+        patches = unfold_k(vid,inds)
         patches[...] = 1.
-        # print(nlInds[64*64-1])
-        # print(nlInds[64*64])
-        # print(nlInds[64*64+1])
+        # print(inds[64*64-1])
+        # print(inds[64*64])
+        # print(inds[64*64+1])
 
         # -- find eq --
-        eq = th.all(nlInds==0,-1)
+        eq = th.all(inds==0,-1)
         # print(eq.shape)
         args = th.where(eq)
         # print(args)
-        # print(nlInds[...,0][args])
-        # print(nlInds[...,1][args])
-        # print(nlInds[...,2][args])
+        # print(inds[...,0][args])
+        # print(inds[...,1][args])
+        # print(inds[...,2][args])
 
         # -- reset fold_k --
         if clear_each:
@@ -136,40 +136,47 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
 
         # -- testing forward --
         timer.start("simp")
-        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,nlDists,
-                                                    nlInds,dilation=dilation,
+        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,dists,
+                                                    inds,dilation=dilation,
                                                     shape=shape)
-        # vid_simp,wvid_simp = fold_k_simp(patches,nlDists,nlInds)
+        # vid_simp,wvid_simp = fold_k_simp(patches,dists,inds)
         th.cuda.synchronize()
         timer.stop("simp")
+
         timer.start("eff")
-        vid_eff,wvid_eff = fold_k_eff(patches,nlDists,nlInds)
+        vid_eff,wvid_eff = fold_k_eff(patches,dists,inds)
         th.cuda.synchronize()
         timer.stop("eff")
+
+        # -- viz --
         # print(timer)
         # print(vid_simp[0,0,:3,:3])
         # print(vid_eff[0,0,:3,:3])
         # print(vid_simp[0,0,16:19,16:19])
         # print(vid_eff[0,0,16:19,16:19])
-
         # print(vid_simp[6,0,16:19,16:19])
         # print(vid_eff[6,0,16:19,16:19])
 
-        diff = th.mean((vid_eff - vid_simp)**2,1)
-        args = th.where(diff>1e-5)
-        # print(th.unique(args[0]))
-        diff = repeat(diff,'t h w -> t c h w',c=3)
-        diff /= diff.max()
-        # dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
-
-        error = th.mean((vid_eff - vid_simp)**2).item()
-        assert error < 1e-10
+        # -- exect most of the value to be mostly the same --
+        diff = th.abs(vid_eff - vid_simp)/(th.abs(vid_simp)+1e-10)
+        args0 = th.where(th.abs(vid_simp) > 1e-2) # rm small
+        diff = diff[args0]
+        args_big = th.where(diff >= 0.75) # get big % diff
+        perc_big = len(args_big[0]) / float(diff.shape[0])
+        assert perc_big < 1e-1 # one tenth is big
+        args1 = th.where(diff < 0.75) # rm big % diff
+        diff = diff[args1]
+        ave_rel_error = th.mean(diff).item()
+        assert ave_rel_error < 1e-1 # small on ave
 
         # -- save --
         # vid_nl /= vid_nl.max()
         # vid_simp /= vid_simp.max()
         # dnls.testing.data.save_burst(vid_nl[[0]],SAVE_DIR,"nl_%d" % index)
         # dnls.testing.data.save_burst(vid_simp[[0]],SAVE_DIR,"simp_%d" % index)
+
+        # -- compare times --
+        # print(timer)
 
     th.cuda.synchronize()
 
@@ -205,8 +212,8 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     # -- fold_k/unfold_k decl --
     unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
                             exact=True,device=device)
-    fold_k = dnls.FoldK(vid.shape,ws,wt,dilation=dilation,
-                           exact=exact,device=device)
+    fold_k = dnls.FoldK(vid.shape,dilation=dilation,
+                        exact=exact,device=device)
 
     # -- batching info --
     device = noisy.device
@@ -223,21 +230,21 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     # -- nbatches --
     for index in range(nbatches):
 
-        # -- get [patches & nlInds] --
+        # -- get [patches & inds] --
         queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
                                                     t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+        dists,inds = dnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = unfold_k(vid,nlInds)
+        patches = unfold_k(vid,inds)
 
         # -- reset fold_k --
         fold_k.vid[...] = 0
         fold_k.wvid[...] = 0
 
         # -- testing forward --
-        vid_nl,wvid_nl = fold_k(patches,nlDists,nlInds)
-        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,nlDists,
-                                                    nlInds,dilation=dilation,
+        vid_nl,wvid_nl = fold_k(patches,dists,inds)
+        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,dists,
+                                                    inds,dilation=dilation,
                                                     shape=shape)
         error = th.mean((vid_nl - vid_simp)**2).item()
         assert error < 1e-10
@@ -289,16 +296,17 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
     # -- exec fold_k fxns --
     unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
                             exact=True,device=device)
-    fold_k = dnls.FoldK((t,c,h,w),ws,wt,dilation=dilation,
+    fold_k = dnls.FoldK((t,c,h,w),dilation=dilation,
                                      exact=exact,device=device)
 
-    # -- get [patches & nlInds] --
+    # -- get [patches & inds] --
     index = 0
     queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
                                                 t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+    dists,inds = dnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
-    patches = unfold_k(vid,nlInds)
+    patches = unfold_k(vid,inds)
+    dists = th.ones_like(dists)
 
     #
     # -- test logic --
@@ -312,7 +320,7 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
 
     # -- run forward --
     vid_nn,wvid_nn = run_fold(patches_nn,t,h,w,stride,dilation)
-    vid_nl,wvid_nl = fold_k(patches_nl,nlDists,nlInds)
+    vid_nl,wvid_nl = fold_k(patches_nl,dists,inds)
 
     # -- reweight --
     args = th.where(wvid_nl>0)

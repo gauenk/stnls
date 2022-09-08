@@ -7,9 +7,6 @@ from einops import rearrange
 # -- softmax --
 import torch.nn.functional as nnf
 
-# -- padding --
-from dnls.utils.pads import comp_pads
-
 # -- cpp cuda kernel --
 import dnls_cuda
 

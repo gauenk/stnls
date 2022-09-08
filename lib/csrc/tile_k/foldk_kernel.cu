@@ -262,6 +262,7 @@ void dnls_cuda_foldk_forward(
 
      Forward Pass (dist threads across search space)
 
+     This doesn't work well. Do not use.
 ***********************************************************/
 
 
@@ -445,6 +446,7 @@ void dnls_cuda_foldk_forward_dist(
     torch::Tensor dists,torch::Tensor inds,
     int ws, int wt, int dilation) {
 
+  fprintf(stdout,"WARNING: Don't use me.\n");
   // launch params
   int numQueries = inds.size(0);
   int k = dists.size(1);

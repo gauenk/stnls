@@ -5,7 +5,7 @@ import torch as th
 # -- cpp cuda kernel --
 import dnls_cuda
 
-from dnls.utils.timer import ExpTimer
+from ...utils.timer import ExpTimer
 
 
 def allocate_vid(vid_shape,device):

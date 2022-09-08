@@ -4,12 +4,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- padding --
-from dnls.utils.pads import comp_pads
+# -- utils --
+from ...utils.timer import ExpTimer
 
 # -- cpp cuda kernel --
 import dnls_cuda
-from dnls.utils.timer import ExpTimer
 
 # -- local --
 from .search_utils import *
