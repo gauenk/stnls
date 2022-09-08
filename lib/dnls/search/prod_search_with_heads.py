@@ -70,6 +70,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                                                  reflect_bounds, search_abs, full_ws,
                                                  anchor_self, tranges,
                                                  n_tranges, min_tranges)
+        th.cuda.synchronize()
 
         # -- shape for output --
         H,b = dists_exh.shape[:2]

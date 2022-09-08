@@ -49,6 +49,6 @@ setup(name='dnls',
           ])
       ],
       cmdclass={'build_ext': BuildExtension},
-      extra_cuda_cflags=['-lineinfo']
+      # extra_cuda_cflags=['-lineinfo']
       #extra_cuda_cflags=['--generate-line-info']
 )
