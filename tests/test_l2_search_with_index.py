@@ -8,12 +8,9 @@ see pacnet's test for details.
 """
 
 # -- python --
-import cv2,tqdm,copy,pytest
+import pytest
 import numpy as np
-import unittest
-import tempfile
 import sys
-import shutil
 from pathlib import Path
 from easydict import EasyDict as edict
 
@@ -29,7 +26,6 @@ from dnls.utils.pads import comp_pads
 from dnls.utils.inds import get_batching_info
 
 # -- check if reordered --
-from scipy import optimize
 SAVE_DIR = Path("./output/tests/l2_search_with_index")
 
 #

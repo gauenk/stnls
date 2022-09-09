@@ -1,6 +1,6 @@
 
 # -- python --
-import sys,pytest
+import sys
 import numba as nb
 
 # -- data mgnmt --
@@ -8,7 +8,8 @@ from pathlib import Path
 from easydict import EasyDict as edict
 
 # -- testing --
-import unittest
+import pytest
+
 
 # -- linalg --
 import torch as th

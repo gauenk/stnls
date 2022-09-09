@@ -7,7 +7,7 @@ from pathlib import Path
 from easydict import EasyDict as edict
 
 # -- testing --
-import unittest,pytest
+import pytest
 
 # -- linalg --
 import torch as th
@@ -20,7 +20,7 @@ import dnls.utils.gpu_mem as gpu_mem
 from dnls.utils.pads import comp_pads
 
 # -- meshgrid --
-import cache_io
+
 
 # -- test func --
 from torch.nn.functional import fold,unfold,pad

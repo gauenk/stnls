@@ -25,7 +25,7 @@ from pathlib import Path
 from easydict import EasyDict as edict
 
 # -- testing --
-import unittest,pytest
+import pytest
 
 # -- linalg --
 import torch as th

@@ -1,13 +1,11 @@
 
 # -- python --
-import sys,pytest
+import sys
+import pytest
 
 # -- data mgnmt --
 from pathlib import Path
 from easydict import EasyDict as edict
-
-# -- testing --
-import unittest
 
 # -- linalg --
 import torch as th

@@ -1,13 +1,10 @@
 
-# -- python --
-import sys
 
 # -- data mgnmt --
 from pathlib import Path
-from easydict import EasyDict as edict
 
 # -- testing --
-import unittest,pytest
+import pytest
 
 # -- linalg --
 import torch as th
@@ -19,13 +16,6 @@ import dnls
 import dnls.utils.gpu_mem as gpu_mem
 from dnls.utils.pads import comp_pads
 from dnls.utils.inds import get_batching_info
-
-# -- meshgrid --
-import cache_io
-
-# -- test func --
-from torch.nn.functional import fold,unfold,pad
-from torchvision.transforms.functional import center_crop
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/prod_search")
@@ -718,7 +708,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
-    chnls,k,pt = 1,1,1
+    k,pt = 1,1
     ws,wt = 10,0
     ws = -1
     k = -1
