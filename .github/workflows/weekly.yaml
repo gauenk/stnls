@@ -26,9 +26,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install -r requirements.txt
-    - name: Install package
+    - name: Install our package
       run: |
-        python -m pip install .
+        python -m pip install ./lib
     - name: Testing Code
       run: |
         python -m pytest -s ./test/
