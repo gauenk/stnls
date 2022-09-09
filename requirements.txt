@@ -7,4 +7,6 @@ numpy
 numba
 torch==1.12.1+cu113
 torchvision==0.13.1
+https://storage.googleapis.com/jax-releases/cuda11/jaxlib-0.3.10+cuda11.cudnn805-cp38-none-manylinux2014_x86_64.whl # jax
+jaxlib==0.3.10
 --extra-index-url https://download.pytorch.org/whl/cu113
