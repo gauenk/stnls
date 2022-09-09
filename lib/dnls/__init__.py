@@ -1,7 +1,8 @@
 # -- api --
-from . import jax
 from . import pytorch
+from . import jax # jax after pytorch
 from . import utils
+from . import flow
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
