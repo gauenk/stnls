@@ -23,7 +23,7 @@ apt-get update
 export INSTALLER=cuda-11-3_11.3.0-1_amd64.deb
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/${INSTALLER}
 sudo dpkg -i ${INSTALLER}
-# sudo apt install -y cuda-11-3 cuda-cufft-dev-11-3
+sudo apt install -y cuda-11-3 cuda-cufft-dev-11-3
 
 
 

@@ -101,8 +101,76 @@ void search_prod_with_index_backward(
 void jax_search_prod_with_index_forward(cudaStream_t stream, void **buffers,
                                         const char *opaque,
                                         std::size_t opaque_len){
+  // -- declr consts for now --
+  int qstart = 0;
+  int stride0 = 1;
+  int n_h0 = 1;
+  int n_w0 = 1;
+  int ps = 1;
+  int pt = 1;
+  int chnls = 1;
+  int stride = 1;
+  int dilation = 1;
+  bool use_search_abs = false;
+  bool use_bounds = true;
+  bool use_adj = false;
+  bool full_ws = false;
+  int oh0 = 0;
+  int ow0 = 0;
+  int oh1 = 0;
+  int ow1 = 0;
 
-  fprintf(stdout,"jax-it!\n");
+  // -- video shape --
+  int nframes = 3;
+  int color = 3;
+  int height = 128;
+  int width = 128;
+  int nqueries = 10;
+  int k = 3;
+  int ws_h = 8;
+  int ws_w = 8;
+  int wt = 0;
+  int st = 2*wt+1;
+
+  // -- init memory types --
+  auto vid0_ptr = reinterpret_cast<float*>(buffers[0]);
+  auto vid1_ptr = reinterpret_cast<float*>(buffers[1]);
+  auto fflow_ptr = reinterpret_cast<float*>(buffers[2]);
+  auto bflow_ptr = reinterpret_cast<float*>(buffers[3]);
+  auto dists_ptr = reinterpret_cast<float*>(buffers[4]);
+  auto inds_ptr = reinterpret_cast<int32_t*>(buffers[5]);
+  auto tranges_ptr = reinterpret_cast<int32_t*>(buffers[6]);
+  auto n_tranges_ptr = reinterpret_cast<int32_t*>(buffers[7]);
+  auto min_tranges_ptr = reinterpret_cast<int32_t*>(buffers[8]);
+
+  // -- init options --
+  auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32).\
+    layout(torch::kStrided).device(torch::kCUDA, 0);
+  auto options_i32 = torch::TensorOptions().dtype(torch::kInt32).\
+    layout(torch::kStrided).device(torch::kCUDA, 0);
+
+  // -- create writable tensors --
+  auto dists = torch::zeros({nqueries,ws_h,ws_w,st},options_f32);
+  auto inds = torch::zeros({nqueries,ws_h,ws_w,st,3},options_i32);
+
+  // -- create tensors --
+  auto vid0 = torch::from_blob(vid0_ptr,{nframes,color,height,height},options_f32);
+  auto vid1 = torch::from_blob(vid1_ptr,{nframes,color,height,height},options_f32);
+  auto fflow = torch::from_blob(fflow_ptr,{nframes,2,height,height},options_f32);
+  auto bflow = torch::from_blob(bflow_ptr,{nframes,2,height,height},options_f32);
+  auto tranges = torch::from_blob(tranges_ptr,{nframes,nframes},options_i32);
+  auto n_tranges = torch::from_blob(n_tranges_ptr,{nframes},options_i32);
+  auto min_tranges = torch::from_blob(min_tranges_ptr,{nframes},options_i32);
+
+  // -- run program --
+  search_prod_with_index_forward(
+      vid0,vid1,fflow,bflow,dists,inds,
+      qstart, stride0, n_h0, n_w0,
+      ps,pt,ws_h,ws_w,wt,chnls,stride,dilation,
+      use_search_abs, use_bounds, use_adj,
+      full_ws, oh0, ow0, oh1, ow1,
+      tranges, n_tranges, min_tranges);
+  fprintf(stdout,"hi.\n");
 }
 
 py::dict Registrations() {
