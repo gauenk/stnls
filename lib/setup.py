@@ -1,7 +1,6 @@
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-print("packages: ",find_packages("."))
 setup(name='dnls',
       packages=find_packages("."),
       package_dir={"": "."},
