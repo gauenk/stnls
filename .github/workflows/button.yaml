@@ -1,8 +1,7 @@
-name: Weekly Pytest
+name: Button Pytest
 
 on:
-  schedule:
-    - cron: '* 3 * * 1'
+    workflow_dispatch
 
 jobs:
   build:
