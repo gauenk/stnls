@@ -3,6 +3,12 @@
 #include <vector>
 
 // -- include cuda_runtime for jax --
+#include <cuda_runtime_api.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <pybind11/pybind11.h>
+#include "../jax_pybind.h"
 // #include <cuda.h>
 // #include <cuda_runtime.h>
 // #include <cstddef>
@@ -91,11 +97,18 @@ void search_prod_with_index_backward(
 }
 
 // jax wrappers
-// void jax_search_prod_with_index_forward(cudaStream_t stream, void **buffers,
-//                                         const char *opaque,
-//                                         std::size_t opaque_len){
-//   fprintf(stdout,"jax-it!\n");
-// }
+void jax_search_prod_with_index_forward(cudaStream_t stream, void **buffers,
+                                        const char *opaque,
+                                        std::size_t opaque_len){
+  fprintf(stdout,"jax-it!\n");
+}
+
+py::dict Registrations() {
+  py::dict dict;
+  dict["example"] = EncapsulateFunction(jax_search_prod_with_index_forward);
+  return dict;
+}
+
 
 // void _jax_search_prod_with_index_forward(
 //     torch::Tensor vid0,torch::Tensor vid1,
@@ -135,6 +148,7 @@ void init_prod_with_index_search(py::module &m){
         "DNLS Search (Prod) Forward (CUDA)");
   m.def("search_prod_with_index_backward", &search_prod_with_index_backward,
         "DNLS Search (Prod) Backward (CUDA)");
+  m.def("reg", &Registrations,"Jax Forward ");
   // m.def("jax_search_prod_with_index_backward", &jax_search_prod_with_index_forward,
   //       "Jax Forward ");
 }

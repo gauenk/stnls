@@ -41,8 +41,8 @@ template <typename scalar_t>
 __global__ void prod_search_with_heads_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> fflow,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> bflow,
+    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> inds,
     int qstart, int nqueries, int stride0, int n_h0, int n_w0,
@@ -51,9 +51,9 @@ __global__ void prod_search_with_heads_forward_kernel(
     int chnls, int dilation, int stride1,
     bool use_adj, bool reflect_bounds, bool search_abs,
     bool full_ws, bool anchor_self,
-    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
-    torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
-    torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
+    const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
+    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
+    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
     int ws_h_iters, int ws_w_iters, int bpt){
 
   // shapes

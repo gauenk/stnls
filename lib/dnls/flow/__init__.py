@@ -11,13 +11,18 @@ from einops import rearrange,repeat
 from easydict import EasyDict as edict
 
 # -- opencv --
-import cv2
+with_cv = False
+try:
+    import cv2
+    with_cv = True
+except:
+    pass
 
 # -- local --
 from ..utils import color
 
 def get_flow(run_flow,use_clean,noisy,clean,sigma):
-    if run_flow is True:
+    if run_flow is True and with_cv is True:
         if use_clean:
             return run(clean,0.)
         else:

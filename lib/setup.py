@@ -1,8 +1,12 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
+print("packages: ",find_packages("."))
 setup(name='dnls',
-      packages=["dnls"],
+      packages=find_packages("."),
+      package_dir={"": "."},
+      package_data={'': ['*.so']},
+      include_package_data=True,
       ext_modules=[
           CUDAExtension('dnls_cuda', [
               'csrc/search/prod_with_index_cuda.cpp',
@@ -44,12 +48,13 @@ setup(name='dnls',
               'csrc/reducers/wpsum_heads_2vid_cuda.cpp',
               'csrc/reducers/wpsum_heads_2vid_kernel.cu',
               'csrc/pybind.cpp',
-          ]),
-          CUDAExtension('dnls_jax', [
-              'csrc/search/jax_prod_with_index_cuda.cpp',
-              'csrc/jax_pybind.cpp',
-          ])
+          ],),
+          # CUDAExtension('dnls_jax', [
+          #     'csrc/search/jax_prod_with_index_cuda.cpp',
+          #     'csrc/jax_pybind.cpp',
+          # ])
       ],
+
       cmdclass={'build_ext': BuildExtension},
 )
 
