@@ -2,8 +2,35 @@ name: weekly
 
 on:
   schedule:
-    # Mondays at 7:37am UTC = 12:27am PST
-    # Choose a random time near midnight PST because it may be delayed if there are high loads
-    # See https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
-    - cron: 37 7 * * 1
-  workflow_dispatch:
+    - cron: * 3 * * 1
+workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        python-version: ["3.8"]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+          fetch-depth: 0
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements.txt
+    - name: Install package
+      run: |
+        python -m pip install .
+    - name: Testing Code
+      run: |
+        python -m pytest -s ./test/
+
+  
