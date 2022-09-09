@@ -1,6 +1,6 @@
 # -- api --
-from . import dnls_pytorch
-from . import dnls_jax # jax after pytorch
+from . import pytorch
+from . import jax # jax after pytorch
 from . import utils
 from . import flow
 

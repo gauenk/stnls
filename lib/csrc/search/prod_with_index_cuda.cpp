@@ -18,17 +18,17 @@
 // CUDA forward declarations
 
 void search_prod_with_index_forward_cuda(
-    torch::Tensor vid0,torch::Tensor vid1,
-    torch::Tensor fflow,torch::Tensor bflow,
+    const torch::Tensor vid0,const torch::Tensor vid1,
+    const torch::Tensor fflow,const torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
     bool full_ws, int oh0, int ow0, int oh1, int ow1,
-    torch::Tensor tranges,
-    torch::Tensor n_tranges,torch::Tensor min_tranges);
-
+    const torch::Tensor tranges,
+    const torch::Tensor n_tranges,
+    const torch::Tensor min_tranges);
 
 void search_prod_with_index_backward_cuda(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,
@@ -47,16 +47,17 @@ void search_prod_with_index_backward_cuda(
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 void search_prod_with_index_forward(
-    torch::Tensor vid0,torch::Tensor vid1,
-    torch::Tensor fflow,torch::Tensor bflow,
+    const torch::Tensor vid0,const torch::Tensor vid1,
+    const torch::Tensor fflow,const torch::Tensor bflow,
     torch::Tensor nlDists,torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
     bool full_ws, int oh0, int ow0, int oh1, int ow1,
-    torch::Tensor tranges,
-    torch::Tensor n_tranges,torch::Tensor min_tranges){
+    const torch::Tensor tranges,
+    const torch::Tensor n_tranges,
+    const torch::Tensor min_tranges){
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
   CHECK_INPUT(fflow);
@@ -100,6 +101,7 @@ void search_prod_with_index_backward(
 void jax_search_prod_with_index_forward(cudaStream_t stream, void **buffers,
                                         const char *opaque,
                                         std::size_t opaque_len){
+
   fprintf(stdout,"jax-it!\n");
 }
 

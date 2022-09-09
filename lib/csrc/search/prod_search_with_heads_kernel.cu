@@ -39,8 +39,8 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 
 template <typename scalar_t>
 __global__ void prod_search_with_heads_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
@@ -341,8 +341,8 @@ __global__ void prod_search_with_heads_forward_kernel(
 }
 
 void prod_search_with_heads_forward_cuda(
-    torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor fflow, torch::Tensor bflow,
+    const torch::Tensor vid0, const torch::Tensor vid1,
+    const torch::Tensor fflow, const torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
     int qstart, int nqueries, int nheads, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
@@ -350,8 +350,8 @@ void prod_search_with_heads_forward_cuda(
     int chnls, int dilation, int stride1,
     bool use_adj, bool reflect_bounds, bool search_abs,
     bool full_ws, bool anchor_self,
-    torch::Tensor tranges,
-    torch::Tensor n_tranges, torch::Tensor min_tranges){
+    const torch::Tensor tranges,
+    const torch::Tensor n_tranges, const torch::Tensor min_tranges){
 
     // # -- launch params --
     // w_threads = min(ws,32)
