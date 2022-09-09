@@ -85,9 +85,11 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
             dists,inds = allocate_rtn(HB,k,device)
             get_topk_prod(dists_exh,inds_exh,dists,inds)
         else:
-            args = th.where(th.isnan(dists_exh))
-            dists_exh[args] = -th.inf # fix nan
             dists,inds = dists_exh,inds_exh
+
+        # -- fill nans --
+        args = th.where(th.isnan(dists))
+        dists[args] = -th.inf # fix nan
 
         # -- fill if anchored --
         if anchor_self:
@@ -248,6 +250,7 @@ class ProdSearchWithHeads(th.nn.Module):
     def _get_args(self,vshape):
         # -- unpack --
         ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
+        ndim = len(vshape)
         vshape = vshape[-4:] # (t,c,h,w) NOT (H,t,c,h,w)
         t,c,h,w = vshape
 
@@ -257,7 +260,8 @@ class ProdSearchWithHeads(th.nn.Module):
         if ws == -1: ws_h,ws_w = n_h,n_w
         if k == -1: k = ws**2 * (2*wt + 1)
         if chnls <= 0: chnls = c//self.nheads
-        assert c % self.nheads == 0,"must be multiple of each other."
+        if ndim == 4:
+            assert c % self.nheads == 0,"must be multiple of each other."
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):

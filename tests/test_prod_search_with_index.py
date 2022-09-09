@@ -132,7 +132,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
                               chnls=-1,dilation=dil,
                               stride0=stride0, stride1=stride1,
                               reflect_bounds=reflect_bounds,use_k=False,
-                              use_search_abs=True,use_adj=use_adj,
+                              search_abs=True,use_adj=use_adj,
                               exact=exact)
     # -- query inds --
 
@@ -185,6 +185,10 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
+    args0 = th.where(th.logical_not(th.isinf(score_gt))) # remove all inf
+    diff = th.abs(score_te - score_gt) / (score_gt.abs() + 1e-5)
+    diff = diff[args0]
+
     tol = 1e-5
     error = th.mean(th.abs(score_te - score_gt)).item()
     if error > tol: print("error: ",error)
@@ -277,7 +281,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
                               chnls=chnls,dilation=dil,
                               stride0=stride0,stride1=stride1,
                               reflect_bounds=reflect_bounds,use_k=False,
-                              exact=exact,use_search_abs=True)
+                              exact=exact,search_abs=True)
 
     # -- binary image to remove float error --
     # vidr = None
@@ -463,7 +467,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
                               chnls=-1,dilation=dil,
                               stride0=stride0,stride1=stride1,
                               reflect_bounds=reflect_bounds,
-                              use_k=False,exact=exact,use_search_abs=True)
+                              use_k=False,exact=exact,search_abs=True)
     # -- binary image to remove float error --
     # vidr = None
     # vidr = 10*th.ones_like(vid)
@@ -616,9 +620,9 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     dname,ext = "davis_baseball_64x64","jpg"
     chnls,pt,wt = 3,1,0
     ws = -1 if k == -1 else 10
-    use_search_abs = k == -1
+    search_abs = k == -1
     use_k = not(k == -1)
-    # print(ws,k,use_search_abs,use_k)
+    # print(ws,k,search_abs,use_k)
     use_adj = True#k==-1
 
     # -- init vars --
@@ -669,7 +673,7 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                               ws, wt, oh0, ow0, oh1, ow1,
                               chnls=chnls,dilation=dil,
                               stride0=stride0, stride1=stride1,
-                              use_k=use_k,use_search_abs=use_search_abs,
+                              use_k=use_k,search_abs=search_abs,
                               reflect_bounds=True,exact=True,use_adj=use_adj)
     fold_nl = dnls.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
@@ -686,8 +690,8 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                                                        ps,pt,ws,wt,chnls,
                                                        stride0=stride0,stride1=stride1,
                                                        dilation=dil,use_k=use_k,
-                                                       use_bound=True,
-                                                       use_search_abs=use_search_abs)
+                                                       use_bound=True,use_adj=use_adj,
+                                                       search_abs=search_abs)
 
     # -- reshape --
     nq = iqueries.shape[0]
@@ -777,7 +781,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
                               chnls=-1,dilation=dil,
                               stride0=stride0, stride1=stride1,
                               reflect_bounds=reflect_bounds,
-                              use_k=False,exact=exact,use_search_abs=True)
+                              use_k=False,exact=exact,search_abs=True)
 
     # -- run prod_search over batches --
     score_te = []

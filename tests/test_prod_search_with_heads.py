@@ -36,12 +36,8 @@ def pytest_generate_tests(metafunc):
     np.random.seed(seed)
     test_lists = {"ps":[7],"stride0":[2],"stride1":[2],
                   "dilation":[1],"wt":[0],"ws":[-1],
-                  "k":[-1],"exact":[True],"nheads":[1],
-                  "seed":[0]}
-    # test_lists = {"ps":[7],"stride0":[2,4],"stride1":[2,4],
-    #               "dilation":[1],"wt":[0,1,2,3],"ws":[15,23,32],
-    #               "k":[5],"exact":[True],"nheads":[1],
-    #               "seed":[0,1,2,3,4]}
+                  "k":[-1],"exact":[True],"nheads":[1,4],
+                  "seed":[0,1]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -127,7 +123,6 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
 
 
     # -- [testing] search --
-    # print("vid.shape: ",vid.shape)
     dists_te,inds_te = search_te(vid,0,ntotal)
     th.cuda.synchronize()
 
@@ -137,7 +132,7 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     dists_gt,inds_gt = [],[]
     for h in range(nheads):
         cinds = slice(_c*h,_c*(h+1))
-        vid_c = vid[:,cinds]
+        vid_c = vid[:,cinds].contiguous()
         dists_h,inds_h = search_gt(vid_c,0,ntotal)
         # dists_h,inds_h = search_te(vid_c,0,ntotal)
         # dists_h,inds_h = dists_h[0],inds_h[0]
@@ -164,8 +159,11 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
+    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
+    diff = diff[args0]
 
+    # -- test --
     tol = 1e-5
     error = diff.mean().item()
     if error > tol: print("error: ",error)
@@ -273,8 +271,8 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     dists_gt,inds_gt = [],[]
     for h in range(nheads):
         cinds = slice(_c*h,_c*(h+1))
-        vid_c0 = vid_gt0[:,cinds]
-        vid_c1 = vid_gt1[:,cinds]
+        vid_c0 = vid_gt0[:,cinds].contiguous()
+        vid_c1 = vid_gt1[:,cinds].contiguous()
         dists_h,inds_h = search_gt(vid_c0,0,ntotal,vid_c1)
         # dists_h,inds_h = search_te(vid_c,0,ntotal)
         # dists_h,inds_h = dists_h[0],inds_h[0]
@@ -352,12 +350,12 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         tol = 1e-3
         error = th.max(rel_error_nz).item()
         if error > tol: print("Max Error: ",error)
-        print("Max Error: ",error)
+        # print("Max Error: ",error)
         assert error < tol
 
         tol = 1e-4
         error = th.mean(rel_error_nz).item()
         if error > tol: print("Mean Error: ",error)
-        print("Mean Error: ",error)
+        # print("Mean Error: ",error)
         assert error < tol
 

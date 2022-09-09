@@ -38,15 +38,12 @@ import dnls.utils.gpu_mem as gpu_mem
 from dnls.utils.inds import get_nums_hw
 from dnls.utils.pads import same_padding,comp_pads
 
-# -- meshgrid --
-import cache_io
-
 # -- test func --
 from torch.nn.functional import fold,unfold,pad,softmax,log_softmax
 from torchvision.transforms.functional import center_crop
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/wpsum/")
+SAVE_DIR = Path("./output/tests/wpsum_heads_2vid/")
 
 def set_seed(seed):
     th.manual_seed(seed)
@@ -80,9 +77,9 @@ def simple_run(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
     wpatches_i = th.sum(score_heads[...,None] * patches_i,1).type(th.float32)
     return wpatches_i
 
+@pytest.mark.skip("not implemented.")
 def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
 
-    pass
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
@@ -99,7 +96,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = False
     t = 1 if use_unfold else 3
@@ -148,7 +145,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride0=stride0, stride1=stride1,
                               use_k=use_k,reflect_bounds=reflect_bounds,
-                              use_search_abs=use_search_abs)
+                              search_abs=search_abs)
 
     # -- init our inner product --
     t,c,h,w = vshape
@@ -206,8 +203,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     if error > tol: print(error)
     assert error < tol
 
+@pytest.mark.skip("not implemented.")
 def test_backward(ps,stride,dilation,top,btm,left,right,k):
-    pass
 
     # -- get args --
     pt,dil = 1,dilation
@@ -224,7 +221,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_search_abs = ws == -1
+    search_abs = ws == -1
     use_k = k != -1
     use_unfold = k == -1
     t = 1 if use_unfold else 3
@@ -276,7 +273,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
                                ws, wt, oh0, ow0, oh1, ow1,
                                dilation=dil, stride=stride1,
                                reflect_bounds=reflect_bounds,
-                               use_k=use_k,use_search_abs=use_search_abs,exact=exact)
+                               use_k=use_k,search_abs=search_abs,exact=exact)
 
     # -- query inds --
     qindex = 0

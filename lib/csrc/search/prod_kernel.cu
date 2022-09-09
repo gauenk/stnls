@@ -62,8 +62,8 @@ __global__ void search_prod_forward_kernel(
 
   // offsets
   int psHalf = ps/2;
-  int wsHalf_h = (ws_h-1)/2;
-  int wsHalf_w = (ws_w-1)/2;
+  int wsHalf_h = (ws_h)/2;
+  int wsHalf_w = (ws_w)/2;
   int numQueries = queryInds.size(0);
   int adj = use_adj ? psHalf : 0;
   // int adj = psHalf;
