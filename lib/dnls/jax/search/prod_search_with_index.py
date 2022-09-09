@@ -12,22 +12,24 @@ from jax.interpreters import ad, batching, xla
 from jax.abstract_arrays import ShapedArray
 
 # Register the CPU XLA custom calls
-from . import dnls_cuda
-print(dir(dnls_cuda))
+# import dnls_cuda
+# print(dir(dnls_cuda))
 
-for _name, _value in cpu_ops.registrations().items():
-    xla_client.register_cpu_custom_call_target(_name, _value)
+# for _name in dir(dnls_cuda):
+#     if "__" in _name: continue
+#     _value = getattr(dnls_cuda,_name)
+#     xla_client.register_cpu_custom_call_target(_name, _value)
 
-# If the GPU version exists, also register those
-try:
-    from . import gpu_ops
-except ImportError:
-    gpu_ops = None
-else:
-    for _name, _value in gpu_ops.registrations().items():
-        xla_client.register_custom_call_target(_name, _value, platform="gpu")
+# # If the GPU version exists, also register those
+# try:
+#     from . import gpu_ops
+# except ImportError:
+#     gpu_ops = None
+# else:
+#     for _name, _value in gpu_ops.registrations().items():
+#         xla_client.register_custom_call_target(_name, _value, platform="gpu")
 
-xops = xla_client.ops
+# xops = xla_client.ops
 
 
 # This function exposes the primitive to user code and this is the only

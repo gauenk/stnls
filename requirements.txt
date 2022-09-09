@@ -2,6 +2,7 @@ easydict
 einops
 pathlib
 pytest
+pylint
 numpy
 numba
 torch==1.12.1+cu113
