@@ -3,8 +3,9 @@ name: Weekly Pytest
 on:
   schedule:
     - cron: '* 3 * * 1'
-workflow_dispatch:
+on: workflow_dispatch
 
+workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
