@@ -22,9 +22,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: CUDA Install ${{ matrix.cuda-version }}
-        if: ${{ matrix.cuda-version != 'cpu' }}
-        run: |
-          bash .github/workflows/install_cuda.sh
+      if: ${{ matrix.cuda-version != 'cpu' }}
+      run: |
+        bash .github/workflows/install_cuda.sh
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
