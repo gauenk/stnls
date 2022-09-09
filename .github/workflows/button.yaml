@@ -11,6 +11,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.8"]
+        cuda-version: ["11.1"]
     steps:
     - name: Checkout
       uses: actions/checkout@v2
@@ -20,6 +21,10 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+    - name: CUDA Install ${{ matrix.cuda-version }}
+        if: ${{ matrix.cuda-version != 'cpu' }}
+        run: |
+          bash .github/workflows/install_cuda.sh
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
