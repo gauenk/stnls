@@ -104,7 +104,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -229,7 +229,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -369,6 +369,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
             assert error < tol_max
 
 
+@pytest.mark.slow
 def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- get args --
@@ -408,7 +409,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device

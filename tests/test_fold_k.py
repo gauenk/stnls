@@ -76,7 +76,7 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
     vid = vid.contiguous().clone()
     # print(vid.shape)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unfold/fold k decl --
     unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
@@ -205,7 +205,7 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- fold_k/unfold_k decl --
     unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
@@ -279,7 +279,7 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- batching info --
     shape = noisy.shape

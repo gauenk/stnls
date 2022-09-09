@@ -31,8 +31,8 @@ def get_flow(run_flow,use_clean,noisy,clean,sigma):
 def init_flows(vshape,device):
     t,c,h,w = vshape
     flows = edict()
-    flows.fflow = np.zeros((t,2,h,w))
-    flows.bflow = np.zeros((t,2,h,w))
+    flows.fflow = np.zeros((t,2,h,w),dtype=np.float32)
+    flows.bflow = np.zeros((t,2,h,w),dtype=np.float32)
     if not(device is None):
         flows.fflow = th.from_numpy(flows.fflow).to(device)
         flows.bflow = th.from_numpy(flows.bflow).to(device)

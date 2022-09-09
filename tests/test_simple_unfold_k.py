@@ -43,7 +43,7 @@ def exec_patch_strided_test(dname,sigma,flow_args,args):
     clean = dnls.testing.data.load_burst("./data",dname)[:10]
     clean = th.from_numpy(clean).to(device)
     noisy = clean + sigma * th.randn_like(clean)
-    flow = dnls.testing.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
+    flow = dnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
                                       noisy,clean,sigma)
 
     # -- unpack params --
@@ -135,7 +135,7 @@ def exec_query_strided_test(dname,sigma,flow_args,args):
     clean = dnls.testing.data.load_burst("./data",dname)[:10]
     clean = th.from_numpy(clean).to(device)
     noisy = clean + sigma * th.randn_like(clean)
-    flow = dnls.testing.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
+    flow = dnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
                                       noisy,clean,sigma)
 
     # -- unpack params --
@@ -223,7 +223,7 @@ def exec_folding_test(dname,sigma,flow_args,args):
     clean = clean[:,:,:32,:32]
     clean = th.from_numpy(clean).to(device)
     noisy = clean + sigma * th.randn_like(clean)
-    flow = dnls.testing.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
+    flow = dnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
                                       noisy,clean,sigma)
 
     # -- unpack params --

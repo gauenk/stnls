@@ -31,6 +31,8 @@ from jax.abstract_arrays import ShapedArray
 
 # xops = xla_client.ops
 
+def prod_search_with_heads(*args,**kwargs):
+    pass
 
 # This function exposes the primitive to user code and this is the only
 # public-facing function in this module

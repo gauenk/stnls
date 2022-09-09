@@ -44,7 +44,7 @@ def test_nn():
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -149,7 +149,7 @@ def test_batched():
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt

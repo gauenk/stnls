@@ -117,7 +117,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -256,7 +256,7 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -344,6 +344,7 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
     assert error < 1e-4
 
 
+@pytest.mark.slow
 def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     """
 
@@ -390,7 +391,7 @@ def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exac
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device

@@ -85,7 +85,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     vid /= vid.max()
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -190,6 +190,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     assert max_error < tol
 
 
+@pytest.mark.slow
 def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     """
 
@@ -233,7 +234,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -418,7 +419,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -628,7 +629,7 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.fflow)
 
@@ -725,7 +726,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid)[:1].to(device).contiguous()
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --

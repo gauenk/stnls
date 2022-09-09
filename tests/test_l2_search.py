@@ -97,7 +97,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -206,7 +206,7 @@ def test_cu_vs_simp_fwd(ps,k,stride0,stride1,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -322,7 +322,7 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -456,7 +456,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     vid1_gt.requires_grad_(True)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device

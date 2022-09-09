@@ -103,7 +103,7 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -221,7 +221,7 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     vid1_gt.requires_grad_(True)
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device

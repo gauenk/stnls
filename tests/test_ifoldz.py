@@ -80,7 +80,7 @@ def test_nn_with_unfold(ps,stride,dilation):
     vid = th.ones_like(vid)
 
     # -- compute optical flow --
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device
@@ -182,7 +182,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     vid = th.from_numpy(vid).to(device).contiguous()
 
     # -- compute optical flow --
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device
@@ -294,7 +294,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --
@@ -418,7 +418,7 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device
@@ -531,7 +531,7 @@ def test_shrink_search():
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --

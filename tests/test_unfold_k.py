@@ -57,7 +57,7 @@ def test_simple_unfold_k():
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -110,7 +110,7 @@ def test_efficient_unfold_k():
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -167,7 +167,7 @@ def test_unfold_k_vs_simple(exact,ps,pt,k):
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # seed = 345
     # th.manual_seed(seed)
@@ -277,7 +277,7 @@ def test_unfold_k_vs_unfold(exact,ps,pt,k):
     vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
     # noisy = th.randn((5,16,64,64)).to(vid.device)
     vid = noisy.clone()/255.
     th.cuda.synchronize()

@@ -79,7 +79,7 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -174,6 +174,7 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 
+@pytest.mark.slow
 def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
@@ -209,7 +210,7 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 

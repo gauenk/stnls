@@ -84,7 +84,7 @@ def test_nn(ps,stride,dilation):
     vid = th.ones_like(vid)
 
     # -- compute optical flow --
-    flow = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device

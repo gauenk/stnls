@@ -20,7 +20,7 @@ def init(version,*args,**kwargs):
     elif version == "prod_with_index":
         return prod_search_with_index.ProductSearch_with_index(*args,**kwargs)
     elif version == "prod_with_heads":
-        return prod_search_with_heads.ProdSearchWithHeads(*args,**kwargs)
+        return prod_search_with_heads.prod_search_with_heads(*args,**kwargs)
     else:
         raise ValueError(f"Uknown version [{version}]")
 
