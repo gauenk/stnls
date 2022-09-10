@@ -47,13 +47,12 @@ setup(name='dnls',
               'csrc/reducers/wpsum_heads_2vid_cuda.cpp',
               'csrc/reducers/wpsum_heads_2vid_kernel.cu',
               'csrc/pybind.cpp',
-          ],),
+          ],)
           # CUDAExtension('dnls_jax', [
           #     'csrc/search/jax_prod_with_index_cuda.cpp',
           #     'csrc/jax_pybind.cpp',
           # ])
       ],
-
       cmdclass={'build_ext': BuildExtension},
 )
 
