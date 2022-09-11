@@ -1,10 +1,12 @@
 import dnls
 import dnls_cuda
 from functools import partial
+import jax.numpy as jnp
 from jax.lib import xla_client
 from jax import core, dtypes, lax
 from jax.interpreters import ad, batching, xla
 from jax.abstract_arrays import ShapedArray
+import numpy as np
 
 # "search_prod_with_jax"
 # name = "prod_search_with_index"
@@ -18,13 +20,47 @@ from jax.abstract_arrays import ShapedArray
 # import numba as nb
 # from numba import types as nb_types
 
+# -- init args --
+vid0 = np.random.rand(3,3,128,128).astype(np.float32)
+vid1 = np.random.rand(3,3,128,128).astype(np.float32)
+fflow = np.zeros((3,2,128,128),dtype=np.float32)
+bflow = np.zeros((3,2,128,128),dtype=np.float32)
+nframes = vid0.shape[0]
+qstart, nqueries = 0,10
+k, ps, pt = 5, 7, 1
+ws_h, ws_w, wt, chnls = 5, 5, 0, -1
+stride0, stride1, dilation = 1, 1, 1
+use_search_abs, reflect_bounds = False, True
+use_adj, use_k = True, True
+oh0, ow0, oh1, ow1 = 0, 0, 0, 0
+remove_self, full_ws, nbwd = False, True, 1
+use_rand, exact = False, False
+
+args = [vid0,vid1,fflow,bflow,qstart]
+
 from jax._src import api
 import dnls
 print(dnls.jax.search.prod_search_with_index._register())
 # print(dnls.jax.search.prod_search_with_index.forward())
-fxn = dnls.jax.search.prod_search_with_index.run
-fxn()
-print(api.jit(lambda x, y: fxn())(2., 10.))
+iargs = [nframes,nqueries,ws_h,ws_w,wt,
+         k, ps, pt, chnls, stride0, stride1, dilation,
+         use_search_abs, reflect_bounds, use_adj,
+         oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+         use_rand, exact]
+fxn = dnls.jax.search.prod_search_with_index.init_fwd(*iargs)
+# fxn()
+
+dists,inds = api.jit(fxn)(*args)
+print(dists.shape)
+print(inds.shape)
+print(dists[0])
+print(inds[0])
+dists = jnp.reshape(dists,(nqueries,-1))
+inds = jnp.reshape(inds,(nqueries,-1,3))
+print(dists[:3,:3])
+print(inds[:3,:3])
+
+
 
 # def xla_shape_to_abstract(xla_shape) -> ShapedArray:
 #     """

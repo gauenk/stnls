@@ -18,6 +18,7 @@ from jax.interpreters import xla
 from jax.interpreters import ad
 from jax.lib import xla_client
 
+
 import numba
 from numba import types as nb_types
 import numpy as np
@@ -25,36 +26,6 @@ import numpy as np
 from . import xla_utils
 # from . import gpu
 
-
-def abstract_eval_rule(abstract_eval_fn, *args, **kwargs):
-    """
-    Evaluates abstract_eval_fn and returns an iterable of
-    the results.
-    This function makes sure that the returned object is always
-    a PyTree, even if the function only has 1 result.
-    """
-    # Special-casing when only a single tensor is returned.
-    shapes = abstract_eval_fn(*args, **kwargs)
-    if not isinstance(shapes, collections.abc.Collection):
-        return [shapes]
-    else:
-        return shapes
-
-
-def bind_primitive(primitive, abstract_eval_fn, *args):
-    """
-    Binds a primitive and returns a pytree only if the result
-    is a tuple of 2 or more onbjects.
-    """
-    result = primitive.bind(*args)
-
-    output_shapes = abstract_eval_fn(*args)
-    # Special-casing when only a single tensor is returned.
-    if not isinstance(output_shapes, collections.abc.Collection):
-        assert len(result) == 1
-        return result[0]
-    else:
-        return result
 
 
 def eval_rule(call_fn, abstract_eval_fn, *args, **kwargs):
@@ -112,7 +83,15 @@ def naive_batching_rule(call_fn, args, batch_axes):
     return result, batch_axes
 
 
-def cfunc_to_jax(name: str, fwd, bwd, wfwd, wbwd,
+def xla_register(name: str, fwd, bwd):
+    # -- register custom c-funcs to XLA --
+    name_fwd = name + "_forward"
+    xla_client.register_custom_call_target(name_fwd, fwd, platform="gpu")
+    name_bwd = name + "_backward"
+    xla_client.register_custom_call_target(name_bwd, bwd, platform="gpu")
+    return name_fwd,name_bwd
+
+def cfunc_to_jax(name: str, fxn,
                  abstract_eval_fn, batching_fn=None):
     """Create a jittable JAX function for the given c-source function.
     Args:
@@ -128,32 +107,18 @@ def cfunc_to_jax(name: str, fwd, bwd, wfwd, wbwd,
     # -- primitive --
     primitive = jax.core.Primitive(name)
     primitive.multiple_results = True
-
-    abstract_eval = partial(abstract_eval_rule, abstract_eval_fn)
-    bind_primitive_fn = partial(bind_primitive, primitive, abstract_eval_fn)
+    # abstract_eval = partial(abstract_eval_rule, abstract_eval_fn)
 
     # -- define --
-    primitive.def_abstract_eval(abstract_eval)
-    # primitive.def_impl(partial(eval_rule, gpu_fn, abstract_eval))
+    primitive.def_abstract_eval(abstract_eval_fn)
     primitive.def_impl(partial(xla.apply_primitive, primitive))
 
-    # -- register custom c-funcs to XLA --
-    _name = name + "_forward"
-    xla_client.register_custom_call_target(_name, fwd, platform="gpu")
-    _name = name + "_backward"
-    xla_client.register_custom_call_target(_name, bwd, platform="gpu")
-
     # -- register wrapped fwd/bwd (which use the registered c-funs) --
-    xla.backend_specific_translations["gpu"][primitive] = wfwd
-    ad.primitive_jvps[primitive] = wbwd
+    xla.backend_specific_translations["gpu"][primitive] = fxn
 
     # -- skip batching for now --
     # if batching_fn is not None:
     #    batching.primitive_batchers[primitive] = batching_fn
-    # else:
-    #    batching.primitive_batchers[primitive] = partial(
-    #        naive_batching_rule, bind_primitive_fn
-    #    )
     # batching.defvectorized(primitive)
 
     # xla.backend_specific_translations["cpu"][primitive] = partial(
@@ -161,5 +126,5 @@ def cfunc_to_jax(name: str, fwd, bwd, wfwd, wbwd,
     # )
 
     # -- return --
-    return primitive#bind_primitive_fn
+    return primitive
 
