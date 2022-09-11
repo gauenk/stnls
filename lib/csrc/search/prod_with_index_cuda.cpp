@@ -195,10 +195,13 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   fprintf(stdout,"n_w0: %d\n",n_w0);
 
   // -- create writable tensors --
-  // auto dists = torch::zeros({nqueries,ws_h,ws_w,st},options_f32);
-  // auto inds = torch::zeros({nqueries,ws_h,ws_w,st,3},options_i32);
-  auto dists = torch::from_blob(dists_ptr,{nqueries,ws_h,ws_w,st},options_f32);
-  auto inds = torch::from_blob(inds_ptr,{nqueries,ws_h,ws_w,st,3},options_i32);
+  // auto dists = torch::zeros({nqueries,st,ws_h,ws_w},options_f32);
+  // auto inds = torch::zeros({nqueries,st,ws_h,ws_w,3},options_i32);
+  auto dists = torch::from_blob(dists_ptr,{nqueries,st,ws_h,ws_w},options_f32);
+  auto inds = torch::from_blob(inds_ptr,{nqueries,st,ws_h,ws_w,3},options_i32);
+  float inf = std::numeric_limits<float>::infinity();
+  dists.fill_(-inf);
+  inds.fill_(-1);
 
   // -- create tensors --
   auto vid0 = torch::from_blob(vid0_ptr,{nframes,color,height,width},options_f32);
@@ -219,7 +222,7 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
       use_search_abs, reflect_bounds, use_adj,
       full_ws, oh0, ow0, oh1, ow1,
       tranges, n_tranges, min_tranges);
-  fprintf(stdout,"hi.\n");
+  // fprintf(stdout,"hi.\n");
 
   // -- copy result back --
   // dists_b.copy_(dists);
@@ -231,15 +234,15 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   // thrust::memcpy(thrust::device,start,end,data_ptr);
 
   // -- view --
-  auto vid0_ = vid0.to(torch::kCPU);
-  auto vid0_a = vid0_.accessor<float,4>();
-  fprintf(stdout,"%2.3f,%2.3f\n",vid0_a[0][0][0][0],vid0_a[0][0][0][1]);
-  fprintf(stdout,"%2.3f,%2.3f\n",vid0_a[0][0][1][0],vid0_a[0][0][1][1]);
+  // auto vid0_ = vid0.to(torch::kCPU);
+  // auto vid0_a = vid0_.accessor<float,4>();
+  // fprintf(stdout,"%2.3f,%2.3f\n",vid0_a[0][0][0][0],vid0_a[0][0][0][1]);
+  // fprintf(stdout,"%2.3f,%2.3f\n",vid0_a[0][0][1][0],vid0_a[0][0][1][1]);
 
-  auto dists_ = dists.to(torch::kCPU);
-  auto dists_a = dists_.accessor<float,4>();
-  fprintf(stdout,"%2.3f,%2.3f\n",dists_a[0][0][0][0],dists_a[0][0][0][1]);
-  fprintf(stdout,"%2.3f,%2.3f\n",dists_a[0][0][1][0],dists_a[0][0][1][1]);
+  // auto dists_ = dists.to(torch::kCPU);
+  // auto dists_a = dists_.accessor<float,4>();
+  // fprintf(stdout,"%2.3f,%2.3f\n",dists_a[0][0][0][0],dists_a[0][0][0][1]);
+  // fprintf(stdout,"%2.3f,%2.3f\n",dists_a[0][0][1][0],dists_a[0][0][1][1]);
 
 }
 

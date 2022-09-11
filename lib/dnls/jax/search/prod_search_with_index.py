@@ -52,13 +52,12 @@ def init_fwd(nframes,nqueries,ws_h,ws_w,wt,
                          use_search_abs, reflect_bounds, use_adj,
                          oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
                          use_rand, exact, nframes, 0, 0, 0],dtype=jnp.int32)
-
     run_fwd_part = partial(run_fwd,dists,inds,tranges,n_tranges,min_tranges,ishapes)
     return run_fwd_part
 
 def run_fwd(dists,inds,
             tranges, n_tranges, min_tranges, ishapes,
-            vid0, vid1, fflow, bflow, qstart):
+            vid0, vid1, fflow, bflow, qstart, nqueries, k):
 
 
     # -- fill shapes --
@@ -74,7 +73,18 @@ def run_fwd(dists,inds,
         dists,inds,tranges,n_tranges,min_tranges,ishapes,
         vid0, vid1, fflow, bflow)
 
-    return out_dists,out_inds
+    # -- run topk --
+    out_dists = jnp.reshape(out_dists,(nqueries,-1))
+    out_inds = jnp.reshape(out_inds,(nqueries,-1,3))
+    order = jnp.argsort(out_dists,1)[:,:k]
+    dists_topk = jnp.take_along_axis(out_dists,order,1)
+    inds_topk = []
+    for i in range(3):
+        inds_topk_i = jnp.take_along_axis(out_inds[:,:,i],order,1)
+        inds_topk.append(inds_topk_i)
+    inds_topk = jnp.stack(inds_topk,-1)
+
+    return dists_topk,inds_topk
 
 def run_bwd(*args,**kwargs):
     return _primitive_backward.bind(*args)
@@ -131,11 +141,11 @@ def forward(xla_builder, dists, inds,
     # ishapes[3] = nframes
 
     # -- view --
-    print("yo.")
-    print(input_shapes)
-    print(output_shapes)
-    print(name)
-    print(opaque)
+    # print("yo.")
+    # print(input_shapes)
+    # print(output_shapes)
+    # print(name)
+    # print(opaque)
 
     # -- exec cpp --
     out = xops.CustomCallWithLayout(
@@ -146,7 +156,7 @@ def forward(xla_builder, dists, inds,
         shape_with_layout=output_shapes,
         opaque=opaque
     )
-    print(out)
+    # print(out)
     return out
 
 def abstract_backward(*args):

@@ -46,7 +46,7 @@ __global__ void search_prod_with_index_forward_kernel(
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
-    int ws_h_iters, int ws_w_iters, int bpb){
+    int ws_h_iters, int ws_w_iters, int bpt){
 
   // shapes
   float nan = __int_as_float(0xffe00000);
@@ -80,7 +80,7 @@ __global__ void search_prod_with_index_forward_kernel(
   int blkDimY = blockDim.y; // num threads in y-block
   int cu_tidX = threadIdx.x;
   int cu_tidY = threadIdx.y;
-  int block_start = blockIdx.x*bpb;
+  int block_start = blockIdx.x*bpt;
   int bidx,ws_i,ws_j,dtd;
   int qindex,i_mod;
 
@@ -102,7 +102,7 @@ __global__ void search_prod_with_index_forward_kernel(
   float v_pix,n_pix;
   double _dist,dist;
 
-  for (int _bidx = 0; _bidx < bpb; _bidx++){
+  for (int _bidx = 0; _bidx < bpt; _bidx++){
 
     //---------------------------
     //   extract anchor pixel
@@ -191,8 +191,8 @@ __global__ void search_prod_with_index_forward_kernel(
             // ct0 = 1.*bufs[bidx][2][dtd][ws_i][ws_j];
 
             // -- legalize access --
-            l_cw0 = int(max(0,min(w-1,int(cw0))));
-            l_ch0 = int(max(0,min(h-1,int(ch0))));
+            l_cw0 = int(max(0,min(width-1,int(cw0))));
+            l_ch0 = int(max(0,min(height-1,int(ch0))));
             l_ct0 = int(max(0,min(nframes-1,int(ct0))));
 
             // -- access flows --
@@ -343,7 +343,8 @@ void search_prod_with_index_forward_cuda(
     torch::Tensor fflow, torch::Tensor bflow,
     torch::Tensor nlDists, torch::Tensor nlInds,
     int qstart, int stride0, int n_h0, int n_w0,
-    int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride1, int dilation,
+    int ps, int pt, int ws_h_noneed, int ws_w_noneed,
+    int wt, int chnls, int stride1, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj, bool full_ws,
     int h0_off, int w0_off, int h1_off, int w1_off,
     torch::Tensor tranges, torch::Tensor n_tranges,
@@ -360,16 +361,20 @@ void search_prod_with_index_forward_cuda(
 
     // -- threads --
     int numQueries = nlDists.size(0);
+    int st = nlDists.size(1);
+    int ws_h = nlDists.size(2);
+    int ws_w = nlDists.size(3);
     int ws_h_threads = std::min(ws_h,29);
     int ws_w_threads = std::min(ws_w,29);
     int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
     int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
-    dim3 nthreads(ws_h_threads,ws_h_threads);
+    dim3 nthreads(ws_h_threads,ws_w_threads);
 
     // -- blocks --
-    int bpb = 32;
-    int nblocks = ((numQueries - 1) / bpb) + 1;
-    // fprintf(stdout,"nblocks,w_threads: %d,%d\n",nblocks,w_threads);
+    int bpt = 4;
+    int nblocks = ((numQueries - 1) / bpt) + 1;
+    fprintf(stdout,"nblocks,w_h_threads,w_w_threads,ws_h,ws_w: %d,%d,%d,%d,%d\n",
+            nblocks,ws_h_threads,ws_w_threads,ws_h,ws_w);
      
     // launch kernel
     AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_forward_kernel", ([&] {
@@ -386,7 +391,7 @@ void search_prod_with_index_forward_cuda(
          tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
          n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
          min_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-         ws_h_iters, ws_w_iters, bpb);
+         ws_h_iters, ws_w_iters, bpt);
        }));
 }
 

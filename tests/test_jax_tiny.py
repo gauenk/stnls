@@ -36,7 +36,7 @@ oh0, ow0, oh1, ow1 = 0, 0, 0, 0
 remove_self, full_ws, nbwd = False, True, 1
 use_rand, exact = False, False
 
-args = [vid0,vid1,fflow,bflow,qstart]
+args = [vid0,vid1,fflow,bflow,qstart,nqueries,k]
 
 from jax._src import api
 import dnls
@@ -50,15 +50,18 @@ iargs = [nframes,nqueries,ws_h,ws_w,wt,
 fxn = dnls.jax.search.prod_search_with_index.init_fwd(*iargs)
 # fxn()
 
-dists,inds = api.jit(fxn)(*args)
+dists,inds = api.jit(fxn,static_argnums=(4,5,6,))(*args)
 print(dists.shape)
 print(inds.shape)
 print(dists[0])
+print(dists[1])
 print(inds[0])
 dists = jnp.reshape(dists,(nqueries,-1))
 inds = jnp.reshape(inds,(nqueries,-1,3))
 print(dists[:3,:3])
+print(dists[:,:3])
 print(inds[:3,:3])
+print(inds[:,:3])
 
 
 
