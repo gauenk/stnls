@@ -1,4 +1,4 @@
-
+3
 # -- linalg helpers --
 import torch as th # for base cpp
 import numpy as np # help
@@ -12,6 +12,7 @@ from ..link import xla_utils,primitive_utils
 xla_shape_to_abstract = xla_utils.xla_shape_to_abstract
 
 # -- jax --
+import jax
 from jax import lax
 from jax import dtypes
 from jax.abstract_arrays import ShapedArray
@@ -26,6 +27,45 @@ _primitive_forward = None
 _primitive_backward = None
 __all__ = ["run_fwd","run_bwd","init"]
 
+def init(fflow, bflow,
+         nframes, k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+         chnls=-1,dilation=1,stride0=1, stride1=1,
+         reflect_bounds=False,use_k=False,
+         remove_self=False,full_ws=False,
+         search_abs=True,use_adj=False,exact=False,
+         rbwd=False,nbwd=1):
+
+    # -- alloc memory --
+    # st = 2*wt+1
+    # dists = jnp.zeros((nqueries,st,ws_h,ws_w),dtype=np.float32)
+    # inds = jnp.zeros((nqueries,st,ws_h,ws_w,3),dtype=np.int32)
+    tranges = jnp.zeros((nframes,nframes),dtype=np.int32)
+    n_tranges = jnp.ones((nframes),dtype=np.int32)
+    min_tranges = jnp.zeros((nframes),dtype=np.int32)
+
+    # -- init shapes --
+    # ishapes = jnp.array([0, nqueries,ws_h,ws_w,wt,
+    #                      k, ps, pt, chnls,
+    #                      stride0, stride1, dilation,
+    #                      use_search_abs, reflect_bounds, use_adj,
+    #                      oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+    #                      rbwd, exact, nframes, 0, 0, 0],dtype=jnp.int32)
+    run_fwd_part = partial(run_fwd, fflow=fflow,bflow=bflow,
+                           k=k, ps=ps, pt=pt, chnls=chnls,
+                           stride0=stride0, stride1=stride1, dilation=dilation,
+                           ws_h=ws, ws_w=ws, wt=wt,
+                           search_abs=search_abs,
+                           reflect_bounds=reflect_bounds,
+                           use_adj=use_adj, oh0=oh0, ow0=ow0, oh1=oh1, ow1=ow1,
+                           remove_self=remove_self, full_ws=full_ws,
+                           nbwd=nbwd,rbwd=rbwd, exact=exact)
+
+    def wrap_run(vid0,qstart,nqueries,vid1=None):
+        if vid1 is None: vid1 = vid0
+        return run_fwd_part(vid0,vid1,qstart,nqueries)
+
+    return wrap_run
+
 # -=-=-=-=-=-=-=-=-=-=-=-=-
 #
 #          API
@@ -35,62 +75,113 @@ __all__ = ["run_fwd","run_bwd","init"]
 def init_fwd(nframes,nqueries,ws_h,ws_w,wt,
              k, ps, pt, chnls,
              stride0, stride1, dilation,
-             use_search_abs, reflect_bounds, use_adj,
+             search_abs, reflect_bounds, use_adj,
              oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
-             use_rand, exact):
-    st = 2*wt+1
-    dists = jnp.zeros((nqueries,st,ws_h,ws_w),dtype=np.float32)
-    inds = jnp.zeros((nqueries,st,ws_h,ws_w,3),dtype=np.int32)
+             rbwd, exact):
+    # st = 2*wt+1
+    # dists = jnp.zeros((nqueries,st,ws_h,ws_w),dtype=np.float32)
+    # inds = jnp.zeros((nqueries,st,ws_h,ws_w,3),dtype=np.int32)
     tranges = jnp.zeros((nframes,nframes),dtype=np.int32)
     n_tranges = jnp.ones((nframes),dtype=np.int32)
     min_tranges = jnp.zeros((nframes),dtype=np.int32)
 
     # -- init shapes --
-    ishapes = jnp.array([0, nqueries,ws_h,ws_w,wt,
-                         k, ps, pt, chnls,
-                         stride0, stride1, dilation,
-                         use_search_abs, reflect_bounds, use_adj,
-                         oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
-                         use_rand, exact, nframes, 0, 0, 0],dtype=jnp.int32)
-    run_fwd_part = partial(run_fwd,dists,inds,tranges,n_tranges,min_tranges,ishapes)
+    # ishapes = jnp.array([0, nqueries,ws_h,ws_w,wt,
+    #                      k, ps, pt, chnls,
+    #                      stride0, stride1, dilation,
+    #                      search_abs, reflect_bounds, use_adj,
+    #                      oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+    #                      rbwd, exact, nframes, 0, 0, 0],dtype=jnp.int32)
+    run_fwd_part = partial(run_fwd, k=k, ps=ps, pt=pt, chnls=chnls,
+                           stride0=stride0, stride1=stride1, dilation=dilation,
+                           ws_h=ws_h, ws_w=ws_w, wt=wt,
+                           search_abs=search_abs,
+                           reflect_bounds=reflect_bounds,
+                           use_adj=use_adj, oh0=oh0, ow0=ow0, oh1=oh1, ow1=ow1,
+                           remove_self=remove_self, full_ws=full_ws,
+                           nbwd=nbwd,rbwd=rbwd, exact=exact)
+    # run_fwd_part = partial(run_fwd,dists,inds,tranges,n_tranges,
+    #                        min_tranges,ishapes,nqueries,k)
     return run_fwd_part
 
-def run_fwd(dists,inds,
-            tranges, n_tranges, min_tranges, ishapes,
-            vid0, vid1, fflow, bflow, qstart, nqueries, k):
+# @partial(jax.jit,static_argnums=list(range(24)))
+def run_fwd(vid0, vid1, qstart, nqueries,
+            fflow=None, bflow=None,
+            k=5, ps=7, pt=1, chnls=-1,
+            stride0=1, stride1=1, dilation=1,
+            ws_h=5, ws_w=5, wt=0,
+            search_abs=False, reflect_bounds=False, use_adj=False,
+            oh0=0, ow0=0, oh1=0, ow1=0, remove_self=False,
+            full_ws=False, nbwd=False, rbwd=False, exact=False):
 
+    # -- allocate --
+    # st = 2*wt+1
+    # dists = jnp.zeros((nqueries,st,ws_h,ws_w),dtype=np.float32)
+    # inds = jnp.zeros((nqueries,st,ws_h,ws_w,3),dtype=np.int32)
+    # dists = jnp.zeros((nqueries,k),dtype=np.float32)
+    # inds = jnp.zeros((nqueries,k,3),dtype=np.int32)
 
     # -- fill shapes --
-    nframes,nchnls,height,width = vid0.shape
-    ishapes = ishapes.at[-3].set(nchnls)
-    ishapes = ishapes.at[-2].set(height)
-    ishapes = ishapes.at[-1].set(width)
-    ishapes = ishapes.at[0].set(qstart)
-    print(ishapes)
+    # nframes,nchnls,height,width = vid0.shape
+    # ishapes = ishapes.at[-3].set(nchnls)
+    # ishapes = ishapes.at[-2].set(height)
+    # ishapes = ishapes.at[-1].set(width)
+    # ishapes = ishapes.at[0].set(0) # qstart
+    # print(ishapes)
 
     # -- exec cpp primitive --
+    # out_dists,out_inds = _primitive_forward.bind(
+    #     dists,inds,tranges,n_tranges,min_tranges,ishapes,
+    #     nqueries, k, vid0, vid1, fflow, bflow)
+    nframes,color,height,width = vid0.shape
+    tranges = jnp.zeros((nframes,nframes),dtype=np.int32)
+    n_tranges = jnp.ones((nframes),dtype=np.int32)
+    min_tranges = jnp.zeros((nframes),dtype=np.int32)
+    ishapes = jnp.array([qstart, nqueries,ws_h,ws_w,wt,
+                         k, ps, pt, chnls,
+                         stride0, stride1, dilation,
+                         search_abs, reflect_bounds, use_adj,
+                         oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+                         rbwd, exact, nframes, color, height, width],
+                        dtype=jnp.int32)
+
+
+    vshape = vid0.shape
     out_dists,out_inds = _primitive_forward.bind(
-        dists,inds,tranges,n_tranges,min_tranges,ishapes,
-        vid0, vid1, fflow, bflow)
+        vid0, vid1, fflow, bflow,
+        tranges, n_tranges, min_tranges, ishapes,
+        qstart=qstart, nqueries=nqueries, vshape=vshape,
+        k=k, ps=ps, pt=pt, chnls=chnls,
+        stride0=stride0, stride1=stride1, dilation=dilation,
+        ws_h=ws_h, ws_w=ws_w, wt=wt,
+        search_abs=search_abs,
+        reflect_bounds=reflect_bounds, use_adj=use_adj,
+        oh0=oh0, ow0=ow0, oh1=oh1, ow1=ow1,
+        remove_self=remove_self, full_ws=full_ws,
+        nbwd=nbwd,rbwd=rbwd, exact=exact)
+
 
     # -- run topk --
-    out_dists = jnp.reshape(out_dists,(nqueries,-1))
-    out_inds = jnp.reshape(out_inds,(nqueries,-1,3))
-    order = jnp.argsort(out_dists,1)[:,:k]
-    dists_topk = jnp.take_along_axis(out_dists,order,1)
-    inds_topk = []
-    for i in range(3):
-        inds_topk_i = jnp.take_along_axis(out_inds[:,:,i],order,1)
-        inds_topk.append(inds_topk_i)
-    inds_topk = jnp.stack(inds_topk,-1)
+    # print("out_dists.shape: ",out_dists.shape)
+    # out_dists = jnp.reshape(out_dists,(nqueries,-1))
+    # out_inds = jnp.reshape(out_inds,(nqueries,-1,3))
+    # order = jnp.argsort(out_dists,1)[:,:k]
+    # print("out_dists.shape: ",out_dists.shape)
+    # dists_topk = jnp.take_along_axis(out_dists,order,1)
+    # inds_topk = []
+    # for i in range(3):
+    #     inds_topk_i = jnp.take_along_axis(out_inds[:,:,i],order,1)
+    #     inds_topk.append(inds_topk_i)
+    # inds_topk = jnp.stack(inds_topk,-1)
+    dists_topk,inds_topk = out_dists,out_inds
 
     return dists_topk,inds_topk
 
 def run_bwd(*args,**kwargs):
     return _primitive_backward.bind(*args)
 
-def init(*args,**kwargs): # a "partial" version of run.
-    return run_fwd(*args,**kwargs)
+# def init(*args,**kwargs): # a "partial" version of run.
+#     return run_fwd(*args,**kwargs)
 
 def create_opaque_param(*args):
     nelem = len(args)
@@ -103,16 +194,74 @@ def create_opaque_param(*args):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-
 
-def abstract_forward(dists,inds,tranges,n_tranges,
-                     min_tranges,ishapes,
-                     vid0, vid1, fflow, bflow):
+def abstract_forward(vid0, vid1, fflow, bflow,
+                     tranges, n_tranges, min_tranges, ishapes,
+                     qstart=0, nqueries=1, vshape=(1,1,1,1),
+                     k=5, ps=7, pt=1, chnls=-1,
+                     stride0=1, stride1=1, dilation=1,
+                     ws_h=5, ws_w=5, wt=0,
+                     search_abs=False, reflect_bounds=False, use_adj=False,
+                     oh0=0, ow0=0, oh1=0, ow1=0, remove_self=False,
+                     full_ws=False, nbwd=False, rbwd=False, exact=False):
+    st = wt*2 + 1
     f32 = dtypes.canonicalize_dtype(np.float32)
     i32 = dtypes.canonicalize_dtype(np.int32)
-    return (ShapedArray(dists.shape,f32),ShapedArray(inds.shape,i32))
+    dshape = (nqueries,k)
+    ishape = (nqueries,k,3)
+    print("dshape: ",dshape)
+    return (ShapedArray(dshape,f32),ShapedArray(ishape,i32))
 
-def forward(xla_builder, dists, inds,
+def forward(xla_builder,
+            vid0, vid1, fflow, bflow,
             tranges, n_tranges, min_tranges, ishapes,
-            vid0, vid1, fflow, bflow, name=""):
+            qstart=0, nqueries=1, vshape=(1,1,1,1),
+            k=5, ps=7, pt=1, chnls=-1,
+            stride0=1, stride1=1, dilation=1,
+            ws_h=5, ws_w=5, wt=0,
+            search_abs=False, reflect_bounds=False, use_adj=False,
+            oh0=0, ow0=0, oh1=0, ow1=0, remove_self=False, full_ws=False,
+            nbwd=False, rbwd=False, exact=False, name=""):
+
+    # -- allocate --
+    args = [vid0,vid1,fflow,bflow,tranges,n_tranges,min_tranges,ishapes]
+
+    # -- types --
+    f32 = dtypes.canonicalize_dtype(np.float32)
+    i32 = dtypes.canonicalize_dtype(np.int32)
+    ashape = xla_client.Shape.array_shape
+
+    # -- input --
+    input_shapes = [xla_builder.get_shape(arg) for arg in args]
+
+    # -- output --
+    output_shapes = [ashape(f32,(nqueries,k),(1,0))]
+    output_shapes += [ashape(i32,(nqueries,k,3),(2,1,0))]
+    output_shapes = xla_client.Shape.tuple_shape(output_shapes)
+
+    # -- bytes --
+    name = name.encode("ascii")
+    opaque = b'..'#create_opaque_param(*oargs)
+
+    # -- exec cpp --
+    out = xops.CustomCallWithLayout(
+        xla_builder, name, operands=args,
+        operand_shapes_with_layout=input_shapes,
+        shape_with_layout=output_shapes,
+        opaque=opaque
+    )
+
+    return out
+
+def abstract_backward(*args):
+    vid0 = args[-4]
+    vid1 = args[-3]
+    print("absbwd: hey.")
+    f32 = dtypes.canonicalize_dtype(np.float32)
+    return (ShapedArray(vid0.shape,f32),ShapedArray(vid1.shape,f32))
+
+def backward(xla_builder, dists, inds,
+            tranges, n_tranges, min_tranges, ishapes,
+            nqueries, k, vid0, vid1, fflow, bflow, name=""):
 
     # -- allocate --
     args = [vid0,vid1,fflow,bflow,tranges,n_tranges,min_tranges,ishapes]
@@ -123,32 +272,17 @@ def forward(xla_builder, dists, inds,
     input_dimensions = tuple(shape.dimensions() for shape in input_shapes)
 
     # -- output --
-    out_shapes = xla_builder.get_shape(dists),xla_builder.get_shape(inds)
+    out_shapes = xla_builder.get_shape(vid0),xla_builder.get_shape(vid1)
     output_shapes = xla_client.Shape.tuple_shape(out_shapes)
 
-    # -- bytes --
-    name = name.encode("ascii")
-    # oargs = [ps,pt,ws_h,ws_w,wt,chnls,stride0,stride1,
-    #          dilation,use_search_abs,reflect_bounds,
-    #          use_adj, oh0, ow0, oh1, ow1, remove_self,
-    #          full_ws, nbwd, use_rand, exact]
-    opaque = b'..'#create_opaque_param(*oargs)
-
-    # -- fill ishapes --
-    # ishapes[0] = nframes
-    # ishapes[1] = nframes
-    # ishapes[2] = nframes
-    # ishapes[3] = nframes
-
     # -- view --
-    # print("yo.")
-    # print(input_shapes)
-    # print(output_shapes)
-    # print(name)
-    # print(opaque)
+    print(input_shapes)
+    name = name.encode("ascii")
+    print(name)
+    opaque = b'..'
 
     # -- exec cpp --
-    out = xops.CustomCallWithLayout(
+    return xops.CustomCallWithLayout(
         xla_builder,
         name,
         operands=args,
@@ -156,56 +290,6 @@ def forward(xla_builder, dists, inds,
         shape_with_layout=output_shapes,
         opaque=opaque
     )
-    # print(out)
-    return out
-
-def abstract_backward(*args):
-    print("absbwd: hey.")
-    f32 = dtypes.canonicalize_dtype(np.float32)
-    return (ShapedArray((3,3,128,128),f32),ShapedArray((3,3,128,128),f32))
-
-def backward(xla_builder,*args,name=""):
-
-    # -- input --
-    print("bwd: hey.")
-    input_shapes = [xla_builder.get_shape(arg) for arg in args]
-    input_dtypes = tuple(shape.element_type() for shape in input_shapes)
-    input_dimensions = tuple(shape.dimensions() for shape in input_shapes)
-
-    # -- output --
-    output_abstract_arrays = abstract_backward(
-        *[xla_shape_to_abstract(shape) for shape in input_shapes]
-    )
-    output_shapes = tuple(array.shape for array in output_abstract_arrays)
-    output_dtypes = tuple(array.dtype for array in output_abstract_arrays)
-    output_layouts = map(lambda shape: range(len(shape) - 1, -1, -1), output_shapes)
-    xla_output_shapes = [
-        xla_client.Shape.array_shape(*arg)
-        for arg in zip(output_dtypes, output_shapes, output_layouts)
-    ]
-    xla_output_shape = xla_client.Shape.tuple_shape(xla_output_shapes)
-
-    print(input_shapes)
-    name = name.encode("ascii")
-    print(name)
-    opaque = b'..'
-
-    # -- exec cpp --
-    xops.CustomCallWithLayout(
-        xla_builder,
-        name,
-        operands=args,
-        operand_shapes_with_layout=input_shapes,
-        shape_with_layout=xla_output_shape,
-        opaque=opaque
-    )
-
-    # -- output --
-    # vid0_grad = jnp.zeros((3,3,128,128),jnp.float32)
-    # vid1_grad = jnp.zeros((3,3,128,128),jnp.float32)
-    # outs = [lax.zeros_like_array(arg) for arg in args]
-
-    return vid0_grad,vid1_grad
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -213,14 +297,14 @@ def backward(xla_builder,*args,name=""):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def backward_jvp(arg_values, arg_tangents, name_fwd="", name_bwd=""):
+def backward_jvp(arg_values, arg_tangents, fwd_fxn=None, bwd_fxn=None):
 
     # -- primal --
     print("a: ")
-    print(len(arg_values))
+    print(len(arg_values),arg_values[0].shape)
     print("b: ")
-    print(len(arg_tangents))
-    fwd_out = run_fwd(*arg_values)
+    print(len(arg_tangents))#,arg_tangents[0].shape)
+    fwd_out = fwd_fxn(*arg_values)
 
     # -- tangent --
     def make_zero(tan):
@@ -267,7 +351,7 @@ def _register():
     # -- wrap --
     fwd = partial(forward,name=name_fwd)
     bwd = partial(backward,name=name_bwd)
-    jvp = partial(backward_jvp,name_fwd=name_fwd,name_bwd=name_bwd)
+    jvp = partial(backward_jvp,fwd_fxn=run_fwd,bwd_fxn=run_bwd)
     vjp = partial(backward_vjp,name_fwd=name_fwd,name_bwd=name_bwd)
 
     # -- define primitive --

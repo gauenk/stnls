@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <pybind11/pybind11.h>
 #include "../jax_pybind.h"
+using namespace torch::indexing;
 
 
 // CUDA forward declarations
@@ -156,8 +157,8 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   int width = ishapes[27];
 
   int st = 2*wt+1;
-  int n_h0 = height;
-  int n_w0 = width;
+  int n_h0 = (height-1)/stride0+1;
+  int n_w0 = (width-1)/stride0+1;
 
   fprintf(stdout,"qstart: %d\n",qstart);
   fprintf(stdout,"nqueries: %d\n",nqueries);
@@ -195,11 +196,12 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   fprintf(stdout,"n_w0: %d\n",n_w0);
 
   // -- create writable tensors --
-  // auto dists = torch::zeros({nqueries,st,ws_h,ws_w},options_f32);
-  // auto inds = torch::zeros({nqueries,st,ws_h,ws_w,3},options_i32);
-  auto dists = torch::from_blob(dists_ptr,{nqueries,st,ws_h,ws_w},options_f32);
-  auto inds = torch::from_blob(inds_ptr,{nqueries,st,ws_h,ws_w,3},options_i32);
+  auto dists = torch::zeros({nqueries,st,ws_h,ws_w},options_f32);
+  auto inds = torch::zeros({nqueries,st,ws_h,ws_w,3},options_i32);
+  auto dists_topk = torch::from_blob(dists_ptr,{nqueries,k},options_f32);
+  auto inds_topk = torch::from_blob(inds_ptr,{nqueries,k,3},options_i32);
   float inf = std::numeric_limits<float>::infinity();
+  fprintf(stdout,"nqueries,k: %d,%d\n",nqueries,k);
   dists.fill_(-inf);
   inds.fill_(-1);
 
@@ -215,7 +217,14 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
 
   // -- run program --
   chnls = chnls <= 0 ? color : chnls;
-  search_prod_with_index_forward(
+  // search_prod_with_index_forward_cuda(
+  //         vid0,vid1,fflow,bflow,nlDists,nlInds,
+  //         qstart, stride0, n_h0, n_w0,
+  //         ps,pt,ws_h,ws_w,wt,chnls,stride,dilation,
+  //         use_search_abs, use_bounds, use_adj,
+  //         full_ws, oh0, ow0, oh1, ow1,
+  //         tranges, n_tranges, min_tranges);
+  search_prod_with_index_forward_cuda(
       vid0,vid1,fflow,bflow,dists,inds,
       qstart, stride0, n_h0, n_w0,
       ps,pt,ws_h,ws_w,wt,chnls,stride1,dilation,
@@ -224,25 +233,24 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
       tranges, n_tranges, min_tranges);
   // fprintf(stdout,"hi.\n");
 
-  // -- copy result back --
-  // dists_b.copy_(dists);
-  // inds_b.copy_(inds);
-  // std::memcpy(dists_ptr,dists.data_ptr(),sizeof(float)*dists.numel());
-  // std::memcpy(inds_ptr,inds.data_ptr(),sizeof(int32_t)*inds.numel());
-  // void* start = dists.data_ptr();
-  // void* end = start + sizeof(float)*dists.numel();
-  // thrust::memcpy(thrust::device,start,end,data_ptr);
-
   // -- view --
-  // auto vid0_ = vid0.to(torch::kCPU);
-  // auto vid0_a = vid0_.accessor<float,4>();
-  // fprintf(stdout,"%2.3f,%2.3f\n",vid0_a[0][0][0][0],vid0_a[0][0][0][1]);
-  // fprintf(stdout,"%2.3f,%2.3f\n",vid0_a[0][0][1][0],vid0_a[0][0][1][1]);
+  int nsearch = ws_h * ws_w * st;
+  auto dists_v = dists.view({nqueries,nsearch});
+  auto inds_v = inds.view({nqueries,nsearch,3});
 
-  // auto dists_ = dists.to(torch::kCPU);
-  // auto dists_a = dists_.accessor<float,4>();
-  // fprintf(stdout,"%2.3f,%2.3f\n",dists_a[0][0][0][0],dists_a[0][0][0][1]);
-  // fprintf(stdout,"%2.3f,%2.3f\n",dists_a[0][0][1][0],dists_a[0][0][1][1]);
+  // -- replace nan with inf --
+  auto nan_args = torch::where(torch::isnan(dists_v));
+  dists_v.index_put_({nan_args[0],nan_args[1]},-inf);
+
+  // -- topk --
+  fprintf(stdout,"nsearch: %d\n",nsearch);
+  auto args = torch::argsort(dists_v,1,true);
+  auto args_k = args.index({Slice(),Slice(0,k,None)});
+  auto dists_g = torch::gather(dists_v,1,args_k);
+  dists_topk.index_put_({"..."},dists_g);
+  inds_topk.index_put_({"...",0},torch::gather(inds_v.index({"...",0}),1,args_k));
+  inds_topk.index_put_({"...",1},torch::gather(inds_v.index({"...",1}),1,args_k));
+  inds_topk.index_put_({"...",2},torch::gather(inds_v.index({"...",2}),1,args_k));
 
 }
 

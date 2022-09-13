@@ -30,7 +30,6 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         ws = search Window Spatial (ws)
         wt = search Window Time (wt)
         """
-
         # -- reshape with heads --
         device = vid0.device
         if vid0.ndim == 4:

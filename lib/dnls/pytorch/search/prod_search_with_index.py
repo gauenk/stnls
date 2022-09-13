@@ -80,7 +80,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 stride0, stride1, dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
                 oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
-                use_rand, exact):
+                rbwd, exact):
         """
         vid = [T,C,H,W]
         ws = xsearch Window Spatial (ws)
@@ -92,6 +92,14 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         nq = nqueries
         t,c,h,w = vid0.shape
         n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
+        print("k, ps, pt, ws_h, ws_w, wt: ",k, ps, pt, ws_h, ws_w, wt)
+        print("chnls, stride0, stride1, dilation,lam: ",
+              chnls, stride0, stride1, dilation,lam)
+        print("use_search_abs, reflect_bounds, use_adj: ",
+              use_search_abs, reflect_bounds, use_adj)
+        print("use_k, oh0, ow0, oh1, ow1: ",use_k, oh0, ow0, oh1, ow1)
+        print("remove_self, full_ws, nbwd, rbwd, exact: ",
+              remove_self, full_ws, nbwd, rbwd, exact)
 
         # -- allocs --
         # bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
@@ -139,7 +147,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         ctx.vid_shape = vid0.shape
         ctx.use_adj = use_adj
         ctx.ps,ctx.pt = ps,pt
-        ctx.use_rand = use_rand
+        ctx.rbwd = rbwd
         ctx.nbwd = nbwd
         ctx.lam = lam
         ctx.use_k = use_k
@@ -165,7 +173,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         lam,ps,pt,dil = ctx.lam,ctx.ps,ctx.pt,ctx.dilation
         qstart,stride0 = ctx.qstart,ctx.stride0
         full_ws,nbwd = ctx.full_ws,ctx.nbwd
-        use_rand = ctx.use_rand
+        rbwd = ctx.rbwd
         oh0 = ctx.oh0
         ow0 = ctx.ow0
         oh1 = ctx.oh1
@@ -185,7 +193,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 grad_dists,inds,
                 qstart,stride0,n_h0,n_w0,
                 ps,pt,lam,use_adj,reflect_bounds,
-                oh0,ow0,oh1,ow1,full_ws,use_rand,exact)
+                oh0,ow0,oh1,ow1,full_ws,rbwd,exact)
         else:
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
@@ -195,7 +203,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                     grad_dists,inds,
                     qstart,stride0,n_h0,n_w0,
                     ps,pt,lam,reflect_bounds,
-                    oh0,ow0,oh1,ow1,full_ws,use_rand,exact)
+                    oh0,ow0,oh1,ow1,full_ws,rbwd,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
             grad_vid0 /= nbwd
@@ -212,7 +220,7 @@ class ProductSearch_with_index(th.nn.Module):
                  chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
                  search_abs=False, reflect_bounds=True, use_adj=True,
                  use_k=True, remove_self=False, full_ws=False, nbwd=1,
-                 use_rand=True, exact=True):
+                 rbwd=True, exact=True):
         super(ProductSearch_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -237,7 +245,7 @@ class ProductSearch_with_index(th.nn.Module):
         self.remove_self = remove_self
         self.full_ws = full_ws
         self.nbwd = nbwd
-        self.use_rand = use_rand
+        self.rbwd = rbwd
         self.exact = exact
 
     def _get_args(self,vshape):
@@ -275,4 +283,4 @@ class ProductSearch_with_index(th.nn.Module):
             self.search_abs,self.reflect_bounds,
             self.use_adj,self.use_k,self.oh0,self.ow0,
             self.oh1,self.ow1,self.remove_self,
-            self.full_ws,self.nbwd,self.use_rand,self.exact)
+            self.full_ws,self.nbwd,self.rbwd,self.exact)

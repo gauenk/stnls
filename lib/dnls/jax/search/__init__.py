@@ -18,9 +18,11 @@ def init(version,*args,**kwargs):
     elif version == "prod":
         return prod_search.ProductSearch(*args,**kwargs)
     elif version == "prod_with_index":
-        return prod_search_with_index.ProductSearch_with_index(*args,**kwargs)
+        # return prod_search_with_index.ProductSearch_with_index(*args,**kwargs)
+        return prod_search_with_index.init(*args,**kwargs)
     elif version == "prod_with_heads":
-        return prod_search_with_heads.prod_search_with_heads(*args,**kwargs)
+        # return prod_search_with_heads.prod_search_with_heads(*args,**kwargs)
+        return prod_search_with_heads.init(*args,**kwargs)
     else:
         raise ValueError(f"Uknown version [{version}]")
 

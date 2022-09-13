@@ -5,6 +5,7 @@ Wrap the opencv optical flow
 # -- linalg --
 import numpy as np
 import torch as th
+import jax.numpy as jnp
 from einops import rearrange,repeat
 
 # -- misc --
@@ -155,3 +156,11 @@ def flow2vid(flow):
         mask_ti = rearrange(mask_ti,'h w c -> c h w')
         mask[ti] = mask_ti
     return mask
+
+def pth2jax(flows):
+    flows_jax = {}
+    for key in flows:
+        flows_jax[key] = jnp.array(flows[key].cpu().numpy())
+        # edict({jnp.array(flows[key].cpu().numpy()) for key in flows})
+    flows_jax = edict(flows_jax)
+    return flows_jax

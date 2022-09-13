@@ -36,33 +36,46 @@ oh0, ow0, oh1, ow1 = 0, 0, 0, 0
 remove_self, full_ws, nbwd = False, True, 1
 use_rand, exact = False, False
 
-args = [vid0,vid1,fflow,bflow,qstart,nqueries,k]
+args = [0,vid0,vid1,fflow,bflow]
 
 from jax._src import api
 import dnls
 print(dnls.jax.search.prod_search_with_index._register())
+fxn = dnls.jax.search.prod_search_with_index.run_fwd
 # print(dnls.jax.search.prod_search_with_index.forward())
-iargs = [nframes,nqueries,ws_h,ws_w,wt,
-         k, ps, pt, chnls, stride0, stride1, dilation,
-         use_search_abs, reflect_bounds, use_adj,
-         oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
-         use_rand, exact]
-fxn = dnls.jax.search.prod_search_with_index.init_fwd(*iargs)
+# iargs = [nframes,nqueries,ws_h,ws_w,wt,
+#          k, ps, pt, chnls, stride0, stride1, dilation,
+#          use_search_abs, reflect_bounds, use_adj,
+#          oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+#          use_rand, exact]
+# fxn = dnls.jax.search.prod_search_with_index.init_fwd(*iargs)
 # fxn()
 
-dists,inds = api.jit(fxn,static_argnums=(4,5,6,))(*args)
+# dists,inds = api.jit(fxn,static_argnums=(4,5,6,))(*args)
+# print("api.jit(fxn): ",api.jit(fxn))
+# dists,inds = fxn(vid0, vid1, fflow, bflow, qstart=qstart,
+#                  nqueries=nqueries,ws_h=ws_h,ws_w=ws_w,wt=wt,k=k)
+dists,inds = api.jit(fxn,static_argnums=(4,5,6,7,8,9))(
+    vid0, vid1, qstart, nqueries, fflow, bflow,
+    ws_h=ws_h,ws_w=ws_w,wt=wt,k=k)
 print(dists.shape)
 print(inds.shape)
-print(dists[0])
-print(dists[1])
-print(inds[0])
-dists = jnp.reshape(dists,(nqueries,-1))
-inds = jnp.reshape(inds,(nqueries,-1,3))
-print(dists[:3,:3])
-print(dists[:,:3])
-print(inds[:3,:3])
-print(inds[:,:3])
+exit(0)
+# print(dists[0])
+# print(dists[1])
+# print(inds[0])
+# dists = jnp.reshape(dists,(nqueries,-1))
+# inds = jnp.reshape(inds,(nqueries,-1,3))
+# print(dists[:3,:3])
+# print(dists[:,:3])
+# print(inds[:3,:3])
+# print(inds[:,:3])
 
+# forward
+# my_jvp = api.jit(lambda ins,tans: api.jvp(fxn, ins, tans))
+# my_jvp(vid0,vid1,fflow,bflow,
+
+print(api.grad(fxn,argnums=1)(vid0,vid1,fflow,bflow))
 
 
 # def xla_shape_to_abstract(xla_shape) -> ShapedArray:
