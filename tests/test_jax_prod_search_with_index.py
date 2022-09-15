@@ -8,9 +8,14 @@ import pytest
 # -- linalg --
 import torch as th
 import numpy as np
+from einops import rearrange,repeat
+
+# -- jax --
+import jax
+from jax._src import api
 import jax.numpy as jnp
 import jax.random as jr
-from einops import rearrange,repeat
+from functools import partial
 
 # -- dnls --
 import dnls
@@ -44,7 +49,7 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.mark.jax
-def test_cu_vs_th_fwd_basic(ps,stride,dilation,exact):
+def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     """
 
     Test the CUDA code with torch code
@@ -52,7 +57,6 @@ def test_cu_vs_th_fwd_basic(ps,stride,dilation,exact):
     Forward Pass
 
     """
-
 
     # -- get args --
     dil = dilation
@@ -151,6 +155,8 @@ def test_cu_vs_th_fwd_basic(ps,stride,dilation,exact):
                                      reflect_bounds=reflect_bounds,use_k=use_k,
                                      search_abs=search_abs,use_adj=use_adj,
                                      exact=exact)
+    search_te = jax.jit(search_te,static_argnums=(1,2))
+
     # print(search_gt)
     # print(search_te)
     # exit(0)
@@ -164,27 +170,27 @@ def test_cu_vs_th_fwd_basic(ps,stride,dilation,exact):
     inds_te = th.from_numpy(np.asarray(inds_te)).to(device)
 
     # -- viz --
-    print(score_gt[:3,:3])
-    print(score_te[:3,:3])
-    # print(score_te[:3,-3:])
-    print("-"*50)
-    print(score_gt[-3:,:3])
-    print(score_te[-3:,:3])
-    print("-"*50)
-    print(inds_gt[:3,:3])
-    print(inds_te[:3,:3])
-    print("-"*50)
-    print(inds_gt[32:35,:3])
-    print(inds_te[32:35,:3])
-    print("-"*50)
-    print(inds_gt[-3:,:3])
-    print(inds_te[-3:,:3])
-    print("-"*50)
+    # print(score_gt[:3,:3])
+    # print(score_te[:3,:3])
+    # # print(score_te[:3,-3:])
+    # print("-"*50)
+    # print(score_gt[-3:,:3])
+    # print(score_te[-3:,:3])
+    # print("-"*50)
+    # print(inds_gt[:3,:3])
+    # print(inds_te[:3,:3])
+    # print("-"*50)
+    # print(inds_gt[32:35,:3])
+    # print(inds_te[32:35,:3])
+    # print("-"*50)
+    # print(inds_gt[-3:,:3])
+    # print(inds_te[-3:,:3])
+    # print("-"*50)
 
     # print(inds_te[:3,-3:])
-    args = th.where(th.abs(score_gt - score_te)>0.1)
-    print(score_gt[args])
-    print(score_te[args])
+    # args = th.where(th.abs(score_gt - score_te)>0.1)
+    # print(score_gt[args])
+    # print(score_te[args])
     # print(args)
     # print(th.unique(args[0]))
 
@@ -208,25 +214,26 @@ def test_cu_vs_th_fwd_basic(ps,stride,dilation,exact):
 
 
 @pytest.mark.jax
-def test_cu_vs_th_fwd(ps,stride,dilation,exact):
+def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     """
 
     Test the CUDA code with torch code
 
-    Forward Pass
+    Backward Pass
 
     """
-
 
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
     k,pt = 1,1
     wt = 0
-    ws = -1
-    k = -1
+    ws = 8
+    k = 4
     stride0 = stride
     stride1 = 1
+    search_abs = ws <= 0
+    use_k = k > 0
 
     # -- init vars --
     device = "cuda:0"
@@ -235,6 +242,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     gpu_stats = False
     adj = False
     reflect_bounds = False
+    use_adj = True
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
@@ -252,13 +260,14 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
 
     # -- compute flow --
     flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows_jax = dnls.flow.pth2jax(flows)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
     t,color,h,w = shape
+    nframes,chnls = vid.shape[:2]
     vshape = vid.shape
-    chnls = vid.shape[1]
 
     # -- sub square --
     top,btm,left,right = 0,h,0,w
@@ -279,41 +288,117 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
+    # -- two video types --
+    vid_pth = vid.clone()
+    vid_jax = jnp.array(vid.clone().cpu().numpy())
+
+    # -- random videos --
+    vidr_pth = th.rand_like(vid_pth)
+    vidr_jax = jnp.array(vidr_pth.clone().cpu().numpy())
+    qindex = 0
+
     # -- exec fold fxns --
-    use_adj = True
     # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
     # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
     search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
-                              k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
-                              chnls=-1,dilation=dil,
-                              stride0=stride0, stride1=stride1,
-                              reflect_bounds=reflect_bounds,use_k=False,
-                              search_abs=True,use_adj=use_adj,
-                              exact=exact)
-    search_te = dnls.jax.search.init("prod_with_index",flows.fflow, flows.bflow,
-                                     k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                                 k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                                 chnls=-1,dilation=dil,
+                                 stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,use_k=use_k,
+                                 search_abs=search_abs,use_adj=use_adj,
+                                 exact=exact)
+    # chnls=-1, dilation=1, stride0=1, stride1=1,
+    # use_k=True, use_adj=True, reflect_bounds=True,
+    # search_abs=False, full_ws = False, nbwd=1, exact=False,
+    # h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
+    # anchor_self=False,rbwd=True):
+    search_te = dnls.jax.search.init("prod_with_index",
+                                     flows_jax.fflow, flows_jax.bflow,
+                                     nframes, k, ps, pt, ws, wt,
+                                     oh0, ow0, oh1, ow1,
                                      chnls=-1,dilation=dil,
                                      stride0=stride0, stride1=stride1,
-                                     reflect_bounds=reflect_bounds,use_k=False,
-                                     search_abs=True,use_adj=use_adj,
+                                     reflect_bounds=reflect_bounds,use_k=use_k,
+                                     search_abs=search_abs,use_adj=use_adj,
                                      exact=exact)
-    # -- run search --
-    vidr = th.rand_like(vid)
-    qindex = 0
-    score_gt,inds_gt = search_gt(vid,qindex,nbatch,vid1=vidr)
-    score_te,inds_te = search_te(vid,qindex,nbatch,vid1=vidr)
+    # search_fwd = jax.jit(search_te,static_argnums=(1,2))
+    search_fwd = search_te
+
+
+    # print(search_gt)
+    # print(search_te)
+    # exit(0)
+    # -- run pytorch search --
+    score_gt,inds_gt = search_gt(vid_pth,qindex,nbatch,vid1=vidr_pth)
+
+    # -- create gradients --
+    score_grad_pth = th.randn_like(score_gt)
+    score_grad_jax = jnp.array(score_grad_pth.cpu().numpy())
+
+    # -- run jax search --
+    score_te,inds_te = search_fwd(vid_jax,qindex,nbatch,vidr_jax)
+    inds_grad = jnp.array(th.zeros_like(inds_gt).cpu().numpy())
+    # grad_in = (score_grad_jax,)
+    grad_in = (vid_jax,qindex,nbatch,vidr_jax)
+    grad_out = (score_te,None,None,None)
+
+    grad_in = (vid_jax,)
+    grad_out = (vid_jax,)
+    search_p = lambda x: search_fwd(x,qindex,nbatch,vidr_jax)
+    jvp_out = jax.jvp(search_p,grad_in,grad_out,has_aux=True)
+
+    # jvp_out = jax.jvp(search_fwd,grad_in,grad_out,has_aux=True)
+    # search_jvp = jax.jit(api.jvp(search_te,has_aux),static_argnums=(1,2))
+    # search_grad = jax.jit(api.grad(search_te,has_aux=True),static_argnums=(1,2))
+    # search_jvp((score_te,inds_te),(vid_jax,vidr_jax))
+    # score_te = th.from_numpy(np.asarray(score_te)).to(device)
+    # inds_te = th.from_numpy(np.asarray(inds_te)).to(device)
+    # print(type(qindex))
+    # print(search_grad)
+    # print(search_grad(vid_jax,qindex,nbatch,vidr_jax))
+    # print(search_grad(vid_jax,vidr_jax))
+    exit(0)
+
+
+    # -- viz --
+    # print(score_gt[:3,:3])
+    # print(score_te[:3,:3])
+    # # print(score_te[:3,-3:])
+    # print("-"*50)
+    # print(score_gt[-3:,:3])
+    # print(score_te[-3:,:3])
+    # print("-"*50)
+    # print(inds_gt[:3,:3])
+    # print(inds_te[:3,:3])
+    # print("-"*50)
+    # print(inds_gt[32:35,:3])
+    # print(inds_te[32:35,:3])
+    # print("-"*50)
+    # print(inds_gt[-3:,:3])
+    # print(inds_te[-3:,:3])
+    # print("-"*50)
+
+    # print(inds_te[:3,-3:])
+    # args = th.where(th.abs(score_gt - score_te)>0.1)
+    # print(score_gt[args])
+    # print(score_te[args])
+    # print(args)
+    # print(th.unique(args[0]))
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(score_gt))) # remove all inf
+    args1 = th.where(th.logical_not(th.isinf(score_te))) # remove all inf
     diff = th.abs(score_te - score_gt) / (score_gt.abs() + 1e-5)
     diff = diff[args0]
+    # print(th.abs(args0[0] - args1[0]).sum())
+    # print(th.abs(args0[1] - args1[1]).sum())
 
     tol = 1e-5
-    error = th.mean(th.abs(score_te - score_gt)).item()
+    error = diff.mean().item()
     if error > tol: print("error: ",error)
     assert error < tol
 
     tol = 1e-4
-    max_error = th.abs(score_te - score_gt).max().item()
+    max_error = diff.max().item()
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
