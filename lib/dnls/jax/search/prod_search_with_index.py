@@ -235,7 +235,7 @@ def abstract_forward(vid0, vid1,
     i32 = dtypes.canonicalize_dtype(np.int32)
     dshape = (nqueries,k)
     ishape = (nqueries,k,3)
-    print("dshape: ",dshape)
+    # print("dshape: ",dshape)
     return (ShapedArray(dshape,f32),ShapedArray(ishape,i32))
 
 def forward(xla_builder, vid0, vid1,
@@ -328,9 +328,9 @@ def backward(xla_builder, dists, inds, vid0, vid1,
     output_shapes = xla_client.Shape.tuple_shape(out_shapes)
 
     # -- view --
-    print(input_shapes)
+    # print(input_shapes)
     name = name.encode("ascii")
-    print(name)
+    # print(name)
     opaque = b'..'
 
     # -- exec cpp --
@@ -342,7 +342,6 @@ def backward(xla_builder, dists, inds, vid0, vid1,
         shape_with_layout=output_shapes,
         opaque=opaque
     )
-    # return (vid0,vid1)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -368,6 +367,7 @@ def backward_jvp(arg_values, arg_tangents,
 
     # -- prepare --
     # print("a: ")
+    # print([type(arg) for arg in arg_values])
     # print(len(arg_values),arg_values[0].shape)
     # print("b: ")
     # print(len(arg_tangents),arg_tangents[0])#.shape)
@@ -375,27 +375,7 @@ def backward_jvp(arg_values, arg_tangents,
     # exit(0)
     vid0,vid1,fflow,bflow,tranges,n_tranges,min_tranges,ishapes = arg_values
     nframes = arg_values[0].shape[0]
-    # vshape = vid0.shape
-    # print(vid0,vid1,qstart,nqueries)
-
-    # -- create buffers --
-    # nframes,color,height,width = vid0.shape
-    # if tranges is None:
-    #     tranges = jnp.zeros((nframes,nframes),dtype=np.int32)
-    # if n_tranges is None:
-    #     n_tranges = jnp.ones((nframes),dtype=np.int32)
-    # if min_tranges is None:
-    #     min_tranges = jnp.zeros((nframes),dtype=np.int32)
-    # if ishapes is None:
-    #     ishapes = jnp.array([qstart, nqueries,ws_h,ws_w,wt,
-    #                          k, ps, pt, chnls,
-    #                          stride0, stride1, dilation,
-    #                          search_abs, reflect_bounds, use_adj,
-    #                          oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
-    #                          rbwd, exact, nframes, color, height, width],
-    #                         dtype=jnp.int32)
-    # if vshape is None:
-    #     vshape = vid0.shape
+    # print("jvp.")
 
 
     # -- forward --
@@ -410,19 +390,34 @@ def backward_jvp(arg_values, arg_tangents,
     dists,inds = ifwd_fxn(vid0,qstart,nqueries,vid1)
 
     # -- tangent (backward at point) --
+    # print("pre tan.")
     vid0_grad,vid1_grad = run_bwd(dists,inds,vid0,vid1,fflow,bflow,
                                   tranges,n_tranges,min_tranges,ishapes,
                                   qstart=qstart,ps=ps,pt=pt,dilation=dilation,
                                   stride0=stride0,oh0=oh0,ow0=ow0,oh1=oh1,ow1=ow1,
                                   use_adj=use_adj,reflect_bounds=reflect_bounds,
                                   full_ws=full_ws,nbwd=nbwd,rbwd=rbwd,exact=exact)
+    # print("post tan.")
 
     return ((dists,inds), (vid0_grad,vid1_grad))
 
-def backward_vjp(*args,name_fwd="",name_bwd=""): # "backward"
+def backward_vjp(*args,qstart=0, nqueries=1, vshape=(1,1,1,1),
+                 k=5, ps=7, pt=1, chnls=-1,
+                 stride0=1, stride1=1, dilation=1,
+                 ws_h=5, ws_w=5, wt=0,
+                 search_abs=False, reflect_bounds=False, use_adj=False,
+                 oh0=0, ow0=0, oh1=0, ow1=0, remove_self=False,
+                 full_ws=False, nbwd=False, rbwd=False, exact=False,
+                 fwd_fxn=None, bwd_fxn=None):
+# **kwargs,name_fwd="",name_bwd=""): # "backward"
 
+    # -- init --
+    print("vjp.")
     print("a: ")
     print(len(args))
+    exit(0)
+    # vid0,vid1,fflow,bflow,tranges,n_tranges,min_tranges,ishapes = arg_values
+    # nframes = arg_values[0].shape[0]
 
     # -- primal --
     fwd_out = run_fwd(*arg_values)
@@ -458,7 +453,7 @@ def _register():
     fwd = partial(forward,name=name_fwd)
     bwd = partial(backward,name=name_bwd)
     jvp = partial(backward_jvp,fwd_fxn=run_fwd,bwd_fxn=run_bwd)
-    vjp = partial(backward_vjp,name_fwd=name_fwd,name_bwd=name_bwd)
+    vjp = partial(backward_vjp,fwd_fxn=run_fwd,bwd_fxn=run_bwd)
 
     # -- define primitive --
     name = "search_prod_with_index_jax_forward"
@@ -472,6 +467,6 @@ def _register():
 
     # -- assign jvp/vjp for forward --
     ad.primitive_jvps[prim_fwd] = jvp
-    # ad.primitive_transposes[prim_fwd] = vjp
+    ad.primitive_transposes[prim_fwd] = vjp
 
 _register() # call for init
