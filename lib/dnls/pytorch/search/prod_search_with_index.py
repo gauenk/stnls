@@ -92,14 +92,14 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         nq = nqueries
         t,c,h,w = vid0.shape
         n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
-        print("k, ps, pt, ws_h, ws_w, wt: ",k, ps, pt, ws_h, ws_w, wt)
-        print("chnls, stride0, stride1, dilation,lam: ",
-              chnls, stride0, stride1, dilation,lam)
-        print("use_search_abs, reflect_bounds, use_adj: ",
-              use_search_abs, reflect_bounds, use_adj)
-        print("use_k, oh0, ow0, oh1, ow1: ",use_k, oh0, ow0, oh1, ow1)
-        print("remove_self, full_ws, nbwd, rbwd, exact: ",
-              remove_self, full_ws, nbwd, rbwd, exact)
+        # print("k, ps, pt, ws_h, ws_w, wt: ",k, ps, pt, ws_h, ws_w, wt)
+        # print("chnls, stride0, stride1, dilation,lam: ",
+        #       chnls, stride0, stride1, dilation,lam)
+        # print("use_search_abs, reflect_bounds, use_adj: ",
+        #       use_search_abs, reflect_bounds, use_adj)
+        # print("use_k, oh0, ow0, oh1, ow1: ",use_k, oh0, ow0, oh1, ow1)
+        # print("remove_self, full_ws, nbwd, rbwd, exact: ",
+        #       remove_self, full_ws, nbwd, rbwd, exact)
 
         # -- allocs --
         # bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)

@@ -65,7 +65,7 @@ def init(fflow, bflow,
     def wrap_run(vid0,qstart,nqueries,vid1=None):
         if vid1 is None: vid1 = vid0
         part2 = partial(run_fwd_part,qstart=qstart,nqueries=nqueries)
-        print("hi.")
+        # print("hi.")
         return part2(vid0,vid1)
 
 
@@ -171,7 +171,7 @@ def run_fwd(vid0, vid1, qstart=0, nqueries=1,
             full_ws=False, nbwd=1, rbwd=False, exact=False):
 
     if fflow is None:
-        print("b.")
+        # print("b.")
         exit(0)
 
     # -- allocate --
@@ -202,12 +202,12 @@ def run_fwd(vid0, vid1, qstart=0, nqueries=1,
     if min_tranges is None:
         min_tranges = jnp.zeros((nframes),dtype=np.int32)
     if ishapes is None:
-        print(qstart, nqueries,ws_h,ws_w,wt,
-              k, ps, pt, chnls,
-              stride0, stride1, dilation,
-              search_abs, reflect_bounds, use_adj,
-              oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
-              rbwd, exact, nframes, color, height, width)
+        # print(qstart, nqueries,ws_h,ws_w,wt,
+        #       k, ps, pt, chnls,
+        #       stride0, stride1, dilation,
+        #       search_abs, reflect_bounds, use_adj,
+        #       oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+        #       rbwd, exact, nframes, color, height, width)
         ishapes = jnp.array([qstart, nqueries,ws_h,ws_w,wt,
                              k, ps, pt, chnls,
                              stride0, stride1, dilation,
@@ -215,12 +215,12 @@ def run_fwd(vid0, vid1, qstart=0, nqueries=1,
                              oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
                              rbwd, exact, nframes, color, height, width],
                             dtype=jnp.int32)
-    print("\n"*5)
-    print("ishapes: ",type(ishapes))
-    print("\n"*5)
+    # print("\n"*5)
+    # print("ishapes: ",type(ishapes))
+    # print("\n"*5)
     if vshape is None:
         vshape = vid0.shape
-    print("[run_fwd] type(ishapes): ",type(ishapes))
+    # print("[run_fwd] type(ishapes): ",type(ishapes))
 
 
     out_dists,out_inds = _primitive_forward.bind(
@@ -279,8 +279,8 @@ def run_bwd(dists,inds,vid0,vid1,
             oh0=0,ow0=0,oh1=0,ow1=0,use_adj=False,
             reflect_bounds=True,full_ws=True,
             nbwd=1,rbwd=False,exact=True):
-    print("yo.")
-    print(dists,inds,vid0,vid1)
+    # print("yo.")
+    # print(dists,inds,vid0,vid1)
     nqueries,k = dists.shape
     nframes,color,height,width = vid0.shape
     if ishapes is None:
@@ -472,7 +472,7 @@ def backward(xla_builder,
     # input_shapes = [xla_builder.get_shape(arg) for arg in args]
     # input_dtypes = tuple(shape.element_type() for shape in input_shapes)
     # input_dimensions = tuple(shape.dimensions() for shape in input_shapes)
-    print(input_shapes)
+    # print(input_shapes)
 
     # -- output --
     # out_shapes = vid0.shape,vid1.shape
@@ -548,18 +548,18 @@ def forward_jvp(# arg_values, arg_tangents,
     #               tranges, n_tranges, min_tranges,# ishapes,  vshape,
     # )
 
-    print("--"*30)
-    print(fflow, bflow,
-          tranges, n_tranges, min_tranges,
-          ishapes, qstart, nqueries,
-          vshape,k, ps, pt, chnls,
-          stride0, stride1, dilation,
-          ws_h, ws_w, wt, search_abs, reflect_bounds, use_adj,
-          oh0, ow0, oh1, ow1, remove_self,
-          full_ws, nbwd, rbwd, exact)
+    # print("--"*30)
+    # print(fflow, bflow,
+    #       tranges, n_tranges, min_tranges,
+    #       ishapes, qstart, nqueries,
+    #       vshape,k, ps, pt, chnls,
+    #       stride0, stride1, dilation,
+    #       ws_h, ws_w, wt, search_abs, reflect_bounds, use_adj,
+    #       oh0, ow0, oh1, ow1, remove_self,
+    #       full_ws, nbwd, rbwd, exact)
 
-    print(ishapes)
-    print(qstart,nqueries)
+    # print(ishapes)
+    # print(qstart,nqueries)
     # qstart = 0
     # nqueries = 1024
     vshape = vid0.shape
@@ -581,7 +581,7 @@ def forward_jvp(# arg_values, arg_tangents,
                     full_ws=full_ws, nbwd=nbwd, rbwd=rbwd, exact=exact)
     dists,inds = ifwd_fxn(vid0,qstart,nqueries,vid1)
 
-    print(dists[:3,:3])
+    # print(dists[:3,:3])
     # exit(0)
     # dists_2,inds_2 = ifwd_fxn(vid0,qstart,nqueries,vid1)
     # vid0,vid1,_,_,_,_,_,_ = arg_tangents
@@ -770,8 +770,8 @@ def forward_vjp(qstart, nqueries,
     return (vid0_grad,vid1_grad)# + (None,)*31
 
 def backward_jvp(*args,**kwargs):
-    print(len(args))
-    print(args[0].shape)
+    # print(len(args))
+    # print(args[0].shape)
     print("jvp.")
     exit(0)
     return args[0]
@@ -782,13 +782,13 @@ def backward_transpose(ct_dists_inds,dists,inds,vid0,vid1,
                        use_adj=False,reflect_bounds=True,
                        full_ws=False,nbwd=1,rbwd=False,exact=False,
                        fwd_fxn=None,bwd_fxn=None):
-    print(ct_dists_inds)
+    # print(ct_dists_inds)
     dists_ct,inds_ct = ct_dists_inds
     # print(dists.shape)
     # print(inds.shape)
-    print(dists,inds)
-    print(vid0,vid1)
-    print("btrans.")
+    # print(dists,inds)
+    # print(vid0,vid1)
+    # print("btrans.")
     # ibwd_fxn = init_bwd(ishapes,ps=ps,pt=pt,dilation=dilation,
     #                     stride0=stride0,oh0=oh0,ow0=ow0,oh1=oh1,ow1=ow1,
     #                     use_adj=use_adj,reflect_bounds=reflect_bounds,

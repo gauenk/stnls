@@ -373,8 +373,8 @@ void search_prod_with_index_forward_cuda(
     // -- blocks --
     int bpt = 4;
     int nblocks = ((numQueries - 1) / bpt) + 1;
-    fprintf(stdout,"nblocks,w_h_threads,w_w_threads,ws_h,ws_w: %d,%d,%d,%d,%d\n",
-            nblocks,ws_h_threads,ws_w_threads,ws_h,ws_w);
+    // fprintf(stdout,"nblocks,w_h_threads,w_w_threads,ws_h,ws_w: %d,%d,%d,%d,%d\n",
+    //         nblocks,ws_h_threads,ws_w_threads,ws_h,ws_w);
      
     // launch kernel
     AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_forward_kernel", ([&] {
@@ -553,11 +553,11 @@ void search_prod_with_index_backward_cuda(
   int npt = (num1-1)/tdim0+1;
   int cpt = (colors-1)/tdim1+1;
 
-  fprintf(stdout,"num0,num1: %d,%d\n",num0,num1);
-  fprintf(stdout,"nblocks,tdim0,tdim1: %d,%d,%d\n",
-          nblocks,tdim0,tdim1);
-  fprintf(stdout,"bpb,npt,cpt: %d,%d,%d\n",
-          bpb,npt,cpt);
+  // fprintf(stdout,"num0,num1: %d,%d\n",num0,num1);
+  // fprintf(stdout,"nblocks,tdim0,tdim1: %d,%d,%d\n",
+  //         nblocks,tdim0,tdim1);
+  // fprintf(stdout,"bpb,npt,cpt: %d,%d,%d\n",
+  //         bpb,npt,cpt);
 
   // -- allocate random values --
   auto cu_index = vid0_grad.device().index();

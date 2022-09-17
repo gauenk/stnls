@@ -98,7 +98,7 @@ void search_prod_with_index_backward(
 void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
                                         const char *opaque,
                                         std::size_t opaque_len){
-  fprintf(stdout,"hi.\n");
+  // fprintf(stdout,"hi.\n");
 
   // -- init memory types --
   auto vid0_ptr = reinterpret_cast<float*>(buffers[0]);
@@ -161,40 +161,39 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   int n_w0 = (width-1)/stride0+1;
   bool rbwd = false;
 
-  fprintf(stdout,"qstart: %d\n",qstart);
-  fprintf(stdout,"nqueries: %d\n",nqueries);
-  fprintf(stdout,"ws_h: %d\n",ws_h);
-  fprintf(stdout,"ws_w: %d\n",ws_w);
-  fprintf(stdout,"wt: %d\n",wt);
-  fprintf(stdout,"k: %d\n",k);
-  fprintf(stdout,"ps: %d\n",ps);
-  fprintf(stdout,"pt: %d\n",pt);
+  // fprintf(stdout,"qstart: %d\n",qstart);
+  // fprintf(stdout,"nqueries: %d\n",nqueries);
+  // fprintf(stdout,"ws_h: %d\n",ws_h);
+  // fprintf(stdout,"ws_w: %d\n",ws_w);
+  // fprintf(stdout,"wt: %d\n",wt);
+  // fprintf(stdout,"k: %d\n",k);
+  // fprintf(stdout,"ps: %d\n",ps);
+  // fprintf(stdout,"pt: %d\n",pt);
 
-  fprintf(stdout,"chnls: %d\n",chnls);
-  fprintf(stdout,"stride0: %d\n",stride0);
-  fprintf(stdout,"stride1: %d\n",stride1);
-  fprintf(stdout,"dilation: %d\n",dilation);
+  // fprintf(stdout,"chnls: %d\n",chnls);
+  // fprintf(stdout,"stride0: %d\n",stride0);
+  // fprintf(stdout,"stride1: %d\n",stride1);
+  // fprintf(stdout,"dilation: %d\n",dilation);
 
-  fprintf(stdout,"use_search_abs: %d\n",use_search_abs);
-  fprintf(stdout,"reflect_bounds: %d\n",reflect_bounds);
-  fprintf(stdout,"use_adj: %d\n",use_adj);
+  // fprintf(stdout,"use_search_abs: %d\n",use_search_abs);
+  // fprintf(stdout,"reflect_bounds: %d\n",reflect_bounds);
+  // fprintf(stdout,"use_adj: %d\n",use_adj);
 
-  fprintf(stdout,"oh0: %d\n",oh0);
-  fprintf(stdout,"ow0: %d\n",ow0);
-  fprintf(stdout,"oh1: %d\n",oh1);
-  fprintf(stdout,"ow1: %d\n",ow1);
+  // fprintf(stdout,"oh0: %d\n",oh0);
+  // fprintf(stdout,"ow0: %d\n",ow0);
+  // fprintf(stdout,"oh1: %d\n",oh1);
+  // fprintf(stdout,"ow1: %d\n",ow1);
 
+  // fprintf(stdout,"remove_self: %d\n",remove_self);
+  // fprintf(stdout,"full_ws: %d\n",full_ws);
 
-  fprintf(stdout,"remove_self: %d\n",remove_self);
-  fprintf(stdout,"full_ws: %d\n",full_ws);
+  // fprintf(stdout,"nframes: %d\n",nframes);
+  // fprintf(stdout,"color: %d\n",color);
+  // fprintf(stdout,"height: %d\n",height);
+  // fprintf(stdout,"width: %d\n",width);
 
-  fprintf(stdout,"nframes: %d\n",nframes);
-  fprintf(stdout,"color: %d\n",color);
-  fprintf(stdout,"height: %d\n",height);
-  fprintf(stdout,"width: %d\n",width);
-
-  fprintf(stdout,"n_h0: %d\n",n_h0);
-  fprintf(stdout,"n_w0: %d\n",n_w0);
+  // fprintf(stdout,"n_h0: %d\n",n_h0);
+  // fprintf(stdout,"n_w0: %d\n",n_w0);
 
   // -- create writable tensors --
   auto dists = torch::zeros({nqueries,st,ws_h,ws_w},options_f32);
@@ -202,7 +201,9 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   auto dists_topk = torch::from_blob(dists_ptr,{nqueries,k},options_f32);
   auto inds_topk = torch::from_blob(inds_ptr,{nqueries,k,3},options_i32);
   float inf = std::numeric_limits<float>::infinity();
-  fprintf(stdout,"nqueries,k: %d,%d\n",nqueries,k);
+  // fprintf(stdout,"nqueries,k: %d,%d\n",nqueries,k);
+
+  // -- init --
   dists.fill_(-inf);
   inds.fill_(-1);
 
@@ -244,7 +245,7 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   dists_v.index_put_({nan_args[0],nan_args[1]},-inf);
 
   // -- topk --
-  fprintf(stdout,"nsearch: %d\n",nsearch);
+  // fprintf(stdout,"nsearch: %d\n",nsearch);
   auto args = torch::argsort(dists_v,1,true);
   auto args_k = args.index({Slice(),Slice(0,k,None)});
   auto dists_g = torch::gather(dists_v,1,args_k);
@@ -312,28 +313,28 @@ void search_prod_with_index_backward_jax(cudaStream_t stream, void **buffers,
   int n_h0 = (height-1)/stride0+1;
   int n_w0 = (width-1)/stride0+1;
 
-  fprintf(stdout,"qstart: %d\n",qstart);
-  fprintf(stdout,"nqueries: %d\n",nqueries);
-  fprintf(stdout,"ws_h: %d\n",ws_h);
-  fprintf(stdout,"ws_w: %d\n",ws_w);
-  fprintf(stdout,"wt: %d\n",wt);
-  fprintf(stdout,"k: %d\n",k);
-  fprintf(stdout,"ps: %d\n",ps);
-  fprintf(stdout,"pt: %d\n",pt);
+  // fprintf(stdout,"qstart: %d\n",qstart);
+  // fprintf(stdout,"nqueries: %d\n",nqueries);
+  // fprintf(stdout,"ws_h: %d\n",ws_h);
+  // fprintf(stdout,"ws_w: %d\n",ws_w);
+  // fprintf(stdout,"wt: %d\n",wt);
+  // fprintf(stdout,"k: %d\n",k);
+  // fprintf(stdout,"ps: %d\n",ps);
+  // fprintf(stdout,"pt: %d\n",pt);
 
   // fprintf(stdout,"chnls: %d\n",chnls);
   // fprintf(stdout,"stride0: %d\n",stride0);
   // fprintf(stdout,"stride1: %d\n",stride1);
   // fprintf(stdout,"dilation: %d\n",dilation);
 
-  fprintf(stdout,"use_search_abs: %d\n",use_search_abs);
-  fprintf(stdout,"reflect_bounds: %d\n",reflect_bounds);
-  fprintf(stdout,"use_adj: %d\n",use_adj);
+  // fprintf(stdout,"use_search_abs: %d\n",use_search_abs);
+  // fprintf(stdout,"reflect_bounds: %d\n",reflect_bounds);
+  // fprintf(stdout,"use_adj: %d\n",use_adj);
 
-  fprintf(stdout,"nframes: %d\n",nframes);
-  fprintf(stdout,"color: %d\n",color);
-  fprintf(stdout,"height: %d\n",height);
-  fprintf(stdout,"width: %d\n",width);
+  // fprintf(stdout,"nframes: %d\n",nframes);
+  // fprintf(stdout,"color: %d\n",color);
+  // fprintf(stdout,"height: %d\n",height);
+  // fprintf(stdout,"width: %d\n",width);
 
   // fprintf(stdout,"oh0: %d\n",oh0);
   // fprintf(stdout,"ow0: %d\n",ow0);
@@ -374,7 +375,7 @@ void search_prod_with_index_backward_jax(cudaStream_t stream, void **buffers,
   vid1_grad.fill_(0);
 
   // std::cout << dists << std::endl;
-  std::cout << inds << std::endl;
+  // std::cout << inds << std::endl;
 
   // std::cout << vid0 << std::endl;
   // auto tranges = torch::from_blob(tranges_ptr,{nframes,nframes},options_i32);
@@ -399,32 +400,6 @@ void search_prod_with_index_backward_jax(cudaStream_t stream, void **buffers,
     ps, pt, lam, use_adj, reflect_bounds,
     oh0, ow0, oh1, ow1, full_ws,
     rbwd, exact);
-
-  // -- view --
-  fprintf(stdout,"vid0\n");
-  fprintf(stdout,"%2.3f\n",vid0[0][0][0][1]);
-  fprintf(stdout,"%2.3f\n",vid0[0][0][0][1]);
-  fprintf(stdout,"%2.3f\n",vid0[0][0][1][0]);
-  fprintf(stdout,"%2.3f\n",vid0[0][0][1][1]);
-
-  fprintf(stdout,"dists\n");
-  fprintf(stdout,"%2.3f\n",dists[0][0]);
-  fprintf(stdout,"%2.3f\n",dists[0][1]);
-  fprintf(stdout,"%2.3f\n",dists[0][2]);
-  fprintf(stdout,"%2.3f\n",dists[1][0]);
-  fprintf(stdout,"%2.3f\n",dists[1][1]);
-  fprintf(stdout,"%2.3f\n",dists[1][2]);
-
-  fprintf(stdout,"inds\n");
-  fprintf(stdout,"%d,%d,%d\n",inds[0][0][0],inds[0][0][1],inds[0][0][2]);
-  fprintf(stdout,"%d,%d,%d\n",inds[0][1][0],inds[0][1][1],inds[0][1][2]);
-
-
-  fprintf(stdout,"vid0_grad\n");
-  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][0][0]);
-  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][0][1]);
-  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][1][0]);
-  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][1][1]);
 
   // // -- view --
   // int nsearch = ws_h * ws_w * st;
