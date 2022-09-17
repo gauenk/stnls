@@ -159,6 +159,7 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   int st = 2*wt+1;
   int n_h0 = (height-1)/stride0+1;
   int n_w0 = (width-1)/stride0+1;
+  bool rbwd = false;
 
   fprintf(stdout,"qstart: %d\n",qstart);
   fprintf(stdout,"nqueries: %d\n",nqueries);
@@ -258,91 +259,86 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
 void search_prod_with_index_backward_jax(cudaStream_t stream, void **buffers,
                                         const char *opaque,
                                         std::size_t opaque_len){
-  fprintf(stdout,"hi.\n");
+  // fprintf(stdout,"hi.\n");
 
   // -- init memory types --
-  auto vid0_ptr = reinterpret_cast<float*>(buffers[0]);
-  auto vid1_ptr = reinterpret_cast<float*>(buffers[1]);
-  auto fflow_ptr = reinterpret_cast<float*>(buffers[2]);
-  auto bflow_ptr = reinterpret_cast<float*>(buffers[3]);
-  auto tranges_ptr = reinterpret_cast<int32_t*>(buffers[4]);
-  auto n_tranges_ptr = reinterpret_cast<int32_t*>(buffers[5]);
-  auto min_tranges_ptr = reinterpret_cast<int32_t*>(buffers[6]);
-  auto ishapes_ptr = reinterpret_cast<int32_t*>(buffers[7]);
-  auto vid0_grad_ptr = reinterpret_cast<float*>(buffers[8]);
-  auto vid1_grad_ptr = reinterpret_cast<int32_t*>(buffers[9]);
+  auto dists_ptr = reinterpret_cast<float*>(buffers[0]);
+  auto inds_ptr = reinterpret_cast<int32_t*>(buffers[1]);
+  auto vid0_ptr = reinterpret_cast<float*>(buffers[2]);
+  auto vid1_ptr = reinterpret_cast<float*>(buffers[3]);
+  auto ishapes_ptr = reinterpret_cast<int32_t*>(buffers[4]);
+  auto vid0_grad_ptr = reinterpret_cast<float*>(buffers[5]);
+  auto vid1_grad_ptr = reinterpret_cast<float*>(buffers[6]);
 
 
-  // // -- init options --
-  // auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32).\
-  //   layout(torch::kStrided).device(torch::kCUDA, 0);
-  // auto options_i32 = torch::TensorOptions().dtype(torch::kInt32).\
-  //   layout(torch::kStrided).device(torch::kCUDA, 0);
+  // -- init options --
+  auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32).\
+    layout(torch::kStrided).device(torch::kCUDA, 0);
+  auto options_i32 = torch::TensorOptions().dtype(torch::kInt32).\
+    layout(torch::kStrided).device(torch::kCUDA, 0);
 
-  // // -- unpack from ishapes --
-  // auto ishapes_th = torch::from_blob(ishapes_ptr,{28},options_i32).to(torch::kCPU);
-  // auto ishapes = ishapes_th.accessor<int,1>();
-  //   // ishapes = jnp.array([0, nqueries,ws_h,ws_w,wt,
-  //   //                      k, ps, pt, chnls,
-  //   //                      stride0, stride1, dilation,
-  //   //                      use_search_abs, reflect_bounds, use_adj,
-  //   //                      oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
-  //   //                      use_rand, exact, nframes, 0, 0, 0],dtype=jnp.int32)
+  // -- unpack from ishapes --
+  auto ishapes_th = torch::from_blob(ishapes_ptr,{28},options_i32).to(torch::kCPU);
+  auto ishapes = ishapes_th.accessor<int,1>();
 
-  // int qstart = ishapes[0];
-  // int nqueries = ishapes[1];
-  // int ws_h = ishapes[2];
-  // int ws_w = ishapes[3];
-  // int wt = ishapes[4];
-  // int k = ishapes[5];
-  // int ps = ishapes[6];
-  // int pt = ishapes[7];
-  // int chnls = ishapes[8];
-  // int stride0 = ishapes[9];
-  // int stride1 = ishapes[10];
-  // int dilation = ishapes[11];
-  // bool use_search_abs = ishapes[12] == 1;
-  // bool reflect_bounds = ishapes[13] == 1;
-  // bool use_adj = ishapes[14] == 1;
-  // int oh0 = ishapes[15];
-  // int ow0 = ishapes[16];
-  // int oh1 = ishapes[17];
-  // int ow1 = ishapes[18];
-  // bool remove_self = ishapes[19] == 1;
-  // bool full_ws = ishapes[20] == 1;
+  int qstart = ishapes[0];
+  int nqueries = ishapes[1];
+  int ws_h = ishapes[2];
+  int ws_w = ishapes[3];
+  int wt = ishapes[4];
+  int k = ishapes[5];
+  int ps = ishapes[6];
+  int pt = ishapes[7];
+  int chnls = ishapes[8];
+  int stride0 = ishapes[9];
+  int stride1 = ishapes[10];
+  int dilation = ishapes[11];
+  bool use_search_abs = ishapes[12] == 1;
+  bool reflect_bounds = ishapes[13] == 1;
+  bool use_adj = ishapes[14] == 1;
+  int oh0 = ishapes[15];
+  int ow0 = ishapes[16];
+  int oh1 = ishapes[17];
+  int ow1 = ishapes[18];
+  bool remove_self = ishapes[19] == 1;
+  bool full_ws = ishapes[20] == 1;
 
-  // int nframes = ishapes[24];
-  // int color = ishapes[25];
-  // int height = ishapes[26];
-  // int width = ishapes[27];
+  int nframes = ishapes[24];
+  int color = ishapes[25];
+  int height = ishapes[26];
+  int width = ishapes[27];
 
-  // int st = 2*wt+1;
-  // int n_h0 = (height-1)/stride0+1;
-  // int n_w0 = (width-1)/stride0+1;
+  int st = 2*wt+1;
+  int n_h0 = (height-1)/stride0+1;
+  int n_w0 = (width-1)/stride0+1;
 
-  // fprintf(stdout,"qstart: %d\n",qstart);
-  // fprintf(stdout,"nqueries: %d\n",nqueries);
-  // fprintf(stdout,"ws_h: %d\n",ws_h);
-  // fprintf(stdout,"ws_w: %d\n",ws_w);
-  // fprintf(stdout,"wt: %d\n",wt);
-  // fprintf(stdout,"k: %d\n",k);
-  // fprintf(stdout,"ps: %d\n",ps);
-  // fprintf(stdout,"pt: %d\n",pt);
+  fprintf(stdout,"qstart: %d\n",qstart);
+  fprintf(stdout,"nqueries: %d\n",nqueries);
+  fprintf(stdout,"ws_h: %d\n",ws_h);
+  fprintf(stdout,"ws_w: %d\n",ws_w);
+  fprintf(stdout,"wt: %d\n",wt);
+  fprintf(stdout,"k: %d\n",k);
+  fprintf(stdout,"ps: %d\n",ps);
+  fprintf(stdout,"pt: %d\n",pt);
 
   // fprintf(stdout,"chnls: %d\n",chnls);
   // fprintf(stdout,"stride0: %d\n",stride0);
   // fprintf(stdout,"stride1: %d\n",stride1);
   // fprintf(stdout,"dilation: %d\n",dilation);
 
-  // fprintf(stdout,"use_search_abs: %d\n",use_search_abs);
-  // fprintf(stdout,"reflect_bounds: %d\n",reflect_bounds);
-  // fprintf(stdout,"use_adj: %d\n",use_adj);
+  fprintf(stdout,"use_search_abs: %d\n",use_search_abs);
+  fprintf(stdout,"reflect_bounds: %d\n",reflect_bounds);
+  fprintf(stdout,"use_adj: %d\n",use_adj);
+
+  fprintf(stdout,"nframes: %d\n",nframes);
+  fprintf(stdout,"color: %d\n",color);
+  fprintf(stdout,"height: %d\n",height);
+  fprintf(stdout,"width: %d\n",width);
 
   // fprintf(stdout,"oh0: %d\n",oh0);
   // fprintf(stdout,"ow0: %d\n",ow0);
   // fprintf(stdout,"oh1: %d\n",oh1);
   // fprintf(stdout,"ow1: %d\n",ow1);
-
 
   // fprintf(stdout,"remove_self: %d\n",remove_self);
   // fprintf(stdout,"full_ws: %d\n",full_ws);
@@ -355,22 +351,32 @@ void search_prod_with_index_backward_jax(cudaStream_t stream, void **buffers,
   // fprintf(stdout,"n_h0: %d\n",n_h0);
   // fprintf(stdout,"n_w0: %d\n",n_w0);
 
-  // // -- create writable tensors --
+  // -- create writable tensors --
   // auto dists = torch::zeros({nqueries,st,ws_h,ws_w},options_f32);
   // auto inds = torch::zeros({nqueries,st,ws_h,ws_w,3},options_i32);
-  // auto dists_topk = torch::from_blob(dists_ptr,{nqueries,k},options_f32);
-  // auto inds_topk = torch::from_blob(inds_ptr,{nqueries,k,3},options_i32);
-  // float inf = std::numeric_limits<float>::infinity();
-  // fprintf(stdout,"nqueries,k: %d,%d\n",nqueries,k);
-  // dists.fill_(-inf);
+  auto dists = torch::from_blob(dists_ptr,{nqueries,k},options_f32);
+  auto inds = torch::from_blob(inds_ptr,{nqueries,k,3},options_i32);
+  // dists.fill_(-1);
   // inds.fill_(-1);
 
-  // // -- create tensors --
-  // auto vid0 = torch::from_blob(vid0_ptr,{nframes,color,height,width},options_f32);
-  // auto vid1 = torch::from_blob(vid1_ptr,{nframes,color,height,width},options_f32);
+  // -- create tensors --
+  auto vid0 = torch::from_blob(vid0_ptr,{nframes,color,height,width},options_f32);
+  auto vid1 = torch::from_blob(vid1_ptr,{nframes,color,height,width},options_f32);
   // auto fflow = torch::from_blob(fflow_ptr,{nframes,2,height,width},options_f32);
   // auto bflow = torch::from_blob(bflow_ptr,{nframes,2,height,width},options_f32);
 
+  // -- create grad tensors --
+  auto vid0_grad = torch::from_blob(vid0_grad_ptr,
+                                    {nframes,color,height,width},options_f32);
+  auto vid1_grad = torch::from_blob(vid1_grad_ptr,
+                                    {nframes,color,height,width},options_f32);
+  vid0_grad.fill_(0);
+  vid1_grad.fill_(0);
+
+  // std::cout << dists << std::endl;
+  std::cout << inds << std::endl;
+
+  // std::cout << vid0 << std::endl;
   // auto tranges = torch::from_blob(tranges_ptr,{nframes,nframes},options_i32);
   // auto n_tranges = torch::from_blob(n_tranges_ptr,{nframes},options_i32);
   // auto min_tranges = torch::from_blob(min_tranges_ptr,{nframes},options_i32);
@@ -384,14 +390,41 @@ void search_prod_with_index_backward_jax(cudaStream_t stream, void **buffers,
   // //         use_search_abs, use_bounds, use_adj,
   // //         full_ws, oh0, ow0, oh1, ow1,
   // //         tranges, n_tranges, min_tranges);
-  // search_prod_with_index_forward_cuda(
-  //     vid0,vid1,fflow,bflow,dists,inds,
-  //     qstart, stride0, n_h0, n_w0,
-  //     ps,pt,ws_h,ws_w,wt,chnls,stride1,dilation,
-  //     use_search_abs, reflect_bounds, use_adj,
-  //     full_ws, oh0, ow0, oh1, ow1,
-  //     tranges, n_tranges, min_tranges);
-  // // fprintf(stdout,"hi.\n");
+  bool rbwd = false;
+  bool exact = true;
+  float lam = 0.;
+  search_prod_with_index_backward_cuda(
+    vid0_grad, vid1_grad, vid0, vid1, dists, inds,
+    qstart, stride0, n_h0, n_w0,
+    ps, pt, lam, use_adj, reflect_bounds,
+    oh0, ow0, oh1, ow1, full_ws,
+    rbwd, exact);
+
+  // -- view --
+  fprintf(stdout,"vid0\n");
+  fprintf(stdout,"%2.3f\n",vid0[0][0][0][1]);
+  fprintf(stdout,"%2.3f\n",vid0[0][0][0][1]);
+  fprintf(stdout,"%2.3f\n",vid0[0][0][1][0]);
+  fprintf(stdout,"%2.3f\n",vid0[0][0][1][1]);
+
+  fprintf(stdout,"dists\n");
+  fprintf(stdout,"%2.3f\n",dists[0][0]);
+  fprintf(stdout,"%2.3f\n",dists[0][1]);
+  fprintf(stdout,"%2.3f\n",dists[0][2]);
+  fprintf(stdout,"%2.3f\n",dists[1][0]);
+  fprintf(stdout,"%2.3f\n",dists[1][1]);
+  fprintf(stdout,"%2.3f\n",dists[1][2]);
+
+  fprintf(stdout,"inds\n");
+  fprintf(stdout,"%d,%d,%d\n",inds[0][0][0],inds[0][0][1],inds[0][0][2]);
+  fprintf(stdout,"%d,%d,%d\n",inds[0][1][0],inds[0][1][1],inds[0][1][2]);
+
+
+  fprintf(stdout,"vid0_grad\n");
+  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][0][0]);
+  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][0][1]);
+  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][1][0]);
+  fprintf(stdout,"%2.3f\n",vid0_grad[0][0][1][1]);
 
   // // -- view --
   // int nsearch = ws_h * ws_w * st;

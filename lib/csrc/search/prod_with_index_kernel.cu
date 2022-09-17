@@ -553,11 +553,11 @@ void search_prod_with_index_backward_cuda(
   int npt = (num1-1)/tdim0+1;
   int cpt = (colors-1)/tdim1+1;
 
-  // fprintf(stdout,"num0,num1: %d,%d\n",num0,num1);
-  // fprintf(stdout,"nblocks,tdim0,tdim1: %d,%d,%d\n",
-  //         nblocks,tdim0,tdim1);
-  // fprintf(stdout,"bpb,npt,cpt: %d,%d,%d\n",
-  //         bpb,npt,cpt);
+  fprintf(stdout,"num0,num1: %d,%d\n",num0,num1);
+  fprintf(stdout,"nblocks,tdim0,tdim1: %d,%d,%d\n",
+          nblocks,tdim0,tdim1);
+  fprintf(stdout,"bpb,npt,cpt: %d,%d,%d\n",
+          bpb,npt,cpt);
 
   // -- allocate random values --
   auto cu_index = vid0_grad.device().index();

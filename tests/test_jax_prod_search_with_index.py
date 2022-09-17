@@ -155,7 +155,8 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
                                      reflect_bounds=reflect_bounds,use_k=use_k,
                                      search_abs=search_abs,use_adj=use_adj,
                                      exact=exact)
-    search_te = jax.jit(search_te,static_argnums=(1,2))
+    # search_te = jax.jit(search_te,static_argnums=(1,2))
+    print(search_te)
 
     # print(search_gt)
     # print(search_te)
@@ -165,7 +166,12 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     score_gt,inds_gt = search_gt(vid_pth,qindex,nbatch,vid1=vidr_pth)
 
     # -- run jax search --
-    score_te,inds_te = search_te(vid_jax,qindex,nbatch,vid1=vidr_jax)
+    # search_te_set = search_te(qindex,nbatch)
+    # search_te_jit = jax.jit(search_te_set)
+    # score_te,inds_te = search_te_jit(vid_jax,vidr_jax)
+    search_te = jax.jit(search_te,static_argnums=(1,2))
+    score_te,inds_te = search_te(vid_jax,qindex,nbatch,vidr_jax)
+    # exit(0)
     score_te = th.from_numpy(np.asarray(score_te)).to(device)
     inds_te = th.from_numpy(np.asarray(inds_te)).to(device)
 
@@ -297,6 +303,10 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     vidr_jax = jnp.array(vidr_pth.clone().cpu().numpy())
     qindex = 0
 
+    # -- pytorch grads --
+    vid_pth.requires_grad_(True)
+    vidr_pth.requires_grad_(True)
+
     # -- exec fold fxns --
     # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
     # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
@@ -335,6 +345,11 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     score_grad_pth = th.randn_like(score_gt)
     score_grad_jax = jnp.array(score_grad_pth.cpu().numpy())
 
+    # -- pytorch backward --
+    th.autograd.backward(score_gt,score_grad_pth)
+    grad0_pth = vid_pth.grad
+    grad1_pth = vidr_pth.grad
+
     # -- run jax search --
     score_te,inds_te = search_fwd(vid_jax,qindex,nbatch,vidr_jax)
     inds_grad = jnp.array(th.zeros_like(inds_gt).cpu().numpy())
@@ -344,21 +359,49 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
 
     # grad_in = (vid_jax,qindex,nbatch,vidr_jax) # should be this.
     grad_in = (vid_jax,vidr_jax)
+    # grad_in = (fflow, bflow,
+    #            None,None,None,None,qindex,nbatch,
+    #            list(vid.shape),k,ps,pt,chnls,stride0,stride1,
+    #            dilation,ws,ws,wt,search_abs,reflect_bounds,use_adj,
+    #            k=5, ps=7, pt=1, chnls=-1,
+    #            stride0=1, stride1=1, dilation=1,
+    #            ws_h=5, ws_w=5, wt=0,
+    #            search_abs=False, reflect_bounds=False, use_adj=False,
+    #            oh0=0, ow0=0, oh1=0, ow1=0, remove_self=False,
+    #            full_ws=False, nbwd=False, rbwd=False, exact=False)
+
     grad_out = (score_grad_jax,inds_grad)
     search_p = lambda x,y: search_fwd(x,qindex,nbatch,y)
+    # print("a: ",qindex,nbatch)
+    # exit(0)
     og,vjp_fxn = jax.vjp(search_p,*grad_in)#,grad_out,has_aux=True)
     # print(vjp_fxn)
     # print(len(og))
-    print("outside.")
+    # print(og[1])
+    # exit(0)
+    print("outside." + "\n"*10)
+    print(grad_out[0])
+    vjp_fxn = jax.jit(vjp_fxn)
+    print("done.")
+    grad_out = (score_grad_jax,og[1])
+    # print(grad_out[1])
+    # exit(0)
     out = vjp_fxn(grad_out)
-    print(len(out))
+    print("len(out): ",len(out))
     print(out[0].shape)
-    print(out[1].shape)
-    # a,b,c = jvp_out
-    # print(len(jvp_out))
-    # print(a.shape,b.shape,c.shape)
+    # # print(out[-1])
+    # exit(0)
 
-    exit(0)
+
+    # -- jax to torch --
+    score_te = th.from_numpy(np.asarray(og[0])).to(device)
+    inds_te = th.from_numpy(np.asarray(og[1])).to(device)
+    grad0_jax = th.from_numpy(np.asarray(out[0])).to(device)
+    grad1_jax = th.from_numpy(np.asarray(out[1])).to(device)
+    print(len(out))
+    # print(score_te[0],score_gt[0])
+    print(score_te.shape,inds_te.shape)
+    print(grad0_jax.shape,grad1_jax.shape)
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(score_gt))) # remove all inf
@@ -378,6 +421,16 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 
+    # -- compare bwd --
+    grads_jax = [grad0_jax,grad1_jax]
+    grads_pth = [grad0_pth,grad1_pth]
+    for grad_jax,grad_pth in zip(grads_jax,grads_pth):
+        print(grad_jax[0,0,:3,:3])
+        print(grad_pth[0,0,:3,:3])
+        print("-"*30)
+        diff = th.abs(grad_jax - grad_pth)
+        error = diff.mean().item()
+        print(error)
 
 @pytest.mark.jax
 def test_cu_vs_th_jvp(ps,stride,dilation,exact):
@@ -516,7 +569,7 @@ def test_cu_vs_th_jvp(ps,stride,dilation,exact):
     a,b,c = jvp_out
     print(len(jvp_out))
     print(a.shape,b.shape,c.shape)
-    exit(0)
+    # exit(0)
 
     # jvp_out = jax.jvp(search_fwd,grad_in,grad_out,has_aux=True)
     # search_jvp = jax.jit(api.jvp(search_te,has_aux),static_argnums=(1,2))
