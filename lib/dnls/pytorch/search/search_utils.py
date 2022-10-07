@@ -106,8 +106,8 @@ def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
         bufs = th.zeros(nq,3,st,ws_h,ws_w,dtype=th.int32,device=device)
     return bufs
 
-def allocate_exh_prod(nq,wt,ws_h,ws_w,device):
-    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
+def allocate_exh_prod(nq,wt,ws_h,ws_w,device,dtype=th.float32):
+    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=dtype)
     dists[...] = -float("inf")
     inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
     inds[...] = -1
@@ -116,15 +116,15 @@ def allocate_exh_prod(nq,wt,ws_h,ws_w,device):
 def allocate_exh_l2(nq,wt,ws_h,ws_w,device):
     return allocate_exh(nq,wt,ws_h,ws_w,device)
 
-def allocate_exh(nq,wt,ws_h,ws_w,device):
-    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
+def allocate_exh(nq,wt,ws_h,ws_w,device,dtype=th.float32):
+    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=dtype)
     dists[...] = float("inf")
     inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
 
-def allocate_rtn(nq,k,device):
-    dists = th.zeros((nq,k),device=device,dtype=th.float32)
+def allocate_rtn(nq,k,device,dtype=th.float32):
+    dists = th.zeros((nq,k),device=device,dtype=dtype)
     inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
     return dists,inds
 

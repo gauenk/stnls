@@ -93,6 +93,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         exact = ctx.exact
         use_rand = ctx.use_rand
         # print("wpsum_heads: bwd.")
+        grad_patches = grad_patches.contiguous()
 
         # -- start timer --
         # timer = ExpTimer()
@@ -159,3 +160,18 @@ class WeightedPatchSumHeads(th.nn.Module):
         patches = patches.view(nq,nheads,c,ph,pw)
         return patches
 
+    def flops(self, nrefs, chnls_per_head, nheads, k):
+
+        # -- init --
+        flops = 0
+
+        # -- unpack --
+        chnls = chnls_per_head
+        ps,pt = self.ps,self.pt
+
+        # -- compute weighted patch sum --
+        flops_per_patch = 2 * (chnls * ps * ps * pt) # multi weight & add to accumulate
+        flops_per_ref = flops_per_patch * k # accumulate over "k" patches
+        flops = flops_per_ref * nrefs * nheads# do for each reference
+
+        return flops

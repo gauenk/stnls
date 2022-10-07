@@ -31,6 +31,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         wt = search Window Time (wt)
         """
         # -- reshape with heads --
+        dtype = vid0.dtype
         device = vid0.device
         if vid0.ndim == 4:
             c = vid0.shape[1]
@@ -44,7 +45,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- allocs --
         B = nqueries*nheads
-        dists_exh,inds_exh = allocate_exh_prod(B,wt,ws_h,ws_w,device)
+        dists_exh,inds_exh = allocate_exh_prod(B,wt,ws_h,ws_w,device,dtype)
         dists_exh = dists_exh.view(nheads,nqueries,-1,ws_h,ws_w)
         inds_exh = inds_exh.view(nheads,nqueries,-1,ws_h,ws_w,3)
 
@@ -53,8 +54,8 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- forward --
         gpuid = th.cuda.current_device()
-        fflow = fflow.to(device)
-        bflow = bflow.to(device)
+        fflow = fflow.to(device).type(dtype)
+        bflow = bflow.to(device).type(dtype)
         th.cuda.set_device(device)
         dnls_cuda.prod_search_with_heads_forward(vid0, vid1, fflow, bflow,
                                                  dists_exh, inds_exh,
@@ -81,7 +82,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- topk --
         if use_k:
             HB = dists_exh.shape[0]
-            dists,inds = allocate_rtn(HB,k,device)
+            dists,inds = allocate_rtn(HB,k,device,dtype)
             get_topk_prod(dists_exh,inds_exh,dists,inds)
         else:
             dists,inds = dists_exh,inds_exh
@@ -160,6 +161,11 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- finalize shape --
         grad_vid0 = rearrange(grad_vid0,'H t c h w -> t (H c) h w')
         grad_vid1 = rearrange(grad_vid1,'H t c h w -> t (H c) h w')
+
+        # -- print stats --
+        # print("grad_dists[min,max]: ",grad_dists.min().item(),grad_dists.max().item())
+        # print("grad_vid0[min,max]: ",grad_vid0.min().item(),grad_vid0.max().item())
+        # print("grad_vid1[min,max]: ",grad_vid1.min().item(),grad_vid1.max().item())
 
         return grad_vid0,grad_vid1,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
@@ -291,3 +297,29 @@ class ProdSearchWithHeads(th.nn.Module):
                                          self.full_ws,self.anchor_self,
                                          self.remove_self,
                                          self.nbwd,self.rbwd,self.exact)
+
+    def flops(self,T,C,H,W):
+
+        # -- init --
+        flops = 0
+
+        # -- unpack --
+        vshape = (T,C,H,W)
+        ws_h,ws_w,wt,k,chnls = self._get_args(vshape)
+        nheads = self.nheads
+        ps,pt = self.ps,self.pt
+
+        # -- compute search --
+        nrefs_hw = ((H-1)//self.stride0+1) * ((W-1)//self.stride0+1)
+        nrefs = T * nheads * nrefs_hw
+        nsearch = ws_h * ws_w * (2*wt+1)
+        flops_per_search = chnls * ps * ps * pt
+        search_flops = nrefs * nsearch * flops_per_search
+        flops += search_flops
+
+        # -- compute top-k --
+        if self.use_k:
+            sort_flops = nrefs * (nsearch * np.log(nsearch))
+            flops += sort_flops
+
+        return flops

@@ -70,6 +70,10 @@ class ifoldz(th.autograd.Function):
                                  top, left, btm, right,
                                  qStart,stride,dilation,adj,
                                  only_full, use_reflect)
+        # -- info --
+        # print("grad_vid[min,max]: ",grad_vid.min().item(),grad_vid.max().item())
+        # print("grad_zvid_is_none[min,max]: ",grad_zvid_is_none.min().item(),grad_zvid_is_none.max().item())
+
         return grad_patches,None,None,None,None,None,None,None,None,None
 
 class iFoldz(th.nn.Module):

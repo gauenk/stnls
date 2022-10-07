@@ -4,6 +4,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <vector>
+using namespace at;
 
 /****************************
 
@@ -106,10 +107,13 @@ __global__ void prod_search_with_heads_forward_kernel(
   bool eq_ti,eq_hi,eq_wi,eq_dim;
   int wsOff_h,wsOff_w;
 
-  float cw0,ch0,ct0,cw_f,ch_f;
   int l_cw0,l_ch0,l_ct0;
   int cw_i,ch_i,ch,cw,ct;
-  float dist,v_pix,n_pix;
+  // float cw0,ch0,ct0,cw_f,ch_f;
+  // float dist,v_pix,n_pix;
+  scalar_t cw0,ch0,ct0,cw_f,ch_f;
+  scalar_t dist,v_pix,n_pix;
+
 
   for (int _bidx = 0; _bidx < bpt; _bidx++){
 
@@ -302,8 +306,8 @@ __global__ void prod_search_with_heads_forward_kernel(
                 for (int ci = 0; ci < chnls; ci++){
 
                   // -- get data --
-                  v_pix = vvalid ? vid0[head][vT][ci][vH][vW] : 0.;
-                  n_pix = nvalid ? vid1[head][nT][ci][nH][nW] : 0.;
+                  v_pix = vvalid ? vid0[head][vT][ci][vH][vW] : (scalar_t)0.;
+                  n_pix = nvalid ? vid1[head][nT][ci][nH][nW] : (scalar_t)0.;
 
                   // -- compute dist --
                   dist += v_pix * n_pix;
@@ -382,7 +386,8 @@ void prod_search_with_heads_forward_cuda(
    // fprintf(stdout,"ws_h_iters,ws_w_iters: %d,%d\n",ws_h_iters,ws_w_iters);
     
    // launch kernel
-   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "prod_seach_with_heads_forward_kernel", ([&] {
+   AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                              "prod_seach_with_heads_forward_kernel", ([&] {
       prod_search_with_heads_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
@@ -439,7 +444,8 @@ __global__ void prod_search_with_heads_backward_kernel(
   bool valid_hj,valid_wj;
   bool valid_hk,valid_wk;
   bool valid,valid_j,valid_k;
-  float weight,pix,pix0,pix1;
+  // float 
+  scalar_t weight,pix,pix0,pix1;
 
   // -- declare constants --
   int psHalf = ps/2;
@@ -608,7 +614,8 @@ void prod_search_with_heads_backward_cuda(
   }
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "prod_seach_with_heads_backward_kernel", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                             "prod_seach_with_heads_backward_kernel", ([&] {
     prod_search_with_heads_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
