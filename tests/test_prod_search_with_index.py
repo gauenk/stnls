@@ -138,6 +138,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # vid[th.where(th.abs(vid) < 1)] = 0
 
     # ones = th.ones_like(vid)
+    # print("vid.shape: ",vid.shape)
     qindex = 0
     score_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
 

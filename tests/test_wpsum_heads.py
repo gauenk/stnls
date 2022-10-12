@@ -59,6 +59,15 @@ def pytest_generate_tests(metafunc):
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
+def scores_to_heads_batch(scores,nheads,seed=None):
+    B = scores.shape[0]
+    sheads = []
+    for b in range(B):
+        sheads_b = scores_to_heads(scores[b],nheads,seed)
+        sheads.append(sheads_b)
+    sheads = th.stack(sheads)
+    return sheads
+
 def scores_to_heads(scores,nheads,seed=None):
     if not(seed is None):
         th.manual_seed(seed)
@@ -69,11 +78,26 @@ def scores_to_heads(scores,nheads,seed=None):
     score_heads = th.stack(score_heads,0) # nheads a b
     return score_heads
 
+def simple_run_batch(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
+    B = vid.shape[0]
+    wpatches = []
+    # print("score_heads.shape,inds.shape: " ,score_heads.shape,inds.shape)
+    for b in range(B):
+        wpatches_b = simple_run(vid[[b]],score_heads[b],
+                                inds[[b]],ps,pt,reflect_bounds,exact)
+        wpatches.append(wpatches_b)
+    wpatches = th.stack(wpatches)
+    return wpatches
+
 def simple_run(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
     unfold_k = dnls.UnfoldK(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
-    patches_i = unfold_k(vid,inds).type(th.float64)
-    patches_i = rearrange(patches_i,'n k 1 c h w -> n k 1 (c h w)')
-    score_heads = rearrange(score_heads,'h q d -> q d h 1')
+    patches_i = unfold_k(vid,inds).type(th.float64)[0]
+    H = score_heads.shape[0]
+    patches_i = rearrange(patches_i,'q k 1 (H c) h w -> q k H (c h w)',H=H)
+    # print("score_heads.shape:" ,score_heads.shape)
+    score_heads = rearrange(score_heads,'H q k -> q k H 1')
+    # print("score_heads.shape:" ,score_heads.shape)
+    # print("patches_i.shape:" ,patches_i.shape)
     wpatches_i = th.sum(score_heads * patches_i,1).type(th.float32)
     return wpatches_i
 
@@ -81,7 +105,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     chnls,pt = 1,1
     stride0 = stride
     stride1 = 1
@@ -102,12 +127,13 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     adj = ps//2 if use_unfold else 0
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:t,].contiguous()/255.
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = vid.to(device)[:,:t,].contiguous()
+    vid = vid[...,:32,:32].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    # vid = th.cat([vid,]*nheads,1)
+    vid = th.cat([vid,]*nheads,2)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
@@ -117,12 +143,12 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
 
     # -- sub square --
@@ -130,8 +156,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     coords = [top,left,btm,right]
 
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,__,__ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,__,__ = comp_pads(vid[0].shape, ps, stride1, dil)
     n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
 
@@ -142,16 +168,12 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    search = dnls.search.init("prod",flows.fflow, flows.bflow,
+    search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
-                              dilation=dil, stride=stride1, use_k=use_k,
+                              dilation=dil, stride0=stride0, stride1=stride1,
+                              use_k=use_k,
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs)
-
-    # -- query inds --
-    qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
 
     # -- init our inner product --
     h_off,w_off = oh1,ow1
@@ -163,14 +185,16 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
                                                 adj=adj, exact=exact)
 
     # -- run search --
-    scores,inds = search(vid,iqueries,vid1=vid)
-    scores_s = scores_to_heads(scores,nheads)
+    qindex = 0
+    scores,inds = search(vid,qindex,nbatch,vid1=vid)
+    scores_s = scores_to_heads_batch(scores,nheads)
     # print("score_heads.shape: ",scores_s.shape)
 
     # -- two methods for comparison --
-    nq = iqueries.shape[0]
-    wpatches_te = wpsum(vid[None,],scores_s,inds).view(nq,nheads,-1)
-    wpatches_gt = simple_run(vid,scores_s,inds,ps,pt,reflect_bounds,exact)
+    nq = nbatch
+    # print("vid.shape:" ,vid.shape)
+    wpatches_te = wpsum(vid,scores_s,inds).view(b,nq,nheads,-1)
+    wpatches_gt = simple_run_batch(vid,scores_s,inds,ps,pt,reflect_bounds,exact)
 
     # -- vis [scores] --
     # scores = scores.view(n_h,n_w,h,w)
@@ -180,8 +204,10 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # print(scores_gt[0,0,:3,:3])
 
     # -- vis --
-    # print(wpatches_te[:3,:3])
-    # print(wpatches_gt[:3,:3])
+    # print(wpatches_te.shape)
+    # print(wpatches_gt.shape)
+    # print(wpatches_te[0,:3,:3])
+    # print(wpatches_gt[0,:3,:3])
     # diff = th.abs(wpatches_gt - wpatches_te).mean(-1)
     # diff = rearrange(diff,'(h w) -> 1 1 h w',h=32)
     # diff /= diff.max()
@@ -203,12 +229,14 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- get args --
     pt,dil = 1,dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     stride0 = stride
     stride1 = 1
     ws = -1 if k == -1 else 10
     wt = 0 if k == -1 else 5
     nheads = 5
+    seed = 123
 
     # -- init vars --
     device = "cuda:0"
@@ -224,14 +252,14 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     exact = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
     h,w = 64,64
-    vid = th.from_numpy(vid).to(device)[[0],:,:h,:w].contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = vid.to(device)[:,[0],:,:h,:w].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    # vid = th.cat([vid,]*nheads,1)
+    vid = th.cat([vid,]*nheads,-3)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
@@ -241,12 +269,12 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
 
     # -- sub square --
@@ -254,8 +282,8 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     coords = [top,left,btm,right]
 
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
     n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
 
@@ -266,16 +294,11 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init search --
-    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+    search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,
-                              dilation=dil, stride=stride1,
+                              dilation=dil, stride0=stride0, stride1=stride1,
                               reflect_bounds=reflect_bounds,
                               use_k=use_k,search_abs=search_abs,exact=exact)
-
-    # -- query inds --
-    qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
 
     # -- init our inner product --
     h_off,w_off = oh1,ow1
@@ -310,22 +333,30 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     #
 
     # -- compute score --
-    scores,inds = search(vid0_te,iqueries,vid1=vid1_te)
+    qindex = 0
+    scores,inds = search(vid0_te,qindex,nbatch,vid1=vid1_te)
     scores_te = scores.clone()
     scores_gt = scores.clone()
     scores_te.requires_grad_(True)
     scores_gt.requires_grad_(True)
-    scores_s_te = scores_to_heads(scores_te,nheads,seed=123)
-    scores_s_gt = scores_to_heads(scores_gt,nheads,seed=123)
+    scores_s_te = scores_to_heads_batch(scores_te,nheads,seed)
+    scores_s_gt = scores_to_heads_batch(scores_gt,nheads,seed)
     scores_s_te.retain_grad()
     scores_s_gt.retain_grad()
 
     # -- forward test --
-    nq = iqueries.shape[0]
-    wpatches_te = wpsum(vid2_te[None,:],scores_s_te,inds).view(nq,nheads,-1)
+    # print("scores_s_te.shape: ",scores_s_te.shape)
+    nq = nbatch
+    wpatches_te = wpsum(vid2_te,scores_s_te,inds).view(b,nq,nheads,-1)
 
     # -- forward gt --
-    wpatches_gt = simple_run(vid2_gt,scores_s_gt,inds,ps,pt,reflect_bounds,exact)
+    wpatches_gt = simple_run_batch(vid2_gt,scores_s_gt,inds,ps,pt,reflect_bounds,exact)
+
+    # -- viz --
+    print(wpatches_te.shape)
+    print(wpatches_gt.shape)
+    # print(wpatches_te.shape)
+    # print(wpatches_gt.shape)
 
     # -- confirm fwd --
     tol = 1e-5 if use_unfold else 1e-7
@@ -333,10 +364,13 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     if error > tol: print(error)
     assert error < tol
 
+    th.cuda.synchronize()
     # -- backward passes --
     wpatches_grad = th.rand_like(wpatches_te)
     th.autograd.backward(wpatches_te,wpatches_grad)
+    th.cuda.synchronize()
     th.autograd.backward(wpatches_gt,wpatches_grad)
+    th.cuda.synchronize()
 
     # -- set tol --
     tol_mean = 1e-5
@@ -374,7 +408,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- get args --
     pt,dil = 1,dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     stride0 = stride
     stride1 = 1
     ws = -1 if k == -1 else 10
@@ -395,13 +430,13 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
-    vid = th.from_numpy(vid).to(device)[[0],:,:32,:32].contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = vid.to(device)[:,[0],:,:32,:32].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    # vid = th.cat([vid,]*nheads,1)
+    vid = th.cat([vid,]*nheads,-3)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
     # vid = th.cat([vid,vid],-2)
@@ -410,12 +445,12 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
 
     # -- sub square --
@@ -423,8 +458,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     coords = [top,left,btm,right]
 
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
     n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
 
@@ -435,16 +470,11 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    prod_search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
-                               ws, wt, oh0, ow0, oh1, ow1,
-                               dilation=dil, stride=stride1,
-                               reflect_bounds=reflect_bounds,
-                               use_k=use_k,search_abs=search_abs,exact=exact)
-
-    # -- query inds --
-    qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
-                                                coords,t,device)
+    prod_search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+                                   k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                                   dilation=dil, stride0=stride0, stride1=stride1,
+                                   reflect_bounds=reflect_bounds,
+                                   use_k=use_k,search_abs=search_abs,exact=exact)
 
     # -- init our inner product --
     h_off,w_off = oh1,ow1
@@ -480,15 +510,16 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     #
 
     # -- forward test --
-    nq = iqueries.shape[0]
-    scores,inds = prod_search(vid0_te,iqueries,vid1=vid1_te)
-    scores_s = scores_to_heads(scores,nheads,seed=123)
-    wpatches_te = wpsum(vid2_te[None,],scores_s,inds).view(nq,nheads,-1)
+    nq = nbatch
+    qindex = 0
+    scores,inds = prod_search(vid0_te,qindex,nbatch,vid1=vid1_te)
+    scores_s = scores_to_heads_batch(scores,nheads,seed=123)
+    wpatches_te = wpsum(vid2_te,scores_s,inds).view(b,nq,nheads,-1)
 
     # -- forward gt --
-    scores,inds = prod_search(vid0_gt,iqueries,vid1=vid1_gt)
-    scores_s = scores_to_heads(scores,nheads,seed=123)
-    wpatches_gt = simple_run(vid2_gt,scores_s,inds,ps,pt,reflect_bounds,exact)
+    scores,inds = prod_search(vid0_gt,qindex,nbatch,vid1=vid1_gt)
+    scores_s = scores_to_heads_batch(scores,nheads,seed=123)
+    wpatches_gt = simple_run_batch(vid2_gt,scores_s,inds,ps,pt,reflect_bounds,exact)
 
     # -- viz --
     # print(wpatches_te[:3,:3])
@@ -531,6 +562,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
         diff = (grad_te - grad_gt).abs()/(grad_gt.abs()+1e-10)
         args = th.where(grad_gt.abs() < 1e-2)
         args = th.where(diff > 1e-3)
+        print(grad_te[args][:10])
+        print(grad_gt[args][:10])
         # print(grad_te[args][:5])
         # print(grad_gt[args][:5])
         # print(diff.mean().item())

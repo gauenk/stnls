@@ -14,8 +14,8 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_patches(nq,k,ps,pt,c,device):
-    patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
+def allocate_patches(b,nq,nhead,pt,c,ps,device):
+    patches = th.zeros((b,nq,nhead,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
 class WpSumHeadsFunction(th.autograd.Function):
@@ -29,23 +29,25 @@ class WpSumHeadsFunction(th.autograd.Function):
                 h_off=0,w_off=0,dilation=1,adj=0,
                 reflect_bounds=True,use_rand=False,exact=False):
         """
-        vid = [nHeads or 1,T,C,H,W]
-        dists = [nHeads,NumQueries,K]
-        inds = [nHeads or 1,NumQueries,K,3]
+        vid = [BatchSize,nHeads or 1,T,C,H,W]
+        dists = [BatchSize,nHeads,NumQueries,K]
+        inds = [BatchSize,nHeads or 1,NumQueries,K,3]
         ps = patchsize
         pt = patchsize_time (forward only)
         """
         # -- add head dim if 1 --
         vid_in_dim = vid.ndim
-        nheads = dists.shape[0]
-        if vid.ndim == 4:
-            vid = rearrange(vid,'t (H c) h w -> H t c h w',H=nheads)
-        if inds.ndim == 3: inds = inds[None,:]
+        bsize,nheads = dists.shape[:2]
+        # print("vid.shape: ",vid.shape,nheads,bsize)
+        # assert vid.ndim == 5,"must be 5 dims"
+        if vid.ndim == 5:
+            vid = rearrange(vid,'b t (H c) h w -> b H t c h w',H=nheads)
+        if inds.ndim == 4: inds = inds[:,None] # add heads dim
 
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         device = dists.device
-        nheads,nq,k = dists.shape
-        patches = allocate_patches(nq,nheads,ps,pt,vid.shape[2],device)
+        bsize,nheads,nq,k = dists.shape
+        patches = allocate_patches(bsize,nq,nheads,pt,vid.shape[3],ps,device)
         vid = vid.contiguous()
 
         # print(vid.shape)
@@ -121,8 +123,8 @@ class WpSumHeadsFunction(th.autograd.Function):
 
         # -- final shaping --
         vid_in_dim = ctx.vid_in_dim
-        if vid_in_dim == 4:
-            grad_vid = rearrange(grad_vid,'H t c h w -> t (H c) h w')
+        if vid_in_dim == 5:
+            grad_vid = rearrange(grad_vid,'b H t c h w -> b t (H c) h w')
 
         # -- stop timer --
         # th.cuda.synchronize()
@@ -155,9 +157,9 @@ class WeightedPatchSumHeads(th.nn.Module):
                                            self.dilation,self.adj,
                                            self.reflect_bounds,
                                            self.use_rand,self.exact)
-        nheads = dists.shape[0]
-        nq,_,_,c,ph,pw = patches.shape
-        patches = patches.view(nq,nheads,c,ph,pw)
+        nheads = dists.shape[1]
+        b,nq,_,_,c,ph,pw = patches.shape
+        patches = patches.view(b,nq,nheads,c,ph,pw)
         return patches
 
     def flops(self, nrefs, chnls_per_head, nheads, k):

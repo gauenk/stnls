@@ -12,8 +12,8 @@ def allocate_vid(vid_shape,device):
 
 def allocate_patches(inds,ps,pt,c):
     device = inds.device
-    nq,k = inds.shape[:2]
-    patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
+    b,nq,k = inds.shape[:3]
+    patches = th.zeros((b,nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
 
@@ -24,15 +24,24 @@ class unfold_k(th.autograd.Function):
     def forward(ctx, vid, inds, ps, pt=1, dilation=1, btype="default", exact=False,
                 adj = 0, reflect_bounds=True):
         """
-        vid = [T,C,H,W]
-        inds = [NumQueries,K,3]
+        vid = [B,T,C,H,W]
+        inds = [B,NumQueries,K,3]
         ps = patchsize
         pt = patchsize_time (forward only)
         """
-        patches = allocate_patches(inds,ps,pt,vid.shape[1])
+        patches = allocate_patches(inds,ps,pt,vid.shape[-3])
         inds = inds.contiguous()
+
+        # -- viz --
+        # print("vid.shape: ",vid.shape)
+        # print("patches.shape: ",patches.shape)
+        # print("inds.shape: ",inds.shape)
+
+        # -- exec --
         dnls_cuda.unfoldk_forward(vid, patches, inds, dilation, adj, reflect_bounds)
         # print("inds.shape: ",inds.shape)
+
+        # -- save --
         ctx.save_for_backward(inds)
         ctx.ps,ctx.pt = ps,pt
         ctx.vid_shape = vid.shape

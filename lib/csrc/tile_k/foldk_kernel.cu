@@ -44,11 +44,11 @@ float warpReduceSum(float val) {
 
 template <typename scalar_t>
 __global__ void dnls_foldk_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> wvid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
+    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     int ws, int wt, int dilation, int qpt) {
 
   // shared mem
@@ -57,6 +57,7 @@ __global__ void dnls_foldk_forward_kernel(
   // unpack cuda threads
   int tidx = threadIdx.x;
   int bidx = blockIdx.x;
+  int bi = blockIdx.y; // batch index
 
   // warp info for reduction
   int lane = threadIdx.x % warpSize;
@@ -64,16 +65,17 @@ __global__ void dnls_foldk_forward_kernel(
   int numWarps = ((blockDim.x-1) / warpSize)+1;
 
   // shape
-  int nq =    patches.size(0);
-  int k =     patches.size(1);
-  int pt =    patches.size(2);
-  int colors = patches.size(3);
-  int ps =    patches.size(4);
+  int nq =    patches.size(1);
+  int k =     patches.size(2);
+  int pt =    patches.size(3);
+  int colors = patches.size(4);
+  int ps =    patches.size(5);
 
   // vid shape
-  int nframes = vid.size(0);
-  int height = vid.size(2);
-  int width = vid.size(3);
+  int bsize = vid.size(0);
+  int nframes = vid.size(1);
+  int height = vid.size(3);
+  int width = vid.size(4);
   int psHalf = (ps-1)/2;
 
   // shape helpers
@@ -143,10 +145,10 @@ __global__ void dnls_foldk_forward_kernel(
   
   // accumulate over K neighbors
   for (int ki = 0; ki < k; ki++){
-    weight = dists[q1][ki];
-    int t1_i = inds[q1][ki][0];
-    int h1_i = inds[q1][ki][1];
-    int w1_i = inds[q1][ki][2];
+    weight = dists[bi][q1][ki];
+    int t1_i = inds[bi][q1][ki][0];
+    int h1_i = inds[bi][q1][ki][1];
+    int w1_i = inds[bi][q1][ki][2];
 
     for (int pk = 0; pk < pt; pk++){
       for (int pi = 0; pi < ps; pi++){
@@ -165,7 +167,7 @@ __global__ void dnls_foldk_forward_kernel(
   
           // fill
           for (int ci = 0; ci < colors; ci++){
-            pix_i = patches[q1][ki][pk][ci][pi][pj];
+            pix_i = patches[bi][q1][ki][pk][ci][pi][pj];
             pix[ci] += valid ? (weight * pix_i) : 0.;
             wpix[ci] += valid ? weight : 0.;
           }
@@ -209,8 +211,8 @@ __global__ void dnls_foldk_forward_kernel(
     // Assign first lane to image value
     if (lane==0){
       for (int ci = 0; ci < colors; ci++){
-        vid[t0][ci][h0][w0] = pix[ci];
-        wvid[t0][ci][h0][w0] = wpix[ci];
+        vid[bi][t0][ci][h0][w0] = pix[ci];
+        wvid[bi][t0][ci][h0][w0] = wpix[ci];
       }
     }
   }
@@ -223,11 +225,12 @@ void dnls_cuda_foldk_forward(
     int ws, int wt, int dilation) {
 
   // launch params
-  int numQueries = inds.size(0);
-  int k = dists.size(1);
-  int pt = patches.size(2);
-  int color = patches.size(3);
-  int ps = patches.size(4);
+  int bsize = inds.size(0);
+  int numQueries = inds.size(1);
+  int k = dists.size(2);
+  int pt = patches.size(3);
+  int color = patches.size(4);
+  int ps = patches.size(5);
   assert(pt == 1);
   assert(color <= 3);
 
@@ -242,17 +245,18 @@ void dnls_cuda_foldk_forward(
   int qpt = 1;
   int nthreads = kwWarpSize*nWarps;
   int queries_per_block = nthreads * qpt;
-  int nblocks = numQueries;
+  int nblocks_queries = numQueries;
+  dim3 nblocks(nblocks_queries,bsize);
   // fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_forward_kernel", ([&] {
     dnls_foldk_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        wvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         ws,wt,dilation,qpt);
       }));
 }
@@ -268,11 +272,11 @@ void dnls_cuda_foldk_forward(
 
 template <typename scalar_t>
 __global__ void dnls_foldk_forward_kernel_dist(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> wvid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
+    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     int ws, int wt, int dilation, int qpt) {
 
   // shared mem
@@ -281,6 +285,7 @@ __global__ void dnls_foldk_forward_kernel_dist(
   // unpack cuda threads
   int tidx = threadIdx.x;
   int bidx = blockIdx.x;
+  int bi = blockIdx.y; // batch index
 
   // warp info for reduction
   int lane = threadIdx.x % warpSize;
@@ -288,16 +293,17 @@ __global__ void dnls_foldk_forward_kernel_dist(
   int numWarps = ((blockDim.x-1) / warpSize)+1;
 
   // shape
-  int nq =    patches.size(0);
-  int k =     patches.size(1);
-  int pt =    patches.size(2);
-  int colors = patches.size(3);
-  int ps =    patches.size(4);
+  int nq =    patches.size(1);
+  int k =     patches.size(2);
+  int pt =    patches.size(3);
+  int colors = patches.size(4);
+  int ps =    patches.size(5);
 
   // vid shape
-  int nframes = vid.size(0);
-  int height = vid.size(2);
-  int width = vid.size(3);
+  int bsize = vid.size(0);
+  int nframes = vid.size(1);
+  int height = vid.size(3);
+  int width = vid.size(4);
   int psHalf = (ps-1)/2;
 
   // shape helpers
@@ -367,10 +373,10 @@ __global__ void dnls_foldk_forward_kernel_dist(
   
   // accumulate over K neighbors
   for (int ki = 0; ki < k; ki++){
-    weight = dists[q1][ki];
-    int t1_i = inds[q1][ki][0];
-    int h1_i = inds[q1][ki][1];
-    int w1_i = inds[q1][ki][2];
+    weight = dists[bi][q1][ki];
+    int t1_i = inds[bi][q1][ki][0];
+    int h1_i = inds[bi][q1][ki][1];
+    int w1_i = inds[bi][q1][ki][2];
 
     for (int pk = 0; pk < pt; pk++){
       for (int pi = 0; pi < ps; pi++){
@@ -389,7 +395,7 @@ __global__ void dnls_foldk_forward_kernel_dist(
   
           // fill
           for (int ci = 0; ci < colors; ci++){
-            pix_i = patches[q1][ki][pk][ci][pi][pj];
+            pix_i = patches[bi][q1][ki][pk][ci][pi][pj];
             pix[ci] += valid ? (weight * pix_i) : 0.;
             wpix[ci] += valid ? weight : 0.;
           }
@@ -433,8 +439,8 @@ __global__ void dnls_foldk_forward_kernel_dist(
     // Assign first lane to image value
     if (lane==0){
       for (int ci = 0; ci < colors; ci++){
-        vid[t0][ci][h0][w0] = pix[ci];
-        wvid[t0][ci][h0][w0] = wpix[ci];
+        vid[bi][t0][ci][h0][w0] = pix[ci];
+        wvid[bi][t0][ci][h0][w0] = wpix[ci];
       }
     }
   }
@@ -448,11 +454,12 @@ void dnls_cuda_foldk_forward_dist(
 
   fprintf(stdout,"WARNING: Don't use me.\n");
   // launch params
-  int numQueries = inds.size(0);
-  int k = dists.size(1);
-  int pt = patches.size(2);
-  int color = patches.size(3);
-  int ps = patches.size(4);
+  int bsize = inds.size(0);
+  int numQueries = inds.size(1);
+  int k = dists.size(2);
+  int pt = patches.size(3);
+  int color = patches.size(4);
+  int ps = patches.size(5);
   assert(pt == 1);
   assert(color <= 3);
 
@@ -467,17 +474,18 @@ void dnls_cuda_foldk_forward_dist(
   int qpt = 1;
   int nthreads = kwWarpSize*nWarps;
   int queries_per_block = nthreads * qpt;
-  int nblocks = numQueries;
+  int nblocks_queries = numQueries;
+  dim3 nblocks(nblocks_queries,bsize);
   // fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_forward_kernel", ([&] {
     dnls_foldk_forward_kernel_dist<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        wvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         ws,wt,dilation,qpt);
       }));
 }
@@ -491,25 +499,26 @@ void dnls_cuda_foldk_forward_dist(
 
 template <typename scalar_t>
 __global__ void dnls_foldk_forward_kernel_race(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> wvid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> wvid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
+    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int dilation, int qpt, int cpt) {
 
   // shape
-  int nq =    patches.size(0);
-  int k =     patches.size(1);
-  int pt =    patches.size(2);
-  int colors = patches.size(3);
-  int ps =    patches.size(4);
+  int bsize = patches.size(0);
+  int nq =    patches.size(1);
+  int k =     patches.size(2);
+  int pt =    patches.size(3);
+  int colors = patches.size(4);
+  int ps =    patches.size(5);
 
   // vid shape
-  int nframes = vid.size(0);
-  int height = vid.size(2);
-  int width = vid.size(3);
+  int nframes = vid.size(1);
+  int height = vid.size(3);
+  int width = vid.size(4);
   int psHalf = (ps-1)/2;
 
   // location
@@ -519,6 +528,9 @@ __global__ void dnls_foldk_forward_kernel_race(
   // only valid 
   bool valid;
   float pix;
+
+  // -- batch --
+  int bi = blockIdx.y;
 
   // -- endpoints --
   int c0_start = threadIdx.y * cpt;
@@ -541,15 +553,15 @@ __global__ void dnls_foldk_forward_kernel_race(
     if (qi < nq){
       // iterate
       for (int ki = 0; ki < k; ki++){
-        weight = dists[qi][ki];
+        weight = dists[bi][qi][ki];
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
 
               // prop ind
-              ti = inds[qi][ki][0] + pk;
-              hi = inds[qi][ki][1] + dilation*(pi - psHalf);
-              wi = inds[qi][ki][2] + dilation*(pj - psHalf);
+              ti = inds[bi][qi][ki][0] + pk;
+              hi = inds[bi][qi][ki][1] + dilation*(pi - psHalf);
+              wi = inds[bi][qi][ki][2] + dilation*(pj - psHalf);
 
               // valid
               valid = (ti >= 0) && (ti < nframes);
@@ -559,10 +571,10 @@ __global__ void dnls_foldk_forward_kernel_race(
               // fill
               for (int _c0 = c0_start; _c0 < c0_end; _c0++){
                 ci = (_c0 + c0_offset) % c0_dist + c0_start;
-                pix = patches[qi][ki][pk][ci][pi][pj];
+                pix = patches[bi][qi][ki][pk][ci][pi][pj];
                 if (valid){
-                  vid[ti][ci][hi][wi] += weight * pix;
-                  wvid[ti][ci][hi][wi] += weight;
+                  vid[bi][ti][ci][hi][wi] += weight * pix;
+                  wvid[bi][ti][ci][hi][wi] += weight;
                 }
               }
             }
@@ -579,11 +591,12 @@ void dnls_cuda_foldk_forward_race(
     int dilation, bool use_rand, bool exact) {
 
   // launch params
-  int nqueries = inds.size(0);
-  int k = dists.size(1);
-  int pt = patches.size(2);
-  int color = patches.size(3);
-  int ps = patches.size(4);
+  int bsize = inds.size(0);
+  int nqueries = inds.size(1);
+  int k = dists.size(2);
+  int pt = patches.size(3);
+  int color = patches.size(4);
+  int ps = patches.size(5);
   assert(pt == 1);
 
   int cpt = exact ? 1 : color;
@@ -591,7 +604,9 @@ void dnls_cuda_foldk_forward_race(
   int qpt = 2;
   int nthreads_blocks = 1024;
   int queries_per_block = nthreads_blocks * qpt;
-  int nblocks = ((nqueries - 1) / queries_per_block) + 1;
+  int nblocks_queries = ((nqueries - 1) / queries_per_block) + 1;
+  dim3 nblocks(nblocks_queries,bsize);
+
   if (exact){
     nthreads_blocks = 1;
     nblocks = 1;
@@ -615,11 +630,11 @@ void dnls_cuda_foldk_forward_race(
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_forward_kernel_race", ([&] {
     dnls_foldk_forward_kernel_race<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        wvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        wvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         dilation,qpt,cpt);
       }));
@@ -634,20 +649,21 @@ void dnls_cuda_foldk_forward_race(
 
 template <typename scalar_t>
 __global__ void dnls_foldk_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     int dilation, int qpt, int kpt) {
 
     // -- shapes --
-    int nframes = grad_vid.size(0);
-    int colors = grad_vid.size(1);
-    int height = grad_vid.size(2);
-    int width = grad_vid.size(3);
-    int nq = patches.size(0);
-    int k = patches.size(1);
-    int pt = patches.size(2);
-    int ps = patches.size(4);
+    int bsize = grad_vid.size(0);
+    int nframes = grad_vid.size(1);
+    int colors = grad_vid.size(2);
+    int height = grad_vid.size(3);
+    int width = grad_vid.size(4);
+    int nq = patches.size(1);
+    int k = patches.size(2);
+    int pt = patches.size(3);
+    int ps = patches.size(5);
     int psHalf = (int)ps/2;
 
     // -- cuda threads --
@@ -657,6 +673,7 @@ __global__ void dnls_foldk_backward_kernel(
     // -- batching --
     int query_start = blockIdx.x*qpt;
     int k_start = threadIdx.x*kpt;
+    int bi = blockIdx.y;
 
     // inits
     int qi,ki,ti,hi,wi;
@@ -678,9 +695,9 @@ __global__ void dnls_foldk_backward_kernel(
         if (ki >= k){ continue; }
 
         // -- fill --
-        ti = inds[qi][ki][0];
-        hi = inds[qi][ki][1];
-        wi = inds[qi][ki][2];
+        ti = inds[bi][qi][ki][0];
+        hi = inds[bi][qi][ki][1];
+        wi = inds[bi][qi][ki][2];
 
         // -- fill across cuda threads --
         vi_h = hi+dilation*(pi - psHalf);
@@ -703,11 +720,11 @@ __global__ void dnls_foldk_backward_kernel(
           // -- colors --
           for(int ci = 0; ci < colors; ci++){
             if (valid){
-              pix = grad_vid[vi_t][ci][vi_h][vi_w];
+              pix = grad_vid[bi][vi_t][ci][vi_h][vi_w];
             }else{
               pix = 0.;
             }
-            patches[qi][ki][pk][ci][pi][pj] = pix;
+            patches[bi][qi][ki][pk][ci][pi][pj] = pix;
           }
         }
       }
@@ -719,10 +736,12 @@ void dnls_cuda_foldk_backward(
   int dilation) {
 
   // -- kernel blocks --
-  int nqueries = inds.size(0);
-  int k = inds.size(1);
+  int bsize = inds.size(0);
+  int nqueries = inds.size(1);
+  int k = inds.size(2);
   int qpt = 10;
-  int nblocks = (nqueries-1)/qpt+1;
+  int nblocks_queries = (nqueries-1)/qpt+1;
+  dim3 nblocks(nblocks_queries,bsize);
 
   // -- kernel threads --
   int ps = patches.size(5);
@@ -735,9 +754,9 @@ void dnls_cuda_foldk_backward(
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_backward_kernel", ([&] {
     dnls_foldk_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        grad_vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         dilation,qpt,kpt);
   }));
 

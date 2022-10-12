@@ -41,20 +41,21 @@ __inline__ int cpu_bounds(int val, int lim ){
 
 template <typename scalar_t>
 __global__ void dnls_unfoldk_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     int dilation, int adj, bool use_bounds, int qpt, int kpt){
 
     // -- shapes --
-    int nframes = vid.size(0);
-    int colors = vid.size(1);
-    int height = vid.size(2);
-    int width = vid.size(3);
-    int nq = patches.size(0);
-    int k = patches.size(1);
-    int pt = patches.size(2);
-    int ps = patches.size(4);
+    int bsize = vid.size(0);
+    int nframes = vid.size(1);
+    int colors = vid.size(2);
+    int height = vid.size(3);
+    int width = vid.size(4);
+    int nq = patches.size(1);
+    int k = patches.size(2);
+    int pt = patches.size(3);
+    int ps = patches.size(5);
     int psHalf = (int)ps/2;
 
     // -- cuda threads --
@@ -64,6 +65,7 @@ __global__ void dnls_unfoldk_forward_kernel(
     // -- batching --
     int query_start = blockIdx.x*qpt;
     int k_start = threadIdx.x*kpt;
+    int bi = blockIdx.y;
 
     // inits
     int qi,ki,ti,hi,wi;
@@ -85,9 +87,9 @@ __global__ void dnls_unfoldk_forward_kernel(
         if (ki >= k){ continue; }
 
         // -- fill --
-        ti = inds[qi][ki][0];
-        hi = inds[qi][ki][1];
-        wi = inds[qi][ki][2];
+        ti = inds[bi][qi][ki][0];
+        hi = inds[bi][qi][ki][1];
+        wi = inds[bi][qi][ki][2];
 
         // -- fill across cuda threads --
         if (use_bounds){
@@ -113,11 +115,11 @@ __global__ void dnls_unfoldk_forward_kernel(
           // -- colors --
           for(int ci = 0; ci < colors; ci++){
             if (valid){
-              pix = vid[vi_t][ci][vi_h][vi_w];
+              pix = vid[bi][vi_t][ci][vi_h][vi_w];
             }else{
               pix = 0.;
             }
-            patches[qi][ki][pk][ci][pi][pj] = pix;
+            patches[bi][qi][ki][pk][ci][pi][pj] = pix;
           }
         }
       }
@@ -129,10 +131,12 @@ void dnls_cuda_unfoldk_forward(
     int dilation, int adj, bool use_bounds) {
 
   // -- kernel blocks --
-  int numQueries = inds.size(0);
-  int k = inds.size(1);
+  int bsize = inds.size(0);
+  int numQueries = inds.size(1);
+  int k = inds.size(2);
   int qpt = 10;
-  int nblocks = (numQueries-1)/qpt+1;
+  int nblocks_queries = (numQueries-1)/qpt+1;
+  dim3 nblocks(nblocks_queries,bsize);
 
   // -- kernel threads --
   int ps = patches.size(5);
@@ -145,9 +149,9 @@ void dnls_cuda_unfoldk_forward(
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_unfoldk_forward_kernel", ([&] {
     dnls_unfoldk_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         dilation, adj, use_bounds, qpt, kpt);
     }));
 }
@@ -162,23 +166,24 @@ void dnls_cuda_unfoldk_forward(
 
 template <typename scalar_t>
 __global__ void dnls_unfoldk_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_patches,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_patches,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int dilation, int adj, bool use_bounds, int qpt, int cpt){
 
   // shape
-  int nq =    grad_patches.size(0);
-  int k =     grad_patches.size(1);
-  int pt =    grad_patches.size(2);
-  int colors = grad_patches.size(3);
-  int ps =    grad_patches.size(4);
-  int nframes = vid.size(0);
+  int bsize =  grad_patches.size(0);
+  int nq =    grad_patches.size(1);
+  int k =     grad_patches.size(2);
+  int pt =    grad_patches.size(3);
+  int colors = grad_patches.size(4);
+  int ps =    grad_patches.size(5);
+  int nframes = vid.size(1);
   int qi,ti,hi,wi;
   float pix;
-  int height = vid.size(2);
-  int width = vid.size(3);
+  int height = vid.size(3);
+  int width = vid.size(4);
   int psHalf = ps/2;
   bool valid_h,valid_w,valid;
   int pi_offset,pj_offset;
@@ -196,7 +201,8 @@ __global__ void dnls_unfoldk_backward_kernel(
   // block indices
   int thread_x = threadIdx.x;
   int block_x = blockIdx.x;
-  int q_start = qpt*( thread_x + block_x * blockDim.x);
+  int q_start = qpt * (thread_x + block_x * blockDim.x);
+  int bi = blockIdx.y;
   
   for (int _qi = 0; _qi < qpt; _qi++){
     qi = q_start + _qi;
@@ -219,9 +225,9 @@ __global__ void dnls_unfoldk_backward_kernel(
               pj = (_pj + pj_offset) % ps;
               
               // -- standard accumulation --
-              ti = bounds(inds[qi][ki][0] + pk,nframes);
-              _hi = inds[qi][ki][1] + dilation*(pi - psHalf + adj);
-              _wi = inds[qi][ki][2] + dilation*(pj - psHalf + adj);
+              ti = bounds(inds[bi][qi][ki][0] + pk,nframes);
+              _hi = inds[bi][qi][ki][1] + dilation*(pi - psHalf + adj);
+              _wi = inds[bi][qi][ki][2] + dilation*(pj - psHalf + adj);
               hi = use_bounds ? bounds(_hi,height) : _hi;
               wi = use_bounds ? bounds(_wi,width) : _wi;
               valid_h = (hi >= 0) && (hi < height);
@@ -230,9 +236,9 @@ __global__ void dnls_unfoldk_backward_kernel(
 
               for (int _c0 = c0_start; _c0 < c0_end; _c0++){
                 c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-                pix = grad_patches[qi][ki][pk][c0][pi][pj];
+                pix = grad_patches[bi][qi][ki][pk][c0][pi][pj];
                 if (valid){
-                  vid[ti][c0][hi][wi] += pix;
+                  vid[bi][ti][c0][hi][wi] += pix;
                 }
               }
             }
@@ -250,11 +256,12 @@ void dnls_cuda_unfoldk_backward(
     torch::Tensor inds, int dilation, bool exact, int adj, bool use_bounds) {
 
   // unpack params
-  int numQueries = inds.size(0);
-  int k = inds.size(1);
-  int pt = grad_patches.size(2);
-  int colors = grad_patches.size(3);
-  int ps = grad_patches.size(4);
+  int bsize = inds.size(0);
+  int numQueries = inds.size(1);
+  int k = inds.size(2);
+  int pt = grad_patches.size(3);
+  int colors = grad_patches.size(4);
+  int ps = grad_patches.size(5);
   assert(pt == 1);
 
   // num of threads
@@ -270,18 +277,20 @@ void dnls_cuda_unfoldk_backward(
   int max_nblocks = 32;
   int num_per_block = 16;
   int total_per_block = block_threads * num_per_block;
-  int nblocks = ((numQueries - 1) / total_per_block) + 1;
-  nblocks = min(nblocks,max_nblocks);
-  int total_pb = (numQueries - 1) / nblocks + 1;
+  int nblocks_queries = ((numQueries - 1) / total_per_block) + 1;
+  nblocks_queries = min(nblocks_queries,max_nblocks);
+  int total_pb = (numQueries - 1) / nblocks_queries + 1;
   int bpb = (total_pb-1) / block_threads + 1;
 
   // if exact
   if (exact){
     cpt = 1;
-    nblocks = 1;
+    nblocks_queries = 1;
     block_threads = 1;
     bpb = numQueries;
   }
+  dim3 nblocks(nblocks_queries,bsize);
+
   // fprintf(stdout,"block_threads,color_threads: %d,%d\n",block_threads,color_threads);
   // fprintf(stdout,"bpb,cpt: %d,%d\n",bpb,cpt);
 
@@ -296,9 +305,9 @@ void dnls_cuda_unfoldk_backward(
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_unfoldk_backward_kernel", ([&] {
     dnls_unfoldk_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        grad_patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         dilation, adj, use_bounds, bpb, cpt);
   }));
@@ -314,26 +323,28 @@ void dnls_cuda_unfoldk_backward(
 
 template <typename scalar_t>
 __global__ void dnls_unfoldk_backward_kernel_eff(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_patches,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_patches,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     int dilation, int adj, bool use_bounds, int qpt) {
 
   // shape
-  int nq =    grad_patches.size(0);
-  int k =     grad_patches.size(1);
-  int pt =    grad_patches.size(2);
-  int color = grad_patches.size(3);
-  int ps =    grad_patches.size(4);
+  int bsize = grad_patches.size(0);
+  int nq =    grad_patches.size(1);
+  int k =     grad_patches.size(2);
+  int pt =    grad_patches.size(3);
+  int color = grad_patches.size(4);
+  int ps =    grad_patches.size(5);
   int qi,ti,hi,wi;
   scalar_t pix;
-  int height = vid.size(2);
-  int width = vid.size(3);
+  int height = vid.size(3);
+  int width = vid.size(4);
   int psHalf = ps/2;
   bool valid_h,valid_w,valid;
   int _hi,_wi;
 
   // get indices
+  int bi = blockIdx.y;
   int tidx = threadIdx.x;
   int bidx = blockIdx.x;
   int q_start = qpt*(tidx + bidx * blockDim.x);
@@ -346,9 +357,9 @@ __global__ void dnls_unfoldk_backward_kernel_eff(
         for (int pk = 0; pk < pt; pk++){
           for (int pi = 0; pi < ps; pi++){
             for (int pj = 0; pj < ps; pj++){
-              ti = inds[qi][ki][0] + pk;
-              _hi = inds[qi][ki][1] + dilation*(pi - psHalf + adj);
-              _wi = inds[qi][ki][2] + dilation*(pj - psHalf + adj);
+              ti = inds[bi][qi][ki][0] + pk;
+              _hi = inds[bi][qi][ki][1] + dilation*(pi - psHalf + adj);
+              _wi = inds[bi][qi][ki][2] + dilation*(pj - psHalf + adj);
               hi = bounds(_hi,height);
               wi = bounds(_wi,width);
               // hi = use_bounds ? bounds(hi,height) : hi;
@@ -357,9 +368,9 @@ __global__ void dnls_unfoldk_backward_kernel_eff(
               valid_w = (wi >= 0) && (wi < width);
               valid = valid_h && valid_w;
               for (int ci = 0; ci < color; ci++){
-                pix = grad_patches[qi][ki][pk][ci][pi][pj];
+                pix = grad_patches[bi][qi][ki][pk][ci][pi][pj];
                 if(valid){
-                  vid[ti][ci][hi][wi] += pix;
+                  vid[bi][ti][ci][hi][wi] += pix;
                 }
               }
             }
@@ -376,29 +387,31 @@ void dnls_cuda_unfoldk_backward_eff(
     torch::Tensor inds, int dilation, bool exact, int adj, bool use_bounds) {
 
   // launch params
-  int numQueries = inds.size(0);
-  int k = inds.size(1);
-  int pt = grad_patches.size(2);
-  int color = grad_patches.size(3);
-  int ps = grad_patches.size(4);
+  int bsize = inds.size(0);
+  int numQueries = inds.size(1);
+  int k = inds.size(2);
+  int pt = grad_patches.size(3);
+  int color = grad_patches.size(4);
+  int ps = grad_patches.size(5);
   assert(pt == 1);
 
   int qpt = 10;
   int nthreads = 1024;
   int queries_per_block = nthreads * qpt;
-  int nblocks = ((numQueries - 1) / queries_per_block) + 1;
+  int nblocks_queries = ((numQueries - 1) / queries_per_block) + 1;
   if (exact){
     nthreads = 1;
-    nblocks = 1;
+    nblocks_queries = 1;
     qpt = numQueries;
   }
+  dim3 nblocks(nblocks_queries,bsize);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_unfoldk_backward_kernel_eff", ([&] {
     dnls_unfoldk_backward_kernel_eff<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        grad_patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         dilation, adj, use_bounds, qpt);
   }));
 
