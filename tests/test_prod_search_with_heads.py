@@ -8,6 +8,7 @@ from easydict import EasyDict as edict
 
 # -- testing --
 import pytest
+import random
 
 # -- linalg --
 import torch as th
@@ -34,10 +35,10 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ps":[7],"stride0":[2],"stride1":[2],
+    test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
                   "dilation":[1],"wt":[0],"ws":[-1],
-                  "k":[-1],"exact":[True],"nheads":[1,4],
-                  "seed":[0,1]}
+                  "k":[-1],"exact":[True],"nheads":[1],
+                  "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -45,6 +46,7 @@ def pytest_generate_tests(metafunc):
 def set_seed(seed):
     th.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
 
 def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
@@ -58,8 +60,10 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
+    set_seed(seed)
 
     # -- init vars --
     device = "cuda:0"
@@ -70,18 +74,16 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_k = k > 0
     use_adj = False
     adj = 0
-    B = 2
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:5,].contiguous()
-    vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:32].contiguous()
-    vid = repeat(vid,'t c h w -> b t c h w',b=B) # batch size
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -123,29 +125,30 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  search_abs=False,use_adj=use_adj,
                                  exact=exact)
 
-
     # -- [testing] search --
     dists_te,inds_te = search_te(vid,0,ntotal)
     th.cuda.synchronize()
 
     # -- [groundtruth] search --
-    search_te.nheads = 1
-    _c = (vid.shape[1]-1) // nheads + 1
+    # search_te.nheads = 1
+    _c = (vid.shape[2]-1) // nheads + 1
     dists_gt,inds_gt = [],[]
     for h in range(nheads):
         cinds = slice(_c*h,_c*(h+1))
-        vid_c = vid[:,cinds].contiguous()
+        vid_c = vid[:,:,cinds].contiguous()
         dists_h,inds_h = search_gt(vid_c,0,ntotal)
         # dists_h,inds_h = search_te(vid_c,0,ntotal)
         # dists_h,inds_h = dists_h[0],inds_h[0]
         dists_gt.append(dists_h)
         inds_gt.append(inds_h)
-    dists_gt = th.stack(dists_gt)
-    inds_gt  = th.stack(inds_gt)
+    dists_gt = th.stack(dists_gt,1)
+    inds_gt  = th.stack(inds_gt,1)
 
     # -- viz --
-    # print(dists_te[0,0,:10])
-    # print(dists_gt[0,0,:10])
+    # print(dists_te[0,0,0,:])
+    # print(dists_gt[0,0,0,:])
+    # print(dists_te[0,0,1,:10])
+    # print(dists_gt[0,0,1,:10])
     # print(dists_te.shape)
     # print(dists_gt.shape)
 
@@ -189,7 +192,8 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
 
     # -- init vars --
@@ -204,27 +208,27 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     adj = 0
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:2,].contiguous()
-    vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:32].contiguous()
-    vid = vid[:,:,:32,:32]
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:2,].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid = vid[...,:32,:32]
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
-    chnls = vid.shape[1]
+    chnls = vid.shape[2]
 
     # -- pads --
-    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
     n_h0,n_w0 = n0[0],n0[1]
     n_h1,n_w1 = n1[0],n1[1]
     h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
@@ -270,7 +274,7 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
 
     # -- [groundtruth] search --
     search_te.nheads = 1
-    _c = (vid.shape[1]-1) // nheads + 1
+    _c = (vid.shape[2]-1) // nheads + 1
     dists_gt,inds_gt = [],[]
     for h in range(nheads):
         cinds = slice(_c*h,_c*(h+1))
@@ -281,8 +285,8 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         # dists_h,inds_h = dists_h[0],inds_h[0]
         dists_gt.append(dists_h)
         inds_gt.append(inds_h)
-    dists_gt = th.stack(dists_gt)
-    inds_gt  = th.stack(inds_gt)
+    dists_gt = th.stack(dists_gt,1)
+    inds_gt  = th.stack(inds_gt,1)
 
     # -- viz --
     # print(dists_te[0,0,:10])

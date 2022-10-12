@@ -184,11 +184,12 @@ void dnls_cuda_ifold_forward(
     bool only_full, bool use_reflect){
 
   // batching entire image always
-  int nframes = vid.size(0);
-  int colors = vid.size(1);
-  int height = vid.size(2);
-  int width = vid.size(3);
-  int ps = patches.size(5);
+  int bsize = vid.size(0);
+  int nframes = vid.size(1);
+  int colors = vid.size(2);
+  int height = vid.size(3);
+  int width = vid.size(4);
+  int ps = patches.size(6);
 
   // -- coords with pads --
   int pad = dilation*(ps/2);
@@ -213,8 +214,8 @@ void dnls_cuda_ifold_forward(
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifold_forward_kernel", ([&] {
     dnls_ifold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top,left,btm,right,start,stride,dilation,adj,only_full,use_reflect,num_kernels);
       }));
 }

@@ -32,26 +32,35 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- reshape with heads --
         dtype = vid0.dtype
         device = vid0.device
-        assert vid0.ndim in [5,6], "Must be 5 or 6 dims."
+        assert vid0.ndim in [5], "Must be 5 dims."
         if vid0.ndim == 5:
-            c = vid0.shape[1]
+            c = vid0.shape[2]
             assert c % nheads == 0,"must be multiple of each other."
-            vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
-            vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
-        assert vid0.shape[0] == nheads
-        assert vid1.shape[0] == nheads
-        bsize,H,t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0.shape[1:],stride0,ps,dilation)
+            shape_str = 'b t (H c) h w -> b H t c h w'
+            vid0 = rearrange(vid0,shape_str,H=nheads).contiguous()
+            vid1 = rearrange(vid1,shape_str,H=nheads).contiguous()
+        assert vid0.shape[1] == nheads
+        assert vid1.shape[1] == nheads
+        B,H,t,c,h,w = vid0.shape
+        n_h0,n_w0 = get_num_img(vid0.shape[2:],stride0,ps,dilation)
+        Q = nqueries
 
         # -- allocs --
-        B,H,Q = bsize,nheads,nqueries
-        BHQ = bsize*nheads*nqueries
+        BHQ = B*H*Q
         dists_exh,inds_exh = allocate_exh_prod(BHQ,wt,ws_h,ws_w,device,dtype)
         dists_exh = dists_exh.view(B,H,Q,-1,ws_h,ws_w)
         inds_exh = inds_exh.view(B,H,Q,-1,ws_h,ws_w,3)
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
+
+        # -- viz --
+        # print("vid0.shape: " ,vid0.shape)
+        # print("vid1.shape: " ,vid1.shape)
+        # print("fflow.shape: " ,fflow.shape)
+        # print("bflow.shape: " ,bflow.shape)
+        # print("dists_exh.shape: " ,dists_exh.shape)
+        # print("inds_exh.shape: " ,inds_exh.shape)
 
         # -- forward --
         gpuid = th.cuda.current_device()
@@ -81,14 +90,14 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                                                       stride0,n_h0,n_w0)
 
         # -- shape for next step --
+        dists_exh = dists_exh.view(B*H*Q,-1)#.contiguous()
+        inds_exh = inds_exh.view(B*H*Q,-1,3)#.contiguous()
         # dists_exh=dists_exh.view(B,H,Q,-1)#.contiguous()
         # inds_exh=inds_exh.view(B,H,Q,-1,3)#.contiguous()
 
         # -- topk --
         if use_k:
             dists,inds = allocate_rtn(B*H*Q,k,device,dtype)
-            dists_exh = dists_exh.view(B*H*Q,-1)#.contiguous()
-            inds_exh = inds_exh.view(B*H*Q,-1,3)#.contiguous()
             get_topk_prod_b(dists_exh,inds_exh,dists,inds)
         else:
             dists,inds = dists_exh,inds_exh
@@ -103,7 +112,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
             # args = th.where(dists == th.inf)
             # dists[args] = 0. # not the inner product value
 
-        # -- shape with heads -
+        # -- final shape with heads -
         dists = dists.view(B,H,Q,-1)
         inds = inds.view(B,H,Q,-1,3)
 
@@ -279,8 +288,10 @@ class ProdSearchWithHeads(th.nn.Module):
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):
-        vshape = vshape[-4:] # (t,c,h,w) NOT (H,t,c,h,w)
-        b,t,c,h,w = vshape
+        vshape = vshape # (t,c,h,w) NOT (H,t,c,h,w)
+        assert len(vshape) in [5]
+        # if len(vshape) == 5: b,t,c,h,w = vshape
+        # else: b,h,t,c,h,w = vshape
         b,t,c,h,w = vshape
         zflow = th.zeros((b,t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow

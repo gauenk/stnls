@@ -82,13 +82,13 @@ __global__ void prod_search_with_heads_forward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // cuda index
-  int bindex = blockDim.x;
+  int bindex = blockIdx.x;
+  int head = blockIdx.y;
   int blkDimX = blockDim.y; // num threads in x-block
   int blkDimY = blockDim.z; // num threads in y-block
   int cu_tidX = threadIdx.x;
   int cu_tidY = threadIdx.y;
-  int block_start = blockIdx.x*bpt;
-  int head = blockIdx.y;
+  int block_start = blockIdx.z*bpt;
   int bidx,ws_i,ws_j;
 
   // accumulate time offsets
@@ -380,7 +380,7 @@ void prod_search_with_heads_forward_cuda(
    int nquery_blocks = ((nqueries - 1) / bpt) + 1;
    nquery_blocks = min(nquery_blocks,rem_blocks);
    bpt = ((nqueries - 1) / nquery_blocks) + 1;
-   dim3 nblocks(bsize,nquery_blocks,nheads);
+   dim3 nblocks(bsize,nheads,nquery_blocks);
 
    // fprintf(stdout,"bpt,nquery_blocks,w_threads: %d,%d,%d,%d\n",
    //         bpt,nquery_blocks,ws_h_threads,ws_w_threads);

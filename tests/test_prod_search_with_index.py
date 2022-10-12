@@ -47,7 +47,6 @@ def pytest_generate_tests(metafunc):
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-
 def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     """
 
