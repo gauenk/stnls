@@ -22,6 +22,19 @@ def np_matmul(mat_a,mat_b):
     mat = np.matmul(mat_a,mat_b)
     return mat
 
+def run_nn_batch(vid,ps,stride=4,dilation=1,mode="reflect",
+                 vid1=None,vid2=None):
+    scores = []
+    B = vid.shape[0]
+    for b in range(B):
+        vid1_b = None if vid1 is None else vid1[b]
+        vid2_b = None if vid2 is None else vid2[b]
+        scores_b,_ = run_nn(vid[b],ps,stride,dilation,mode,
+                            vid1=vid1_b,vid2=vid2_b)
+        scores.append(scores_b)
+    scores = th.stack(scores)
+    return scores
+
 def run_nn(vid,ps,stride=4,dilation=1,mode="reflect",vid1=None,vid2=None):
     if vid1 is None: vid1 = vid
     if vid2 is None: vid2 = vid

@@ -29,12 +29,15 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- unpack --
         device = vid0.device
-        t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
+        B,t,c,h,w = vid0.shape
+        n_h0,n_w0 = get_num_img(vid0[0].shape,stride0,ps,dilation)
 
         # -- allocs --
-        nq = nqueries
-        dists_exh,inds_exh = allocate_exh(nq,wt,ws_h,ws_w,device)
+        Q = nqueries
+        dists_exh,inds_exh = allocate_exh(B*Q,wt,ws_h,ws_w,device)
+        dists_exh = dists_exh.view(B,Q,-1)
+        inds_exh = inds_exh.view(B,Q,-1,3)
+
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -62,14 +65,16 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                n_tranges, min_tranges)
 
         # -- shape for output --
-        b = dists_exh.shape[0]
-        dists_exh=dists_exh.view(b,-1)#.contiguous()
-        inds_exh=inds_exh.view(b,-1,3)#.contiguous()
+        # q = dists_exh.shape[0]
+        dists_exh=dists_exh.view(B,Q,-1)#.contiguous()
+        inds_exh=inds_exh.view(B,Q,-1,3)#.contiguous()
 
         # -- remove self --
         if remove_self:
-            dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qstart,
-                                                      stride0,n_h0,n_w0)
+            dists_exh,inds_exh = run_remove_self_cuda(dists_exh[None,:],
+                                                      inds_exh[None,:],
+                                                      qstart,stride0,n_h0,n_w0)
+            dists_exh,inds_exh = dists_exh[0],inds_exh[0]
 
         # -- topk --
         if use_k:

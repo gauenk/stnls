@@ -22,6 +22,27 @@ except:
 # -- local --
 from ..utils import color
 
+def get_flow_batch(run_flow,use_clean,noisy,clean,sigma):
+    if run_flow is True and with_cv is True:
+        if use_clean: vid = noisy
+        else: vid = clean
+        B = vid.shape[0]
+        flows = edict()
+        flows.fflow,flows.bflow = [],[]
+        for b in range(B):
+            flows_b = run(vid[b],0.)
+            flows.fflow.append(flows_b.fflow)
+            flows.bflow.append(flows_b.bflow)
+        flows.fflow = th.stack(flows.fflow)
+        flows.bflow = th.stack(flows.bflow)
+        return flows
+    else:
+        if th.is_tensor(noisy): device = noisy.device
+        else: device = None
+        flows = init_flows_batch(noisy.shape,device)
+        return flows
+
+
 def get_flow(run_flow,use_clean,noisy,clean,sigma):
     if run_flow is True and with_cv is True:
         if use_clean:
@@ -33,6 +54,17 @@ def get_flow(run_flow,use_clean,noisy,clean,sigma):
         else: device = None
         flows = init_flows(noisy.shape,device)
         return flows
+
+def init_flows_batch(vshape,device):
+    b,t,c,h,w = vshape
+    flows = edict()
+    flows.fflow = np.zeros((b,t,2,h,w),dtype=np.float32)
+    flows.bflow = np.zeros((b,t,2,h,w),dtype=np.float32)
+    if not(device is None):
+        flows.fflow = th.from_numpy(flows.fflow).to(device)
+        flows.bflow = th.from_numpy(flows.bflow).to(device)
+    return flows
+
 
 def init_flows(vshape,device):
     t,c,h,w = vshape

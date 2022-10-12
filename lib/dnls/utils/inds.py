@@ -153,11 +153,11 @@ def get_3d_inds(inds,stride,t,h,w):
     inds_mod = tmod(inds,qSearchTotal_t)
     for ti in range(t):
         args = th.where(ti == aug_inds[0])
-        print(ti,len(args[0]))
+        # print(ti,len(args[0]))
         # print("[0]: ",inds[args][0])
         # print("[a]: ",inds_mod[args][0])
         inds_mod[args] -= delta[ti]
-        print("[b]: ",inds_mod[args])
+        # print("[b]: ",inds_mod[args])
         # print("[c]: ",inds_mod[args][0]*stride)
     exit(0)
 

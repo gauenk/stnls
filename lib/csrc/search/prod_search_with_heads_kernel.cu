@@ -40,12 +40,12 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 
 template <typename scalar_t>
 __global__ void prod_search_with_heads_forward_kernel(
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> fflow,
-    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> bflow,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
-    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
+    torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
     int qstart, int nqueries, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
@@ -58,12 +58,13 @@ __global__ void prod_search_with_heads_forward_kernel(
     int ws_h_iters, int ws_w_iters, int bpt){
 
   // shapes
-  int nheads,nframes,color,h,w,height,width;
-  nheads = vid0.size(0);
-  nframes = vid0.size(1);
-  color = vid0.size(2);
-  h = vid0.size(3);
-  w = vid0.size(4);
+  int bsize,nheads,nframes,color,h,w,height,width;
+  bsize = vid0.size(0);
+  nheads = vid0.size(1);
+  nframes = vid0.size(2);
+  color = vid0.size(3);
+  h = vid0.size(4);
+  w = vid0.size(5);
   height = h;
   width = w;
   int n_hw0 = n_h0 * n_w0;
@@ -81,8 +82,9 @@ __global__ void prod_search_with_heads_forward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // cuda index
-  int blkDimX = blockDim.x; // num threads in x-block
-  int blkDimY = blockDim.y; // num threads in y-block
+  int bindex = blockDim.x;
+  int blkDimX = blockDim.y; // num threads in x-block
+  int blkDimY = blockDim.z; // num threads in y-block
   int cu_tidX = threadIdx.x;
   int cu_tidY = threadIdx.y;
   int block_start = blockIdx.x*bpt;
@@ -209,11 +211,11 @@ __global__ void prod_search_with_heads_forward_kernel(
 
             // -- access flows --
             if (direction > 0 ){
-              cw_f = cw0 + fflow[l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + fflow[l_ct0][1][l_ch0][l_cw0];
+              cw_f = cw0 + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
+              ch_f = ch0 + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
             }else{
-              cw_f = cw0 + bflow[l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + bflow[l_ct0][1][l_ch0][l_cw0];
+              cw_f = cw0 + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
+              ch_f = ch0 + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
             }
             cw_i = int(cw_f + 0.5);
             ch_i = int(ch_f + 0.5);
@@ -306,8 +308,8 @@ __global__ void prod_search_with_heads_forward_kernel(
                 for (int ci = 0; ci < chnls; ci++){
 
                   // -- get data --
-                  v_pix = vvalid ? vid0[head][vT][ci][vH][vW] : (scalar_t)0.;
-                  n_pix = nvalid ? vid1[head][nT][ci][nH][nW] : (scalar_t)0.;
+                  v_pix = vvalid ? vid0[bindex][head][vT][ci][vH][vW] : (scalar_t)0.;
+                  n_pix = nvalid ? vid1[bindex][head][nT][ci][nH][nW] : (scalar_t)0.;
 
                   // -- compute dist --
                   dist += v_pix * n_pix;
@@ -320,12 +322,12 @@ __global__ void prod_search_with_heads_forward_kernel(
 
           // -- dists --
           if (!valid){ dist = nan; }
-          dists[head][bidx][wt_k][ws_i][ws_j] = dist;
+          dists[bindex][head][bidx][wt_k][ws_i][ws_j] = dist;
 
           // -- inds --
-          inds[head][bidx][wt_k][ws_i][ws_j][0] = n_ti;
-          inds[head][bidx][wt_k][ws_i][ws_j][1] = n_hi;
-          inds[head][bidx][wt_k][ws_i][ws_j][2] = n_wi;
+          inds[bindex][head][bidx][wt_k][ws_i][ws_j][0] = n_ti;
+          inds[bindex][head][bidx][wt_k][ws_i][ws_j][1] = n_hi;
+          inds[bindex][head][bidx][wt_k][ws_i][ws_j][2] = n_wi;
 
           // -- final check [put self@index 0] --
           if (anchor_self){
@@ -334,7 +336,7 @@ __global__ void prod_search_with_heads_forward_kernel(
             eq_wi = n_wi == wi;
             eq_dim = eq_ti && eq_hi && eq_wi;
             if (eq_dim){
-              dists[head][bidx][wt_k][ws_i][ws_j] = inf;
+              dists[bindex][head][bidx][wt_k][ws_i][ws_j] = inf;
             }
           }
           
@@ -372,12 +374,13 @@ void prod_search_with_heads_forward_cuda(
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
 
+   int bsize = vid0.size(0);
    int rem_blocks = (65535-1)/nheads+1;
    int bpt = 2;
    int nquery_blocks = ((nqueries - 1) / bpt) + 1;
    nquery_blocks = min(nquery_blocks,rem_blocks);
    bpt = ((nqueries - 1) / nquery_blocks) + 1;
-   dim3 nblocks(nquery_blocks,nheads);
+   dim3 nblocks(bsize,nquery_blocks,nheads);
 
    // fprintf(stdout,"bpt,nquery_blocks,w_threads: %d,%d,%d,%d\n",
    //         bpt,nquery_blocks,ws_h_threads,ws_w_threads);
@@ -389,12 +392,12 @@ void prod_search_with_heads_forward_cuda(
    AT_DISPATCH_FLOATING_TYPES(vid0.type(),
                               "prod_seach_with_heads_forward_kernel", ([&] {
       prod_search_with_heads_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        fflow.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        bflow.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+        vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
         qstart, nqueries, stride0, n_h0, n_w0,
         h0_off, w0_off, h1_off, w1_off,
         ps, pt, ws_h, ws_w, wt, chnls, dilation, stride1,
@@ -415,12 +418,12 @@ void prod_search_with_heads_forward_cuda(
 
 template <typename scalar_t>
 __global__ void prod_search_with_heads_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid0,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> grad_dists,
-    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid0,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid1,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
+    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_dists,
+    const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
@@ -428,12 +431,14 @@ __global__ void prod_search_with_heads_backward_kernel(
     int bpt, int npt, int cpt) {
 
   // -- shape --
-  int nq = grad_dists.size(1);
-  int k =  grad_dists.size(2);
-  int nframes = vid0.size(1);
-  int colors = vid0.size(2);
-  int height = vid0.size(3);
-  int width = vid0.size(4);
+  int bs = grad_dists.size(0);
+  int nq = grad_dists.size(2);
+  int k =  grad_dists.size(3);
+  // int bs = vid0.size(0);
+  int nframes = vid0.size(2);
+  int colors = vid0.size(3);
+  int height = vid0.size(4);
+  int width = vid0.size(5);
   int n_hw0 = n_h0 * n_w0;
 
   // -- fwd decl registers --
@@ -452,14 +457,15 @@ __global__ void prod_search_with_heads_backward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // -- limits --
-  int i0_max = inds.size(1);
-  int i1_max = inds.size(2);
+  int i0_max = inds.size(2); // nq
+  int i1_max = inds.size(3); // k
 
   // -- get indices --
-  int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.x);
+  int bindex = blockIdx.x;
+  int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.y);
   int i1_start = threadIdx.y * npt;
   int c0_start = threadIdx.z * cpt;
-  int head = blockIdx.y;
+  int head = blockIdx.z;
 
   // -- get block limits --
   int i0_end = min(i0_start + bpt,i0_max);
@@ -487,10 +493,10 @@ __global__ void prod_search_with_heads_backward_kernel(
 
     // k neighbors
     for (int i1=i1_start; i1 < i1_end; i1++){
-      ti = inds[head][i0][i1][0];
-      hi = inds[head][i0][i1][1];
-      wi = inds[head][i0][i1][2];
-      weight = grad_dists[head][i0][i1];
+      ti = inds[bindex][head][i0][i1][0];
+      hi = inds[bindex][head][i0][i1][1];
+      wi = inds[bindex][head][i0][i1][2];
+      weight = grad_dists[bindex][head][i0][i1];
 
       for (int pk = 0; pk < pt; pk++){
         for (int pi = 0; pi < ps; pi++){
@@ -520,16 +526,15 @@ __global__ void prod_search_with_heads_backward_kernel(
             valid_wk = (wk >= 0) && (wk < width);
             valid_k = valid_hk && valid_wk;
 
-
             // __syncthreads();
             valid = valid_j && valid_k;
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
               if(valid){
-                pix0 = weight*vid0[head][tk][c0][hk][wk];
-                pix1 = weight*vid1[head][tj][c0][hj][wj];
-                grad_vid1[head][tj][c0][hj][wj] += pix0;
-                grad_vid0[head][tk][c0][hk][wk] += pix1;
+                pix0 = weight*vid0[bindex][head][tk][c0][hk][wk];
+                pix1 = weight*vid1[bindex][head][tj][c0][hj][wj];
+                grad_vid1[bindex][head][tj][c0][hj][wj] += pix0;
+                grad_vid0[bindex][head][tk][c0][hk][wk] += pix1;
               }
             }
           }
@@ -550,12 +555,13 @@ void prod_search_with_heads_backward_cuda(
     bool exact) {
 
   // -- unpack --
-  int nframes = vid0.size(1);
-  int colors = vid0.size(2);
-  int height = vid0.size(3);
-  int width = vid0.size(4);
-  int nqueries = inds.size(1);
-  int k = inds.size(2);
+  int bsize = vid0.size(0);
+  int nframes = vid0.size(2);
+  int colors = vid0.size(3);
+  int height = vid0.size(4);
+  int width = vid0.size(5);
+  int nqueries = inds.size(2);
+  int k = inds.size(3);
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
@@ -585,7 +591,7 @@ void prod_search_with_heads_backward_cuda(
     query_nthreads = 1;
     nquery_blocks = 1;
   }
-  dim3 nblocks(nquery_blocks,nheads);
+  dim3 nblocks(bsize,nquery_blocks,nheads);
 
   // -- launch params --
   dim3 nthreads(query_nthreads, neigh_nthreads, color_nthreads);
@@ -617,12 +623,12 @@ void prod_search_with_heads_backward_cuda(
   AT_DISPATCH_FLOATING_TYPES(vid0.type(),
                              "prod_seach_with_heads_backward_kernel", ([&] {
     prod_search_with_heads_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        grad_vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        grad_vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        grad_dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
+        grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0, h0_off, w0_off, h1_off, w1_off,
         ps, pt, dilation, use_adj, reflect_bounds, bpt, npt, cpt);

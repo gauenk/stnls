@@ -50,9 +50,21 @@ def get_topk_prod(l2_vals,l2_inds,vals,inds):
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(l2_inds[:,:,i],1,order[:,:k])
 
+def get_topk_prod_b(l2_vals,l2_inds,vals,inds):
+
+    # -- view --
+    B,Q = l2_vals.shape[:2]
+    l2_vals = l2_vals.view(B*Q,-1)
+    l2_inds = l2_inds.view(B*Q,-1,3)
+    vals = vals.view(B*Q,-1)
+    inds = inds.view(B*Q,-1,3)
+
+    # -- topk fill --
+    get_topk_prod(l2_vals,l2_inds,vals,inds)
+
 def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
-    nq,k = dists.shape
-    mask = th.zeros((nq,k),device=dists.device,dtype=th.bool)
+    b,nq,k = dists.shape
+    mask = th.zeros((b,nq,k),device=dists.device,dtype=th.bool)
     dnls_cuda.remove_self_from_search(inds,mask,qstart,stride,n_h,n_w)
     mask = th.logical_not(mask)
     # print(dists.shape)
@@ -63,9 +75,9 @@ def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
     # print(th.all(mask.sum(1)==1))
     rm_dists = th.masked_select(dists,mask)
     # print(rm_dists.shape)
-    rm_dists = th.masked_select(dists,mask).view(nq,k-1)
-    mask = repeat(mask,'a b -> a b c',c=3)
-    rm_inds = th.masked_select(inds,mask).view(nq,k-1,3)
+    rm_dists = th.masked_select(dists,mask).view(b,nq,k-1)
+    mask = repeat(mask,'a b c -> a b c d',d=3)
+    rm_inds = th.masked_select(inds,mask).view(b,nq,k-1,3)
 
     return rm_dists,rm_inds
 
@@ -121,6 +133,11 @@ def allocate_exh(nq,wt,ws_h,ws_w,device,dtype=th.float32):
     dists[...] = float("inf")
     inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
     inds[...] = -1
+    return dists,inds
+
+def allocate_rtn_b(b,nq,k,device,dtype=th.float32):
+    dists = th.zeros((b,nq,k),device=device,dtype=dtype)
+    inds = th.zeros((b,nq,k,3),device=device,dtype=th.int32)
     return dists,inds
 
 def allocate_rtn(nq,k,device,dtype=th.float32):

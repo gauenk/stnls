@@ -16,6 +16,19 @@ from ...utils.pads import same_padding,comp_pads
 # -- fold/unfold
 from torch.nn.functional import fold,unfold,pad,softmax,log_softmax
 
+def run_nn_batch(vid,ps,stride=4,dilation=1,mode="reflect",
+                 vid1=None,vid2=None,stride1=1):
+    B = vid.shape[0]
+    scores = []
+    for b in range(B):
+        vid1_b = None if vid1 is None else vid1[b]
+        vid2_b = None if vid2 is None else vid2[b]
+        scores_b = run_nn(vid,ps,stride,dilation,mode,
+                          vid1=vid1_b,vid2=vid2_b,stride1=stride1)
+        scores.append(scores_b)
+    scores = th.stack(scores)
+    return scores
+
 def run_nn(vid,ps,stride=4,dilation=1,mode="reflect",vid1=None,vid2=None,stride1=1):
     if vid1 is None: vid1 = vid
     if vid2 is None: vid2 = vid

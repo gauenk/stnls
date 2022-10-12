@@ -11,6 +11,15 @@ from pathlib import Path
 
 MAX_FRAMES = 85
 
+def load_burst_batch(root,names,nframes=-1,ext="png"):
+    vids = []
+    for name in names:
+        vid = load_burst(root,name,nframes,ext)
+        vid = th.from_numpy(vid)
+        vids.append(vid)
+    vids = th.stack(vids)
+    return vids
+
 def load_burst(root,name,nframes=-1,ext="png"):
 
     # -- init path --

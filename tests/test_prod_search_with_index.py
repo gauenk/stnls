@@ -5,6 +5,7 @@ from pathlib import Path
 
 # -- testing --
 import pytest
+import random
 
 # -- linalg --
 import torch as th
@@ -20,6 +21,11 @@ from dnls.utils.inds import get_batching_info
 # -- paths --
 SAVE_DIR = Path("./output/tests/prod_search")
 
+def set_seed(seed):
+    th.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
 def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
@@ -34,7 +40,7 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
                   "ws":[-1],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
-                  "exact":[True]}
+                  "exact":[True],"seed":[123]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
@@ -54,7 +60,8 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     k,pt = 1,1
     wt = 0
     ws = -1
@@ -71,8 +78,8 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -85,25 +92,19 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     vid /= vid.max()
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
     chnls = vid.shape[1]
 
-    # -- sub square --
-    top,btm,left,right = 0,h,0,w
-    coords = [top,left,btm,right]
-    # sq_h = coords[2] - coords[0]
-    # sq_w = coords[3] - coords[1]
-
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
-    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
+    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
     n_h0,n_w0 = n0[0],n0[1]
     n_h1,n_w1 = n1[0],n1[1]
 
@@ -115,8 +116,6 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
 
     # -- exec fold fxns --
     use_adj = True
-    # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
-    # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
     search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               chnls=-1,dilation=dil,
@@ -144,13 +143,22 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     score_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
 
     # -- flip cu --
-    # print(score_te.shape)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
+    # print(score_te.shape) # == B,Q,K
+    # score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
 
     # -- run search --
+    B = vid.shape[0]
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid,ps,stride=stride0,mode=mode,
-                                                   dilation=dil,vid1=vidr)
+    score_gt = []
+    for b in range(B):
+        score_gt_b,_ = dnls.simple.prod_search_nn.run_nn(vid[b],ps,stride=stride0,
+                                                         mode=mode,dilation=dil,
+                                                         vid1=vidr[b])
+        score_gt.append(score_gt_b)
+    score_gt = th.stack(score_gt)
+    score_gt = rearrange(score_gt,'b h w sh sw -> b (sh sw) (h w)')
+
+    # -- viz --
     # print(score_gt.shape)
     # print(score_te.shape)
 
@@ -203,7 +211,8 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
 
     # -- get args --
     dil,pt = dilation,1
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     wt = 0
     ws = -1
     k = -1
@@ -219,14 +228,14 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[[4],].contiguous()/255.
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,[4],].contiguous()/255.
     vid = vid + 25./255. * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    vid = th.cat([vid,vid],1)
-    vid = th.cat([vid,vid],1)
+    # vid = th.cat([vid,vid],-3)
+    # vid = th.cat([vid,vid],-3)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
@@ -234,24 +243,18 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
     chnls = vid.shape[1]
 
-    # -- sub square --
-    top,btm,left,right = 0,h,0,w
-    coords = [top,left,btm,right]
-    # sq_h = coords[2] - coords[0]
-    # sq_w = coords[3] - coords[1]
-
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
     n_h0 = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w0 = (wp - (ps-1)*dil - 1)//stride0 + 1
 
@@ -262,17 +265,19 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- swap --
-    oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,_,_ = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
+    use_adj = False
 
     # -- exec fold fxns --
     search = dnls.search.init("prod_with_index",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,
-                              chnls=chnls,dilation=dil,
+                              chnls=-1,dilation=dil,
                               stride0=stride0,stride1=stride1,
                               reflect_bounds=reflect_bounds,use_k=False,
-                              exact=exact,search_abs=True)
+                              exact=exact,search_abs=True,
+                              use_adj = True)
 
     # -- binary image to remove float error --
     # vidr = None
@@ -315,13 +320,24 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # -- run cu --
     qindex = 0
     score_te,inds_te = search(vid_te,qindex,nbatch,vid1=vidr_te)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
+    # score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,
-                                                   dilation=dil,vid1=vidr_gt,
-                                                   mode=mode)
+    B = vid_gt.shape[0]
+    score_gt = []
+    for b in range(B):
+        score_gt_b,_ = dnls.simple.prod_search_nn.run_nn(vid_gt[b],ps,stride=stride0,
+                                                         dilation=dil,vid1=vidr_gt[b],
+                                                         mode=mode)
+        score_gt.append(score_gt_b)
+    score_gt = th.stack(score_gt)
+    score_gt = rearrange(score_gt,'b h w sh sw -> b (sh sw) (h w)')
+    # print("score_gt.shape: ",score_gt.shape)
+
+    # print(score_gt[0][:3,:3])
+    # print(score_te[0][:3,:3])
+
     # -- vis --
     # diff = th.abs(score_te - score_gt)
     # args = th.where(diff>1e-10)
@@ -376,7 +392,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
         # print("Mean Error: ",error)
         assert error < tol
 
-def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
+def test_cu_vs_th_params_bwd(ps,stride,dilation,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -388,12 +404,14 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
 
     # -- get args --
     dil,pt = dilation,1
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     wt = 0
     ws = -1
     k = -1
     stride0 = stride
     stride1 = 1
+    set_seed(seed)
 
     # -- init vars --
     device = "cuda:0"
@@ -404,14 +422,14 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[[4],].contiguous()/255.
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,[4],].contiguous()/255.
     vid = vid + 25./255. * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
-    vid = th.cat([vid,vid],1)
-    vid = th.cat([vid,vid],1)
+    vid = th.cat([vid,vid],-3)
+    vid = th.cat([vid,vid],-3)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-1)
     # vid = th.cat([vid,vid],-2)
@@ -419,23 +437,17 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
 
-    # -- sub square --
-    top,btm,left,right = 0,h,0,w
-    coords = [top,left,btm,right]
-    # sq_h = coords[2] - coords[0]
-    # sq_w = coords[3] - coords[1]
-
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
     n_h0 = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w0 = (wp - (ps-1)*dil - 1)//stride0 + 1
 
@@ -446,8 +458,8 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- swap --
-    oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,_,_ = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
 
     # -- exec fold fxns --
     use_adj = True
@@ -504,7 +516,9 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
         return params0,params1
 
     def get_xformed(vid,params):
+        B,T = vid.shape[:2]
         xformed = []
+        vid = rearrange(vid,'b t c h w -> (b t) c h w')
         for param in params:
             param.requires_grad_(True)
             param = param.to(vid.device)
@@ -512,12 +526,13 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
             # _xform = _xform.abs()
             _xform = _xform.clip(-1.,1.)
             # _xform = th.round(_xform,decimals=2).type(th.float)
+            _xform = rearrange(_xform,'(b t) c h w -> b t c h w',b=B)
             xformed.append(_xform)
         # xformed = [vid,vid]
         return xformed
 
     # -- allow grads --
-    ichnls,ochnls = vid.shape[1],16
+    ichnls,ochnls = vid.shape[2],16
     params_te,params_gt = create_weights_pair(ichnls,ochnls)
     vid0_te,vid1_te = get_xformed(vid.clone(),params_te)
     vid0_gt,vid1_gt = get_xformed(vid.clone(),params_gt)
@@ -537,16 +552,20 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # -- run cu --
     qindex = 0
     score_te,inds_te = search(vid0_te,qindex,nbatch,vid1=vid1_te)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
+    # score_te = rearrange(score_te,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=h)
+    # score_te = rearrange(score_te,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=h)
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid0_gt,ps,stride=stride0,
-                                                   dilation=dil,vid1=vid1_gt,mode=mode)
+    score_gt = dnls.simple.prod_search_nn.run_nn_batch(vid0_gt,ps,stride=stride0,
+                                                         dilation=dil,
+                                                         vid1=vid1_gt,mode=mode)
+    score_gt = score_gt.view(b,h*w,-1).transpose(1,2)
+
     # -- vis --
-    diff = th.abs(score_te - score_gt)/(score_gt.abs()+1e-10)
-    args = th.where(diff>1e-10)
-    save_burst = dnls.testing.data.save_burst
+    # diff = th.abs(score_te - score_gt)/(score_gt.abs()+1e-10)
+    # args = th.where(diff>1e-10)
+    # save_burst = dnls.testing.data.save_burst
     # for i in range(len(args)):
     #     print(i,th.unique(args[i]))
     # if diff.max() > 1e-10: diff /= diff.max()
@@ -608,7 +627,8 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     chnls,pt,wt = 3,1,0
     ws = -1 if k == -1 else 10
     search_abs = k == -1
@@ -624,40 +644,34 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
     adj = 0
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:2,].contiguous()/255.
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:2,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.fflow)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
-
-    # -- sub square --
-    top,left,btm,right=0,0,h,w
-    coords = [top,left,btm,right]
-    sq_h = coords[2] - coords[0]
-    sq_w = coords[3] - coords[1]
 
     # -- batching info --
     stride0 = stride
     stride1 = 1
     npix = t * h * w
-    nh = (sq_h-1)//stride0+1
-    nw = (sq_w-1)//stride0+1
+    nh = (h-1)//stride0+1
+    nw = (w-1)//stride0+1
     ntotal = t * nh * nw
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- pads --
-    oh0,ow0,_,_ = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,_,_ = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,hp,wp = comp_pads(vid[0].shape, ps, stride1, dil)
 
     # -- exec fold fxns --
     search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow, k, ps, pt,
@@ -666,11 +680,12 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                               stride0=stride0, stride1=stride1,
                               use_k=use_k,search_abs=search_abs,
                               reflect_bounds=True,exact=True,use_adj=use_adj)
-    fold_nl = dnls.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
+    fold_nl = dnls.iFold(vshape,None,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"start-exec")
 
     # -- query inds
+    coords = [0,t,0,0,h,w]
     qindex = 0
     iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
@@ -708,7 +723,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     k,pt = 1,1
     ws,wt = 10,0
     ws = -1
@@ -724,22 +740,16 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid)[:1].to(device).contiguous()
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid[:,:1].to(device).contiguous()
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
-
-    # -- sub square --
-    top,left,btm,right=0,0,h,w
-    coords = [top,left,btm,right]
-    sq_h = coords[2] - coords[0]
-    sq_w = coords[3] - coords[1]
 
     # -- allow grads --
     vid_te = vid.clone()
@@ -755,15 +765,15 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     stride0 = stride
     stride1 = 1
     npix = t * h * w
-    nh = (sq_h-1)//stride0+1
-    nw = (sq_w-1)//stride0+1
+    nh = (h-1)//stride0+1
+    nw = (w-1)//stride0+1
     ntotal = t * nh * nw
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
 
     # -- exec fold fxns --
     search = dnls.search.init("prod_with_index",
@@ -782,19 +792,16 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
         qindex = min(nbatch * index,npix)
         nbatch_i =  min(nbatch, ntotal - qindex)
 
-        # -- get query inds --
-        iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch_i,stride,
-                                                    coords,t,device)
-
         # -- run prod_search --
         score_te_i,inds_te = search(vid_te,qindex,nbatch_i,vid1=vidr_te)
         score_te.append(score_te_i)
 
     # -- forward reference --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,mode=mode,
-                                               dilation=dil,vid1=vidr_gt)
-    score_gt = score_gt.view(h*w,-1).T
+    score_gt = dnls.simple.prod_search_nn.run_nn_batch(vid_gt,ps,
+                                                       stride=stride0,mode=mode,
+                                                       dilation=dil,vid1=vidr_gt)
+    score_gt = score_gt.view(b,h*w,-1).transpose(2,1)
 
     # -- compare forward --
     score_te_cat = th.cat(score_te,0)
@@ -824,7 +831,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     del vid_te,vidr_te
     del vid_gt,vidr_gt
     del grad_gt,grad_te
-    del iqueries,score_te,score_te_cat,score_gt
+    del score_te,score_te_cat,score_gt
     th.cuda.empty_cache()
     th.cuda.synchronize()
 

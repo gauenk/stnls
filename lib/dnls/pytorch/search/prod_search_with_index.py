@@ -13,17 +13,16 @@ import dnls_cuda
 # -- local --
 from .search_utils import *
 
+# def allocate_vid(vid_shape,device):
+#     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
+#     return vid
 
-def allocate_vid(vid_shape,device):
-    vid = th.zeros(vid_shape,device=device,dtype=th.float32)
-    return vid
-
-def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
-    if wt <= 0:
-        bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
-    else:
-        bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
-    return bufs
+# def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
+#     if wt <= 0:
+#         bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
+#     else:
+#         bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
+#     return bufs
 
 # def allocate_exh(nq,ws_h,ws_w,wt,device):
 #     dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
@@ -32,45 +31,45 @@ def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
 #     inds[...] = -1
 #     return dists,inds
 
-def allocate_rtn(nq,k,device):
-    dists = th.zeros((nq,k),device=device,dtype=th.float32)
-    inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
-    return dists,inds
+# def allocate_rtn(nq,k,device):
+#     dists = th.zeros((nq,k),device=device,dtype=th.float32)
+#     inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
+#     return dists,inds
 
-def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
-    tranges,n_tranges,min_tranges = [],[],[]
-    for t_c in range(nframes-ps_t+1):
+# def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
+#     tranges,n_tranges,min_tranges = [],[],[]
+#     for t_c in range(nframes-ps_t+1):
 
-        # -- limits --
-        shift_t = min(0,t_c - nWt_b) + max(0,t_c + nWt_f - nframes + ps_t)
-        t_start = max(t_c - nWt_b - shift_t,0)
-        t_end = min(nframes - ps_t, t_c + nWt_f - shift_t)+1
+#         # -- limits --
+#         shift_t = min(0,t_c - nWt_b) + max(0,t_c + nWt_f - nframes + ps_t)
+#         t_start = max(t_c - nWt_b - shift_t,0)
+#         t_end = min(nframes - ps_t, t_c + nWt_f - shift_t)+1
 
-        # -- final range --
-        trange = [t_c]
-        trange_s = np.arange(t_c+1,t_end)
-        trange_e = np.arange(t_start,t_c)[::-1]
-        for t_i in range(trange_s.shape[0]):
-            trange.append(trange_s[t_i])
-        for t_i in range(trange_e.shape[0]):
-            trange.append(trange_e[t_i])
+#         # -- final range --
+#         trange = [t_c]
+#         trange_s = np.arange(t_c+1,t_end)
+#         trange_e = np.arange(t_start,t_c)[::-1]
+#         for t_i in range(trange_s.shape[0]):
+#             trange.append(trange_s[t_i])
+#         for t_i in range(trange_e.shape[0]):
+#             trange.append(trange_e[t_i])
 
-        # -- aug vars --
-        n_tranges.append(len(trange))
-        min_tranges.append(np.min(trange))
+#         # -- aug vars --
+#         n_tranges.append(len(trange))
+#         min_tranges.append(np.min(trange))
 
-        # -- add padding --
-        for pad in range(nframes-len(trange)):
-            trange.append(-1)
+#         # -- add padding --
+#         for pad in range(nframes-len(trange)):
+#             trange.append(-1)
 
-        # -- to tensor --
-        trange = th.IntTensor(trange).to(device)
-        tranges.append(trange)
+#         # -- to tensor --
+#         trange = th.IntTensor(trange).to(device)
+#         tranges.append(trange)
 
-    tranges = th.stack(tranges).to(device).type(th.int32)
-    n_tranges = th.IntTensor(n_tranges).to(device).type(th.int32)
-    min_tranges = th.IntTensor(min_tranges).to(device).type(th.int32)
-    return tranges,n_tranges,min_tranges
+#     tranges = th.stack(tranges).to(device).type(th.int32)
+#     n_tranges = th.IntTensor(n_tranges).to(device).type(th.int32)
+#     min_tranges = th.IntTensor(min_tranges).to(device).type(th.int32)
+#     return tranges,n_tranges,min_tranges
 
 class ProductSearchFunction_with_index(th.autograd.Function):
 
@@ -88,10 +87,11 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         """
 
         # -- unpack --
+        dtype = vid0.dtype
         device = vid0.device
         nq = nqueries
-        t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
+        bsize,t,c,h,w = vid0.shape
+        n_h0,n_w0 = get_num_img(vid0[0].shape,stride0,ps,dilation)
         # print("k, ps, pt, ws_h, ws_w, wt: ",k, ps, pt, ws_h, ws_w, wt)
         # print("chnls, stride0, stride1, dilation,lam: ",
         #       chnls, stride0, stride1, dilation,lam)
@@ -103,7 +103,11 @@ class ProductSearchFunction_with_index(th.autograd.Function):
 
         # -- allocs --
         # bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
-        dists_exh,inds_exh = allocate_exh_prod(nq,wt,ws_h,ws_w,device)
+        B,Q = bsize,nqueries
+        BQ = B*Q
+        dists_exh,inds_exh = allocate_exh_prod(BQ,wt,ws_h,ws_w,device,dtype)
+        dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
+        inds_exh = inds_exh.view(B,Q,-1,ws_h,ws_w,3)
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -120,9 +124,9 @@ class ProductSearchFunction_with_index(th.autograd.Function):
 
         th.cuda.synchronize()
         # -- shape for output --
-        b = dists_exh.shape[0]
-        dists_exh=dists_exh.view(b,-1)#.contiguous()
-        inds_exh=inds_exh.view(b,-1,3)#.contiguous()
+        # b = dists_exh.shape[0]
+        dists_exh=dists_exh.view(B,Q,-1)#.contiguous()
+        inds_exh=inds_exh.view(B,Q,-1,3)#.contiguous()
 
         # -- remove self --
         if remove_self:
@@ -131,16 +135,28 @@ class ProductSearchFunction_with_index(th.autograd.Function):
 
         # -- top k --
         if use_k:
-            dists,inds = allocate_rtn(nq,k,device)
+            dists,inds = allocate_rtn(B*Q,k,device,dtype)
+            dists_exh = dists_exh.view(B*Q,-1)#.contiguous()
+            inds_exh = inds_exh.view(B*Q,-1,3)#.contiguous()
             get_topk_prod(dists_exh,inds_exh,dists,inds)
-            dists = dists.contiguous()
-            inds = inds.contiguous()
         else:
-            args = th.where(th.isnan(dists_exh))
-            dists_exh[args] = -th.inf # fix nan
-            b = dists_exh.shape[0]
-            dists=dists_exh.view(b,-1)#.contiguous()
-            inds=inds_exh.view(b,-1,3)#.contiguous()
+            # args = th.where(th.isnan(dists_exh))
+            # dists_exh[args] = -th.inf # fix nan
+            # b = dists_exh.shape[0]
+            dists = dists_exh.view(B,Q,-1)#.contiguous()
+            inds = inds_exh.view(B,Q,-1,3)#.contiguous()
+
+        # -- fill nans --
+        args = th.where(th.isnan(dists))
+        dists[args] = -th.inf # fix nan
+
+        # -- shape with heads -
+        dists = dists.view(B,Q,-1)
+        inds = inds.view(B,Q,-1,3)
+
+        # -- contiguous --
+        # dists = dists.contiguous()
+        # inds = inds.contiguous()
 
         # -- for backward --
         ctx.save_for_backward(dists,inds,vid0,vid1)
@@ -180,11 +196,14 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         ow1 = ctx.ow1
         use_adj = ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
-        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dil)
+        n_h0,n_w0 = get_num_img(vid0[0].shape,stride0,ps,dil)
 
         # -- gradient --
         vid0_grad = allocate_vid(vid_shape,grad_dists.device)
         vid1_grad = allocate_vid(vid_shape,grad_dists.device)
+
+        # -- contiguous --
+        grad_dists = grad_dists.contiguous()
 
         # -- allow for repeated exec --
         if nbwd == 1:
@@ -251,10 +270,10 @@ class ProductSearch_with_index(th.nn.Module):
     def _get_args(self,vshape):
         # -- unpack --
         ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
-        t,c,h,w = vshape
+        b,t,c,h,w = vshape
 
         # -- compute --
-        n_h,n_w = get_num_img(vshape,self.stride1,self.ps,self.dilation)
+        n_h,n_w = get_num_img(vshape[1:],self.stride1,self.ps,self.dilation)
         ws_h,ws_w = ws,ws
         if ws == -1:
             ws_h = n_h
@@ -264,11 +283,11 @@ class ProductSearch_with_index(th.nn.Module):
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):
-        t,c,h,w = vshape
-        zflow = th.zeros((t,2,h,w),device=device)
+        b,t,c,h,w = vshape
+        zflow = th.zeros((b,t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
-        for i in [0,2,3]:
+        for i in [0,1,3,4]:
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 

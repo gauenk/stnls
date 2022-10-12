@@ -70,11 +70,13 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_k = k > 0
     use_adj = False
     adj = 0
+    B = 2
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:5,].contiguous()
     vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:32].contiguous()
+    vid = repeat(vid,'t c h w -> b t c h w',b=B) # batch size
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -86,12 +88,12 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
-    chnls = vid.shape[1]
+    chnls = vid.shape[2]
 
     # -- pads --
-    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
     n_h0,n_w0 = n0[0],n0[1]
     n_h1,n_w1 = n1[0],n1[1]
     h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0

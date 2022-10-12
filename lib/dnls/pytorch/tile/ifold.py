@@ -33,13 +33,13 @@ class ifold(th.autograd.Function):
         ctx.coords = coords
         ctx.qStart = qStart
         ctx.stride = stride
-        ctx.qNum = patches.shape[0]
         ctx.dilation = dilation
         ctx.adj = adj
         ctx.only_full = only_full
         ctx.use_reflect = use_reflect
-        ctx.pt = patches.shape[2]
-        ctx.ps = patches.shape[5]
+        ctx.qNum = patches.shape[1]
+        ctx.pt = patches.shape[3]
+        ctx.ps = patches.shape[6]
         return vid
 
     @staticmethod
@@ -58,9 +58,8 @@ class ifold(th.autograd.Function):
         top,left,btm,right = ctx.coords
 
         # -- alloc --
-        t,c,h,w  = grad_vid.shape
-        npix = t*h*w
-        colors = grad_vid.shape[1]
+        b,t,c,h,w  = grad_vid.shape
+        npix,colors = t*h*w,c
         device = grad_vid.device
         grad_patches = allocate_patches(qNum,1,ps,pt,colors,device)
 
@@ -87,7 +86,7 @@ class iFold(th.nn.Module):
         self.only_full = only_full
         self.use_reflect = use_reflect
         if self.coords is None:
-            t,c,h,w = vid_shape
+            b,t,c,h,w = vid_shape
             self.coords = [0,0,h,w]
 
     def allocate_vid(self,vid_shape,device):

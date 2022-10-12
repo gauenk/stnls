@@ -38,20 +38,21 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
 
 template <typename scalar_t>
 __global__ void dnls_ifold_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, 
     int start, int stride, int dilation, int adj,
     bool only_full, bool use_reflect, int num_kernels) {
 
     // -- unpack --
-    int nframes = vid.size(0);
-    int colors = vid.size(1);
-    int height = vid.size(2);
-    int width = vid.size(3);
-    int pt = patches.size(2);
-    int ps = patches.size(5);
-    int numQueries = patches.size(0);
+    int bsize = vid.size(0);
+    int nframes = vid.size(1);
+    int colors = vid.size(2);
+    int height = vid.size(3);
+    int width = vid.size(4);
+    int pt = patches.size(3);
+    int ps = patches.size(6);
+    int numQueries = patches.size(1);
     int psOffset = (ps-1)/2;
     int psHalf = ps/2;
     int hw = height*width;
@@ -72,6 +73,9 @@ __global__ void dnls_ifold_forward_kernel(
     int left_p = std::max(left-pad,0);
     int btm_p = std::min(btm+pad,height);
     int right_p = std::min(right+pad,width);
+
+    // -- get batch index --
+    int bindex = blockIdx.y;
   
     // coords
     int sq_hp = btm_p - top_p;
@@ -162,13 +166,13 @@ __global__ void dnls_ifold_forward_kernel(
               // -- accumulate --
               valid_q = valid && (qi >= 0) && (qi < numQueries);
               if (valid_q){
-                val += patches[qi][0][0][ci][h_ip][w_ip];
+                val += patches[bindex][qi][0][0][ci][h_ip][w_ip];
               }
 
             }
           } // for patch size
         } // for patch size
-        vid[t_im][ci][h_im][w_im] = val;
+        vid[bindex][t_im][ci][h_im][w_im] = val;
       } // for colors
     } // for each pixel (with stride)
 }
@@ -203,7 +207,8 @@ void dnls_cuda_ifold_forward(
   int nthreads = 512;
   // int num_kernels = nframes*sq_hw;
   int num_kernels = nframes*sq_hwp;
-  int nblocks = (num_kernels-1) / nthreads+1;
+  int nblocks_queries = (num_kernels-1) / nthreads+1;
+  dim3 nblocks(nblocks_queries,bsize);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifold_forward_kernel", ([&] {
@@ -222,20 +227,21 @@ void dnls_cuda_ifold_forward(
 
 template <typename scalar_t>
 __global__ void dnls_ifold_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid, // grad
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid, // grad
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, int start, int stride,
     int dilation, int adj, bool only_full, bool use_reflect, int qpt, int kpt) {
 
     // -- shapes --
-    int nframes = vid.size(0);
-    int colors = vid.size(1);
-    int height = vid.size(2);
-    int width = vid.size(3);
-    int nq = patches.size(0);
-    int k = patches.size(1);
-    int pt = patches.size(2);
-    int ps = patches.size(4);
+    int bsize = vid.size(0);
+    int nframes = vid.size(1);
+    int colors = vid.size(2);
+    int height = vid.size(3);
+    int width = vid.size(4);
+    int nq = patches.size(1);
+    int k = patches.size(2);
+    int pt = patches.size(3);
+    int ps = patches.size(5);
     int psHalf = (int)ps/2;
     int psOffset = (int)(ps-1)/2; // convention to decided center
     int height_width = height*width;
@@ -249,6 +255,7 @@ __global__ void dnls_ifold_backward_kernel(
     // -- batching --
     int query_start_block = blockIdx.x*qpt;
     int k_start = threadIdx.x*kpt;
+    int bindex = blockIdx.y;
 
     // -- only fully contained patches count --
     int right_a = right - (ps-1)*dil;
@@ -339,11 +346,11 @@ __global__ void dnls_ifold_backward_kernel(
           // -- colors --
           for(int ci = 0; ci < colors; ci++){
             if (valid){
-              pix = vid[vi_t][ci][vi_h][vi_w];
+              pix = vid[bindex][vi_t][ci][vi_h][vi_w];
             }else{
               pix = 0.;
             }
-            patches[qi][ki][pk][ci][pi][pj] = pix;
+            patches[bindex][qi][ki][pk][ci][pi][pj] = pix;
           }
         }
       }
@@ -357,16 +364,23 @@ void dnls_cuda_ifold_backward(
   int start, int stride, int dilation, int adj,
   bool only_full, bool use_reflect) {
 
+  // patches.shape
+  // = [batch size, num queries, neighbors, patch_t, channels, patch_h, patch_w]
+
+  // -- unpack --
+  int bsize = patches.size(0);
+  int numQueries = patches.size(1);
+  int pt = patches.size(3);
+  int ps = patches.size(6);
+
   // -- kernel blocks --
-  int numQueries = patches.size(0);
   int k = 1;
   int qpt = 10;
-  int nblocks = (numQueries-1)/qpt+1;
-  int pt = patches.size(2);
+  int nblocks_queries = (numQueries-1)/qpt+1;
   assert(pt == 1);
+  dim3 nblocks(nblocks_queries,bsize);
 
   // -- kernel threads --
-  int ps = patches.size(5);
   int MAX_THREADS = 1024;
   int dim = ps*ps;
   int kpb = MAX_THREADS/dim; // num of "k" managed per block
@@ -376,8 +390,8 @@ void dnls_cuda_ifold_backward(
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifold_backward_kernel", ([&] {
     dnls_ifold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        grad_vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top, left, btm, right, start, stride, dilation, adj,
         only_full, use_reflect, qpt, kpt);
   }));

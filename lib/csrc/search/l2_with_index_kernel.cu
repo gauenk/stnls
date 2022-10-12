@@ -632,13 +632,14 @@ void l2_search_with_index_backward_cuda(
 ****************************/
 
 __global__ void remove_self_from_search_kernel(
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
-    torch::PackedTensorAccessor32<bool,2,torch::RestrictPtrTraits> mask,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<bool,3,torch::RestrictPtrTraits> mask,
     int qstart, int stride0, int n_h0, int n_w0, int qpb, int npt) {
 
   // -- shape --
-  int nq = inds.size(0);
-  int k =  inds.size(1);
+  int bsize = inds.size(0);
+  int nq = inds.size(1);
+  int k =  inds.size(2);
   int n_hw0 = n_h0 * n_w0;
 
   // -- fwd decl registers --
@@ -648,11 +649,12 @@ __global__ void remove_self_from_search_kernel(
   bool eq_ij;
 
   // -- boundary --
-  int i0_max = inds.size(0);
-  int i1_max = inds.size(1);
+  int i0_max = inds.size(1);
+  int i1_max = inds.size(2);
 
   // -- get indices --
-  int i0_start = qpb * blockIdx.x;
+  int bindex = blockIdx.x;
+  int i0_start = qpb * blockIdx.y;
   int i1_start = npt * threadIdx.x;
 
   // -- get block limits --
@@ -673,9 +675,9 @@ __global__ void remove_self_from_search_kernel(
     for (int i1=i1_start; i1 < i1_end; i1++){
 
       // -- neighbor index --
-      tj = inds[i0][i1][0];
-      hj = inds[i0][i1][1];
-      wj = inds[i0][i1][2];
+      tj = inds[bindex][i0][i1][0];
+      hj = inds[bindex][i0][i1][1];
+      wj = inds[bindex][i0][i1][2];
 
       // -- check valids --
       eq_ij = ti == tj;
@@ -683,7 +685,7 @@ __global__ void remove_self_from_search_kernel(
       eq_ij = eq_ij && (wi == wj);
       
       // -- assignment --
-      mask[i0][i1] = eq_ij;
+      mask[bindex][i0][i1] = eq_ij;
     }
   }
 
@@ -694,8 +696,9 @@ void remove_self_from_search_cuda(
     int qstart, int stride0, int n_h0, int n_w0) {
 
   // -- unpack --
-  int nqueries = inds.size(0);
-  int k = inds.size(1);
+  int bsize = inds.size(0);
+  int nqueries = inds.size(1);
+  int k = inds.size(2);
   int nneigh = k;
 
   // -- number of queries per cuda-block (qpb) --
@@ -703,6 +706,7 @@ void remove_self_from_search_cuda(
   int query_nblocks = (nqueries-1)/qpb+1;
   query_nblocks = min(nqueries,512);
   qpb = (nqueries-1)/query_nblocks + 1;
+  dim3 nblocks(bsize,query_nblocks);
 
   // -- compute number of neighbor per threads (npt) --
   int npt = 2;
@@ -712,9 +716,9 @@ void remove_self_from_search_cuda(
   // fprintf(stdout,"qpb,npt: %d,%d\n",qpb,npt);
 
   // -- launch kernel --
-  remove_self_from_search_kernel<<<query_nblocks, neigh_nthreads>>>(
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        mask.packed_accessor32<bool,2,torch::RestrictPtrTraits>(),
+  remove_self_from_search_kernel<<<nblocks, neigh_nthreads>>>(
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
+        mask.packed_accessor32<bool,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0, qpb, npt);
 }
 
