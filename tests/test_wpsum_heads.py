@@ -249,10 +249,10 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     use_unfold = k == -1
     t = 1 if use_unfold else 1
     adj = ps//2 if use_unfold else 0
-    exact = False
+    exact = True
 
     # -- load data --
-    h,w = 64,64
+    h,w = 32,32
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     vid = vid.to(device)[:,[0],:,:h,:w].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
@@ -363,8 +363,8 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     error = th.abs(wpatches_te - wpatches_gt).mean().item()
     if error > tol: print(error)
     assert error < tol
-
     th.cuda.synchronize()
+
     # -- backward passes --
     wpatches_grad = th.rand_like(wpatches_te)
     th.autograd.backward(wpatches_te,wpatches_grad)
@@ -373,12 +373,22 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     th.cuda.synchronize()
 
     # -- set tol --
-    tol_mean = 1e-5
-    tol_max = 2*1e-3
+    tol_mean = 1e-8
+    tol_max = 2*1e-7
+
+    # -- viz --
+    print("grads:")
+    print(scores_s_te.grad.shape)
+    print(scores_s_gt.grad.shape)
+    print(scores_s_te.grad[0,0,:,0])
+    print(scores_s_gt.grad[0,0,:,0])
+    print("-"*30)
 
     # -- grab grads --
-    _grads_te = [scores_te.grad,scores_s_te.grad]
-    _grads_gt = [scores_gt.grad,scores_s_gt.grad]
+    _grads_te = [scores_s_te.grad]
+    _grads_gt = [scores_s_gt.grad]
+    # _grads_te = [scores_te.grad]#,scores_s_te.grad]
+    # _grads_gt = [scores_gt.grad]#,scores_s_gt.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
         # -- compute error --
