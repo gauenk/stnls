@@ -12,8 +12,8 @@ import torch as th
 import dnls_cuda
 
 
-def allocate_patches(nq,k,ps,pt,c,device):
-    patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
+def allocate_patches(b,nq,k,ps,pt,c,device):
+    patches = th.zeros((b,nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
 class ifold(th.autograd.Function):
@@ -61,7 +61,7 @@ class ifold(th.autograd.Function):
         b,t,c,h,w  = grad_vid.shape
         npix,colors = t*h*w,c
         device = grad_vid.device
-        grad_patches = allocate_patches(qNum,1,ps,pt,colors,device)
+        grad_patches = allocate_patches(b,qNum,1,ps,pt,colors,device)
 
         # -- backward --
         dnls_cuda.ifold_backward(grad_vid,grad_patches,

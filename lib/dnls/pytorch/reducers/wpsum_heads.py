@@ -47,7 +47,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         device = dists.device
         bsize,nheads,nq,k = dists.shape
-        patches = allocate_patches(bsize,nq,nheads,pt,vid.shape[3],ps,device)
+        patches = allocate_patches(bsize,nheads,nq,pt,vid.shape[3],ps,device)
         vid = vid.contiguous()
 
         # print(vid.shape)
@@ -78,6 +78,10 @@ class WpSumHeadsFunction(th.autograd.Function):
         ctx.exact = exact
         ctx.use_rand = use_rand
 
+        # -- viz --
+        # print("fwd.")
+        # print("patches.shape: ",patches.shape)
+
         return patches
 
     @staticmethod
@@ -96,6 +100,12 @@ class WpSumHeadsFunction(th.autograd.Function):
         use_rand = ctx.use_rand
         # print("wpsum_heads: bwd.")
         grad_patches = grad_patches.contiguous()
+
+        # -- viz --
+        # print("bwd.")
+        # print("vid.shape: ",vid.shape)
+        # print("dists.shape: ",dists.shape)
+        # print("grad_patches.shape: ",grad_patches.shape)
 
         # -- start timer --
         # timer = ExpTimer()
@@ -158,8 +168,8 @@ class WeightedPatchSumHeads(th.nn.Module):
                                            self.reflect_bounds,
                                            self.use_rand,self.exact)
         nheads = dists.shape[1]
-        b,nq,_,_,c,ph,pw = patches.shape
-        patches = patches.view(b,nq,nheads,c,ph,pw)
+        b,nheads,nq,_,c,ph,pw = patches.shape
+        patches = patches.view(b,nheads,nq,c,ph,pw)
         return patches
 
     def flops(self, nrefs, chnls_per_head, nheads, k):

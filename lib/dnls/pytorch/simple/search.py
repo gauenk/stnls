@@ -5,12 +5,36 @@ from numba import cuda,jit
 from numba.core.errors import NumbaPerformanceWarning
 import warnings
 warnings.simplefilter('ignore', category=NumbaPerformanceWarning)
+from easydict import EasyDict as edict
 
 # -- linalg --
 import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
+def flow_at_batch(flow,bindex):
+    flow_b = edict()
+    flow_b.fflow = flow.fflow[bindex]
+    flow_b.bflow = flow.bflow[bindex]
+    return flow_b
+
+def run_batch(vid0,iqueries,flow,k,ps,pt,ws,wt,chnls,dilation=1,stride=1,
+              use_adj=True,reflect_bounds=True,search_abs=False,
+              h0_off=0,w0_off=0,h1_off=0,w1_off=0,vid1=None):
+    B = vid0.shape[0]
+    dists,inds = [],[]
+    for b in range(B):
+        vid0_b = vid0[b]
+        vid1_b = None if vid1 is None else vid1[b]
+        flow_b = flow_at_batch(flow,b)
+        dists_b,inds_b = run(vid0_b,iqueries,flow_b,k,ps,pt,ws,wt,chnls,
+                             dilation,stride,use_adj,reflect_bounds,search_abs,
+                             h0_off,w0_off,h1_off,w1_off,vid1_b)
+        dists.append(dists_b)
+        inds.append(inds_b)
+    dists = th.stack(dists)
+    inds = th.stack(inds)
+    return dists,inds
 
 def run(vid0,iqueries,flow,k,ps,pt,ws,wt,chnls,dilation=1,stride=1,
         use_adj=True,reflect_bounds=True,search_abs=False,

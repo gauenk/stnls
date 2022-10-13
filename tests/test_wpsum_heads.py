@@ -99,6 +99,7 @@ def simple_run(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
     # print("score_heads.shape:" ,score_heads.shape)
     # print("patches_i.shape:" ,patches_i.shape)
     wpatches_i = th.sum(score_heads * patches_i,1).type(th.float32)
+    wpatches_i = wpatches_i.transpose(1,0).contiguous()
     return wpatches_i
 
 def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
@@ -193,7 +194,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # -- two methods for comparison --
     nq = nbatch
     # print("vid.shape:" ,vid.shape)
-    wpatches_te = wpsum(vid,scores_s,inds).view(b,nq,nheads,-1)
+    wpatches_te = wpsum(vid,scores_s,inds).view(b,nheads,nq,-1)
     wpatches_gt = simple_run_batch(vid,scores_s,inds,ps,pt,reflect_bounds,exact)
 
     # -- vis [scores] --
@@ -230,7 +231,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # -- get args --
     pt,dil = 1,dilation
     ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    dnames = ["davis_baseball_64x64"]
     stride0 = stride
     stride1 = 1
     ws = -1 if k == -1 else 10
@@ -335,6 +336,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # -- compute score --
     qindex = 0
     scores,inds = search(vid0_te,qindex,nbatch,vid1=vid1_te)
+    # print("scores.shape: ",scores.shape)
     scores_te = scores.clone()
     scores_gt = scores.clone()
     scores_te.requires_grad_(True)
@@ -347,14 +349,14 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # -- forward test --
     # print("scores_s_te.shape: ",scores_s_te.shape)
     nq = nbatch
-    wpatches_te = wpsum(vid2_te,scores_s_te,inds).view(b,nq,nheads,-1)
+    wpatches_te = wpsum(vid2_te,scores_s_te,inds).view(b,nheads,nq,-1)
 
     # -- forward gt --
     wpatches_gt = simple_run_batch(vid2_gt,scores_s_gt,inds,ps,pt,reflect_bounds,exact)
 
     # -- viz --
-    print(wpatches_te.shape)
-    print(wpatches_gt.shape)
+    # print(wpatches_te.shape)
+    # print(wpatches_gt.shape)
     # print(wpatches_te.shape)
     # print(wpatches_gt.shape)
 
@@ -373,22 +375,20 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     th.cuda.synchronize()
 
     # -- set tol --
-    tol_mean = 1e-8
-    tol_max = 2*1e-7
+    tol_mean = 1e-5
+    tol_max = 1e-3
 
     # -- viz --
-    print("grads:")
-    print(scores_s_te.grad.shape)
-    print(scores_s_gt.grad.shape)
-    print(scores_s_te.grad[0,0,:,0])
-    print(scores_s_gt.grad[0,0,:,0])
-    print("-"*30)
+    # print("grads:")
+    # print(scores_s_te.grad.shape)
+    # print(scores_s_gt.grad.shape)
+    # print(scores_s_te.grad[0,0,:,0])
+    # print(scores_s_gt.grad[0,0,:,0])
+    # print("-"*30)
 
     # -- grab grads --
-    _grads_te = [scores_s_te.grad]
-    _grads_gt = [scores_s_gt.grad]
-    # _grads_te = [scores_te.grad]#,scores_s_te.grad]
-    # _grads_gt = [scores_gt.grad]#,scores_s_gt.grad]
+    _grads_te = [scores_te.grad,scores_s_te.grad]
+    _grads_gt = [scores_gt.grad,scores_s_gt.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
         # -- compute error --
@@ -398,8 +398,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
         # -- viz --
         # print(len(args[0]),len(grads_gt.ravel()),grads_gt.abs().mean())
-        # args2 = th.where(diff[args] > 0.003)
-        # print(grads_gt[args][args2],grads_te[args][args2])
+        args2 = th.where(diff[args] > 1e-4)
 
         # -- compare --
         error = diff.mean().item()
@@ -524,7 +523,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     qindex = 0
     scores,inds = prod_search(vid0_te,qindex,nbatch,vid1=vid1_te)
     scores_s = scores_to_heads_batch(scores,nheads,seed=123)
-    wpatches_te = wpsum(vid2_te,scores_s,inds).view(b,nq,nheads,-1)
+    wpatches_te = wpsum(vid2_te,scores_s,inds).view(b,nheads,nq,-1)
 
     # -- forward gt --
     scores,inds = prod_search(vid0_gt,qindex,nbatch,vid1=vid1_gt)
@@ -572,8 +571,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
         diff = (grad_te - grad_gt).abs()/(grad_gt.abs()+1e-10)
         args = th.where(grad_gt.abs() < 1e-2)
         args = th.where(diff > 1e-3)
-        print(grad_te[args][:10])
-        print(grad_gt[args][:10])
+        # print(grad_te[args][:10])
+        # print(grad_gt[args][:10])
         # print(grad_te[args][:5])
         # print(grad_gt[args][:5])
         # print(diff.mean().item())

@@ -126,7 +126,7 @@ __global__ void wpsum_heads_forward_kernel(
             // -- fill without warp divergence --
             if (valid && (ci < colors)){
               pix = dist*vid[bindex][vid_head][ti][ci][hi][wi];
-              patches[bindex][qi][head_index][pk][ci][pi][pj] += pix;
+              patches[bindex][head_index][qi][pk][ci][pi][pj] += pix;
             }
 
           }
@@ -196,7 +196,7 @@ __global__ void wpsum_heads_backward_vid_kernel(
   int qi,ti,hi,wi;
   float weight,pix;
   int nheads = dists.size(1);
-  int nq =    patches_grad.size(1);
+  int nq =    patches_grad.size(2);
   int k =     inds.size(3);
   int pt =    patches_grad.size(3);
   int colors = patches_grad.size(4);
@@ -259,7 +259,7 @@ __global__ void wpsum_heads_backward_vid_kernel(
                 valid = valid_h && valid_w;
                 for (int _c0 = c0_start; _c0 < c0_end; _c0++){
                   c0 = (_c0 + c0_offset + head_index) % c0_dist + c0_start;
-                  pix = weight * patches_grad[bindex][qi][head_index][pk][c0][pi][pj];
+                  pix = weight * patches_grad[bindex][head_index][qi][pk][c0][pi][pj];
                   if (valid){
                     vid_grad[bindex][vid_head][ti][c0][hi][wi] += pix;
                   }
@@ -300,10 +300,12 @@ void cuda_wpsum_heads_backward_vid(
 
   // -- head blocks --
   int nheads_vid = vid_grad.size(1);
-  bool span_heads = nheads_vid == nheads;
-  span_heads = span_heads || !exact;
-  int head_nblocks = span_heads ? nheads : 1;
-  int hpb = exact ? nheads : 1;
+  // bool span_heads = nheads_vid == nheads;
+  // span_heads = span_heads || !exact;
+  // int head_nblocks = span_heads ? nheads : 1;
+  // int hpb = exact ? nheads : 1;
+  int head_nblocks = nheads_vid;
+  int hpb = 1;
 
   // -- query blocks --
   int max_nblocks = 32;
@@ -371,8 +373,8 @@ __global__ void wpsum_heads_backward_dists_kernel(
 
   // -- shapes --
   int bsize = dists_grad.size(0);
-  int nq = dists_grad.size(1);
-  int k = dists_grad.size(2);
+  int nq = dists_grad.size(2);
+  int k = dists_grad.size(3);
   int pt =    patches_grad.size(3);
   int colors = patches_grad.size(4);
   int ps =    patches_grad.size(5);
@@ -413,7 +415,7 @@ __global__ void wpsum_heads_backward_dists_kernel(
           valid_w = (wi >= 0) && (wi < width);
           valid = valid_h && valid_w;
           for (int c0 = 0; c0 < colors; c0++){
-              pix_n = patches_grad[bindex][qi][head_index][pk][c0][pi][pj];
+              pix_n = patches_grad[bindex][head_index][qi][pk][c0][pi][pj];
               pix_m = valid ? vid[bindex][vid_head][ti][c0][hi][wi] : 0;
               dists_grad[bindex][head_index][qi][ki] += valid ? pix_n * pix_m : 0.;
           }
@@ -439,6 +441,7 @@ void cuda_wpsum_heads_backward_dists(
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
   // blocksPerGrid.z = nheads;
+  // fprintf(stdout,"bsize,nheads,nq,k: %d,%d,%d,%d\n",bsize,nheads,nq,k);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "wpsum_heads_backward_dists_kernel", ([&] {
