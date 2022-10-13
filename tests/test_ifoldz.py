@@ -40,10 +40,10 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    # test_lists = {"ps":[8],"stride":[8],"dilation":[1],
-    #               "top":[0],"btm":[64],"left":[0],"right":[64]}
-    test_lists = {"ps":[3,4,5,6,],"stride":[1,2,3,4],"dilation":[1,2,3,4],
-                  "top":[11],"btm":[50],"left":[7],"right":[57]}
+    test_lists = {"ps":[8],"stride":[8],"dilation":[1],
+                  "top":[0],"btm":[64],"left":[0],"right":[64]}
+    # test_lists = {"ps":[3,4,5,6,],"stride":[1,2,3,4],"dilation":[1,2,3,4],
+    #               "top":[11],"btm":[50],"left":[7],"right":[57]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
@@ -57,7 +57,7 @@ def test_nn_with_unfold(ps,stride,dilation):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    dnames,ext = ["davis_baseball_64x64",],"jpg"
     chnls,k,pt = 1,1,1
     ws,wt = 10,0
     adj = True
@@ -75,17 +75,17 @@ def test_nn_with_unfold(ps,stride,dilation):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device).contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device).contiguous()
     vid = th.ones_like(vid)
 
     # -- compute optical flow --
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    B,t,color,h,w = shape
     nframes,height,width = t,h,w
     vshape = vid.shape
 
@@ -107,18 +107,30 @@ def test_nn_with_unfold(ps,stride,dilation):
     #
 
     # -- run unfold --
-    patches_nl = run_unfold(vid,ps,stride,dil)
+    patches_nl = []
+    for b in range(B):
+        patches_nl_b = run_unfold(vid[b],ps,stride,dil)
+        patches_nl.append(patches_nl_b)
+    patches_nl = th.stack(patches_nl)
     patches_nn = patches_nl.clone()
     patches_nl.requires_grad_(True)
     patches_nn.requires_grad_(True)
 
     # -- run forward --
-    vid_nn,wvid_nn = run_fold(patches_nn,t,sq_h,sq_w,stride,dil,adj)
-    fold_nl = dnls.iFoldz(vshape,coords,stride=stride,dilation=dil,
-                               adj=ps//2,use_reflect=True,only_full=True)
-    vid_nl,wvid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
-
+    B = patches_nn.shape[0]
+    vid_nn,wvid_nn = [],[]
+    for b in range(B):
+        vid_nn_b,wvid_nn_b = run_fold(patches_nn[b],t,sq_h,sq_w,stride,dil,adj)
+        vid_nn.append(vid_nn_b)
+        wvid_nn.append(wvid_nn_b)
+    vid_nn = th.stack(vid_nn)
+    wvid_nn = th.stack(wvid_nn)
     vid_nn_s  = vid_nn /vid_nn.max()
+
+    # -- run fwd ours --
+    fold_nl = dnls.iFoldz(vshape,coords,stride=stride,dilation=dil,
+                          adj=ps//2,use_reflect=True,only_full=True)
+    vid_nl,wvid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
     vid_nl_s = vid_nl / vid_nl.max()
     # dnls.testing.data.save_burst(vid_nn_s,"./output/","vid_nn")
     # dnls.testing.data.save_burst(vid_nl_s,"./output/","vid_nl")
@@ -138,14 +150,14 @@ def test_nn_with_unfold(ps,stride,dilation):
     grad_nl = patches_nl.grad
 
     # -- rearrange --
-    shape_str = '(t h w) 1 1 c ph pw -> t c h w ph pw'
+    shape_str = 'b (t h w) 1 1 c ph pw -> b t c h w ph pw'
     grad_nn = rearrange(grad_nn,shape_str,t=t,h=n_h)
     grad_nl = rearrange(grad_nl,shape_str,t=t,h=n_h)
 
     # -- viz --
-    diff = th.mean((grad_nn - grad_nl)**2,(-2,-1))
-    diff /= diff.max()
-    dnls.testing.data.save_burst(diff,"./output/","grad")
+    # diff = th.mean((grad_nn - grad_nl)**2,(-2,-1))
+    # diff /= diff.max()
+    # dnls.testing.data.save_burst(diff[0],"./output/","grad")
 
     # -- check backward --
     error = th.sum((grad_nn - grad_nl)**2).item()

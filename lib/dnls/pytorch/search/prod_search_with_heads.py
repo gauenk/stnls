@@ -98,7 +98,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- topk --
         if use_k:
             dists,inds = allocate_rtn(B*H*Q,k,device,dtype)
-            get_topk_prod_b(dists_exh,inds_exh,dists,inds)
+            get_topk_prod(dists_exh,inds_exh,dists,inds)
         else:
             dists,inds = dists_exh,inds_exh
 
@@ -287,6 +287,12 @@ class ProdSearchWithHeads(th.nn.Module):
             assert c % self.nheads == 0,"must be multiple of each other."
         return ws_h,ws_w,wt,k,chnls
 
+    def update_flow(self,vid):
+        b,t,c,h,w = vid.shape
+        zflow = th.zeros((b,t,2,h,w),device=vid.device)
+        self.fflow = zflow
+        self.bflow = zflow
+
     def _update_flow(self,vshape,device):
         vshape = vshape # (t,c,h,w) NOT (H,t,c,h,w)
         assert len(vshape) in [5]
@@ -296,6 +302,8 @@ class ProdSearchWithHeads(th.nn.Module):
         zflow = th.zeros((b,t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
+        # print("vshape: ",vshape)
+        # print("self.fflow.shape: ",self.fflow.shape)
         for i in [0,1,3,4]:
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i

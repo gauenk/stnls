@@ -12,8 +12,8 @@ import torch as th
 import dnls_cuda
 
 
-def allocate_patches(nq,k,ps,pt,c,device):
-    patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
+def allocate_patches(b,nq,k,ps,pt,c,device):
+    patches = th.zeros((b,nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
 class ifoldz(th.autograd.Function):
@@ -34,13 +34,13 @@ class ifoldz(th.autograd.Function):
         ctx.coords = coords
         ctx.qStart = qStart
         ctx.stride = stride
-        ctx.qNum = patches.shape[0]
+        ctx.qNum = patches.shape[1]
         ctx.dilation = dilation
         ctx.adj = adj
         ctx.only_full = only_full
         ctx.use_reflect = use_reflect
-        ctx.pt = patches.shape[2]
-        ctx.ps = patches.shape[5]
+        ctx.pt = patches.shape[3]
+        ctx.ps = patches.shape[6]
         return vid,zvid
 
     @staticmethod
@@ -59,11 +59,11 @@ class ifoldz(th.autograd.Function):
         top,left,btm,right = ctx.coords
 
         # -- alloc --
-        t,c,h,w  = grad_vid.shape
+        b,t,c,h,w  = grad_vid.shape
         npix = t*h*w
-        colors = grad_vid.shape[1]
+        colors = grad_vid.shape[2]
         device = grad_vid.device
-        grad_patches = allocate_patches(qNum,1,ps,pt,colors,device)
+        grad_patches = allocate_patches(b,qNum,1,ps,pt,colors,device)
 
         # -- backward --
         dnls_cuda.ifold_backward(grad_vid,grad_patches,
@@ -93,7 +93,7 @@ class iFoldz(th.nn.Module):
         self.only_full = only_full
         self.use_reflect = use_reflect
         if self.coords is None:
-            t,c,h,w = vid_shape
+            b,t,c,h,w = vid_shape
             self.coords = [0,0,h,w]
 
     def allocate_vid(self,vid_shape,device):

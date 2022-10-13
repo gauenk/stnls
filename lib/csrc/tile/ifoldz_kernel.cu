@@ -44,21 +44,22 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
 
 template <typename scalar_t>
 __global__ void dnls_ifoldz_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> zvid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> zvid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, 
     int start, int stride, int dilation, int adj,
     bool only_full, bool use_reflect, int num_kernels) {
 
     // -- unpack --
-    int nframes = vid.size(0);
-    int colors = vid.size(1);
-    int height = vid.size(2);
-    int width = vid.size(3);
-    int pt = patches.size(2);
-    int ps = patches.size(5);
-    int numQueries = patches.size(0);
+    int bsize = vid.size(0);
+    int nframes = vid.size(1);
+    int colors = vid.size(2);
+    int height = vid.size(3);
+    int width = vid.size(4);
+    int pt = patches.size(3);
+    int ps = patches.size(6);
+    int numQueries = patches.size(1);
     int psOffset = (ps-1)/2;
     int psHalf = ps/2;
     int hw = height*width;
@@ -105,6 +106,7 @@ __global__ void dnls_ifoldz_forward_kernel(
       n_w = (sq_w - (ps-1)*dil - 1)/stride + 1;
     }
     int n_hw = n_h * n_w;
+    int bindex = blockIdx.y;
 
     CUDA_KERNEL_LOOP(_index, num_kernels) {
 
@@ -170,14 +172,14 @@ __global__ void dnls_ifoldz_forward_kernel(
               // -- accumulate --
               valid_q = valid && (qi >= 0) && (qi < numQueries);
               if (valid_q){
-                val += patches[qi][0][0][ci][h_ip][w_ip];
+                val += patches[bindex][qi][0][0][ci][h_ip][w_ip];
                 zval += 1;
               }
             }
           } // for patch size
         } // for patch size
-        vid[t_im][ci][h_im][w_im] = val;
-        zvid[t_im][ci][h_im][w_im] = zval;
+        vid[bindex][t_im][ci][h_im][w_im] = val;
+        zvid[bindex][t_im][ci][h_im][w_im] = zval;
       } // for colors
     } // for each pixel (with stride)
 }
@@ -189,11 +191,12 @@ void dnls_cuda_ifoldz_forward(
     bool only_full, bool use_reflect){
 
   // batching entire image always
-  int nframes = vid.size(0);
-  int colors = vid.size(1);
-  int height = vid.size(2);
-  int width = vid.size(3);
-  int ps = patches.size(5);
+  int bsize = vid.size(0);
+  int nframes = vid.size(1);
+  int colors = vid.size(2);
+  int height = vid.size(3);
+  int width = vid.size(4);
+  int ps = patches.size(6);
 
   // -- coords with pads --
   int pad = dilation*(ps/2);
@@ -212,14 +215,15 @@ void dnls_cuda_ifoldz_forward(
   int nthreads = 512;
   // int num_kernels = nframes*sq_hw;
   int num_kernels = nframes*sq_hwp;
-  int nblocks = (num_kernels-1) / nthreads+1;
+  int nblocks_queries = (num_kernels-1) / nthreads+1;
+  dim3 nblocks(nblocks_queries,bsize);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifoldz_forward_kernel", ([&] {
     dnls_ifoldz_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        zvid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        zvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top,left,btm,right,start,stride,dilation,adj,only_full,use_reflect,num_kernels);
       }));
 }
