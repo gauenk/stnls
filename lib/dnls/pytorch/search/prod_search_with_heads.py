@@ -69,15 +69,14 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         th.cuda.set_device(device)
         dnls_cuda.prod_search_with_heads_forward(vid0, vid1, fflow, bflow,
                                                  dists_exh, inds_exh,
-                                                 qstart, nqueries, nheads, stride0,
-                                                 n_h0, n_w0,
+                                                 qstart, stride0, n_h0, n_w0,
                                                  h0_off, w0_off, h1_off, w1_off,
                                                  ps, pt, ws_h, ws_w,
                                                  wt, chnls, dilation, stride1, use_adj,
                                                  reflect_bounds, search_abs, full_ws,
                                                  anchor_self, tranges,
                                                  n_tranges, min_tranges)
-        th.cuda.synchronize()
+        # th.cuda.synchronize()
 
         # -- shape for next step --
         B,H,Q = dists_exh.shape[:3]
@@ -332,7 +331,7 @@ class ProdSearchWithHeads(th.nn.Module):
         flops = 0
 
         # -- unpack --
-        vshape = (T,C,H,W)
+        vshape = (1,T,C,H,W)
         ws_h,ws_w,wt,k,chnls = self._get_args(vshape)
         nheads = self.nheads
         ps,pt = self.ps,self.pt

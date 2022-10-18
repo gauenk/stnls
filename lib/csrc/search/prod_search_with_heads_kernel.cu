@@ -46,7 +46,7 @@ __global__ void prod_search_with_heads_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
-    int qstart, int nqueries, int stride0, int n_h0, int n_w0,
+    int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride1,
@@ -68,6 +68,7 @@ __global__ void prod_search_with_heads_forward_kernel(
   height = h;
   width = w;
   int n_hw0 = n_h0 * n_w0;
+  int nqueries = dists.size(2);
 
   // constants
   float nan = __int_as_float(0xffe00000);
@@ -350,7 +351,7 @@ void prod_search_with_heads_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor fflow, const torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
-    int qstart, int nqueries, int nheads, int stride0, int n_h0, int n_w0,
+    int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride1,
@@ -368,6 +369,8 @@ void prod_search_with_heads_forward_cuda(
    // fprintf(stdout,"qstart, nqueries: %d,%d\n",qstart,nqueries);
    // launch params
    // our many (too many?) registers limit the number of threads
+   int nheads = dists.size(1);
+   int nqueries = dists.size(2);
    int ws_h_threads = std::min(ws_h,29);
    int ws_w_threads = std::min(ws_w,29);
    int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
@@ -382,6 +385,8 @@ void prod_search_with_heads_forward_cuda(
    bpt = ((nqueries - 1) / nquery_blocks) + 1;
    dim3 nblocks(bsize,nheads,nquery_blocks);
 
+   // fprintf(stdout,"bsize,nheads,nquery_blocks: %d,%d,%d\n",
+   //         bsize,nheads,nquery_blocks);
    // fprintf(stdout,"bpt,nquery_blocks,w_threads: %d,%d,%d,%d\n",
    //         bpt,nquery_blocks,ws_h_threads,ws_w_threads);
    // fprintf(stdout,"reflect_bounds,search_abs,full_ws,anchor_self: %d,%d,%d,%d\n",
@@ -398,7 +403,7 @@ void prod_search_with_heads_forward_cuda(
         bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-        qstart, nqueries, stride0, n_h0, n_w0,
+        qstart, stride0, n_h0, n_w0,
         h0_off, w0_off, h1_off, w1_off,
         ps, pt, ws_h, ws_w, wt, chnls, dilation, stride1,
         use_adj, reflect_bounds, search_abs, full_ws, anchor_self,
