@@ -286,11 +286,13 @@ class ProdSearchWithHeads(th.nn.Module):
             assert c % self.nheads == 0,"must be multiple of each other."
         return ws_h,ws_w,wt,k,chnls
 
-    def update_flow(self,vid):
+    def update_flow(self,vid,flows=None):
         b,t,c,h,w = vid.shape
         zflow = th.zeros((b,t,2,h,w),device=vid.device)
-        self.fflow = zflow
-        self.bflow = zflow
+        noflow = flows is None
+        # print("noflow: ",noflow)
+        self.fflow = zflow if noflow else flows.fflow
+        self.bflow = zflow if noflow else flows.bflow
 
     def _update_flow(self,vshape,device):
         vshape = vshape # (t,c,h,w) NOT (H,t,c,h,w)
