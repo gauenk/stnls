@@ -125,7 +125,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            print(grad_vid0.shape,vid0.shape,grad_dists.shape,inds.shape)
+            # print(grad_vid0.shape,vid0.shape,grad_dists.shape,inds.shape)
             dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
                                                     vid0,vid1,
                                                     grad_dists,inds,

@@ -442,8 +442,6 @@ def test_exact_bwd(ps,k,stride0,stride1,dilation,reflect_bounds):
 def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
 
-
-
     # -- get args --
     dil = dilation
     dname,ext = "davis_baseball_64x64","jpg"
@@ -469,7 +467,7 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = th.from_numpy(vid).to(device)[:1,].contiguous()[None,:]
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -484,13 +482,13 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
-    vshape = vid.shape
+    b,t,color,h,w = shape
+    vshape = vid.shape[1:]
     chnls = vid.shape[1]
 
     # -- exec fold fxns --
@@ -508,7 +506,7 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
                               h1_off=h1_off,w1_off=w1_off)
 
     # -- batching info --
-    n_h0,n_w0 = search.query_batch_info(vid.shape) # just showing api
+    n_h0,n_w0 = search.query_batch_info(vshape) # just showing api
     ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
@@ -573,7 +571,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- load data --
     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = th.from_numpy(vid).to(device)[:1,].contiguous()[None,:]
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -598,14 +596,14 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     vid1_gt.requires_grad_(True)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
-    vshape = vid.shape
-    chnls = vid.shape[1]
+    b,t,color,h,w = shape
+    vshape = vid.shape[1:]
+    chnls = vid.shape[-3]
 
     # -- sub square --
     top,btm,left,right = 0,h,0,w
@@ -614,7 +612,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # sq_w = coords[3] - coords[1]
 
     # -- batching --
-    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    _,_,n0,n1 = get_batching_info(vshape,stride0,stride1,ps,dil)
     n_h0,n_w0 = n0[0],n0[1]
     n_h1,n_w1 = n1[0],n1[1]
 
@@ -625,8 +623,8 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- exec fold fxns --
     use_adj = True
-    h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
-    h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
+    h0_off,w0_off,_,_ = comp_pads(vshape, ps, stride0, 1)
+    h1_off,w1_off,_,_ = comp_pads(vshape, ps, stride1, 1)
     search = dnls.search.init("l2_with_index",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, dilation=dil,
@@ -640,13 +638,13 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- run search --
     qindex = 0
     score_te,inds_te = search(vid0_te,qindex,ntotal,vid1=vid1_te)
-    score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
+    score_te = rearrange(score_te,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=n_h1)
 
     # -- comparison --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt = dnls.simple.search_nn.run_nn(vid0_gt,ps,stride=stride0,mode=mode,
+    score_gt = dnls.simple.search_nn.run_nn_batch(vid0_gt,ps,stride=stride0,mode=mode,
                                             dilation=dil,vid1=vid1_gt,stride1=stride1)
-    score_gt = rearrange(score_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
+    score_gt = rearrange(score_gt,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=n_h1)
 
     # -- compute gradient --
     score_grad = th.rand_like(score_gt)
@@ -659,14 +657,14 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     grad0_gt = vid0_gt.grad
     grad1_gt = vid1_gt.grad
 
-
     # -- viz --
-    diff = th.abs((grad0_te - grad0_gt)/(grad0_gt.abs()+1e-5))
-    diff /= diff.max()
-    dnls.testing.data.save_burst(diff,"./output/tests/test_search_with_index/","grad0")
-    diff = th.abs((grad1_te - grad1_gt)/(grad1_gt.abs()+1e-5))
-    diff /= diff.max()
-    dnls.testing.data.save_burst(diff,"./output/tests/test_search_with_index/","grad1")
+    # diff = th.abs((grad0_te - grad0_gt)/(grad0_gt.abs()+1e-5))
+    # diff /= diff.max()
+    # dsave = "./output/tests/test_search_with_index/"
+    # dnls.testing.data.save_burst(diff[0],dsave,"grad0")
+    # diff = th.abs((grad1_te - grad1_gt)/(grad1_gt.abs()+1e-5))
+    # diff /= diff.max()
+    # dnls.testing.data.save_burst(diff[0],dsave,"grad1")
 
     #
     # -- Backward Step --
