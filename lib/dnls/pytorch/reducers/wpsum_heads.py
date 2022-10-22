@@ -37,12 +37,17 @@ class WpSumHeadsFunction(th.autograd.Function):
         """
         # -- add head dim if 1 --
         vid_in_dim = vid.ndim
+        total_color = vid.shape[2]
         bsize,nheads = dists.shape[:2]
         # print("vid.shape: ",vid.shape,nheads,bsize)
         # assert vid.ndim == 5,"must be 5 dims"
         if vid.ndim == 5:
-            vid = rearrange(vid,'b t (H c) h w -> b H t c h w',H=nheads)
+            if (total_color % nheads) == 0:
+                vid = rearrange(vid,'b t (H c) h w -> b H t c h w',H=nheads)
+            else:
+                vid = rearrange(vid,'b t c h w -> b 1 t c h w')
         if inds.ndim == 4: inds = inds[:,None] # add heads dim
+        print("dists.shape,inds.shape: " ,dists.shape,inds.shape)
 
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         device = dists.device

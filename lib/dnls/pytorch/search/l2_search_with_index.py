@@ -30,14 +30,14 @@ class L2SearchFunction_with_index(th.autograd.Function):
         # -- unpack --
         device = vid0.device
         B,t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0[0].shape,stride0,ps,dilation)
+        n_h0,n_w0 = get_num_img(vid0.shape[1:],stride0,ps,dilation)
+        # print("n_h0,n_w0: ",n_h0,n_w0)
 
         # -- allocs --
         Q = nqueries
         dists_exh,inds_exh = allocate_exh(B*Q,wt,ws_h,ws_w,device)
-        dists_exh = dists_exh.view(B,Q,-1)
-        inds_exh = inds_exh.view(B,Q,-1,3)
-
+        dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
+        inds_exh = inds_exh.view(B,Q,-1,ws_h,ws_w,3)
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -70,23 +70,30 @@ class L2SearchFunction_with_index(th.autograd.Function):
         inds_exh=inds_exh.view(B,Q,-1,3)#.contiguous()
 
         # -- remove self --
+        # print("remove_self: ",remove_self)
         if remove_self:
-            dists_exh,inds_exh = run_remove_self_cuda(dists_exh[None,:],
-                                                      inds_exh[None,:],
+            dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,
                                                       qstart,stride0,n_h0,n_w0)
-            dists_exh,inds_exh = dists_exh[0],inds_exh[0]
+            # dists_exh,inds_exh = dists_exh[0],inds_exh[0]
 
         # -- topk --
         if use_k:
-            dists,inds = allocate_rtn(nq,k,device)
+            dists_exh=dists_exh.view(B*Q,-1)#.contiguous()
+            inds_exh=inds_exh.view(B*Q,-1,3)
+            dists,inds = allocate_rtn(B*Q,k,device)
             get_topk(dists_exh,inds_exh,dists,inds)
         else:
             dists,inds = dists_exh,inds_exh
 
+        # print(dists[...,1,:10],inds[...,1,:10,:])
         # -- fill if anchored --
         if anchor_self:
             args = th.where(dists == -100)
             dists[args] = 0.
+
+        # -- final shape --
+        dists = dists.view(B,Q,-1)
+        inds = inds.view(B,Q,-1,3)
 
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
@@ -118,6 +125,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
+            print(grad_vid0.shape,vid0.shape,grad_dists.shape,inds.shape)
             dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
                                                     vid0,vid1,
                                                     grad_dists,inds,
@@ -188,6 +196,7 @@ class L2Search_with_index(th.nn.Module):
     def _get_args(self,vshape):
         # -- unpack --
         ws,wt,k,chnls = self.ws,self.wt,self.k,self.chnls
+        vshape = vshape[-4:]
         t,c,h,w = vshape
 
         # -- compute number of searchable patches --
@@ -199,17 +208,19 @@ class L2Search_with_index(th.nn.Module):
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):
-        t,c,h,w = vshape
-        zflow = th.zeros((t,2,h,w),device=device)
+        b,t,c,h,w = vshape
+        zflow = th.zeros((b,t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
-        for i in [0,2,3]:
+        for i in [0,1,3,4]:
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
     def forward(self, vid0, qstart, nqueries, vid1=None):
+        assert vid0.shape[0] == 1
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
+        # vid0,vid1 = vid0[0],vid1[0]
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
         return L2SearchFunction_with_index.apply(vid0,vid1,
                                                  self.fflow,self.bflow,

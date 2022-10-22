@@ -21,9 +21,10 @@ def run_nn_batch(vid,ps,stride=4,dilation=1,mode="reflect",
     B = vid.shape[0]
     scores = []
     for b in range(B):
+        vid_b = vid[b]
         vid1_b = None if vid1 is None else vid1[b]
         vid2_b = None if vid2 is None else vid2[b]
-        scores_b = run_nn(vid,ps,stride,dilation,mode,
+        scores_b = run_nn(vid_b,ps,stride,dilation,mode,
                           vid1=vid1_b,vid2=vid2_b,stride1=stride1)
         scores.append(scores_b)
     scores = th.stack(scores)

@@ -111,10 +111,10 @@ __global__ void prod_search_with_heads_forward_kernel(
   int wsOff_h,wsOff_w;
 
   int l_cw0,l_ch0,l_ct0;
-  int cw_i,ch_i,ch,cw,ct;
+  int cw_i,ch_i,ch,cw;//,ct;
   // float cw0,ch0,ct0,cw_f,ch_f;
   // float dist,v_pix,n_pix;
-  scalar_t cw0,ch0,ct0,cw_f,ch_f;
+  scalar_t cw0,ch0;//,ct0;//,cw_f,ch_f;
   scalar_t dist,v_pix,n_pix;
 
 
@@ -203,32 +203,31 @@ __global__ void prod_search_with_heads_forward_kernel(
             // int dtd = int(dt-direction);
             cw0 = 1.*prev_w;
             ch0 = 1.*prev_h;
-            ct0 = 1.*prev_t;
 
             // -- legalize access --
             l_cw0 = int(max(0,min(width-1,int(cw0))));
             l_ch0 = int(max(0,min(height-1,int(ch0))));
-            l_ct0 = int(max(0,min(nframes-1,int(ct0))));
+            l_ct0 = int(max(0,min(nframes-1,int(1.*prev_t))));
 
             // -- access flows --
             if (direction > 0 ){
-              cw_f = cw0 + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
+              cw0 = cw0 + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
+              ch0 = ch0 + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
             }else{
-              cw_f = cw0 + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
+              cw0 = cw0 + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
+              ch0 = ch0 + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
             }
-            cw_i = int(cw_f + 0.5);
-            ch_i = int(ch_f + 0.5);
+            cw_i = int(cw0 + 0.5);
+            ch_i = int(ch0 + 0.5);
 
             // -- rounding --
             cw = max(0,min(width-1,cw_i));
             ch = max(0,min(height-1,ch_i));
-            ct = n_ti;
+            // ct = n_ti;
           }else{
             cw = wi;
             ch = hi;
-            ct = ti;
+            // ct = ti;
           }
           
           // ----------------
@@ -236,7 +235,7 @@ __global__ void prod_search_with_heads_forward_kernel(
           // ----------------
           prev_w = cw;
           prev_h = ch;
-          prev_t = ct;
+          prev_t = n_ti;
 
           // --------------------
           //      init dists

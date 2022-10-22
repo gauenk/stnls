@@ -19,6 +19,22 @@ from einops import rearrange,repeat
 # int ps, int pt, int dilation, bool use_adj, bool reflect_bounds,
 # int bpt, int npt, int cpt) {
 
+def run_batch(grad_dists,vid0,vid1,inds,qstart,stride0,
+              ps,pt,dilation,use_adj,reflect_bounds):
+    B = grad_dists.shape[0]
+    grad_vid0,grad_vid1 = [],[]
+    for b in range(B):
+        vid0_b,vid1_b = vid0[b],vid1[b]
+        grad_dists_b,inds_b = grad_dists[b],inds[b]
+        grad_vid0_b,grad_vid1_b = run(grad_dists_b,vid0_b,vid1_b,inds_b,
+                                      qstart,stride0,ps,pt,dilation,
+                                      use_adj,reflect_bounds)
+        grad_vid0.append(grad_vid0_b)
+        grad_vid1.append(grad_vid1_b)
+    grad_vid0 = th.stack(grad_vid0)
+    grad_vid1 = th.stack(grad_vid1)
+    return grad_vid0,grad_vid1
+
 def run(grad_dists,vid0,vid1,inds,qstart,stride0,
         ps,pt,dilation,use_adj,reflect_bounds):
 

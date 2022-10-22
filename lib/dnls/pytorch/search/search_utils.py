@@ -63,6 +63,7 @@ def get_topk_prod_b(l2_vals,l2_inds,vals,inds):
     get_topk_prod(l2_vals,l2_inds,vals,inds)
 
 def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
+    # print("dists.shape,inds.shape:" ,dists.shape,inds.shape,n_h,n_w)
     b,nq,k = dists.shape
     mask = th.zeros((b,nq,k),device=dists.device,dtype=th.bool)
     dnls_cuda.remove_self_from_search(inds,mask,qstart,stride,n_h,n_w)
