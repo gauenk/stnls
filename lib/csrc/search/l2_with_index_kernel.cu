@@ -580,7 +580,7 @@ void l2_search_with_index_backward_cuda(
   // -- compute number of blocks --
   //    [think: parallelization over "nqueries"]
   int bpt = 2;
-  int query_nthreads = 32;
+  int query_nthreads = 28;
   int total_per_block = bpt * query_nthreads;
   int nblocks_queries = ((nqueries - 1) / total_per_block) + 1;
   if (exact){
@@ -597,7 +597,7 @@ void l2_search_with_index_backward_cuda(
   // fprintf(stdout,
   //         "query_nthreads, neigh_nthreads, color_nthreads: %d,%d,%d\n",
   //         query_nthreads, neigh_nthreads, color_nthreads);
-  // fprintf(stdout,"nblocks: %d\n",nblocks);
+  // fprintf(stdout,"nblocks_queries,nbatch: %d,%d\n",nblocks,nbatch);
   // fprintf(stdout,"bpt,npt,cpt: %d,%d,%d\n",bpt,npt,cpt);
   // fprintf(stdout,"h0_off,w0_off,h1_off,w1_off: %d,%d,%d,%d\n",
   //         h0_off,w0_off,h1_off,w1_off);

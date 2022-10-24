@@ -25,14 +25,17 @@ class ifoldz(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, patches, vid, zvid, coords, qStart, stride, dilation, adj,
+    def forward(ctx, patches, vid, zvid, coords, qstart, stride, dilation, adj,
                 only_full,use_reflect):
         top,left,btm,right = coords
         patches = patches.contiguous()
+        # print("only_full: ",only_full)
+        # print("vid.shape: ",vid.shape)
+        # print("patches.shape:" ,patches.shape,vid.shape)
         dnls_cuda.ifoldz_forward(vid, zvid, patches, top, left, btm, right,
-                                 qStart, stride, dilation, adj, only_full, use_reflect)
+                                 qstart, stride, dilation, adj, only_full, use_reflect)
         ctx.coords = coords
-        ctx.qStart = qStart
+        ctx.qstart = qstart
         ctx.stride = stride
         ctx.qNum = patches.shape[1]
         ctx.dilation = dilation
@@ -50,7 +53,7 @@ class ifoldz(th.autograd.Function):
         grad_vid = grad_vid.contiguous()
         ps,pt = ctx.ps,ctx.pt
         dilation = ctx.dilation
-        qStart = ctx.qStart
+        qstart = ctx.qstart
         stride = ctx.stride
         qNum = ctx.qNum
         adj = ctx.adj
@@ -68,7 +71,7 @@ class ifoldz(th.autograd.Function):
         # -- backward --
         dnls_cuda.ifold_backward(grad_vid,grad_patches,
                                  top, left, btm, right,
-                                 qStart,stride,dilation,adj,
+                                 qstart,stride,dilation,adj,
                                  only_full, use_reflect)
         # -- info --
         # print("grad_vid[min,max]: ",grad_vid.min().item(),grad_vid.max().item())
@@ -100,12 +103,12 @@ class iFoldz(th.nn.Module):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)
         return vid
 
-    def forward(self, patches, qStart):
+    def forward(self, patches, qstart):
         ps = patches.shape[-1]
-        bpatches,qStart = patches,qStart
+        bpatches,qstart = patches,qstart
         vid = self.allocate_vid(self.vid_shape,patches.device)
         zvid = self.allocate_vid(self.vid_shape,patches.device)
-        vid,zvid = ifoldz.apply(bpatches, vid, zvid, self.coords, qStart,
+        vid,zvid = ifoldz.apply(bpatches, vid, zvid, self.coords, qstart,
                            self.stride,self.dilation,self.adj,
                            self.only_full,self.use_reflect)
         self.vid = self.vid + vid

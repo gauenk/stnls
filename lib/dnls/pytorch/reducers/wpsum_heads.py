@@ -47,7 +47,7 @@ class WpSumHeadsFunction(th.autograd.Function):
             else:
                 vid = rearrange(vid,'b t c h w -> b 1 t c h w')
         if inds.ndim == 4: inds = inds[:,None] # add heads dim
-        print("dists.shape,inds.shape: " ,dists.shape,inds.shape)
+        # print("dists.shape,inds.shape: " ,dists.shape,inds.shape)
 
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         device = dists.device

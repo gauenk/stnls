@@ -85,6 +85,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         else:
             dists,inds = dists_exh,inds_exh
 
+        # print(dists[...,0,:10],inds[...,0,:10,:])
         # print(dists[...,1,:10],inds[...,1,:10,:])
         # -- fill if anchored --
         if anchor_self:

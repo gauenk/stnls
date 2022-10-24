@@ -67,6 +67,7 @@ def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
     b,nq,k = dists.shape
     mask = th.zeros((b,nq,k),device=dists.device,dtype=th.bool)
     dnls_cuda.remove_self_from_search(inds,mask,qstart,stride,n_h,n_w)
+    # th.cuda.synchronize()
     mask = th.logical_not(mask)
     # print(dists.shape)
     # print(mask.sum(1))
@@ -75,10 +76,12 @@ def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
     # print(mask.sum(1))
     # print(th.all(mask.sum(1)==1))
     rm_dists = th.masked_select(dists,mask)
-    # print(rm_dists.shape)
     rm_dists = th.masked_select(dists,mask).view(b,nq,k-1)
-    mask = repeat(mask,'a b c -> a b c d',d=3)
-    rm_inds = th.masked_select(inds,mask).view(b,nq,k-1,3)
+    rm_inds = []
+    for i in range(3): # |(t,h,w)| == 3
+        rm_inds_i = th.masked_select(inds[...,i],mask).view(b,nq,k-1)
+        rm_inds.append(rm_inds_i)
+    rm_inds = th.stack(rm_inds,-1)
 
     return rm_dists,rm_inds
 

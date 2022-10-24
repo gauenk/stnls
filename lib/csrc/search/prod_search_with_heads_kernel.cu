@@ -103,20 +103,20 @@ __global__ void prod_search_with_heads_forward_kernel(
   int n_ti,n_hi,n_wi;
   int vH,vW,vT,nH,nW,nT;
   bool valid,vvalid,nvalid;
-  bool valid_ti,valid_hi,valid_wi,valid_anchor;
-  bool valid_n_ti,valid_n_hi,valid_n_wi,valid_n;
+  // bool valid_ti,valid_hi,valid_wi,valid_anchor;
+  // bool valid_n_ti,valid_n_hi,valid_n_wi,valid_n;
+  bool valid_anchor,valid_n;
   bool vvalid_t,vvalid_h,vvalid_w;
   bool nvalid_t,nvalid_h,nvalid_w;
-  bool eq_ti,eq_hi,eq_wi,eq_dim;
+  bool eq_dim;//eq_ti,eq_hi,eq_wi,
   int wsOff_h,wsOff_w;
 
   int l_cw0,l_ch0,l_ct0;
   int cw_i,ch_i,ch,cw;//,ct;
   // float cw0,ch0,ct0,cw_f,ch_f;
   // float dist,v_pix,n_pix;
-  scalar_t cw0,ch0;//,ct0;//,cw_f,ch_f;
+  // scalar_t cw0,ch0;//,ct0;//,cw_f,ch_f;
   scalar_t dist,v_pix,n_pix;
-
 
   for (int _bidx = 0; _bidx < bpt; _bidx++){
 
@@ -141,10 +141,10 @@ __global__ void prod_search_with_heads_forward_kernel(
     // unravel_index(ti, hi, wi, qindex, height, width, hw);
 
     // -- valid (anchor pixel) --
-    valid_ti = (ti < nframes) && (ti >= 0);
-    valid_hi = (hi < height) && (hi >= 0);
-    valid_wi = (wi < width) && (wi >= 0);
-    valid_anchor = valid_ti && valid_hi && valid_wi;
+    valid_anchor = (ti < nframes) && (ti >= 0);
+    valid_anchor = valid_anchor && (hi < height) && (hi >= 0);
+    valid_anchor = valid_anchor && (wi < width) && (wi >= 0);
+    // valid_anchor = valid_ti && valid_hi && valid_wi;
 
     // -- search offset --
     if(full_ws){
@@ -168,7 +168,7 @@ __global__ void prod_search_with_heads_forward_kernel(
     // -- we loop over search space if needed --
     for (int _xi = 0; _xi < ws_h_iters; _xi++){
 
-      int ws_i = cu_tidX + blkDimX*_xi;
+      ws_i = cu_tidX + blkDimX*_xi;
       if (ws_i >= ws_h){ continue; }
 
       for (int _yi = 0; _yi < ws_w_iters; _yi++){
@@ -201,24 +201,24 @@ __global__ void prod_search_with_heads_forward_kernel(
 
             // -- get offset at index --
             // int dtd = int(dt-direction);
-            cw0 = 1.*prev_w;
-            ch0 = 1.*prev_h;
+            // cw0 = 1.*prev_w;
+            // ch0 = 1.*prev_h;
 
             // -- legalize access --
-            l_cw0 = int(max(0,min(width-1,int(cw0))));
-            l_ch0 = int(max(0,min(height-1,int(ch0))));
+            l_cw0 = int(max(0,min(width-1,int(prev_w))));
+            l_ch0 = int(max(0,min(height-1,int(prev_h))));
             l_ct0 = int(max(0,min(nframes-1,int(1.*prev_t))));
 
             // -- access flows --
             if (direction > 0 ){
-              cw0 = cw0 + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              ch0 = ch0 + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
+              prev_w = prev_w + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
+              prev_h = prev_h + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
             }else{
-              cw0 = cw0 + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              ch0 = ch0 + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
+              prev_w = prev_w + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
+              prev_h = prev_h + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
             }
-            cw_i = int(cw0 + 0.5);
-            ch_i = int(ch0 + 0.5);
+            cw_i = int(prev_w + 0.5);
+            ch_i = int(prev_h + 0.5);
 
             // -- rounding --
             cw = max(0,min(width-1,cw_i));
@@ -256,10 +256,10 @@ __global__ void prod_search_with_heads_forward_kernel(
           // ---------------------------
           //      valid (search "n")
           // ---------------------------
-          valid_n_ti = (n_ti < nframes) && (n_ti >= 0);
-          valid_n_hi = (n_hi < height) && (n_hi >= 0);
-          valid_n_wi = (n_wi < width) && (n_wi >= 0);
-          valid_n = valid_n_ti && valid_n_hi && valid_n_wi;
+          valid_n = (n_ti < nframes) && (n_ti >= 0);
+          valid_n = valid_n && (n_hi < height) && (n_hi >= 0);
+          valid_n = valid_n && (n_wi < width) && (n_wi >= 0);
+          // valid_n = valid_n_ti && valid_n_hi && valid_n_wi;
           valid = valid_n && valid_anchor;
 
           // ---------------------------------
@@ -331,10 +331,10 @@ __global__ void prod_search_with_heads_forward_kernel(
 
           // -- final check [put self@index 0] --
           if (anchor_self){
-            eq_ti = n_ti == ti;
-            eq_hi = n_hi == hi;
-            eq_wi = n_wi == wi;
-            eq_dim = eq_ti && eq_hi && eq_wi;
+            eq_dim = n_ti == ti;
+            eq_dim = eq_dim && (n_hi == hi);
+            eq_dim = eq_dim && (n_wi == wi);
+            // eq_dim = eq_ti && eq_hi && eq_wi;
             if (eq_dim){
               dists[bindex][head][bidx][wt_k][ws_i][ws_j] = inf;
             }
@@ -450,8 +450,8 @@ __global__ void prod_search_with_heads_backward_kernel(
   int tj,hj,wj;
   int tk,hk,wk;
   int tk_a,hk_a,wk_a;
-  bool valid_hj,valid_wj;
-  bool valid_hk,valid_wk;
+  // bool valid_hj,valid_wj;
+  // bool valid_hk,valid_wk;
   bool valid,valid_j,valid_k;
   // float 
   scalar_t weight,pix,pix0,pix1;
@@ -522,13 +522,13 @@ __global__ void prod_search_with_heads_backward_kernel(
             tj = reflect_bounds ? bounds(ti+pk,nframes) : ti+pk;
 
             // -- assess if valid --
-            valid_hj = (hj >= 0) && (hj < height);
-            valid_wj = (wj >= 0) && (wj < width);
-            valid_j = valid_hj && valid_wj;
+            valid_j = (hj >= 0) && (hj < height);
+            valid_j = valid_j && (wj >= 0) && (wj < width);
+            // valid_j = valid_hj && valid_wj;
 
-            valid_hk = (hk >= 0) && (hk < height);
-            valid_wk = (wk >= 0) && (wk < width);
-            valid_k = valid_hk && valid_wk;
+            valid_k = (hk >= 0) && (hk < height);
+            valid_k = valid_k && (wk >= 0) && (wk < width);
+            // valid_k = valid_hk && valid_wk;
 
             // __syncthreads();
             valid = valid_j && valid_k;
