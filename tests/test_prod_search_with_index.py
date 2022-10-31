@@ -12,6 +12,9 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
+# -- patchify --
+from torch.nn.functional import fold,unfold,pad
+
 # -- dnls --
 import dnls
 import dnls.utils.gpu_mem as gpu_mem
@@ -39,7 +42,7 @@ def pytest_generate_tests(metafunc):
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
-                  "ws":[-1],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
+                  "ws":[-1,8],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
                   "exact":[True],"seed":[123]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
@@ -391,6 +394,122 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
         if error > tol: print("Mean Error: ",error)
         # print("Mean Error: ",error)
         assert error < tol
+
+def test_anchor_self(ps,k,ws,stride,dilation,exact):
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+
+    # -- get args --
+    dil = dilation
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    pt = 1
+    wt = 0
+    # ws = -1
+    # k = -1
+    stride0 = stride
+    stride1 = stride
+    use_k = not(k > 0)
+    search_abs = ws == -1
+    assert stride1 == stride0 # searching with unfold needs stride1
+
+    # -- init vars --
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    gpu_stats = False
+    reflect_bounds = True
+    anchor_self = True
+    use_self = True
+    full_ws = False
+    use_adj = False
+    if use_k is False: return # skip not "topk"
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:1,].contiguous()
+    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+
+    # -- grow img --
+    vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-2)
+    vid = th.cat([vid,vid],-2)
+
+    # -- normalize --
+    vid /= vid.max()
+
+    # -- compute flow --
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+
+    # -- unpack image --
+    device = vid.device
+    shape = vid.shape
+    b,t,color,h,w = shape
+    vshape = vid.shape
+    chnls = vid.shape[-3]
+
+    # -- pads --
+    oh0,ow0,hp,wp = comp_pads(vid[0].shape, ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid[0].shape, ps, stride1, dil)
+    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
+    oh0, ow0, oh1, ow1 = 0, 0, 0, 0
+
+    # -- batching info --
+    npix = t * h * w
+    ntotal = t * n_h0 * n_w0
+    nbatch = ntotal
+    nbatches = (ntotal-1) // nbatch + 1
+
+    # -- exec fold fxns --
+    search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+                              k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                              chnls=-1,dilation=dil,
+                              stride0=stride0, stride1=stride1,
+                              reflect_bounds=reflect_bounds,use_k=use_k,
+                              search_abs=search_abs,use_adj=use_adj,
+                              full_ws = full_ws,
+                              anchor_self=anchor_self,use_self=use_self,
+                              exact=exact)
+
+    # -- run search --
+    vidr = th.rand_like(vid)
+    qindex = 0
+    dists_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
+    dists_te = dists_te[:,:,0] # only self
+    inds_te = inds_te[:,:,0] # only self
+
+    # -- [gt dists,inds] compute first prod --
+    dists_gt = compute_gt_dists(vid,vidr,ps,stride0,dil,reflect_bounds)
+    inds_gt = compute_gt_inds(vid.shape,stride0,inds_te.device)
+
+    # -- compare inds --
+    diff = th.sum(th.abs(inds_gt - inds_te)).item()
+    assert diff < 1e-10
+
+    # -- compare --
+    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
+    diff = th.abs(dists_te - dists_gt) / (dists_gt.abs() + 1e-5)
+    diff = diff[args0]
+
+    tol = 1e-5
+    error = th.mean(th.abs(dists_te - dists_gt)).item()
+    if error > tol: print("error: ",error)
+    assert error < tol
+
+    tol = 1e-4
+    max_error = th.abs(dists_te - dists_gt).max().item()
+    if max_error > tol: print("max error: ",max_error)
+    assert max_error < tol
+
 
 def test_cu_vs_th_params_bwd(ps,stride,dilation,exact,seed):
     """
@@ -835,3 +954,61 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     th.cuda.empty_cache()
     th.cuda.synchronize()
 
+def compute_gt_inds(vshape,stride0,device):
+
+    # -- create mesh --
+    B,T,C,H,W = vshape
+    nH = (H-1)//stride0+1
+    nW = (W-1)//stride0+1
+    hgrid = np.arange(nH)*stride0
+    wgrid = np.arange(nW)*stride0
+    lmesh = np.meshgrid(*[hgrid,wgrid])
+    mesh = [grid.ravel() for grid in lmesh]
+    mesh = np.flip(np.stack(mesh,-1),-1)
+    mesh = mesh.copy()
+    # print("mesh.shape: ",mesh.shape)
+
+    # -- torchify --
+    inds_hw = th.from_numpy(mesh).to(device)
+    inds_hw = inds_hw.type(th.int32)
+    N = inds_hw.shape[0]
+
+    # -- add "t" --
+    inds = []
+    for t in range(T):
+        inds_t = t*th.ones((N,1),device=device,dtype=th.int32)
+        inds_t = th.cat([inds_t,inds_hw],-1)
+        inds.append(inds_t)
+    inds = th.stack(inds)
+
+    # -- repeat across "b" --
+    inds = repeat(inds,'t n thr -> b t n thr',b=B)
+    inds = inds.reshape(B,T*N,3)
+    return inds
+
+
+def compute_gt_dists(vid,vidr,ps,stride0,dil,rmode):
+    B = vid.shape[0]
+    dists_gt = []
+    for b in range(B):
+        patches = run_unfold(vid[b],ps,stride0,dil,rmode)
+        patches_r = run_unfold(vidr[b],ps,stride0,dil,rmode)
+        dists_gt_b = th.sum(patches * patches_r,dim=(-1))
+        dists_gt.append(dists_gt_b)
+    dists_gt = th.stack(dists_gt)
+    return dists_gt
+
+def run_unfold(_vid,_ps,_stride=1,_dil=1,rmode=False):
+
+    # -- avoid fixutres --
+    vid,stride = _vid,_stride
+    ps,dil = _ps,_dil
+    pads = (ps//2,)*4
+    mode = "reflect" if rmode else "constant"
+
+    # -- run --
+    shape_str = 't d hw -> (t hw) d'
+    vid_pad = pad(vid,pads,mode=mode)
+    patches = unfold(vid_pad,(ps,ps),stride=stride,dilation=dil)
+    patches = rearrange(patches,shape_str)
+    return patches

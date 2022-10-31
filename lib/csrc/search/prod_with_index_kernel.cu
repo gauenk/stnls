@@ -43,6 +43,7 @@ __global__ void search_prod_with_index_forward_kernel(
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride1, int dilation, 
     bool search_abs, bool use_bounds, bool use_adj, bool full_ws,
+    bool anchor_self, bool use_self,
     int h0_off, int w0_off, int h1_off, int w1_off,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
@@ -98,6 +99,7 @@ __global__ void search_prod_with_index_forward_kernel(
   bool valid_ti,valid_hi,valid_wi,valid_anchor;
   bool valid_n_ti,valid_n_hi,valid_n_wi,valid_n;
   int wsOff_h,wsOff_w;
+  bool eq_dim;
   // bool eq_ti,eq_hi,eq_wi,eq_dim;
 
   float cw0,ch0,ct0,cw_f,ch_f;
@@ -322,14 +324,18 @@ __global__ void search_prod_with_index_forward_kernel(
           inds[bindex][bidx][wt_k][ws_i][ws_j][2] = n_wi;
 
           // -- final check [put self@index 0] --
-          // eq_ti = n_ti == ti;
-          // eq_hi = n_hi == hi;
-          // eq_wi = n_wi == wi;
-          // eq_dim = eq_ti && eq_hi && eq_wi;
-          // dist = dists[bidx][wt_k][ws_i][ws_j];
-          // if (eq_dim){
-          //   dists[bidx][wt_k][ws_i][ws_j] = inf;
-          // }
+          if (anchor_self){
+            eq_dim = n_ti == ti;
+            eq_dim = eq_dim && (n_hi == hi);
+            eq_dim = eq_dim && (n_wi == wi);
+            // eq_dim = eq_ti && eq_hi && eq_wi;
+            if (eq_dim && use_self){
+              self_dists[bindex][bidx] = dist; // update self
+              dists[bindex][bidx][wt_k][ws_i][ws_j] = inf;
+            }else if (eq_dim){
+              dists[bindex][bidx][wt_k][ws_i][ws_j] = inf;
+            }
+          }
 
         }
       }
@@ -346,7 +352,7 @@ void search_prod_with_index_forward_cuda(
     int ps, int pt, int ws_h_noneed, int ws_w_noneed,
     int wt, int chnls, int stride1, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
-    bool full_ws, bool use_self,
+    bool full_ws, bool anchor_self, bool use_self,
     int h0_off, int w0_off, int h1_off, int w1_off,
     torch::Tensor tranges, torch::Tensor n_tranges,
     torch::Tensor min_tranges){
@@ -391,7 +397,8 @@ void search_prod_with_index_forward_cuda(
          self_dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
          qstart, stride0, n_h0, n_w0,
          ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation, 
-         use_search_abs, use_bounds, use_adj, full_ws, h0_off, w0_off, h1_off, w1_off,
+         use_search_abs, use_bounds, use_adj, full_ws,
+         anchor_self, use_self, h0_off, w0_off, h1_off, w1_off,
          tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
          n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
          min_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),

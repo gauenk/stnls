@@ -62,6 +62,41 @@ def get_topk_prod_b(l2_vals,l2_inds,vals,inds):
     # -- topk fill --
     get_topk_prod(l2_vals,l2_inds,vals,inds)
 
+def topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self):
+    if anchor_self:
+        get_topk_prod(dists_exh,inds_exh,dists[:,1:],inds[:,1:])
+        run_anchor_self(dists,inds,self_dists,dists_exh,inds_exh)
+    else:
+        get_topk_prod(dists_exh,inds_exh,dists,inds)
+
+def run_anchor_self(dists,inds,self_dists,dists_exh,inds_exh):#,wt,ws_h,ws_w):
+
+    # -- shape --
+    # st = 2*wt+1
+    BQ = inds_exh.shape[0]
+
+    # -- fill dists --
+    dists[:,0] = self_dists.view(BQ)
+
+    # -- fill inds --
+    isinf = th.isinf(dists_exh)
+    ispos = dists_exh>0
+    args0 = th.where(th.logical_and(isinf,ispos))
+    # print("minmax: ",th.min(th.stack(args0)),th.max(th.stack(args0)))
+    # exit(0)
+    inds_self = []
+    for i in range(3):
+        inds_i = inds_exh[...,i][args0].view(BQ)
+        inds_self.append(inds_i)
+    inds_self = th.stack(inds_self,-1)
+    # print("inds_self.shape: ",inds_self.shape)
+    inds[:,0] = inds_self
+    th.cuda.synchronize()
+    # c_st = wt
+    # c_ws_h = ws_h//2
+    # c_ws_w = ws_w//2
+    # inds[:,0] = inds_exh[:,c_st,c_ws_h,c_ws_w]
+
 def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
     # print("dists.shape,inds.shape:" ,dists.shape,inds.shape,n_h,n_w)
     b,nq,k = dists.shape

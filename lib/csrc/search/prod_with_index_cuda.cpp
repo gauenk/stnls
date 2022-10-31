@@ -23,7 +23,7 @@ void search_prod_with_index_forward_cuda(
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
-    bool full_ws, bool use_self,
+    bool full_ws, bool anchor_self, bool use_self,
     int oh0, int ow0, int oh1, int ow1,
     const torch::Tensor tranges,
     const torch::Tensor n_tranges,
@@ -53,7 +53,7 @@ void search_prod_with_index_forward(
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int stride, int dilation,
     bool use_search_abs, bool use_bounds, bool use_adj,
-    bool full_ws, bool use_self,
+    bool full_ws, bool anchor_self, bool use_self,
     int oh0, int ow0, int oh1, int ow1,
     const torch::Tensor tranges,
     const torch::Tensor n_tranges,
@@ -73,7 +73,7 @@ void search_prod_with_index_forward(
           self_dists,qstart, stride0, n_h0, n_w0,
           ps,pt,ws_h,ws_w,wt,chnls,stride,dilation,
           use_search_abs, use_bounds, use_adj,
-          full_ws, use_self, oh0, ow0, oh1, ow1,
+          full_ws, anchor_self, use_self, oh0, ow0, oh1, ow1,
           tranges, n_tranges, min_tranges);
 }
 
@@ -154,6 +154,7 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
   int ow1 = ishapes[18];
   bool remove_self = ishapes[19] == 1;
   bool full_ws = ishapes[20] == 1;
+  bool anchor_self = false;
   bool use_self = false;
 
   int nframes = ishapes[24];
@@ -238,7 +239,7 @@ void search_prod_with_index_forward_jax(cudaStream_t stream, void **buffers,
       qstart, stride0, n_h0, n_w0,
       ps,pt,ws_h,ws_w,wt,chnls,stride1,dilation,
       use_search_abs, reflect_bounds, use_adj,
-      full_ws, use_self, oh0, ow0, oh1, ow1,
+      full_ws, anchor_self, use_self, oh0, ow0, oh1, ow1,
       tranges, n_tranges, min_tranges);
   // fprintf(stdout,"hi.\n");
 

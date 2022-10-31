@@ -48,7 +48,7 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
-def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -75,6 +75,8 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_adj = False
     adj = 0
     search_abs = ws == -1
+    anchor_self = False
+    use_self = anchor_self
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
@@ -116,6 +118,7 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
                                  search_abs=search_abs,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
     search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt,
@@ -124,6 +127,7 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
                                  search_abs=search_abs,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
 
     # -- [testing] search --
@@ -181,7 +185,7 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     assert max_error < tol
 
 @pytest.mark.slow
-def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -207,6 +211,8 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_k = k > 0
     use_adj = False
     adj = 0
+    anchor_self = False
+    use_self = anchor_self
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
@@ -257,6 +263,7 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
                                  search_abs=search_abs,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
     search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt,
@@ -265,6 +272,7 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
                                  search_abs=search_abs,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
 
 
@@ -369,4 +377,122 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         if error > tol: print("Mean Error: ",error)
         # print("Mean Error: ",error)
         assert error < tol
+
+def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+
+    # -- get args --
+    dil = dilation
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    pt = 1
+    set_seed(seed)
+
+    # -- init vars --
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    gpu_stats = False
+    reflect_bounds = False
+    use_k = k > 0
+    use_adj = False
+    adj = 0
+    search_abs = ws == -1
+    anchor_self = True
+    use_self = anchor_self
+    if use_k is False: return # skip non topk examples
+
+    # -- load data --
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid /= vid.max()
+    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+
+    # -- compute flow --
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows.fflow = 10*th.randn_like(flows.fflow)
+    flows.bflow = 10*th.randn_like(flows.bflow)
+
+    # -- unpack image --
+    device = vid.device
+    shape = vid.shape
+    b,t,color,h,w = shape
+    vshape = vid.shape
+    chnls = vid.shape[2]
+
+    # -- pads --
+    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
+    n_h0,n_w0 = n0[0],n0[1]
+    n_h1,n_w1 = n1[0],n1[1]
+    h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
+
+    # -- batching info --
+    npix = t * h * w
+    ntotal = t * n_h0 * n_w0
+    nbatch = ntotal
+    nbatches = (ntotal-1) // nbatch + 1
+
+    # -- exec fold fxns --
+    search_te = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+                                 k, ps, pt, ws, wt, nheads,
+                                 chnls=-1,dilation=dil,
+                                 stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,use_k=use_k,
+                                 h0_off=h0_off, w0_off=w0_off,
+                                 h1_off=h1_off, w1_off=w1_off,
+                                 search_abs=search_abs,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
+                                 exact=exact)
+    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+                                 k, ps, pt, ws, wt,
+                                 h0_off, w0_off, h1_off, w1_off,
+                                 chnls=-1,dilation=dil,
+                                 stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,use_k=use_k,
+                                 search_abs=search_abs,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
+                                 exact=exact)
+
+    # -- [testing] search --
+    dists_te,inds_te = search_te(vid,0,ntotal)
+    th.cuda.synchronize()
+
+    # -- [groundtruth] search --
+    # search_te.nheads = 1
+    _c = (vid.shape[-3]-1) // nheads + 1
+    dists_gt,inds_gt = [],[]
+    for h in range(nheads):
+        cinds = slice(_c*h,_c*(h+1))
+        vid_c = vid[:,:,cinds].contiguous()
+        dists_h,inds_h = search_gt(vid_c,0,ntotal)
+        # dists_h,inds_h = search_te(vid_c,0,ntotal)
+        # dists_h,inds_h = dists_h[0],inds_h[0]
+        dists_gt.append(dists_h)
+        inds_gt.append(inds_h)
+    dists_gt = th.stack(dists_gt,1)
+    inds_gt  = th.stack(inds_gt,1)
+
+    # -- compare --
+    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
+    diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
+    diff = diff[args0]
+
+    # -- test --
+    tol = 1e-5
+    error = diff.mean().item()
+    if error > tol: print("error: ",error)
+    assert error < tol
+
+    tol = 1e-4
+    max_error = diff.max().item()
+    if max_error > tol: print("max error: ",max_error)
+    assert max_error < tol
 

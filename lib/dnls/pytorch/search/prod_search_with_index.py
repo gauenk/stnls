@@ -13,64 +13,6 @@ import dnls_cuda
 # -- local --
 from .search_utils import *
 
-# def allocate_vid(vid_shape,device):
-#     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
-#     return vid
-
-# def allocate_bufs(nq,t,ws_h,ws_w,wt,device):
-#     if wt <= 0:
-#         bufs = th.zeros(1,1,1,1,1,dtype=th.int32,device=device)
-#     else:
-#         bufs = th.zeros(nq,3,t,ws_h,ws_w,dtype=th.int32,device=device)
-#     return bufs
-
-# def allocate_exh(nq,ws_h,ws_w,wt,device):
-#     dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=th.float32)
-#     dists[...] = -float("inf")
-#     inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
-#     inds[...] = -1
-#     return dists,inds
-
-# def allocate_rtn(nq,k,device):
-#     dists = th.zeros((nq,k),device=device,dtype=th.float32)
-#     inds = th.zeros((nq,k,3),device=device,dtype=th.int32)
-#     return dists,inds
-
-# def create_frame_range(nframes,nWt_f,nWt_b,ps_t,device):
-#     tranges,n_tranges,min_tranges = [],[],[]
-#     for t_c in range(nframes-ps_t+1):
-
-#         # -- limits --
-#         shift_t = min(0,t_c - nWt_b) + max(0,t_c + nWt_f - nframes + ps_t)
-#         t_start = max(t_c - nWt_b - shift_t,0)
-#         t_end = min(nframes - ps_t, t_c + nWt_f - shift_t)+1
-
-#         # -- final range --
-#         trange = [t_c]
-#         trange_s = np.arange(t_c+1,t_end)
-#         trange_e = np.arange(t_start,t_c)[::-1]
-#         for t_i in range(trange_s.shape[0]):
-#             trange.append(trange_s[t_i])
-#         for t_i in range(trange_e.shape[0]):
-#             trange.append(trange_e[t_i])
-
-#         # -- aug vars --
-#         n_tranges.append(len(trange))
-#         min_tranges.append(np.min(trange))
-
-#         # -- add padding --
-#         for pad in range(nframes-len(trange)):
-#             trange.append(-1)
-
-#         # -- to tensor --
-#         trange = th.IntTensor(trange).to(device)
-#         tranges.append(trange)
-
-#     tranges = th.stack(tranges).to(device).type(th.int32)
-#     n_tranges = th.IntTensor(n_tranges).to(device).type(th.int32)
-#     min_tranges = th.IntTensor(min_tranges).to(device).type(th.int32)
-#     return tranges,n_tranges,min_tranges
-
 class ProductSearchFunction_with_index(th.autograd.Function):
 
     @staticmethod
@@ -78,7 +20,8 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride0, stride1, dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
-                oh0, ow0, oh1, ow1, use_self, remove_self, full_ws, nbwd,
+                oh0, ow0, oh1, ow1,
+                anchor_self, use_self, remove_self, full_ws, nbwd,
                 rbwd, exact):
         """
         vid = [T,C,H,W]
@@ -110,6 +53,13 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         inds_exh = inds_exh.view(B,Q,-1,ws_h,ws_w,3)
         self_dists = -th.inf * th.ones((B,Q),device=device,dtype=dtype)
 
+        # -- alloc self --
+        assert use_self == anchor_self
+        if use_self:
+            self_dists = -th.inf * th.ones((B,Q),device=device,dtype=dtype)
+        else:
+            self_dists = -th.inf * th.ones((1,1),device=device,dtype=dtype)
+
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
@@ -120,7 +70,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             qstart, stride0, n_h0, n_w0,
             ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation,
             use_search_abs, reflect_bounds, use_adj, full_ws,
-            use_self, oh0, ow0, oh1, ow1,
+            anchor_self, use_self, oh0, ow0, oh1, ow1,
             tranges,n_tranges,min_tranges)
 
         th.cuda.synchronize()
@@ -136,10 +86,17 @@ class ProductSearchFunction_with_index(th.autograd.Function):
 
         # -- top k --
         if use_k:
+            topk_k = k if anchor_self else k-1
             dists,inds = allocate_rtn(B*Q,k,device,dtype)
             dists_exh = dists_exh.view(B*Q,-1)#.contiguous()
             inds_exh = inds_exh.view(B*Q,-1,3)#.contiguous()
-            get_topk_prod(dists_exh,inds_exh,dists,inds)
+            topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
+            # if anchor_self:
+            #     get_topk_prod(dists_exh,inds_exh,dists[:,1:],inds[:,1:])
+            #     run_anchor_self(dists,inds,self_dists,dists_exh,inds_exh)
+            #     #,wt,ws_h,ws_w)
+            # else:
+            #     get_topk_prod(dists_exh,inds_exh,dists,inds)
         else:
             # args = th.where(th.isnan(dists_exh))
             # dists_exh[args] = -th.inf # fix nan
@@ -230,7 +187,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             grad_vid1 /= nbwd
 
         # th.cuda.synchronize()
-        return vid0_grad,vid1_grad,None,None,None,None,None,\
+        return vid0_grad,vid1_grad,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -238,8 +195,8 @@ class ProductSearch_with_index(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
-                 search_abs=False, reflect_bounds=True, use_adj=True,
-                 use_k=True, use_self=False, remove_self=False,
+                 search_abs=False, reflect_bounds=True, use_adj=True, use_k=True,
+                 anchor_self = False, use_self=False, remove_self=False,
                  full_ws=False, nbwd=1, rbwd=True, exact=True):
         super(ProductSearch_with_index, self).__init__()
         self.k = k
@@ -255,6 +212,7 @@ class ProductSearch_with_index(th.nn.Module):
         self.dilation = dilation
         self.lam = lam
         self.search_abs = search_abs
+        self.anchor_self = anchor_self
         self.use_self = use_self
         self.reflect_bounds = reflect_bounds
         self.use_adj = use_adj
@@ -301,5 +259,6 @@ class ProductSearch_with_index(th.nn.Module):
             self.stride0,self.stride1,self.dilation,self.lam,
             self.search_abs,self.reflect_bounds,
             self.use_adj,self.use_k,self.oh0,self.ow0,
-            self.oh1,self.ow1,self.use_self,self.remove_self,
+            self.oh1,self.ow1,
+            self.anchor_self,self.use_self,self.remove_self,
             self.full_ws,self.nbwd,self.rbwd,self.exact)
