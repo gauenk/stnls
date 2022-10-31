@@ -80,13 +80,15 @@ class ProdSearchPatchesWithHeadsFunction(th.autograd.Function):
         # -- shape for next step --
         dists_exh = dists_exh.view(B*H*Q,-1)#.contiguous()
         inds_exh = inds_exh.view(B*H*Q,-1,3)#.contiguous()
+        self_dists = self_dists.view(B*H*Q)
         # dists_exh=dists_exh.view(B,H,Q,-1)#.contiguous()
         # inds_exh=inds_exh.view(B,H,Q,-1,3)#.contiguous()
 
         # -- topk --
         if use_k:
             dists,inds = allocate_rtn(B*H*Q,k,device,dtype)
-            get_topk_prod(dists_exh,inds_exh,dists,inds)
+            # get_topk_prod(dists_exh,inds_exh,dists,inds)
+            topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
         else:
             dists,inds = dists_exh,inds_exh
 
@@ -95,10 +97,10 @@ class ProdSearchPatchesWithHeadsFunction(th.autograd.Function):
         dists[args] = -th.inf # fix nan
 
         # -- fill if anchored --
-        if anchor_self:
-            raise ValueError("Still unknown how to fix the 'self' position.")
-            # args = th.where(dists == th.inf)
-            # dists[args] = 0. # not the inner product value
+        # if anchor_self:
+        #     raise ValueError("Still unknown how to fix the 'self' position.")
+        #     # args = th.where(dists == th.inf)
+        #     # dists[args] = 0. # not the inner product value
 
         # -- final shape with heads -
         dists = dists.view(B,H,Q,-1)

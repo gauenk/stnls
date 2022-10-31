@@ -37,7 +37,7 @@ def pytest_generate_tests(metafunc):
     np.random.seed(seed)
     test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
                   "dilation":[1],"wt":[0],"ws":[-1,9],
-                  "k":[-1,3],"exact":[True],"nheads":[1,4],
+                  "k":[-1,4],"exact":[True],"nheads":[1,4],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -479,6 +479,9 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         inds_gt.append(inds_h)
     dists_gt = th.stack(dists_gt,1)
     inds_gt  = th.stack(inds_gt,1)
+
+    # -- view --
+    print(inds_gt)
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf

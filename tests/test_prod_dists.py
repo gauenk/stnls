@@ -35,9 +35,9 @@ def pytest_generate_tests(metafunc):
     th.manual_seed(seed)
     np.random.seed(seed)
     test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
-                  "dilation":[1],"wt":[0],"ws":[-1],
-                  "k":[-1],"exact":[True],"nheads":[1],
-                  "seed":[0]}
+                  "dilation":[1],"wt":[0],"ws":[9],
+                  "k":[-1,7],"exact":[True],"nheads":[4],
+                  "seed":[0],"anchor_self":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -47,7 +47,7 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
-def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -55,7 +55,6 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     Forward Pass
 
     """
-
 
     # -- get args --
     dil = dilation
@@ -73,6 +72,8 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_k = k > 0
     use_adj = False
     adj = 0
+    anchor_self = anchor_self
+    use_self = anchor_self
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
@@ -91,7 +92,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     shape = vid.shape
     b,t,color,h,w = shape
     vshape = vid.shape
-    chnls = vid.shape[2]
+    chnls = vid.shape[-3]
 
     # -- pads --
     _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
@@ -106,12 +107,12 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    prod_dists = dnls.search.init("prod_dists",k, ps, pt,
-                                  h0_off, w0_off, h1_off, w1_off,
+    prod_dists = dnls.search.init("prod_dists", k, ps, pt, nheads,
                                   chnls=-1,dilation=dil,
                                   stride0=stride0, stride1=stride1,
                                   reflect_bounds=reflect_bounds,use_k=use_k,
                                   search_abs=False,use_adj=use_adj,
+                                  anchor_self=anchor_self,
                                   exact=exact)
     search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
@@ -121,27 +122,21 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
                                  search_abs=False,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
 
     # -- [gt] search --
     dists_gt,inds_gt = search_gt(vid,0,ntotal)
-    th.cuda.synchronize()
 
     # -- [gt] search --
-    dists_te = prod_dists(vid,inds_te)
-    print("dists_te.shape: ",dists_te.shape)
-    th.cuda.synchronize()
+    dists_te = prod_dists(vid,inds_gt)
 
     # -- viz --
-    # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
-
-    # diff = th.abs(dists_te - dists_gt).mean((0,1))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # print("-"*10)
+    # print("dists_gt.shape: ",dists_gt.shape)
+    # print(inds_gt[:3,0,0])
+    # print(dists_gt[:3,0,0])
+    # print(dists_te[:3,0,0])
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
@@ -159,22 +154,23 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 
+@pytest.mark.bwd
 @pytest.mark.slow
-def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     """
 
     Test the CUDA code with torch code
 
-    Forward Pass
+    Backward Pass
 
     """
-
 
     # -- get args --
     dil = dilation
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
+    set_seed(seed)
 
     # -- init vars --
     device = "cuda:0"
@@ -182,16 +178,17 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = True
-    search_abs = ws == -1
     use_k = k > 0
     use_adj = False
     adj = 0
+    anchor_self = anchor_self
+    use_self = anchor_self
+
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
-    vid = vid.to(device)[:,:2,].contiguous()
+    vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
-    vid = vid[...,:32,:32]
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -205,7 +202,15 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     shape = vid.shape
     b,t,color,h,w = shape
     vshape = vid.shape
-    chnls = vid.shape[2]
+    chnls = vid.shape[-3]
+
+    # -- allow grads --
+    vid_te0,vid_te1 = vid.clone(),vid.clone()
+    vid_te0.requires_grad_(True)
+    vid_te1.requires_grad_(True)
+    vid_gt0,vid_gt1 = vid.clone(),vid.clone()
+    vid_gt0.requires_grad_(True)
+    vid_gt1.requires_grad_(True)
 
     # -- pads --
     _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
@@ -219,75 +224,36 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
 
-    # -- allow grads --
-    vid_te0,vid_te1 = vid.clone(),vid.clone()
-    vid_te0.requires_grad_(True)
-    vid_te1.requires_grad_(True)
-    vid_gt0,vid_gt1 = vid.clone(),vid.clone()
-    vid_gt0.requires_grad_(True)
-    vid_gt1.requires_grad_(True)
-
     # -- exec fold fxns --
-    search_te = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    prod_dists = dnls.search.init("prod_dists", k, ps, pt, nheads,
+                                  chnls=-1,dilation=dil,
+                                  stride0=stride0, stride1=stride1,
+                                  reflect_bounds=reflect_bounds,use_k=use_k,
+                                  search_abs=False,use_adj=use_adj,
+                                  anchor_self=anchor_self,exact=exact)
+    search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
                                  h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
-                                 search_abs=search_abs,use_adj=use_adj,
-                                 exact=exact)
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt,
-                                 h0_off, w0_off, h1_off, w1_off,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 search_abs=search_abs,use_adj=use_adj,
+                                 search_abs=False,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
 
+    # -- [gt] search --
+    dists_gt,inds_gt = search_gt(vid_gt0,0,ntotal,vid_gt1)
 
-    # -- [testing] search --
-    # print("vid.shape: ",vid.shape)
-    dists_te,inds_te = search_te(vid_te0,0,ntotal,vid_te1)
-    th.cuda.synchronize()
-
-    # -- [groundtruth] search --
-    search_te.nheads = 1
-    _c = (vid.shape[2]-1) // nheads + 1
-    dists_gt,inds_gt = [],[]
-    for h in range(nheads):
-        cinds = slice(_c*h,_c*(h+1))
-        vid_c0 = vid_gt0[:,cinds].contiguous()
-        vid_c1 = vid_gt1[:,cinds].contiguous()
-        dists_h,inds_h = search_gt(vid_c0,0,ntotal,vid_c1)
-        # dists_h,inds_h = search_te(vid_c,0,ntotal)
-        # dists_h,inds_h = dists_h[0],inds_h[0]
-        dists_gt.append(dists_h)
-        inds_gt.append(inds_h)
-    dists_gt = th.stack(dists_gt,1)
-    inds_gt  = th.stack(inds_gt,1)
-
-    # -- viz --
-    # print(dists_te[0,0,:10])
-    # print(dists_gt[0,0,:10])
-    # print(dists_te.shape)
-    # print(dists_gt.shape)
-
-    # -- viz --
-    # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
-
-    # diff = th.abs(dists_te - dists_gt).mean((0,1))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # -- [gt] search --
+    dists_te = prod_dists(vid_te0,inds_gt,0,vid_te1)
 
     # -- compare --
+    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
+    diff = diff[args0]
 
+    # -- test --
     tol = 1e-5
     error = diff.mean().item()
     if error > tol: print("error: ",error)

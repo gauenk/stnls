@@ -16,7 +16,7 @@ from .search_utils import *
 class ProdSearchWithHeadsFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, inds, stride0,
+    def forward(ctx, vid0, vid1, inds_exh, qstart, stride0,
                 h0_off, w0_off, h1_off, w1_off,
                 k, ps, pt, nheads, chnls,
                 dilation=1,stride1=1,use_k=True,use_adj=True,
@@ -25,7 +25,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                 nbwd=1,rbwd=True,exact=False):
         """
         vid0 = [B,T,C,H,W] or [B,H,T,C,H,W]
-        inds = [B,T,H,W,K_1,3]
+        inds = [B,H,Q,K_1,3]
         """
 
         # -- chw to hwc --
@@ -52,30 +52,34 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         B,H,t,c,h,w = vid0.shape
         vshape = (t,c,h,w)
         n_h0,n_w0 = get_num_img(vshape,stride0,ps,dilation)
-        Q = nqueries
 
         # -- allocs --
-        B,H,Q,k0,_ = inds.shape
+        B,H,Q,k0,_ = inds_exh.shape
         BHQ = B*H*Q
-        dists_exh = -th.inf((B,H,Q,k0),device=device,dtype=th.float32)
-        assert inds.shape[0] == B
-        assert inds.shape[1] == H
-        assert inds.shape[2] == Q
-        # assert inds.shape[3] == K_0 # definition
+        dists_exh = -th.inf * th.ones((B,H,Q,k0),device=device,dtype=dtype)
+        assert inds_exh.shape[0] == B
+        assert inds_exh.shape[1] == H
+        assert inds_exh.shape[2] == Q
+
+        # -- allocates self --
+        if anchor_self:
+            self_dists = -th.inf * th.ones((B,H,Q),device=device,dtype=dtype)
+        else:
+            self_dists = -th.inf * th.ones((1,1,1),device=device,dtype=dtype)
 
         # -- forward --
         th.cuda.set_device(device)
-        dnls_cuda.prod_dists(vid0, vid1, inds, dists_exh, stride0,
-                             n_h0, n_w0, h0_off, w0_off, h1_off, w1_off,
+        dnls_cuda.prod_dists(vid0, vid1, dists_exh, inds_exh, self_dists,
+                             qstart, stride0, n_h0, n_w0,
+                             h0_off, w0_off, h1_off, w1_off,
                              ps, pt, chnls, dilation, stride1, use_adj,
-                             reflect_bounds, search_abs,
-                             anchor_self, tranges,
-                             n_tranges, min_tranges)
+                             reflect_bounds, search_abs, anchor_self)
 
         # -- shape for next step --
         B,H,Q = dists_exh.shape[:3]
         dists_exh = dists_exh.view(B*H,Q,-1)#.contiguous()
         inds_exh = inds_exh.view(B*H,Q,-1,3)#.contiguous()
+        # print(dists_exh)
 
         # -- remove self --
         if remove_self:
@@ -85,13 +89,15 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- shape for next step --
         dists_exh = dists_exh.view(B*H*Q,-1)#.contiguous()
         inds_exh = inds_exh.view(B*H*Q,-1,3)#.contiguous()
+        self_dists = self_dists.view(B*H*Q)
         # dists_exh=dists_exh.view(B,H,Q,-1)#.contiguous()
         # inds_exh=inds_exh.view(B,H,Q,-1,3)#.contiguous()
+        # print("dists_exh.shape:" ,dists_exh.shape)
 
         # -- topk --
         if use_k:
             dists,inds = allocate_rtn(B*H*Q,k,device,dtype)
-            get_topk_prod(dists_exh,inds_exh,dists,inds)
+            topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
         else:
             dists,inds = dists_exh,inds_exh
 
@@ -100,10 +106,10 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         dists[args] = -th.inf # fix nan
 
         # -- fill if anchored --
-        if anchor_self:
-            raise ValueError("Still unknown how to fix the 'self' position.")
-            # args = th.where(dists == th.inf)
-            # dists[args] = 0. # not the inner product value
+        # if anchor_self:
+        #     raise ValueError("Still unknown how to fix the 'self' position.")
+        #     # args = th.where(dists == th.inf)
+        #     # dists[args] = 0. # not the inner product value
 
         # -- final shape with heads -
         dists = dists.view(B,H,Q,-1)
@@ -121,10 +127,10 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         ctx.n_h0,ctx.n_w0 = n_h0,n_w0
         ctx.h0_off,ctx.w0_off = h0_off, w0_off
         ctx.h1_off,ctx.w1_off = h1_off, w1_off
-        return dists,inds
+        return dists
 
     @staticmethod
-    def backward(ctx, grad_dists, grad_inds_is_none):
+    def backward(ctx, grad_dists):
         inds,vid0,vid1 = ctx.saved_tensors
         nheads = ctx.nheads
         vid_shape,nbwd = ctx.vid_shape,ctx.nbwd
@@ -210,12 +216,12 @@ class ProdDistsWithHeads(th.nn.Module):
         self.exact = exact
         self.rbwd = rbwd
 
-    def forward(self, vid0, inds, vid1=None):
+    def forward(self, vid0, inds, qstart=0, vid1=None):
         if vid1 is None: vid1 = vid0
-        chnls = vid0.shape[-3] if self.chnls <= 0 else self.chnls
+        chnls = vid0.shape[-3]//self.nheads if self.chnls <= 0 else self.chnls
         k = inds.shape[-1] if self.k <= 0 else self.k
         return ProdSearchWithHeadsFunction.apply(vid0,vid1,
-                                         inds,self.stride0,
+                                         inds,qstart,self.stride0,
                                          self.h0_off,self.w0_off,
                                          self.h1_off,self.w1_off,
                                          k,self.ps,self.pt,self.nheads,chnls,
@@ -233,7 +239,7 @@ class ProdDistsWithHeads(th.nn.Module):
 
         # -- unpack --
         vshape = (1,T,C,H,W)
-        chnls = C if self.chnls <= 0 else self.chnls
+        chnls = C//self.nheads if self.chnls <= 0 else self.chnls
         k = inds_k if self.k <= 0 else self.k
         nheads = self.nheads
         ps,pt = self.ps,self.pt

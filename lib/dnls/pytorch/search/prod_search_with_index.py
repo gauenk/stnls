@@ -90,6 +90,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             dists,inds = allocate_rtn(B*Q,k,device,dtype)
             dists_exh = dists_exh.view(B*Q,-1)#.contiguous()
             inds_exh = inds_exh.view(B*Q,-1,3)#.contiguous()
+            self_dists=self_dists.view(B*Q)
             topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
             # if anchor_self:
             #     get_topk_prod(dists_exh,inds_exh,dists[:,1:],inds[:,1:])

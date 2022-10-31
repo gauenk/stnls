@@ -64,10 +64,37 @@ def get_topk_prod_b(l2_vals,l2_inds,vals,inds):
 
 def topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self):
     if anchor_self:
-        get_topk_prod(dists_exh,inds_exh,dists[:,1:],inds[:,1:])
-        run_anchor_self(dists,inds,self_dists,dists_exh,inds_exh)
+        # get_topk_prod(dists_exh,inds_exh,dists[:,1:],inds[:,1:])
+        topk_anchor(dists,inds,self_dists,dists_exh,inds_exh)
     else:
         get_topk_prod(dists_exh,inds_exh,dists,inds)
+
+def topk_anchor(dists,inds,self_dists,dists_exh,inds_exh):#,wt,ws_h,ws_w):
+
+    # -- reshape exh --
+    nq = dists_exh.shape[0]
+    dists_exh = dists_exh.view(nq,-1)
+    inds_exh = inds_exh.view(nq,-1,3)
+
+    # -- shape info --
+    b,_ = dists_exh.shape
+    _,k = dists.shape
+
+    # -- fill nan --
+    dists_exh[th.where(th.isnan(dists_exh))] = -th.inf # fix nan
+    # print("dists.shape: ",dists.shape)
+    # print("inds.shape: ",inds.shape)
+    # print("self_dists.shape: ",self_dists.shape)
+    # print("dists_exh.shape: ",dists_exh.shape)
+
+    # -- take maxs --
+    order = th.argsort(dists_exh,dim=1,descending=True)
+    dists[:b,:] = th.gather(dists_exh,1,order[:,:k])
+    for i in range(inds.shape[-1]):
+        inds[:b,:,i] = th.gather(inds_exh[:,:,i],1,order[:,:k])
+
+    # -- fill dists --
+    dists[:b,0] = self_dists
 
 def run_anchor_self(dists,inds,self_dists,dists_exh,inds_exh):#,wt,ws_h,ws_w):
 
@@ -77,15 +104,23 @@ def run_anchor_self(dists,inds,self_dists,dists_exh,inds_exh):#,wt,ws_h,ws_w):
 
     # -- fill dists --
     dists[:,0] = self_dists.view(BQ)
+    print("self_dists.shape: ",self_dists.shape)
+    print("dists_exh.shape: ",dists_exh.shape)
+    print("dists.shape: ",dists.shape)
+    print("inds.shape: ",inds.shape)
+    print("inds_exh.shape: ",inds_exh.shape)
 
     # -- fill inds --
     isinf = th.isinf(dists_exh)
     ispos = dists_exh>0
     args0 = th.where(th.logical_and(isinf,ispos))
-    # print("minmax: ",th.min(th.stack(args0)),th.max(th.stack(args0)))
+    print(inds_exh)
+    print("minmax: ",th.min(th.stack(args0)),th.max(th.stack(args0)))
+    print(args0)
     # exit(0)
     inds_self = []
     for i in range(3):
+        print("inds_exh[...,i].shape: ",inds_exh[...,i].shape)
         inds_i = inds_exh[...,i][args0].view(BQ)
         inds_self.append(inds_i)
     inds_self = th.stack(inds_self,-1)

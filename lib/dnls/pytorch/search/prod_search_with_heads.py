@@ -64,10 +64,11 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         inds_exh = inds_exh.view(B,H,Q,-1,ws_h,ws_w,3)
 
         # -- allocates self --
-        if use_self:
-            self_dists = -th.inf * th.ones_like(dists_exh[:,:,:,0,0,0])
+        assert use_self == anchor_self
+        if anchor_self:
+            self_dists = -th.inf * th.ones((B,H,Q),device=device,dtype=dtype)
         else:
-            self_dists = -th.inf * th.zeros_like(dists_exh[:1,:1,:1,0,0,0])
+            self_dists = -th.inf * th.ones((1,1,1),device=device,dtype=dtype)
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -113,8 +114,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- shape for next step --
         dists_exh = dists_exh.view(B*H*Q,-1)#.contiguous()
         inds_exh = inds_exh.view(B*H*Q,-1,3)#.contiguous()
-        # dists_exh=dists_exh.view(B,H,Q,-1)#.contiguous()
-        # inds_exh=inds_exh.view(B,H,Q,-1,3)#.contiguous()
+        self_dists=self_dists.view(B*H*Q)
 
         # -- topk --
         if use_k:

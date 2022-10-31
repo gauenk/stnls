@@ -6,7 +6,7 @@
 
 void prod_dists_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor dists, torch::Tensor inds, torch::Tensor self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int chnls, int dilation, int stride1,
@@ -21,7 +21,8 @@ void prod_dists_forward_cuda(
 
 void prod_dists_forward(
     torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor dists,torch::Tensor inds,
+    torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int chnls, int dilation, int stride1,
@@ -31,7 +32,8 @@ void prod_dists_forward(
   CHECK_INPUT(vid1);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  prod_dists_forward_cuda(vid0,vid1,dists,inds,
+  CHECK_INPUT(self_dists);
+  prod_dists_forward_cuda(vid0,vid1,dists,inds,self_dists,
                           qstart, stride0, n_h0, n_w0,
                           h0_off,w0_off,h1_off,w1_off,
                           ps,pt,chnls,dilation,stride1,
@@ -41,7 +43,7 @@ void prod_dists_forward(
 
 // python bindings
 void init_prod_dists(py::module &m){
-  m.def("prod_dists_forward", &prod_dists_forward,
+  m.def("prod_dists", &prod_dists_forward,
         "Product Dists Forward with Heads (CUDA)");
 }
 

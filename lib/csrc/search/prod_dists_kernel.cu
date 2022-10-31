@@ -50,6 +50,7 @@ __global__ void prod_dists_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int chnls, int dilation, int stride1,
@@ -60,13 +61,12 @@ __global__ void prod_dists_forward_kernel(
   int nbatch = vid0.size(0);
   int nheads = vid0.size(1);
   int nframes = vid0.size(2);
-  int height = vid0.size(3);
-  int width = vid0.size(4);
-  int color = vid0.size(5);
+  int color = vid0.size(3);
+  int height = vid0.size(4);
+  int width = vid0.size(5);
   int n_hw0 = n_h0 * n_w0;
   int nqueries = dists.size(2);
   int k0 = dists.size(3);
-
 
   // constants
   float nan = __int_as_float(0xffe00000);
@@ -92,7 +92,6 @@ __global__ void prod_dists_forward_kernel(
   int inds_nheads = inds.size(1);
   int ihead = head / inds_nheads;
 
-
   // accumulate time offsets
   bool dir_fwd = true; // forward
   bool swap_dir = false;
@@ -110,13 +109,6 @@ __global__ void prod_dists_forward_kernel(
   bool vvalid_t,vvalid_h,vvalid_w;
   bool nvalid_t,nvalid_h,nvalid_w;
   bool eq_dim;//eq_ti,eq_hi,eq_wi,
-  int wsOff_h,wsOff_w;
-
-  int l_cw0,l_ch0,l_ct0;
-  int cw_i,ch_i,ch,cw;//,ct;
-  // float cw0,ch0,ct0,cw_f,ch_f;
-  // float dist,v_pix,n_pix;
-  // scalar_t cw0,ch0;//,ct0;//,cw_f,ch_f;
   scalar_t dist,v_pix,n_pix;
 
 
@@ -145,8 +137,10 @@ __global__ void prod_dists_forward_kernel(
       if (ki >= k0){ continue; }
       n_ti = inds[ibatch][ihead][qi][ki][0];
       n_hi = inds[ibatch][ihead][qi][ki][1];
-      n_wi = inds[ibatch][head][qi][ki][2];
-      
+      n_wi = inds[ibatch][ihead][qi][ki][2];
+      valid = valid_anchor;
+      dist = 0;
+
       // ---------------------------------
       //
       //  compute delta over patch vol.
@@ -198,8 +192,6 @@ __global__ void prod_dists_forward_kernel(
  
               // -- compute dist --
               dist += v_pix * n_pix;
-              // if (valid){
-              // }
             }
           }
         }
@@ -214,8 +206,8 @@ __global__ void prod_dists_forward_kernel(
         eq_dim = n_ti == ti;
         eq_dim = eq_dim && (n_hi == hi);
         eq_dim = eq_dim && (n_wi == wi);
-        // eq_dim = eq_ti && eq_hi && eq_wi;
         if (eq_dim){
+          self_dists[ibatch][head][qi] = dist;
           dists[ibatch][head][qi][ki] = inf;
         }
       }
@@ -226,16 +218,13 @@ __global__ void prod_dists_forward_kernel(
 
 void prod_dists_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
-    const torch::Tensor fflow, const torch::Tensor bflow,
     torch::Tensor dists, const torch::Tensor inds,
+    torch::Tensor self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps, int pt, int ws_h, int ws_w, int wt,
-    int chnls, int dilation, int stride1,
+    int ps, int pt, int chnls, int dilation, int stride1,
     bool use_adj, bool reflect_bounds, bool search_abs,
-    bool full_ws, bool anchor_self,
-    const torch::Tensor tranges,
-    const torch::Tensor n_tranges, const torch::Tensor min_tranges){
+    bool anchor_self){
 
     // # -- launch params --
     // w_threads = min(ws,32)
@@ -248,7 +237,7 @@ void prod_dists_forward_cuda(
    // our many (too many?) registers limit the number of threads
 
    // -- comp per threads --
-   int kpt = 2;
+   int kpt = 1;
    int qpt = 2;
 
    // -- unpack shape --
@@ -259,7 +248,7 @@ void prod_dists_forward_cuda(
 
    // -- num threads --
    int nthreads_k0 = (k0-1)/kpt+1;
-   dim3 nthreads(nthreads_k0,ps,ps);
+   dim3 nthreads(nthreads_k0);
 
    int rem_blocks = (65535-1)/nheads+1;
    int nquery_blocks = ((nqueries - 1) / qpt) + 1;
@@ -267,13 +256,13 @@ void prod_dists_forward_cuda(
    qpt = ((nqueries - 1) / nquery_blocks) + 1;
    dim3 nblocks(nbatch,nheads,nquery_blocks);
 
+   // fprintf(stdout,"nthreads_k0: %d\n",nthreads_k0);
    // fprintf(stdout,"nbatch,nheads,nquery_blocks: %d,%d,%d\n",
    //         nbatch,nheads,nquery_blocks);
    // fprintf(stdout,"qpt,nquery_blocks,w_threads: %d,%d,%d,%d\n",
    //         qpt,nquery_blocks,ws_h_threads,ws_w_threads);
-   // fprintf(stdout,"reflect_bounds,search_abs,full_ws,anchor_self: %d,%d,%d,%d\n",
-   //         reflect_bounds,search_abs,full_ws,anchor_self);
-   // fprintf(stdout,"ws_h_iters,ws_w_iters: %d,%d\n",ws_h_iters,ws_w_iters);
+   // fprintf(stdout,"reflect_bounds,search_abs,anchor_self: %d,%d,%d\n",
+   //         reflect_bounds,search_abs,anchor_self);
     
    // launch kernel
    AT_DISPATCH_FLOATING_TYPES(vid0.type(),
@@ -283,6 +272,7 @@ void prod_dists_forward_cuda(
         vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+        self_dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0, h0_off, w0_off, h1_off, w1_off,
         ps, pt, chnls, dilation, stride1, use_adj,
         reflect_bounds, search_abs, anchor_self, qpt, kpt);
