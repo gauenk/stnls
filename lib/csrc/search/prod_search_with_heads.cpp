@@ -8,12 +8,13 @@ void prod_search_with_heads_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor fflow, torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls,
     int dilation, int stride1, bool use_adj,
     bool reflect_bounds, bool search_abs,
-    bool full_ws, bool anchor_self,
+    bool full_ws, bool anchor_self, bool use_self,
     torch::Tensor tranges,
     torch::Tensor n_tranges, torch::Tensor min_tranges);
 
@@ -35,13 +36,13 @@ void prod_search_with_heads_backward_cuda(
 void prod_search_with_heads_forward(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor fflow,torch::Tensor bflow,
-    torch::Tensor dists,torch::Tensor inds,
+    torch::Tensor dists, torch::Tensor inds, torch::Tensor self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride1,
     bool use_adj, bool reflect_bounds, bool search_abs,
-    bool full_ws, bool anchor_self,
+    bool full_ws, bool anchor_self, bool use_self,
     torch::Tensor tranges,
     torch::Tensor n_tranges,torch::Tensor min_tranges){
   CHECK_INPUT(vid0);
@@ -50,15 +51,17 @@ void prod_search_with_heads_forward(
   CHECK_INPUT(bflow);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
+  CHECK_INPUT(self_dists);
   CHECK_INPUT(tranges);
   CHECK_INPUT(n_tranges);
   CHECK_INPUT(min_tranges);
-  prod_search_with_heads_forward_cuda(vid0,vid1,fflow,bflow,dists,inds,
+  prod_search_with_heads_forward_cuda(vid0,vid1,fflow,bflow,
+                                      dists,inds,self_dists,
                                       qstart, stride0, n_h0, n_w0,
                                       h0_off,w0_off,h1_off,w1_off,
                                       ps,pt,ws_h,ws_w,wt,chnls,dilation,stride1,
                                       use_adj,reflect_bounds,search_abs,
-                                      full_ws,anchor_self,
+                                      full_ws,anchor_self,use_self,
                                       tranges,n_tranges,min_tranges);
 }
 

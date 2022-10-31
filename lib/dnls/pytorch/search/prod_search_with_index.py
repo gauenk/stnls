@@ -78,7 +78,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                 k, ps, pt, ws_h, ws_w, wt, chnls,
                 stride0, stride1, dilation,lam,
                 use_search_abs, reflect_bounds, use_adj, use_k,
-                oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
+                oh0, ow0, oh1, ow1, use_self, remove_self, full_ws, nbwd,
                 rbwd, exact):
         """
         vid = [T,C,H,W]
@@ -108,6 +108,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         dists_exh,inds_exh = allocate_exh_prod(BQ,wt,ws_h,ws_w,device,dtype)
         dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
         inds_exh = inds_exh.view(B,Q,-1,ws_h,ws_w,3)
+        self_dists = -th.inf * th.ones((B,Q),device=device,dtype=dtype)
 
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -115,11 +116,11 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         # -- forward --
         dnls_cuda.search_prod_with_index_forward(
             vid0, vid1, fflow, bflow,
-            dists_exh, inds_exh,
+            dists_exh, inds_exh, self_dists,
             qstart, stride0, n_h0, n_w0,
             ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation,
             use_search_abs, reflect_bounds, use_adj, full_ws,
-            oh0, ow0, oh1, ow1,
+            use_self, oh0, ow0, oh1, ow1,
             tranges,n_tranges,min_tranges)
 
         th.cuda.synchronize()
@@ -230,7 +231,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
 
         # th.cuda.synchronize()
         return vid0_grad,vid1_grad,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
 class ProductSearch_with_index(th.nn.Module):
@@ -238,8 +239,8 @@ class ProductSearch_with_index(th.nn.Module):
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
                  search_abs=False, reflect_bounds=True, use_adj=True,
-                 use_k=True, remove_self=False, full_ws=False, nbwd=1,
-                 rbwd=True, exact=True):
+                 use_k=True, use_self=False, remove_self=False,
+                 full_ws=False, nbwd=1, rbwd=True, exact=True):
         super(ProductSearch_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -254,6 +255,7 @@ class ProductSearch_with_index(th.nn.Module):
         self.dilation = dilation
         self.lam = lam
         self.search_abs = search_abs
+        self.use_self = use_self
         self.reflect_bounds = reflect_bounds
         self.use_adj = use_adj
         self.use_k = use_k
@@ -275,9 +277,7 @@ class ProductSearch_with_index(th.nn.Module):
         # -- compute --
         n_h,n_w = get_num_img(vshape[1:],self.stride1,self.ps,self.dilation)
         ws_h,ws_w = ws,ws
-        if ws == -1:
-            ws_h = n_h
-            ws_w = n_w
+        if ws == -1: ws_h,ws_w = n_h,n_w
         if k == -1: k = ws_h**2 * (2*wt + 1)
         if chnls <= 0: chnls = c
         return ws_h,ws_w,wt,k,chnls
@@ -301,5 +301,5 @@ class ProductSearch_with_index(th.nn.Module):
             self.stride0,self.stride1,self.dilation,self.lam,
             self.search_abs,self.reflect_bounds,
             self.use_adj,self.use_k,self.oh0,self.ow0,
-            self.oh1,self.ow1,self.remove_self,
+            self.oh1,self.ow1,self.use_self,self.remove_self,
             self.full_ws,self.nbwd,self.rbwd,self.exact)

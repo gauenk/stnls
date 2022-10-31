@@ -23,7 +23,6 @@ from dnls.utils.inds import get_batching_info
 
 # -- meshgrid --
 
-
 # -- test func --
 from torch.nn.functional import fold,unfold,pad
 from torchvision.transforms.functional import center_crop
@@ -36,8 +35,8 @@ def pytest_generate_tests(metafunc):
     th.manual_seed(seed)
     np.random.seed(seed)
     test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
-                  "dilation":[1],"wt":[0],"ws":[-1,9],
-                  "k":[-1,3],"exact":[True],"nheads":[1,4],
+                  "dilation":[1],"wt":[0],"ws":[-1],
+                  "k":[-1],"exact":[True],"nheads":[1],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -48,7 +47,7 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
-def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -70,11 +69,10 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     clean_flow = True
     comp_flow = False
     gpu_stats = False
-    reflect_bounds = False
+    reflect_bounds = True
     use_k = k > 0
     use_adj = False
     adj = 0
-    search_abs = ws == -1
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
@@ -108,50 +106,31 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    prod_dists = dnls.search.init("prod_dists",k, ps, pt,
+                                  h0_off, w0_off, h1_off, w1_off,
+                                  chnls=-1,dilation=dil,
+                                  stride0=stride0, stride1=stride1,
+                                  reflect_bounds=reflect_bounds,use_k=use_k,
+                                  search_abs=False,use_adj=use_adj,
+                                  exact=exact)
+    search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
                                  h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
-                                 search_abs=search_abs,use_adj=use_adj,
-                                 exact=exact)
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt,
-                                 h0_off, w0_off, h1_off, w1_off,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 search_abs=search_abs,use_adj=use_adj,
+                                 search_abs=False,use_adj=use_adj,
                                  exact=exact)
 
-    # -- [testing] search --
-    dists_te,inds_te = search_te(vid,0,ntotal)
+    # -- [gt] search --
+    dists_gt,inds_gt = search_gt(vid,0,ntotal)
     th.cuda.synchronize()
 
-    # -- [groundtruth] search --
-    # search_te.nheads = 1
-    _c = (vid.shape[2]-1) // nheads + 1
-    dists_gt,inds_gt = [],[]
-    for h in range(nheads):
-        cinds = slice(_c*h,_c*(h+1))
-        vid_c = vid[:,:,cinds].contiguous()
-        dists_h,inds_h = search_gt(vid_c,0,ntotal)
-        # dists_h,inds_h = search_te(vid_c,0,ntotal)
-        # dists_h,inds_h = dists_h[0],inds_h[0]
-        dists_gt.append(dists_h)
-        inds_gt.append(inds_h)
-    dists_gt = th.stack(dists_gt,1)
-    inds_gt  = th.stack(inds_gt,1)
-
-    # -- viz --
-    # print(dists_te[0,0,0,:])
-    # print(dists_gt[0,0,0,:])
-    # print(dists_te[0,0,1,:10])
-    # print(dists_gt[0,0,1,:10])
-    # print(dists_te.shape)
-    # print(dists_gt.shape)
+    # -- [gt] search --
+    dists_te = prod_dists(vid,inds_te)
+    print("dists_te.shape: ",dists_te.shape)
+    th.cuda.synchronize()
 
     # -- viz --
     # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
@@ -181,7 +160,7 @@ def test_cu_vs_th_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     assert max_error < tol
 
 @pytest.mark.slow
-def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -210,7 +189,7 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
-    vid = vid.to(device)[:,:5,].contiguous()
+    vid = vid.to(device)[:,:2,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid = vid[...,:32,:32]
     vid /= vid.max()
@@ -279,8 +258,8 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     dists_gt,inds_gt = [],[]
     for h in range(nheads):
         cinds = slice(_c*h,_c*(h+1))
-        vid_c0 = vid_gt0[:,:,cinds].contiguous()
-        vid_c1 = vid_gt1[:,:,cinds].contiguous()
+        vid_c0 = vid_gt0[:,cinds].contiguous()
+        vid_c1 = vid_gt1[:,cinds].contiguous()
         dists_h,inds_h = search_gt(vid_c0,0,ntotal,vid_c1)
         # dists_h,inds_h = search_te(vid_c,0,ntotal)
         # dists_h,inds_h = dists_h[0],inds_h[0]
@@ -290,8 +269,6 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     inds_gt  = th.stack(inds_gt,1)
 
     # -- viz --
-    # print(dists_te)
-    # print(dists_gt)
     # print(dists_te[0,0,:10])
     # print(dists_gt[0,0,:10])
     # print(dists_te.shape)
@@ -309,16 +286,15 @@ def test_cu_vs_th_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
-    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
 
     tol = 1e-5
-    error = diff[args0].mean().item()
+    error = diff.mean().item()
     if error > tol: print("error: ",error)
     assert error < tol
 
     tol = 1e-4
-    max_error = diff[args0].max().item()
+    max_error = diff.max().item()
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 

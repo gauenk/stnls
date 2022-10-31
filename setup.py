@@ -8,6 +8,8 @@ setup(name='dnls',
       include_package_data=True,
       ext_modules=[
           CUDAExtension('dnls_cuda', [
+              'lib/csrc/search/prod_dists.cpp',
+              'lib/csrc/search/prod_dists_kernel.cu',
               'lib/csrc/search/prod_with_index_cuda.cpp',
               'lib/csrc/search/prod_with_index_kernel.cu',
               'lib/csrc/search/l2_cuda.cpp',

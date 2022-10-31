@@ -75,7 +75,7 @@ __global__ void dnls_ifold_forward_kernel(
     int right_p = std::min(right+pad,width);
 
     // -- get batch index --
-    int bindex = blockIdx.y;
+    int ibatch = blockIdx.y;
   
     // coords
     int sq_hp = btm_p - top_p;
@@ -166,13 +166,13 @@ __global__ void dnls_ifold_forward_kernel(
               // -- accumulate --
               valid_q = valid && (qi >= 0) && (qi < numQueries);
               if (valid_q){
-                val += patches[bindex][qi][0][0][ci][h_ip][w_ip];
+                val += patches[ibatch][qi][0][0][ci][h_ip][w_ip];
               }
 
             }
           } // for patch size
         } // for patch size
-        vid[bindex][t_im][ci][h_im][w_im] = val;
+        vid[ibatch][t_im][ci][h_im][w_im] = val;
       } // for colors
     } // for each pixel (with stride)
 }
@@ -231,7 +231,7 @@ __global__ void dnls_ifold_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid, // grad
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, int start, int stride,
-    int dilation, int adj, bool only_full, bool use_reflect, int qpt, int kpt) {
+    int dil, int adj, bool only_full, bool use_reflect, int qpt, int kpt) {
 
     // -- shapes --
     int bsize = vid.size(0);
@@ -245,18 +245,18 @@ __global__ void dnls_ifold_backward_kernel(
     int ps = patches.size(5);
     int psHalf = (int)ps/2;
     int psOffset = (int)(ps-1)/2; // convention to decided center
-    int height_width = height*width;
-    int hw = height*width;
-    int dil = dilation;
+    // int height_width = height*width;
+    // int hw = height*width;
+    // int dil = dilation;
 
     // -- cuda threads --
     int pi = threadIdx.y;
     int pj = threadIdx.z;
+    int k_start = threadIdx.x*kpt;
 
     // -- batching --
     int query_start_block = blockIdx.x*qpt;
-    int k_start = threadIdx.x*kpt;
-    int bindex = blockIdx.y;
+    int ibatch = blockIdx.y;
 
     // -- only fully contained patches count --
     int right_a = right - (ps-1)*dil;
@@ -323,18 +323,19 @@ __global__ void dnls_ifold_backward_kernel(
         // -- fill across cuda threads --
         // vi_h = bounds(hi+dilation*(pi - psHalf),height);
         // vi_w = bounds(wi+dilation*(pj - psHalf),width);
-        vi_h = hi+dilation*(pi - psHalf + adj);
-        vi_w = wi+dilation*(pj - psHalf + adj);
+        vi_h = hi+dil*(pi - psHalf + adj);
+        vi_w = wi+dil*(pj - psHalf + adj);
+        // vi_w = bounds(wi+dilation*(pj - psHalf + adj),0.,width);
+
+        // -- optionally reflect --
+        vi_h = use_reflect ? bounds(vi_h,top,btm) : vi_h;
+        vi_w = use_reflect ? bounds(vi_w,left,right) : vi_w;
+        // vi_h = bounds(vi_h,top,btm);
+        // vi_w = bounds(vi_w,left,right);
 
         // -- spatially valid --
         valid_hw = valid_hw && (vi_h >= top) && (vi_h < btm);
         valid_hw = valid_hw && (vi_w >= left) && (vi_w < right);
-        // valid_hw = valid_hw && (vi_h >= 0) && (vi_h < height);
-        // valid_hw = valid_hw && (vi_w >= 0) && (vi_w < width);
-        // valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
-        // valid_hw = (vi_h >= left) && (vi_h < right);
-        // valid_hw = valid_hw && (vi_w >= top) && (vi_w < btm);
-        // valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- iterate over loop --
         for(int pk = 0; pk < pt; pk++){
@@ -347,11 +348,11 @@ __global__ void dnls_ifold_backward_kernel(
           // -- colors --
           for(int ci = 0; ci < colors; ci++){
             if (valid){
-              pix = vid[bindex][vi_t][ci][vi_h][vi_w];
+              pix = vid[ibatch][vi_t][ci][vi_h][vi_w];
             }else{
               pix = 0.;
             }
-            patches[bindex][qi][ki][pk][ci][pi][pj] = pix;
+            patches[ibatch][qi][ki][pk][ci][pi][pj] = pix;
           }
         }
       }
@@ -375,7 +376,7 @@ void dnls_cuda_ifold_backward(
   int ps = patches.size(6);
 
   // -- kernel blocks --
-  int k = 1;
+  int k = 1; //patches.size(2)
   int qpt = 10;
   int nblocks_queries = (numQueries-1)/qpt+1;
   assert(pt == 1);

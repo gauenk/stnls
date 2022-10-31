@@ -673,7 +673,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
     # -- tolerances --
     small_thresh = 1e-2
     tol_mean = 1e-4
-    tol_max = 5e-3
+    tol_max = 1e-2
 
     # -- check 0 --
     args = th.where(grad0_gt.abs() > small_thresh)

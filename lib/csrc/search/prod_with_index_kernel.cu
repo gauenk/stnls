@@ -37,8 +37,9 @@ __global__ void search_prod_with_index_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> nlDists,
-    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> nlInds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
+    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls, int stride1, int dilation, 
     bool search_abs, bool use_bounds, bool use_adj, bool full_ws,
@@ -59,7 +60,7 @@ __global__ void search_prod_with_index_forward_kernel(
   w = vid0.size(4);
   height = h;
   width = w;
-  int numQueries = nlDists.size(1);
+  int numQueries = dists.size(1);
 
   // offsets
   int psHalf = ps/2;
@@ -313,21 +314,21 @@ __global__ void search_prod_with_index_forward_kernel(
 
           // -- dists --
           if (!valid){ dist = nan; }
-          nlDists[bindex][bidx][wt_k][ws_i][ws_j] = dist;
+          dists[bindex][bidx][wt_k][ws_i][ws_j] = dist;
 
           // -- inds --
-          nlInds[bindex][bidx][wt_k][ws_i][ws_j][0] = n_ti;
-          nlInds[bindex][bidx][wt_k][ws_i][ws_j][1] = n_hi;
-          nlInds[bindex][bidx][wt_k][ws_i][ws_j][2] = n_wi;
+          inds[bindex][bidx][wt_k][ws_i][ws_j][0] = n_ti;
+          inds[bindex][bidx][wt_k][ws_i][ws_j][1] = n_hi;
+          inds[bindex][bidx][wt_k][ws_i][ws_j][2] = n_wi;
 
           // -- final check [put self@index 0] --
           // eq_ti = n_ti == ti;
           // eq_hi = n_hi == hi;
           // eq_wi = n_wi == wi;
           // eq_dim = eq_ti && eq_hi && eq_wi;
-          // dist = nlDists[bidx][wt_k][ws_i][ws_j];
+          // dist = dists[bidx][wt_k][ws_i][ws_j];
           // if (eq_dim){
-          //   nlDists[bidx][wt_k][ws_i][ws_j] = inf;
+          //   dists[bidx][wt_k][ws_i][ws_j] = inf;
           // }
 
         }
@@ -339,11 +340,13 @@ __global__ void search_prod_with_index_forward_kernel(
 void search_prod_with_index_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor fflow, torch::Tensor bflow,
-    torch::Tensor nlDists, torch::Tensor nlInds,
+    torch::Tensor dists, torch::Tensor inds,
+    torch::Tensor self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, int ws_h_noneed, int ws_w_noneed,
     int wt, int chnls, int stride1, int dilation,
-    bool use_search_abs, bool use_bounds, bool use_adj, bool full_ws,
+    bool use_search_abs, bool use_bounds, bool use_adj,
+    bool full_ws, bool use_self,
     int h0_off, int w0_off, int h1_off, int w1_off,
     torch::Tensor tranges, torch::Tensor n_tranges,
     torch::Tensor min_tranges){
@@ -358,11 +361,11 @@ void search_prod_with_index_forward_cuda(
     // fprintf(stdout,"stride, dilation: %d,%d\n",stride, dilation);
 
     // -- threads --
-    int bsize = nlDists.size(0);
-    int numQueries = nlDists.size(1);
-    int st = nlDists.size(2);
-    int ws_h = nlDists.size(3);
-    int ws_w = nlDists.size(4);
+    int bsize = dists.size(0);
+    int numQueries = dists.size(1);
+    int st = dists.size(2);
+    int ws_h = dists.size(3);
+    int ws_w = dists.size(4);
     int ws_h_threads = std::min(ws_h,29);
     int ws_w_threads = std::min(ws_w,29);
     int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
@@ -374,7 +377,7 @@ void search_prod_with_index_forward_cuda(
     int nblocks_queries = ((numQueries - 1) / bpt) + 1;
     dim3 nblocks(bsize,nblocks_queries);
     // fprintf(stdout,"nblocks,w_h_threads,w_w_threads,ws_h,ws_w: %d,%d,%d,%d,%d\n",
-    //         nblocks,ws_h_threads,ws_w_threads,ws_h,ws_w);
+    //         nblocks_queries,ws_h_iters,ws_w_iters,ws_h,ws_w);
      
     // launch kernel
     AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_forward_kernel", ([&] {
@@ -383,8 +386,9 @@ void search_prod_with_index_forward_cuda(
          vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-         nlDists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-         nlInds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+         dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+         inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+         self_dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
          qstart, stride0, n_h0, n_w0,
          ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation, 
          use_search_abs, use_bounds, use_adj, full_ws, h0_off, w0_off, h1_off, w1_off,
@@ -408,8 +412,8 @@ __global__ void search_prod_with_index_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1_grad,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> nlDists,
-    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> nlInds,
+    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, float lam, bool use_adj, bool use_bounds, bool full_ws,
@@ -429,8 +433,8 @@ __global__ void search_prod_with_index_backward_kernel(
   int n_hw0 = n_h0 * n_w0;
 
   // limits
-  int i0_max = nlInds.size(1);
-  int i1_max = nlInds.size(2);
+  int i0_max = inds.size(1);
+  int i1_max = inds.size(2);
 
   // get indices
   int bindex = blockIdx.x;
@@ -473,10 +477,10 @@ __global__ void search_prod_with_index_backward_kernel(
       // c0_offset = 0;
       // c0_offset = (c0_offset + 1) % c0_dist;
       // c0_offset = i1 % c0_dist;
-      ti = nlInds[bindex][i0][i1][0];
-      hi = nlInds[bindex][i0][i1][1];
-      wi = nlInds[bindex][i0][i1][2];
-      weight = nlDists[bindex][i0][i1];
+      ti = inds[bindex][i0][i1][0];
+      hi = inds[bindex][i0][i1][1];
+      wi = inds[bindex][i0][i1][2];
+      weight = dists[bindex][i0][i1];
 
       for (int pk = 0; pk < pt; pk++){
         for (int pi = 0; pi < ps; pi++){
@@ -527,16 +531,16 @@ __global__ void search_prod_with_index_backward_kernel(
 void search_prod_with_index_backward_cuda(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,
     torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor nlDists, torch::Tensor nlInds,
+    torch::Tensor dists, torch::Tensor inds,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, float lam, bool use_adj, bool use_bounds,
     int h0_off, int w0_off, int h1_off, int w1_off,
     bool full_ws, bool use_rand, bool exact) {
 
   // unpack
-  int bsize = nlInds.size(0);
-  int num0 = nlInds.size(1);
-  int num1 = nlInds.size(2);
+  int bsize = inds.size(0);
+  int num0 = inds.size(1);
+  int num1 = inds.size(2);
   int colors = vid0.size(2);
 
   // launch params
@@ -581,8 +585,8 @@ void search_prod_with_index_backward_cuda(
         vid1_grad.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        nlDists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
-        nlInds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
+        dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0,
         ps,pt,lam,use_adj,use_bounds,full_ws,
