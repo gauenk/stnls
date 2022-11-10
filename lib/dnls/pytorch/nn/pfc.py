@@ -26,22 +26,23 @@ class PatchFCFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid, weights, bias, bias_vid,
-                qstart, nqueries, ps, top, left, btm, right,
+                qstart, nqueries, c_in, c_out, ps,
+                top, left, btm, right,
                 stride, dilation, adj, only_full, use_reflect):
 
         # -- init --
-        B,T,C,H,W = vid.shape
+        B,T,_,H,W = vid.shape
         dtype = vid.dtype
         device = vid.device
-        vid_out = th.zeros((B,T,C,C,H,W),device=device,dtype=dtype)
+        vid_out = th.zeros((B,T,c_out,c_in,H,W),device=device,dtype=dtype)
         hw_start = 0
         nqueries = T*((H-1)//stride+1)*((W-1)//stride+1)
         # print("vid.shape: ",vid.shape,nqueries)
 
 
         # -- view --
-        weights = weights.view((C,ps,ps,C,ps,ps))
-        bias = bias.view((C,ps,ps))
+        weights = weights.view((c_out,ps,ps,c_in,ps,ps))
+        bias = bias.view((c_out,ps,ps))
         # print(weights.shape)
         # print(weights)
         # torch::Tensor vid, torch::Tensor vid_in,
@@ -82,20 +83,24 @@ class PatchFCFunction(th.autograd.Function):
 
 class PatchFC(th.nn.Module):
 
-    def __init__(self, c, ps, stride, dil=1, device="cuda:0"):
+    def __init__(self, c_in, c_out, ps, stride, dil=1, device="cuda:0"):
         super().__init__()
-        self.c = c
+        self.c_in = c_in
+        self.c_out = c_out
         self.ps = ps
         self.dil = dil
         self.stride = stride
-        self.dim = ps*ps*c
-        dim = self.dim
-        self.weights,self.bias = self.init_params(c,ps,device)
+        self.weights,self.bias = self.init_params(c_in,c_out,ps,device)
 
-    def init_params(self,c,ps,device):
-        dim = c*ps*ps
-        weights = th.randn((dim,dim),dtype=th.float32,device=device)
-        bias = th.randn((dim,),dtype=th.float32,device=device)
+    def set_from_fc(self,fc_layer):
+        self.weights = fc_layer.weight.data
+        self.bias = fc_layer.bias.data
+
+    def init_params(self,c_in,c_out,ps,device):
+        dim0 = c_in*ps*ps
+        dim1 = c_out*ps*ps
+        weights = th.randn((dim1,dim0),dtype=th.float32,device=device)
+        bias = th.randn((dim1,),dtype=th.float32,device=device)
         weights = weights.clamp(-1,1)
         bias = bias.clamp(-1,1)
         return weights,bias
@@ -125,9 +130,10 @@ class PatchFC(th.nn.Module):
         H,W = vid.shape[-2:]
         bias_vid = self.get_bias_vid(self.bias,H,W)
         # exit(0)
-        assert vid.shape[-3] == self.c
+        assert vid.shape[-3] == self.c_in
         return PatchFCFunction.apply(vid,self.weights,self.bias,
-                                     bias_vid,qstart,nqueries,self.ps,
+                                     bias_vid,qstart,nqueries,
+                                     self.c_in,self.c_out,self.ps,
                                      0,0,H,W,self.stride,self.dil,
                                      adj,only_full,use_reflect)
 

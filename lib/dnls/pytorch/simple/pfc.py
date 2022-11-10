@@ -24,7 +24,7 @@ def run(vid,stride,ps,fc_layer,dil=1):
 
     # -- unfold --
     patches = _unfold(vid,stride,ps)
-    print("patches.shape: ",patches.shape)
+    # print("patches.shape: ",patches.shape)
 
     # -- viz --
     # print(patches[0,:49,0].view(7,7))

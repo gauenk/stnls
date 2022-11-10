@@ -50,7 +50,8 @@ __global__ void patch_full_connected_forward_kernel(
     // -- unpack --
     int bsize = vid.size(0);
     int nframes = vid.size(1);
-    int nftrs = vid.size(2);
+    int nftrs_out = vid.size(2);
+    int nftrs_in = vid.size(3);
     int height = vid.size(4);
     int width = vid.size(5);
     int pt = 1;
@@ -120,7 +121,7 @@ __global__ void patch_full_connected_forward_kernel(
       const int64_t h_im = ((i_mod / sq_wp) % sq_hp) + top_p;
 
       // Which patches (qi) impact me (t_im,w_im,h_im)?
-      for(int c_idx0 = 0; c_idx0 < nftrs; c_idx0++){
+      for(int c_idx0 = 0; c_idx0 < nftrs_out; c_idx0++){
         scalar_t val = 0;
         int Z = 0;
         for (int pk = 0; pk < pt; pk++){
@@ -244,7 +245,8 @@ void patch_full_connected_forward_cuda(
   // batching entire image always
   int bsize = vid.size(0);
   int nframes = vid.size(1);
-  int nftrs = vid.size(2);
+  int nftrs_out = vid.size(2);
+  int nftrs_in = vid.size(3);
   int height = vid.size(4);
   int width = vid.size(5);
 
@@ -265,7 +267,7 @@ void patch_full_connected_forward_cuda(
   int nthreads = 512;
   int num_kernels = nframes*sq_hwp; // ? - qstart?
   int nblocks_queries = (num_kernels-1) / nthreads+1;
-  dim3 nblocks(nblocks_queries,nftrs,bsize);
+  dim3 nblocks(nblocks_queries,nftrs_in,bsize);
   // only_full = true;
 
   // fprintf(stdout,"ps,top,left,btm,right,only_full,use_reflect,dilation: \

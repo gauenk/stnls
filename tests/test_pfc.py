@@ -72,14 +72,17 @@ def test_fwd(ps,stride):
     # vid[...,6,6] = 5.
     # vid[...,7,7] = 10.
     B,T,C,H,W = vid.shape
+    c_in = C
+    c_out = 5
 
     # -- compute optical flow --
     flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- init fc layer --
-    pfc = dnls.nn.init("pfc",C,ps,stride)
-    dim = ps*ps*C
-    fc_layer = nn.Linear(dim,dim).to(device)
+    pfc = dnls.nn.init("pfc",c_in,c_out,ps,stride)
+    dim1 = ps*ps*c_out
+    dim0 = ps*ps*c_in
+    fc_layer = nn.Linear(dim0,dim1).to(device)
     # print(fc_layer.weight.shape)
     fc_weight = th.rand_like(fc_layer.weight).to(device)
     # fc_weight[0,0] = 0.
@@ -122,7 +125,6 @@ def test_fwd(ps,stride):
     # print(vid_te[0,0,:,:,5])
     # print(vid_gt[0,0,:,-3:,-3:])
     # print(vid_te[0,0,:,-3:,-3:])
-
 
     # -- compare --
     diff = th.abs(vid_gt - vid_te)/(vid_gt.abs()+1e-5)
