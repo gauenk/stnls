@@ -129,7 +129,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     dists_gt,inds_gt = search_gt(vid,0,ntotal)
 
     # -- [gt] search --
-    dists_te = prod_dists(vid,inds_gt)
+    dists_te,_ = prod_dists(vid,inds_gt)
 
     # -- viz --
     # print("-"*10)
@@ -246,7 +246,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     dists_gt,inds_gt = search_gt(vid_gt0,0,ntotal,vid_gt1)
 
     # -- [gt] search --
-    dists_te = prod_dists(vid_te0,inds_gt,0,vid_te1)
+    dists_te,_ = prod_dists(vid_te0,inds_gt,0,vid_te1)
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf

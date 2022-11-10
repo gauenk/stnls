@@ -46,7 +46,7 @@ __global__ void wpsum_heads_forward_kernel(
     int h_off, int w_off, int dilation, int adj, bool reflect_bounds, int qpt, int cpt){
 
     // -- shapes --
-    int nheads = dists.size(0);
+    int nheads = dists.size(1);
     int nframes = vid.size(2);
     int colors = vid.size(3);
     int height = vid.size(4);

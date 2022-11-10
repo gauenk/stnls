@@ -70,7 +70,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    ext = "jpg"
     chnls,pt = 1,1
     stride0 = stride
     stride1 = 1
@@ -90,8 +91,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     adj = ps//2 if use_unfold else 0
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:t,].contiguous()/255.
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = th.from_numpy(vid).to(device)[:,:t,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -104,12 +105,12 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
 
     # -- sub square --
@@ -117,8 +118,8 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     coords = [top,left,btm,right]
 
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,__,__ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid.shape[1:], ps, stride0, dil)
+    oh1,ow1,__,__ = comp_pads(vid.shape[1:], ps, stride1, dil)
     n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
 
@@ -193,7 +194,8 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- get args --
     pt,dil = 1,dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    ext = "jpg"
     stride0 = stride
     stride1 = 1
     ws = -1 if k == -1 else 10
@@ -213,9 +215,9 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     h,w = 64,64
-    vid = th.from_numpy(vid).to(device)[[4],:,:h,:w].contiguous()
+    vid = th.from_numpy(vid).to(device)[:,[4],:,:h,:w].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -229,12 +231,12 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
 
     # -- sub square --
@@ -242,8 +244,8 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     coords = [top,left,btm,right]
 
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid.shape[1:], ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid.shape[1:], ps, stride1, dil)
     n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
 
@@ -374,7 +376,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- get args --
     pt,dil = 1,dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    ext = "jpg"
     stride0 = stride
     stride1 = 1
     ws = -1 if k == -1 else 10
@@ -394,8 +397,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
-    vid = th.from_numpy(vid).to(device)[[4],].contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = th.from_numpy(vid).to(device)[:,[4],].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -409,12 +412,12 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
 
     # -- sub square --
@@ -422,8 +425,8 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     coords = [top,left,btm,right]
 
     # -- pads --
-    oh0,ow0,hp,wp = comp_pads(vid.shape, ps, stride0, dil)
-    oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
+    oh0,ow0,hp,wp = comp_pads(vid.shape[1:], ps, stride0, dil)
+    oh1,ow1,_,_ = comp_pads(vid.shape[1:], ps, stride1, dil)
     n_h = (hp - (ps-1)*dil - 1)//stride0 + 1
     n_w = (wp - (ps-1)*dil - 1)//stride0 + 1
 

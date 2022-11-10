@@ -46,8 +46,8 @@ void search_prod_with_index_backward_cuda(
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 void search_prod_with_index_forward(
-    const torch::Tensor vid0,const torch::Tensor vid1,
-    const torch::Tensor fflow,const torch::Tensor bflow,
+    const torch::Tensor vid0, const torch::Tensor vid1,
+    const torch::Tensor fflow, const torch::Tensor bflow,
     torch::Tensor dists,torch::Tensor inds, torch::Tensor self_dists,
     int qstart, int stride0, int n_h0, int n_w0,
     int ps, int pt, int ws_h, int ws_w, int wt,
@@ -76,6 +76,7 @@ void search_prod_with_index_forward(
           full_ws, anchor_self, use_self, oh0, ow0, oh1, ow1,
           tranges, n_tranges, min_tranges);
 }
+
 
 void search_prod_with_index_backward(
     torch::Tensor vid0_grad, torch::Tensor vid1_grad,

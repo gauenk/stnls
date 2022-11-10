@@ -51,7 +51,6 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         dists_exh,inds_exh = allocate_exh_prod(BQ,wt,ws_h,ws_w,device,dtype)
         dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
         inds_exh = inds_exh.view(B,Q,-1,ws_h,ws_w,3)
-        self_dists = -th.inf * th.ones((B,Q),device=device,dtype=dtype)
 
         # -- alloc self --
         assert use_self == anchor_self
@@ -63,6 +62,15 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         # -- pre-computed xsearch offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
+        # print("vid0.shape: ",vid0.shape)
+        # print("vid1.shape: ",vid1.shape)
+        # print("fflow.shape: ",fflow.shape)
+        # print("bflow.shape: ",bflow.shape)
+        # print("dists_exh.shape: ",dists_exh.shape)
+        # print("inds_exh.shape: ",inds_exh.shape)
+        # print("self_dists.shape: ",self_dists.shape)
+        # print(qstart,stride0,n_h0,n_w0,ps,pt,ws_h,ws_w,wt,chnls)
+
         # -- forward --
         dnls_cuda.search_prod_with_index_forward(
             vid0, vid1, fflow, bflow,
@@ -73,7 +81,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             anchor_self, use_self, oh0, ow0, oh1, ow1,
             tranges,n_tranges,min_tranges)
 
-        th.cuda.synchronize()
+        # th.cuda.synchronize()
         # -- shape for output --
         # b = dists_exh.shape[0]
         dists_exh=dists_exh.view(B,Q,-1)#.contiguous()
@@ -90,7 +98,6 @@ class ProductSearchFunction_with_index(th.autograd.Function):
             dists,inds = allocate_rtn(B*Q,k,device,dtype)
             dists_exh = dists_exh.view(B*Q,-1)#.contiguous()
             inds_exh = inds_exh.view(B*Q,-1,3)#.contiguous()
-            self_dists=self_dists.view(B*Q)
             topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
             # if anchor_self:
             #     get_topk_prod(dists_exh,inds_exh,dists[:,1:],inds[:,1:])
@@ -241,6 +248,14 @@ class ProductSearch_with_index(th.nn.Module):
         if chnls <= 0: chnls = c
         return ws_h,ws_w,wt,k,chnls
 
+    def update_flow(self,vshape,device,flows=None):
+        b,t,c,h,w = vshape
+        zflow = th.zeros((b,t,2,h,w),device=device)
+        noflow = flows is None
+        # print("noflow: ",noflow)
+        self.fflow = zflow if noflow else flows.fflow
+        self.bflow = zflow if noflow else flows.bflow
+
     def _update_flow(self,vshape,device):
         b,t,c,h,w = vshape
         zflow = th.zeros((b,t,2,h,w),device=device)
@@ -263,3 +278,6 @@ class ProductSearch_with_index(th.nn.Module):
             self.oh1,self.ow1,
             self.anchor_self,self.use_self,self.remove_self,
             self.full_ws,self.nbwd,self.rbwd,self.exact)
+
+    def wrap_fwd(self,vid0,qstart,nqueries,vid1,_):
+        return self(vid0,qstart,nqueries,vid1)

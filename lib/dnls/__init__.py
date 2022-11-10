@@ -20,6 +20,7 @@ from .pytorch import tile
 from .pytorch import tile_k
 from .pytorch import simple
 from .pytorch import testing
+from .pytorch import nn
 
 #
 # -- unpack functions into namespace --

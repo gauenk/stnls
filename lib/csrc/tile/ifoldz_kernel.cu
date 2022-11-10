@@ -210,13 +210,15 @@ void dnls_cuda_ifoldz_forward(
   int sq_hp = btm_p - top_p;
   int sq_wp = right_p - left_p;
   int sq_hwp = sq_hp * sq_wp;
+  int numQueries = patches.size(1);
 
   // launch params
   int nthreads = 512;
-  // int num_kernels = nframes*sq_hw;
   int num_kernels = nframes*sq_hwp;
+  // int num_kernels = numQueries;//nframes*sq_hwp;
   int nblocks_queries = (num_kernels-1) / nthreads+1;
   dim3 nblocks(nblocks_queries,bsize);
+  // fprintf(stdout,"num_kernels0,num_kernels: %d,%d\n",num_kernels0,num_kernels);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifoldz_forward_kernel", ([&] {

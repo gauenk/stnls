@@ -13,6 +13,8 @@ void init_prod_with_index_search(py::module &);
 void init_window_search(py::module &);
 void init_prod_search_with_heads(py::module &);
 void init_prod_dists(py::module &);
+void init_prod_refine(py::module &);
+void init_unique_topk(py::module &);
 // void init_prod_search_patches_with_heads(py::module &);
 
 // -- reducing --
@@ -32,6 +34,8 @@ void init_ifoldz(py::module &);
 void init_unfold(py::module &);
 void init_iunfold(py::module &);
 
+// -- nn --
+void init_pfc(py::module &);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_l2_search(m);
@@ -41,6 +45,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_window_search(m);
   init_prod_search(m);
   init_prod_dists(m);
+  init_prod_refine(m);
+  init_unique_topk(m);
   init_prod_with_index_search(m);
   init_prod_search_with_heads(m);
   // init_prod_search_patches_with_heads(m);
@@ -59,6 +65,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_unfold(m);
   init_iunfold(m);
 
+  init_pfc(m);
 }
 
 

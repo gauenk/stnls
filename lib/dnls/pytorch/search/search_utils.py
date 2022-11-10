@@ -6,6 +6,7 @@ from einops import rearrange,repeat
 
 # -- padding --
 from ...utils.pads import comp_pads
+from .unique_topk import unique_topk
 
 # -- cpp cuda kernel --
 import dnls_cuda
@@ -75,6 +76,7 @@ def topk_anchor(dists,inds,self_dists,dists_exh,inds_exh):#,wt,ws_h,ws_w):
     nq = dists_exh.shape[0]
     dists_exh = dists_exh.view(nq,-1)
     inds_exh = inds_exh.view(nq,-1,3)
+    self_dists = self_dists.view(-1)
 
     # -- shape info --
     b,_ = dists_exh.shape
@@ -308,3 +310,36 @@ def create_window_partition(in_h,in_w,ws_h,ws_w,device):
     img = img[:in_h,:in_w]
 
     return img
+
+def only_unique(dists,inds,k):
+
+    # -- compute --
+    B,K = dists.shape
+    B,K,_ = inds.shape
+    args = unique_topk(dists,k)
+
+    # -- gather --
+    dists_u = th.gather(dists,1,args)
+    inds_u = []
+    for i in range(3):
+        inds_i = th.gather(inds[...,i],1,args)
+        inds_u.append(inds_i)
+    inds_u = th.stack(inds_u,-1)
+
+    return dists_u,inds_u
+
+def unique(x, dim=-1):
+    x = (1000*x).type(th.int32)
+    unique, inverse = th.unique_consecutive(x, return_inverse=True, dim=dim)
+    # print("unique.shape: ",unique.shape)
+    # print(unique)
+    # print(unique[0,:10])
+    # print(th.unique_consecutive(unique[0,:10],dim=dim))
+    print(unique[:10,0])
+    print(th.unique_consecutive(unique[:10,0],dim=dim))
+    exit(0)
+    perm = th.arange(inverse.size(dim), dtype=inverse.dtype, device=inverse.device)
+    inverse, perm = inverse.flip([dim]), perm.flip([dim])
+    # return unique, inverse.new_empty(unique.size(dim)).scatter_(dim, inverse, perm)
+    args = inverse.new_empty(unique.size(dim)).scatter_(dim, inverse, perm)
+    return args

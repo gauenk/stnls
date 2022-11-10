@@ -114,7 +114,6 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- shape for next step --
         dists_exh = dists_exh.view(B*H*Q,-1)#.contiguous()
         inds_exh = inds_exh.view(B*H*Q,-1,3)#.contiguous()
-        self_dists=self_dists.view(B*H*Q)
 
         # -- topk --
         if use_k:
@@ -310,9 +309,9 @@ class ProdSearchWithHeads(th.nn.Module):
             assert c % self.nheads == 0,"must be multiple of each other."
         return ws_h,ws_w,wt,k,chnls
 
-    def update_flow(self,vid,flows=None):
-        b,t,c,h,w = vid.shape
-        zflow = th.zeros((b,t,2,h,w),device=vid.device)
+    def update_flow(self,vshape,device,flows=None):
+        b,t,c,h,w = vshape
+        zflow = th.zeros((b,t,2,h,w),device=device)
         noflow = flows is None
         # print("noflow: ",noflow)
         self.fflow = zflow if noflow else flows.fflow

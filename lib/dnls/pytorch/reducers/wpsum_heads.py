@@ -27,7 +27,7 @@ class WpSumHeadsFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid, dists, inds, ps, pt=1,
                 h_off=0,w_off=0,dilation=1,adj=0,
-                reflect_bounds=True,use_rand=False,exact=False):
+                reflect_bounds=True,rbwd=False,nbwd=1,exact=False):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
         dists = [BatchSize,nHeads,NumQueries,K]
@@ -37,7 +37,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         """
         # -- add head dim if 1 --
         vid_in_dim = vid.ndim
-        total_color = vid.shape[2]
+        total_color = vid.shape[-3]
         bsize,nheads = dists.shape[:2]
         # print("vid.shape: ",vid.shape,nheads,bsize)
         # assert vid.ndim == 5,"must be 5 dims"
@@ -52,7 +52,9 @@ class WpSumHeadsFunction(th.autograd.Function):
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         device = dists.device
         bsize,nheads,nq,k = dists.shape
-        patches = allocate_patches(bsize,nheads,nq,pt,vid.shape[3],ps,device)
+        # print("vid.shape: ",vid.shape)
+        # print("bsize,nheads,nq,pt,vid.shape[3],ps: ",bsize,nheads,nq,pt,vid.shape[3],ps)
+        patches = allocate_patches(bsize,nheads,nq,pt,vid.shape[-3],ps,device)
         vid = vid.contiguous()
 
         # print(vid.shape)
@@ -81,7 +83,8 @@ class WpSumHeadsFunction(th.autograd.Function):
         ctx.adj = adj
         ctx.reflect_bounds = reflect_bounds
         ctx.exact = exact
-        ctx.use_rand = use_rand
+        ctx.rbwd = rbwd
+        ctx.nbwd = nbwd
 
         # -- viz --
         # print("fwd.")
@@ -102,7 +105,8 @@ class WpSumHeadsFunction(th.autograd.Function):
         adj = ctx.adj
         reflect_bounds = ctx.reflect_bounds
         exact = ctx.exact
-        use_rand = ctx.use_rand
+        rbwd = ctx.rbwd
+        nbwd = ctx.nbwd
         # print("wpsum_heads: bwd.")
         grad_patches = grad_patches.contiguous()
 
@@ -116,6 +120,8 @@ class WpSumHeadsFunction(th.autograd.Function):
         # timer = ExpTimer()
         # timer.start("wpsum_heads_bwd")
         # print(grad_patches.shape)
+        if nbwd > 1:
+            print("Warning: nbwd not implemented for wpsum.")
 
         # -- gradient for video --
         # print(vid_shape,inds.shape,dists.shape,vid.shape)
@@ -123,7 +129,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         dnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
                                            dists,inds,
                                            h_off,w_off,dilation,adj,
-                                           reflect_bounds,use_rand,exact)
+                                           reflect_bounds,rbwd,exact)
         # th.cuda.synchronize()
         # print("1.")
 
@@ -146,13 +152,14 @@ class WpSumHeadsFunction(th.autograd.Function):
         # timer.stop("wpsum_bwd")
         # print(timer)
 
-        return grad_vid,grad_dists,None,None,None,None,None,None,None,None,None,None
+        return grad_vid,grad_dists,None,None,None,\
+            None,None,None,None,None,None,None,None
 
 class WeightedPatchSumHeads(th.nn.Module):
     # [video -> patches] @ inds
 
     def __init__(self, ps, pt=1, h_off=0, w_off=0, dilation=1,
-                 adj=0, reflect_bounds = True, use_rand=False, exact=False):
+                 adj=0, reflect_bounds = True, rbwd=False, nbwd=1, exact=False):
         super(WeightedPatchSumHeads, self).__init__()
         self.ps = ps
         self.pt = pt
@@ -163,7 +170,8 @@ class WeightedPatchSumHeads(th.nn.Module):
         self.dilation = int(dilation)
         self.adj = int(adj)
         self.reflect_bounds = reflect_bounds
-        self.use_rand = use_rand
+        self.rbwd = rbwd
+        self.nbwd = nbwd
         self.exact = exact
 
     def forward(self, vid, dists, inds):
@@ -171,7 +179,7 @@ class WeightedPatchSumHeads(th.nn.Module):
                                            self.h_off,self.w_off,
                                            self.dilation,self.adj,
                                            self.reflect_bounds,
-                                           self.use_rand,self.exact)
+                                           self.rbwd,self.nbwd,self.exact)
         nheads = dists.shape[1]
         b,nheads,nq,_,c,ph,pw = patches.shape
         patches = patches.view(b,nheads,nq,c,ph,pw)

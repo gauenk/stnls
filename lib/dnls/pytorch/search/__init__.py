@@ -6,6 +6,7 @@ from . import prod_search
 from . import prod_search_with_index
 from . import prod_search_with_heads
 from . import prod_dists
+from . import prod_refine
 from . import window_search
 
 def init(version,*args,**kwargs):
@@ -27,5 +28,7 @@ def init(version,*args,**kwargs):
         return prod_search_with_heads.ProdSearchWithHeads(*args,**kwargs)
     elif version == "prod_dists":
         return prod_dists.ProdDistsWithHeads(*args,**kwargs)
+    elif version == "prod_refine":
+        return prod_refine.ProdRefineWithHeads(*args,**kwargs)
     else:
         raise ValueError(f"Uknown version [{version}]")

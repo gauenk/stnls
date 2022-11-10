@@ -6,6 +6,7 @@ from . import tile
 from . import tile_k
 from . import simple
 from . import testing
+from . import nn
 
 #
 # -- unpack functions into namespace --

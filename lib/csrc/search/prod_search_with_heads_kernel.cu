@@ -369,6 +369,7 @@ void prod_search_with_heads_forward_cuda(
     // nthreads = (w_threads,w_threads)
     // ws_iters = (ws-1)//w_threads + 1
     // nblocks = (nq-1)//batches_per_block+1
+    fprintf(stdout,"n_h0,n_w0: %d,%d\n",n_h0,n_w0);
 
    // fprintf(stdout,"qstart, nqueries: %d,%d\n",qstart,nqueries);
    // launch params
