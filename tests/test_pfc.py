@@ -59,6 +59,7 @@ def test_fwd(ps,stride):
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     vid = vid.to(device).contiguous()
+    vid = vid[...,:3,:,:]
     # vid[:,:,0,:,:] = vid[:,:,0,:,:]
     # vid[:,:,1,:,:] = vid[:,:,1,:,:]
     # vid[:,:,2,:,:] = vid[:,:,0,:,:]
@@ -73,7 +74,7 @@ def test_fwd(ps,stride):
     # vid[...,7,7] = 10.
     B,T,C,H,W = vid.shape
     c_in = C
-    c_out = 5
+    c_out = 8
 
     # -- compute optical flow --
     flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
@@ -84,14 +85,8 @@ def test_fwd(ps,stride):
     dim0 = ps*ps*c_in
     fc_layer = nn.Linear(dim0,dim1).to(device)
     # print(fc_layer.weight.shape)
-    fc_weight = th.rand_like(fc_layer.weight).to(device)
-    # fc_weight[0,0] = 0.
-    # fc_weight[0,1] = 2.
-    # fc_weight[1,0] = 3.
-    # fc_weight[1,1] = 4.
-    # fc_weight[0,:] = th.arange(len(fc_weight[0,:]))
-    # fc_weight[1,:] = th.arange(len(fc_weight[0,:]))
-    fc_bias = th.rand_like(fc_layer.bias).to(device)
+    fc_weight = th.randn_like(fc_layer.weight).to(device)
+    fc_bias = th.randn_like(fc_layer.bias).to(device)
     fc_layer.weight.data = fc_weight
     fc_layer.bias.data = fc_bias
     pfc.weights = fc_weight
@@ -105,13 +100,13 @@ def test_fwd(ps,stride):
 
     # -- viz --
     # print("vid_gt.shape: ",vid_gt.shape)
-    # print("-"*30)
-    # print(vid_gt[0,0,0,:9,:9])
-    # print(vid_te[0,0,0,:9,:9])
-    # print("-"*30)
-    # print(vid_gt[0,0,0,-9:,-9:])
-    # print(vid_te[0,0,0,-9:,-9:])
-    # print("-"*30)
+    print("-"*30)
+    print(vid_gt[0,0,0,:9,:9])
+    print(vid_te[0,0,0,:9,:9])
+    print("-"*30)
+    print(vid_gt[0,0,0,-9:,-9:])
+    print(vid_te[0,0,0,-9:,-9:])
+    print("-"*30)
 
     # print("-"*30)
     # args = th.where(th.abs(vid_gt - vid_te) > 1e-3)

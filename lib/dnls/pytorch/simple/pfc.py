@@ -8,7 +8,7 @@ Simple version of Patch Fully-Connected
 # -- torch imports --
 import torch as th
 import torch.nn as nn
-from torch.nn.functional import fold,unfold,pad
+from torch.nn.functional import fold,unfold,pad,relu
 from einops import rearrange,repeat
 
 # def run(vid0,vid1,stride0,stride1,ps,weights,bias):
@@ -17,13 +17,14 @@ def run(vid,stride,ps,fc_layer,dil=1):
     # -- reshape --
     B = vid.shape[0]
     device = vid.device
+    full_pads = True
 
     # -- rearrange --
     vid = rearrange(vid,'b t c h w -> (b t) c h w')
     T,C,H,W = vid.shape
 
     # -- unfold --
-    patches = _unfold(vid,stride,ps)
+    patches = _unfold(vid,stride,ps,full_pads=full_pads)
     # print("patches.shape: ",patches.shape)
 
     # -- viz --
@@ -33,7 +34,7 @@ def run(vid,stride,ps,fc_layer,dil=1):
 
     # -- xform --
     patches = patches.transpose(2,1)
-    xformed = fc_layer(patches)
+    xformed = relu(fc_layer(patches))
     # xformed = patches
     xformed = xformed.transpose(2,1)
     # print("xformed.shape: ",xformed.shape)
@@ -44,7 +45,7 @@ def run(vid,stride,ps,fc_layer,dil=1):
     # print(xformed[0,:49,2].view(7,7))
 
     # -- fold --
-    vid_out = _fold(xformed,ps,H,W,device,stride)
+    vid_out = _fold(xformed,ps,H,W,device,stride,full_pads=full_pads)
 
     # -- reshape --
     vid_out = rearrange(vid_out,'(b t) c h w -> b t c h w',b=B)

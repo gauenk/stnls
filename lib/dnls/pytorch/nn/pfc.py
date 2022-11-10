@@ -74,7 +74,8 @@ class PatchFCFunction(th.autograd.Function):
                               adj, only_full, use_reflect)
 
         # -- for backward --
-        vid_out = vid_out.sum(3) + bias_vid
+        vid_out = vid_out[:,:,:,0]
+        # vid_out = vid_out.sum(3)# + bias_vid
         return vid_out
 
     @staticmethod
@@ -128,7 +129,7 @@ class PatchFC(th.nn.Module):
         only_full = False
         use_reflect = True
         H,W = vid.shape[-2:]
-        bias_vid = self.get_bias_vid(self.bias,H,W)
+        bias_vid = None#self.get_bias_vid(self.bias,H,W)
         # exit(0)
         assert vid.shape[-3] == self.c_in
         return PatchFCFunction.apply(vid,self.weights,self.bias,
