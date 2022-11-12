@@ -353,22 +353,20 @@ class ProdSearchWithHeads(th.nn.Module):
 
     def flops(self,T,C,H,W):
 
-        # -- init --
-        flops = 0
-
         # -- unpack --
         vshape = (1,T,C,H,W)
         ws_h,ws_w,wt,k,chnls = self._get_args(vshape)
         nheads = self.nheads
         ps,pt = self.ps,self.pt
+        print("C,c,nheads: ",C,chnls,nheads)
 
         # -- compute search --
         nrefs_hw = ((H-1)//self.stride0+1) * ((W-1)//self.stride0+1)
         nrefs = T * nheads * nrefs_hw
         nsearch = ws_h * ws_w * (2*wt+1)
-        flops_per_search = chnls * ps * ps * pt
+        flops_per_search = 2 * chnls * ps * ps * pt
         search_flops = nrefs * nsearch * flops_per_search
-        flops += search_flops
+        flops = search_flops
 
         # -- compute top-k --
         if self.use_k:

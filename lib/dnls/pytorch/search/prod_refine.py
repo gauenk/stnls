@@ -351,9 +351,6 @@ class ProdRefineWithHeads(th.nn.Module):
 
     def flops(self,T,C,H,W,K_exh):
 
-        # -- init --
-        flops = 0
-
         # -- unpack --
         vshape = (1,T,C,H,W)
         ws_h,ws_w,k,chnls = self._get_args(vshape)
@@ -364,9 +361,9 @@ class ProdRefineWithHeads(th.nn.Module):
         nrefs_hw = ((H-1)//self.stride0+1) * ((W-1)//self.stride0+1)
         nrefs = T * nheads * nrefs_hw
         nsearch = ws_h * ws_w * K_exh
-        flops_per_search = chnls * ps * ps * pt
+        flops_per_search = 2 * chnls * ps * ps * pt
         search_flops = nrefs * nsearch * flops_per_search
-        flops += search_flops
+        flops = search_flops
 
         # -- compute top-k --
         if self.use_k:
