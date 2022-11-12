@@ -358,7 +358,7 @@ class ProdSearchWithHeads(th.nn.Module):
         ws_h,ws_w,wt,k,chnls = self._get_args(vshape)
         nheads = self.nheads
         ps,pt = self.ps,self.pt
-        print("C,c,nheads: ",C,chnls,nheads)
+        # print("C,c,nheads: ",C,chnls,nheads)
 
         # -- compute search --
         nrefs_hw = ((H-1)//self.stride0+1) * ((W-1)//self.stride0+1)
