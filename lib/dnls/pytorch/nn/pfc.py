@@ -34,7 +34,7 @@ class PatchFCFunction(th.autograd.Function):
         B,T,_,H,W = vid.shape
         dtype = vid.dtype
         device = vid.device
-        vid_out = th.zeros((B,T,c_out,c_in,H,W),device=device,dtype=dtype)
+        vid_out = th.zeros((B,T,c_out,1,H,W),device=device,dtype=dtype)
         hw_start = 0
         nqueries = T*((H-1)//stride+1)*((W-1)//stride+1)
         # print("vid.shape: ",vid.shape,nqueries)
@@ -66,7 +66,8 @@ class PatchFCFunction(th.autograd.Function):
         #       hw_start,stride,dilation,adj,only_full,use_reflect)
 
         # -- forward --
-        th.cuda.set_device(device)
+        # th.cuda.set_device(device)
+        # print("hi.")
         dnls_cuda.pfc_forward(vid_out, vid, weights, bias,
                               qstart, nqueries, ps,
                               top, left, btm, right,

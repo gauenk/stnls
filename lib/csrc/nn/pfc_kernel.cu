@@ -409,8 +409,8 @@ __global__ void patch_full_connected_forward_kernel(
 
               // -- inner product across (hi,wi) patch using weight (h_ip,w_ip) --
               scalar_t pval = 0;
-              for (int _pi = 0; _pi < ps; _pi++){
-                for (int _pj = 0; _pj < ps; _pj++){
+              for (int _pi = 0; _pi < ps; _pi++){ // ps 
+                for (int _pj = 0; _pj < ps; _pj++){ // ps
 
                   // -- patch --
                   int hi_in = (hi) + dilation*(_pi - psOffset);// - psOffset - adj);
@@ -423,7 +423,7 @@ __global__ void patch_full_connected_forward_kernel(
 
                   // -- accumulate partial sum --
                   if (valid_in){
-                    for(int c_idx1 = 0; c_idx1 < nftrs_in; c_idx1++){
+                    for(int c_idx1 = 0; c_idx1 < 1; c_idx1++){ // nftrs_in
                       weight = weights[c_idx0][w_ip][h_ip][c_idx1][_pi][_pj];
                       pval += weight * vid_in[ibatch][t_im][c_idx1][hi_in][wi_in];
                     }
@@ -475,7 +475,7 @@ void patch_full_connected_forward_cuda(
   int sq_hwp = sq_hp * sq_wp;
 
   // -- launch params --
-  int nthreads = 800;
+  int nthreads = 512;
   int num_kernels = nframes*sq_hwp; // ? - qstart?
   int nblocks_queries = (num_kernels-1) / nthreads+1;
   // dim3 nblocks(nblocks_queries,nftrs_in,bsize); // original

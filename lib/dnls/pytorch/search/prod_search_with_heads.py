@@ -55,6 +55,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         B,H,t,c,h,w = vid0.shape
         vshape = (t,c,h,w)
         n_h0,n_w0 = get_num_img(vshape,stride0,ps,dilation)
+        nqueries = n_h0*n_w0 if nqueries <= 0 else nqueries
         Q = nqueries
 
         # -- allocs --
@@ -332,7 +333,7 @@ class ProdSearchWithHeads(th.nn.Module):
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
-    def forward(self, vid0, qstart, nqueries, vid1=None):
+    def forward(self, vid0, qstart=0, nqueries=-1, vid1=None):
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
