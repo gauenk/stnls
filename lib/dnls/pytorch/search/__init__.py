@@ -8,6 +8,7 @@ from . import prod_search_with_heads
 from . import prod_dists
 from . import prod_refine
 from . import window_search
+from . import interpolate_inds
 
 def init(version,*args,**kwargs):
     if version == "l2":

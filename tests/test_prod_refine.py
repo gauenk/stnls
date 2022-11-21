@@ -201,6 +201,6 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     # assert th.all(geq_bools).item(),"Must be greater than gt."
 
 
-def test_bwd():
-    pass
+# def test_bwd():
+#     pass
 

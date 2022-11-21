@@ -15,6 +15,7 @@ void init_prod_search_with_heads(py::module &);
 void init_prod_dists(py::module &);
 void init_prod_refine(py::module &);
 void init_unique_topk(py::module &);
+void init_interpolate_inds(py::module &);
 // void init_prod_search_patches_with_heads(py::module &);
 
 // -- reducing --
@@ -50,6 +51,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_prod_with_index_search(m);
   init_prod_search_with_heads(m);
   // init_prod_search_patches_with_heads(m);
+  init_interpolate_inds(m);
 
   init_wpsum(m);
   init_iwpsum(m);

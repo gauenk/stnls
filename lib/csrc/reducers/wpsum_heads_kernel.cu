@@ -73,7 +73,7 @@ __global__ void wpsum_heads_forward_kernel(
     // -- batching --
     int query_start = blockIdx.x*qpt;
     int c_start = threadIdx.x*cpt;
-    int bindex = blockIdx.z;
+    int bi = blockIdx.z;
 
     // inits
     int qi,ki,ci;
@@ -91,18 +91,17 @@ __global__ void wpsum_heads_forward_kernel(
       for(int ki = 0; ki < k; ki++){
 
         // -- reference center --
-        center_ti = inds[bindex][inds_head][qi][ki][0];
-        center_hi = inds[bindex][inds_head][qi][ki][1];
-        center_wi = inds[bindex][inds_head][qi][ki][2];
-        dist = dists[bindex][head_index][qi][ki];
+        center_ti = inds[bi][inds_head][qi][ki][0];
+        center_hi = inds[bi][inds_head][qi][ki][1];
+        center_wi = inds[bi][inds_head][qi][ki][2];
+        dist = dists[bi][head_index][qi][ki];
 
         // -- reference patch location --
+        hi = (center_hi-h_off)+dilation*(pi - psHalf + adj);
+        wi = (center_wi-w_off)+dilation*(pj - psHalf + adj);
         if (reflect_bounds){
-          hi = bounds((center_hi-h_off)+dilation*(pi - psHalf + adj),height);
-          wi = bounds((center_wi-w_off)+dilation*(pj - psHalf + adj),width);
-        }else{
-          hi = (center_hi-h_off)+dilation*(pi - psHalf + adj);
-          wi = (center_wi-w_off)+dilation*(pj - psHalf + adj);
+          hi = bounds(hi,height);
+          wi = bounds(wi,width);
         }
 
         // -- spatially valid --
@@ -125,8 +124,8 @@ __global__ void wpsum_heads_forward_kernel(
 
             // -- fill without warp divergence --
             if (valid && (ci < colors)){
-              pix = dist*vid[bindex][vid_head][ti][ci][hi][wi];
-              patches[bindex][head_index][qi][pk][ci][pi][pj] += pix;
+              pix = dist*vid[bi][vid_head][ti][ci][hi][wi];
+              patches[bi][head_index][qi][pk][ci][pi][pj] += pix;
             }
 
           }
@@ -161,8 +160,8 @@ void cuda_wpsum_heads_forward(
   color_nthreads = min(color_nthreads,colors);
   int cpt = ((colors - 1)/color_nthreads) + 1; // num of colors per thread
   dim3 nthreads(color_nthreads,ps,ps);
-  // printf("colors: %d, cpt: %d, color_nthreads: %d, ps: %d, nblocks: %d,%d, rbounds: %d\n",
-  //        colors,cpt,color_nthreads,ps,query_nblocks,head_nblocks,reflect_bounds);
+  printf("colors: %d, cpt: %d, color_nthreads: %d, ps: %d, nblocks: %d,%d, rbounds: %d\n",
+         colors,cpt,color_nthreads,ps,query_nblocks,head_nblocks,reflect_bounds);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "wpsum_heads_forward_kernel", ([&] {
@@ -213,6 +212,8 @@ __global__ void wpsum_heads_backward_vid_kernel(
   int c0_end = min(c0_start + cpt,colors);
   int c0 = 0;
   int c0_offset = 0;
+  c0_start = 0;
+  c0_end = colors;
   int c0_dist = c0_end - c0_start;
 
   // -- head indices --
@@ -223,7 +224,7 @@ __global__ void wpsum_heads_backward_vid_kernel(
   int vid_head,inds_head;
 
   // -- batch --
-  int bindex = blockIdx.z;
+  int bi = blockIdx.z;
 
   // block indices
   int thread_x = threadIdx.x;
@@ -241,10 +242,10 @@ __global__ void wpsum_heads_backward_vid_kernel(
           inds_head = head_index % inds_nheads;
           vid_head = head_index % vid_nheads;
 
-          center_ti = inds[bindex][inds_head][qi][ki][0];
-          center_hi = inds[bindex][inds_head][qi][ki][1];
-          center_wi = inds[bindex][inds_head][qi][ki][2];
-          weight = dists[bindex][head_index][qi][ki];
+          center_ti = inds[bi][inds_head][qi][ki][0];
+          center_hi = inds[bi][inds_head][qi][ki][1];
+          center_wi = inds[bi][inds_head][qi][ki][2];
+          weight = dists[bi][head_index][qi][ki];
 
           for (int pk = 0; pk < pt; pk++){
             for (int pi = 0; pi < ps; pi++){
@@ -259,9 +260,9 @@ __global__ void wpsum_heads_backward_vid_kernel(
                 valid = valid_h && valid_w;
                 for (int _c0 = c0_start; _c0 < c0_end; _c0++){
                   c0 = (_c0 + c0_offset + head_index) % c0_dist + c0_start;
-                  pix = weight * patches_grad[bindex][head_index][qi][pk][c0][pi][pj];
+                  pix = weight * patches_grad[bi][head_index][qi][pk][c0][pi][pj];
                   if (valid){
-                    vid_grad[bindex][vid_head][ti][c0][hi][wi] += pix;
+                    vid_grad[bi][vid_head][ti][c0][hi][wi] += pix;
                   }
                 }
               }
@@ -296,7 +297,7 @@ void cuda_wpsum_heads_backward_vid(
   int cpt = (colors-1)/color_threads+1;
   block_threads = exact ? 1 : block_threads;
   color_threads = exact ? colors : color_threads;
-  dim3 nthreads = dim3(block_threads,color_threads);
+  dim3 nthreads(block_threads,color_threads);
 
   // -- head blocks --
   int nheads_vid = vid_grad.size(1);
@@ -329,7 +330,8 @@ void cuda_wpsum_heads_backward_vid(
 
   // -- viz --
   // fprintf(stdout,"nblocks,block_threads,color_threads: %d,%d,%d\n",nblocks,block_threads,color_threads);
-  // fprintf(stdout,"bpb,cpt: %d,%d\n",bpb,cpt);
+  fprintf(stdout,"bpb,cpt: %d,%d\n",bpb,cpt);
+  fprintf(stdout,"ps: %d\n",ps);
 
   // -- allocate random memory --
   auto cu_index = vid_grad.device().index();
@@ -391,7 +393,7 @@ __global__ void wpsum_heads_backward_dists_kernel(
   int qi = blockIdx.x*blockDim.x+threadIdx.x;
   int ki = blockIdx.y*blockDim.y+threadIdx.y;
   int head_index = blockIdx.z/bsize;
-  int bindex = blockIdx.z % bsize;
+  int bi = blockIdx.z % bsize;
 
   // -- head indices --
   int vid_nheads = vid.size(1);
@@ -400,9 +402,9 @@ __global__ void wpsum_heads_backward_dists_kernel(
   int inds_head = head_index % inds_nheads;
 
   if ((qi < nq) && (ki < k)) { // -- if valid --
-    int center_ti = inds[bindex][inds_head][qi][ki][0];
-    int center_hi = inds[bindex][inds_head][qi][ki][1];
-    int center_wi = inds[bindex][inds_head][qi][ki][2];
+    int center_ti = inds[bi][inds_head][qi][ki][0];
+    int center_hi = inds[bi][inds_head][qi][ki][1];
+    int center_wi = inds[bi][inds_head][qi][ki][2];
     for (int pk = 0; pk < pt; pk++){
       ti = center_ti + pk;
       for (int pi = 0; pi < ps; pi++){
@@ -415,9 +417,9 @@ __global__ void wpsum_heads_backward_dists_kernel(
           valid_w = (wi >= 0) && (wi < width);
           valid = valid_h && valid_w;
           for (int c0 = 0; c0 < colors; c0++){
-              pix_n = patches_grad[bindex][head_index][qi][pk][c0][pi][pj];
-              pix_m = valid ? vid[bindex][vid_head][ti][c0][hi][wi] : 0;
-              dists_grad[bindex][head_index][qi][ki] += valid ? pix_n * pix_m : 0.;
+              pix_n = patches_grad[bi][head_index][qi][pk][c0][pi][pj];
+              pix_m = valid ? vid[bi][vid_head][ti][c0][hi][wi] : 0;
+              dists_grad[bi][head_index][qi][ki] += valid ? pix_n * pix_m : 0.;
           }
         }
       }

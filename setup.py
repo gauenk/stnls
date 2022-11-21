@@ -10,6 +10,8 @@ setup(name='dnls',
           CUDAExtension('dnls_cuda', [
               'lib/csrc/nn/pfc.cpp',
               'lib/csrc/nn/pfc_kernel.cu',
+              'lib/csrc/search/interpolate_inds.cpp',
+              'lib/csrc/search/interpolate_inds_kernel.cu',
               'lib/csrc/search/unique_topk.cpp',
               'lib/csrc/search/unique_topk_kernel.cu',
               'lib/csrc/search/prod_dists.cpp',

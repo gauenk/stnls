@@ -4,6 +4,9 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
+# -- nn --
+import torch.nn.functional as nnf
+
 # -- padding --
 from ...utils.pads import comp_pads
 from .unique_topk import unique_topk
@@ -343,3 +346,16 @@ def unique(x, dim=-1):
     # return unique, inverse.new_empty(unique.size(dim)).scatter_(dim, inverse, perm)
     args = inverse.new_empty(unique.size(dim)).scatter_(dim, inverse, perm)
     return args
+
+
+def upscale_inds(inds,stride,H,W):
+    B,Q,K,_ = inds.shape
+    nH = (H-1)//stride+1
+    inds = rearrange(inds,'b (h w) k tr -> (b k) tr h w',h=nH)
+    inds_t = inds[:,[0]].contiguous()
+    inds_i = inds[:,1:].contiguous()
+    inds_t = nnf.interpolate(inds_t,mode='nearest-exact',size=(H,W))
+    inds_i = nnf.interpolate(inds_i,'bilinear',size=(H,W))
+    inds = th.cat([inds_t,inds_i],1)
+    inds = rearrange(inds,'(b k) tr h w -> b (h w) k tr')
+    return inds
