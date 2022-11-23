@@ -19,7 +19,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                 dilation=1,stride1=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
                 full_ws=False,anchor_self=False,remove_self=False,
-                nbwd=1,rbwd=True,exact=False):
+                nbwd=1,rbwd=True,nbwd_mode="median",exact=False):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -99,6 +99,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.vid_shape = vid0.shape
+        ctx.nbwd_mode = nbwd_mode
         ctx.qstart,ctx.stride0 = qstart,stride0
         ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
@@ -121,12 +122,13 @@ class L2SearchFunction_with_index(th.autograd.Function):
         n_h0,n_w0 = ctx.n_h0,ctx.n_w0
         h0_off, w0_off = ctx.h0_off,ctx.w0_off
         h1_off, w1_off = ctx.h1_off,ctx.w1_off
-        grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
-        grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
+        nbwd_mode = ctx.nbwd_mode
 
         # -- allow for repeated exec --
         if nbwd == 1:
             # print(grad_vid0.shape,vid0.shape,grad_dists.shape,inds.shape)
+            grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
+            grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
             dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
                                                     vid0,vid1,
                                                     grad_dists,inds,
@@ -135,22 +137,48 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                     ps,pt,dil, use_adj,
                                                     reflect_bounds,rbwd,exact)
         else:
-            for _ in range(nbwd):
-                grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
-                grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
-                                                        vid0,vid1,
-                                                        grad_dists,inds,
-                                                        qstart,stride0,n_h0,n_w0,
-                                                        h0_off, w0_off, h1_off, w1_off,
-                                                        ps,pt,dil,use_adj,
-                                                        reflect_bounds,rbwd,exact)
-                grad_vid0 += grad_vid0_i
-                grad_vid1 += grad_vid1_i
-            grad_vid0 /= nbwd
-            grad_vid1 /= nbwd
+            if nbwd_mode == "mean":
+                grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
+                grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
+                for _ in range(nbwd):
+                    grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
+                    grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
+                    dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
+                                                            vid0,vid1,
+                                                            grad_dists,inds,
+                                                            qstart,stride0,n_h0,n_w0,
+                                                            h0_off, w0_off,
+                                                            h1_off, w1_off,
+                                                            ps,pt,dil,use_adj,
+                                                            reflect_bounds,rbwd,exact)
+                    grad_vid0 += grad_vid0_i
+                    grad_vid1 += grad_vid1_i
+                grad_vid0 /= nbwd
+                grad_vid1 /= nbwd
+            elif nbwd_mode == "median":
+                grad_vid0 = []
+                grad_vid1 = []
+                for _ in range(nbwd):
+                    grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
+                    grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
+                    dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
+                                                            vid0,vid1,
+                                                            grad_dists,inds,
+                                                            qstart,stride0,n_h0,n_w0,
+                                                            h0_off, w0_off,
+                                                            h1_off, w1_off,
+                                                            ps,pt,dil,use_adj,
+                                                            reflect_bounds,rbwd,exact)
+                    grad_vid0.append(grad_vid0_i)
+                    grad_vid1.append(grad_vid1_i)
+                grad_vid0 = th.stack(grad_vid0,0)
+                grad_vid1 = th.stack(grad_vid1,0)
+                grad_vid0 = th.median(grad_vid0,0)[0]
+                grad_vid1 = th.median(grad_vid1,0)[0]
+            else:
+                raise ValueError(f"Uknown nbwd_mode [{nbwd_mode}]")
 
-        return grad_vid0,grad_vid1,None,None,None,None,None,\
+        return grad_vid0,grad_vid1,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -161,7 +189,7 @@ class L2Search_with_index(th.nn.Module):
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, nbwd=1, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
-                 anchor_self=False,rbwd=True):
+                 anchor_self=False,rbwd=True,nbwd_mode="median"):
         super(L2Search_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -188,6 +216,7 @@ class L2Search_with_index(th.nn.Module):
         self.nbwd = nbwd
         self.exact = exact
         self.rbwd = rbwd
+        self.nbwd_mode = nbwd_mode
 
     def query_batch_info(self,vshape,only_full=True,use_pad=True):
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,
@@ -233,6 +262,6 @@ class L2Search_with_index(th.nn.Module):
                                                  self.use_k,self.use_adj,
                                                  self.reflect_bounds,self.search_abs,
                                                  self.full_ws,self.anchor_self,
-                                                 self.remove_self,
-                                                 self.nbwd,self.rbwd,self.exact)
+                                                 self.remove_self,self.nbwd,
+                                                 self.rbwd,self.nbwd_mode,self.exact)
 
