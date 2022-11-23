@@ -62,9 +62,9 @@ class WpSumHeadsFunction(th.autograd.Function):
         # print(dists.shape)
         # print(inds.shape)
         # print("-"*10)
-        print("adj: ",adj)
-        print("reflect_bounds: ",reflect_bounds)
-        print("inds.shape: ",inds.shape)
+        # print("adj: ",adj)
+        # print("reflect_bounds: ",reflect_bounds)
+        # print("inds.shape: ",inds.shape)
 
         # void cuda_wpsum_heads_forward(
         #     torch::Tensor vid, torch::Tensor patches,
@@ -123,31 +123,46 @@ class WpSumHeadsFunction(th.autograd.Function):
         # timer = ExpTimer()
         # timer.start("wpsum_heads_bwd")
         # print(grad_patches.shape)
-        if nbwd > 1:
-            print("Warning: nbwd not implemented for wpsum.")
+        # if nbwd > 1:
+        #     print("Warning: nbwd not implemented for wpsum.")
 
         # -- gradient for video --
         # print(vid_shape,inds.shape,dists.shape,vid.shape)
-        print(h_off,w_off)
-        print(vid_shape)
+        # print(h_off,w_off)
+        # print(vid_shape)
         _,nheads,_,_ = dists.shape
         _b,_H,_t,_c,_h,_w = vid_shape
         modded_h = False
+        vid_shape_og = list(vid_shape)
         vid_shape = list(vid_shape)
         if _H == 1 and _H != nheads:
             vid_shape[1] = nheads
             modded_h = True
-        grad_vid = allocate_vid(vid_shape,grad_patches.device)
-        print("grad_vid.shape: ",grad_vid.shape)
-        dnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
-                                           dists,inds,
-                                           h_off,w_off,dilation,adj,
-                                           reflect_bounds,rbwd,exact)
-        if modded_h:
-            grad_vid = grad_vid.sum(1,keepdim=True)
 
-        # th.cuda.synchronize()
-        # print("1.")
+        # -- ave multiple evals --
+        if nbwd > 1:
+            grad_vid = allocate_vid(vid_shape_og,grad_patches.device)
+            for i in range(nbwd):
+                grad_vid_i = allocate_vid(vid_shape,grad_patches.device)
+                # dnls_cuda.wpsum_heads_backward_vid(grad_vid_i,grad_patches,
+                #                                    dists,inds,
+                #                                    h_off,w_off,dilation,adj,
+                #                                    reflect_bounds,rbwd,exact)
+                if modded_h:
+                    grad_vid_i = grad_vid_i.sum(1,keepdim=True)
+                grad_vid += grad_vid_i/nbwd
+        else:
+            grad_vid = allocate_vid(vid_shape,grad_patches.device)
+            # print("grad_vid.shape: ",grad_vid.shape)
+            # dnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
+            #                                    dists,inds,
+            #                                    h_off,w_off,dilation,adj,
+            #                                    reflect_bounds,rbwd,exact)
+            # print("grad_vid.shape: ",grad_vid.shape)
+            if modded_h:
+                grad_vid = grad_vid.sum(1,keepdim=True)
+            # print("grad_vid.shape: ",grad_vid.shape)
+        # -- end output --
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
