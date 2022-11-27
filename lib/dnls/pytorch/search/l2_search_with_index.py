@@ -39,6 +39,15 @@ class L2SearchFunction_with_index(th.autograd.Function):
         dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
         inds_exh = inds_exh.view(B,Q,-1,ws_h,ws_w,3)
 
+        # -- debug --
+        # print(ws_h,ws_w,wt,k,vid0.shape,chnls,qstart,nqueries,search_abs,
+        #       full_ws,stride0,stride1,anchor_self,n_h0,n_w0,reflect_bounds,ps,pt)
+        # anchor_self = False
+        # reflect_bounds = True
+        # stride0 = 1
+        # stride1 = 1
+        # print(vid0)
+
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
         # print(fflow.shape,bflow.shape)
@@ -68,6 +77,9 @@ class L2SearchFunction_with_index(th.autograd.Function):
         # q = dists_exh.shape[0]
         dists_exh=dists_exh.view(B,Q,-1)#.contiguous()
         inds_exh=inds_exh.view(B,Q,-1,3)#.contiguous()
+        # print(dists_exh[0,:3,:3])
+        # print(inds_exh[0,0,:3])
+        # exit(0)
 
         # -- remove self --
         # print("remove_self: ",remove_self)
