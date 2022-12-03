@@ -32,7 +32,7 @@ class unfold(th.autograd.Function):
     def forward(ctx, patches, vid, qStart, stride, dilation):
 
         # -- allocate --
-        colors = vid.shape[1]
+        colors = vid.shape[-3]
         device = vid.device
 
         # -- forward --
