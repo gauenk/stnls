@@ -39,11 +39,11 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 
 template <typename scalar_t>
 __global__ void l2_search_with_index_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
+    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> vid0,
+    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> vid1,
+    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> fflow,
+    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor64<int,6,torch::RestrictPtrTraits> inds,
     int qstart, int nqueries, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
@@ -388,11 +388,11 @@ void l2_search_with_index_forward_cuda(
    // launch kernel
    AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_forward_kernel", ([&] {
       l2_search_with_index_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        vid0.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
+        vid1.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
+        fflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
+        bflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
+        dists.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
         inds.packed_accessor64<int,6,torch::RestrictPtrTraits>(),
         qstart, nqueries, stride0, n_h0, n_w0,
         h0_off, w0_off, h1_off, w1_off,
