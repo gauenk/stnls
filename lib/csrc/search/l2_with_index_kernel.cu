@@ -580,7 +580,7 @@ void l2_search_with_index_backward_cuda(
   // -- compute number of blocks --
   //    [think: parallelization over "nqueries"]
   int bpt = 2;
-  int query_nthreads = 28;
+  int query_nthreads = 32;
   int total_per_block = bpt * query_nthreads;
   int nblocks_queries = ((nqueries - 1) / total_per_block) + 1;
   if (exact){

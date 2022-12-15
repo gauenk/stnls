@@ -163,10 +163,10 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                             h1_off, w1_off,
                                                             ps,pt,dil,use_adj,
                                                             reflect_bounds,rbwd,exact)
-                    grad_vid0 += grad_vid0_i
-                    grad_vid1 += grad_vid1_i
-                grad_vid0 /= nbwd
-                grad_vid1 /= nbwd
+                    grad_vid0 += grad_vid0_i/nbwd
+                    grad_vid1 += grad_vid1_i/nbwd
+                # grad_vid0 = nbwd
+                # grad_vid1 = nbwd
             elif nbwd_mode == "median":
                 grad_vid0 = []
                 grad_vid1 = []

@@ -163,81 +163,82 @@ __global__ void prod_search_with_heads_forward_kernel(
       wsOff_w = wsHalf_w;
     }
 
-    // ---------------------------------------
-    //     searching loop for (ti,top,left)
-    // ---------------------------------------
+    // -- reset flow search --
+    dir_fwd = true;
+    swap_dir = false;
+    for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
+      int n_ti = tranges[ti][wt_k];
+      int dt = n_ti - min_t;
 
-    // -- we loop over search space if needed --
-    for (int _xi = 0; _xi < ws_h_iters; _xi++){
+      // ------------------------
+      //      init direction
+      // ------------------------
 
-      ws_i = cu_tidX + blkDimX*_xi;
-      if (ws_i >= ws_h){ continue; }
+      // -- compute direction --
+      int direction = max(-1,min(1,n_ti - ti));
 
-      for (int _yi = 0; _yi < ws_w_iters; _yi++){
-        ws_j = cu_tidY + blkDimY*_yi;
-        if (ws_j >= ws_w){ continue; }
+      // -- reset to anchor when swapping directions --
+      swap_dir = (dir_fwd == true) && (direction == -1);
+      dir_fwd = swap_dir ? false : dir_fwd;
+      prev_w = swap_dir ? wi : prev_w;
+      prev_h = swap_dir ? hi : prev_h;
+      prev_t = swap_dir ? ti : prev_t;
 
-        // -- reset flow search --
-        dir_fwd = true;
-        swap_dir = false;
-        for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
-          int n_ti = tranges[ti][wt_k];
-          int dt = n_ti - min_t;
+      // -- optical flow --
+      if (direction != 0){
 
-          // ------------------------
-          //      init direction
-          // ------------------------
+        // -- get offset at index --
+        // int dtd = int(dt-direction);
+        // cw0 = 1.*prev_w;
+        // ch0 = 1.*prev_h;
 
-          // -- compute direction --
-          int direction = max(-1,min(1,n_ti - ti));
+        // -- legalize access --
+        l_cw0 = int(max(0,min(width-1,int(prev_w))));
+        l_ch0 = int(max(0,min(height-1,int(prev_h))));
+        l_ct0 = int(max(0,min(nframes-1,int(1.*prev_t))));
 
-          // -- reset to anchor when swapping directions --
-          swap_dir = (dir_fwd == true) && (direction == -1);
-          dir_fwd = swap_dir ? false : dir_fwd;
-          prev_w = swap_dir ? wi : prev_w;
-          prev_h = swap_dir ? hi : prev_h;
-          prev_t = swap_dir ? ti : prev_t;
+        // -- access flows --
+        if (direction > 0 ){
+          prev_w = prev_w + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
+          prev_h = prev_h + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
+        }else{
+          prev_w = prev_w + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
+          prev_h = prev_h + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
+        }
+        cw_i = int(prev_w + 0.5);
+        ch_i = int(prev_h + 0.5);
 
-          // -- optical flow --
-          if (direction != 0){
+        // -- rounding --
+        cw = max(0,min(width-1,cw_i));
+        ch = max(0,min(height-1,ch_i));
+        // ct = n_ti;
+      }else{
+        cw = wi;
+        ch = hi;
+        // ct = ti;
+      }
+      
+      // ----------------
+      //     update
+      // ----------------
+      prev_w = cw;
+      prev_h = ch;
+      prev_t = n_ti;
 
-            // -- get offset at index --
-            // int dtd = int(dt-direction);
-            // cw0 = 1.*prev_w;
-            // ch0 = 1.*prev_h;
-
-            // -- legalize access --
-            l_cw0 = int(max(0,min(width-1,int(prev_w))));
-            l_ch0 = int(max(0,min(height-1,int(prev_h))));
-            l_ct0 = int(max(0,min(nframes-1,int(1.*prev_t))));
-
-            // -- access flows --
-            if (direction > 0 ){
-              prev_w = prev_w + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              prev_h = prev_h + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
-            }else{
-              prev_w = prev_w + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              prev_h = prev_h + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
-            }
-            cw_i = int(prev_w + 0.5);
-            ch_i = int(prev_h + 0.5);
-
-            // -- rounding --
-            cw = max(0,min(width-1,cw_i));
-            ch = max(0,min(height-1,ch_i));
-            // ct = n_ti;
-          }else{
-            cw = wi;
-            ch = hi;
-            // ct = ti;
-          }
-          
-          // ----------------
-          //     update
-          // ----------------
-          prev_w = cw;
-          prev_h = ch;
-          prev_t = n_ti;
+      // ---------------------------------------
+      //     searching loop for (ti,top,left)
+      // ---------------------------------------
+  
+      // -- we loop over search space if needed --
+      for (int _xi = 0; _xi < ws_h_iters; _xi++){
+  
+        ws_i = cu_tidX + blkDimX*_xi;
+        if (ws_i >= ws_h){ continue; }
+  
+        for (int _yi = 0; _yi < ws_w_iters; _yi++){
+          ws_j = cu_tidY + blkDimY*_yi;
+          if (ws_j >= ws_w){ continue; }
+  
 
           // --------------------
           //      init dists

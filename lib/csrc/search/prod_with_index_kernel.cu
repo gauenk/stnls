@@ -151,86 +151,81 @@ __global__ void search_prod_with_index_forward_kernel(
     //     xsearching loop for (ti,top,left)
     // ---------------------------------------
 
-    // -- we loop over xsearch space if needed --
-    for (int _xi = 0; _xi < ws_h_iters; _xi++){
+    // -- reset flow search --
+    dir_fwd = true;
+    swap_dir = false;
+    for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
+      int n_ti = tranges[ti][wt_k];
+      int dt = n_ti - min_t;
 
-      int ws_i = cu_tidX + blkDimX*_xi;
-      if (ws_i >= ws_h){ continue; }
+      // ------------------------
+      //      init direction
+      // ------------------------
 
-      for (int _yi = 0; _yi < ws_w_iters; _yi++){
+      // -- init direction --
+      int direction = max(-1,min(1,n_ti - ti));
 
-        ws_j = cu_tidY + blkDimY*_yi;
-        if (ws_j >= ws_w){ continue; }
+      // -- reset to anchor when swapping directions --
+      swap_dir = (dir_fwd == true) && (direction == -1);
+      dir_fwd = swap_dir ? false : dir_fwd;
+      prev_w = swap_dir ? wi : prev_w;
+      prev_h = swap_dir ? hi : prev_h;
+      prev_t = swap_dir ? ti : prev_t;
 
-        // -- reset flow search --
-        dir_fwd = true;
-        swap_dir = false;
-        for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
-          int n_ti = tranges[ti][wt_k];
-          int dt = n_ti - min_t;
+      // -- compute optical flow --
+      if (direction != 0){
 
-          // ------------------------
-          //      init direction
-          // ------------------------
+        // -- get offset at index --
+        cw0 = 1.*prev_w;
+        ch0 = 1.*prev_h;
+        ct0 = 1.*prev_t;
+        
+        // -- legalize access --
+        l_cw0 = int(max(0,min(width-1,int(cw0))));
+        l_ch0 = int(max(0,min(height-1,int(ch0))));
+        l_ct0 = int(max(0,min(nframes-1,int(ct0))));
 
-          // -- init direction --
-          int direction = max(-1,min(1,n_ti - ti));
+        // -- access flows --
+        if (direction > 0 ){
+          cw_f = cw0 + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
+          ch_f = ch0 + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
+        }else{
+          cw_f = cw0 + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
+          ch_f = ch0 + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
+        }
+        cw_i = int(cw_f+0.5);
+        ch_i = int(ch_f+0.5);
 
-          // -- reset to anchor when swapping directions --
-          swap_dir = (dir_fwd == true) && (direction == -1);
-          dir_fwd = swap_dir ? false : dir_fwd;
-          prev_w = swap_dir ? wi : prev_w;
-          prev_h = swap_dir ? hi : prev_h;
-          prev_t = swap_dir ? ti : prev_t;
+        // -- rounding --
+        cw = max(0,min(width-1,cw_i));
+        ch = max(0,min(height-1,ch_i));
+        ct = n_ti;
 
-          // -- compute optical flow --
-          if (direction != 0){
-
-            // -- get offset at index --
-            cw0 = 1.*prev_w;
-            ch0 = 1.*prev_h;
-            ct0 = 1.*prev_t;
-            
-            // -- legalize access --
-            l_cw0 = int(max(0,min(width-1,int(cw0))));
-            l_ch0 = int(max(0,min(height-1,int(ch0))));
-            l_ct0 = int(max(0,min(nframes-1,int(ct0))));
-
-            // -- access flows --
-            if (direction > 0 ){
-              cw_f = cw0 + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
-            }else{
-              cw_f = cw0 + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
-            }
-            cw_i = int(cw_f+0.5);
-            ch_i = int(ch_f+0.5);
-
-            // -- rounding --
-            cw = max(0,min(width-1,cw_i));
-            ch = max(0,min(height-1,ch_i));
-            ct = n_ti;
-
-          }else{
-            cw = wi;
-            ch = hi;
-            ct = ti;
-          }
+      }else{
+        cw = wi;
+        ch = hi;
+        ct = ti;
+      }
 
 
-          // ----------------
-          //     update
-          // ----------------
-          prev_w = cw;
-          prev_h = ch;
-          prev_t = ct;
+      // ----------------
+      //     update
+      // ----------------
+      prev_w = cw;
+      prev_h = ch;
+      prev_t = ct;
 
-          // if (wt > 0){
-          //   bufs[bidx][0][dt][ws_i][ws_j] = cw;
-          //   bufs[bidx][1][dt][ws_i][ws_j] = ch;
-          //   bufs[bidx][2][dt][ws_i][ws_j] = ct;
-          // }
+      // -- we loop over xsearch space if needed --
+      for (int _xi = 0; _xi < ws_h_iters; _xi++){
+  
+        int ws_i = cu_tidX + blkDimX*_xi;
+        if (ws_i >= ws_h){ continue; }
+  
+        for (int _yi = 0; _yi < ws_w_iters; _yi++){
+  
+          ws_j = cu_tidY + blkDimY*_yi;
+          if (ws_j >= ws_w){ continue; }
+
 
           // --------------------
           //      init dists
@@ -372,8 +367,8 @@ void search_prod_with_index_forward_cuda(
     int st = dists.size(2);
     int ws_h = dists.size(3);
     int ws_w = dists.size(4);
-    int ws_h_threads = std::min(ws_h,29);
-    int ws_w_threads = std::min(ws_w,29);
+    int ws_h_threads = std::min(ws_h,27);
+    int ws_w_threads = std::min(ws_w,27);
     int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
     int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
     dim3 nthreads(ws_h_threads,ws_w_threads);
@@ -382,8 +377,7 @@ void search_prod_with_index_forward_cuda(
     int bpt = 4;
     int nblocks_queries = ((numQueries - 1) / bpt) + 1;
     dim3 nblocks(bsize,nblocks_queries);
-    // fprintf(stdout,"nblocks,w_h_threads,w_w_threads,ws_h,ws_w: %d,%d,%d,%d,%d\n",
-    //         nblocks_queries,ws_h_iters,ws_w_iters,ws_h,ws_w);
+    // fprintf(stdout,"nblocks_queries,ws_h_threads,ws_w_threads,ws_h_iters,ws_w_iters,ws_h,ws_w: %d,%d,%d,%d,%d,%d,%d\n",nblocks_queries,ws_h_threads,ws_w_threads,ws_h_iters,ws_w_iters,ws_h,ws_w);
      
     // launch kernel
     AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_forward_kernel", ([&] {

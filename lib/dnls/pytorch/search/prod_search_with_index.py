@@ -187,7 +187,7 @@ class ProductSearchFunction_with_index(th.autograd.Function):
                     vid0_grad,vid1_grad,vid0,vid1,
                     grad_dists,inds,
                     qstart,stride0,n_h0,n_w0,
-                    ps,pt,lam,reflect_bounds,
+                    ps,pt,lam,use_adj,reflect_bounds,
                     oh0,ow0,oh1,ow1,full_ws,rbwd,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
@@ -246,6 +246,7 @@ class ProductSearch_with_index(th.nn.Module):
         if ws == -1: ws_h,ws_w = n_h,n_w
         if k == -1: k = ws_h**2 * (2*wt + 1)
         if chnls <= 0: chnls = c
+        # print("ws_h,ws_w,wt,k,chnls: ",ws_h,ws_w,wt,k,chnls)
         return ws_h,ws_w,wt,k,chnls
 
     def update_flow(self,vshape,device,flows=None):

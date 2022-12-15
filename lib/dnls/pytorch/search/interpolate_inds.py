@@ -6,6 +6,28 @@ import dnls_cuda
 
 def run(inds,scale,stride,T,H,W):
 
+    # -- num h,w across vid --
+    nH1 = (H-1)//stride + 1
+    nW1 = (W-1)//stride + 1
+    nH0,nW0 = nH1//scale,nW1//scale
+
+    # -- unpack and reshape --
+    B,nheads,Q,K,_ = inds.shape
+    inds = rearrange(inds,'b H (t h w) k tr -> (b H t) h w k tr',t=T,h=nH0)
+    _B = inds.shape[0]
+
+    # -- interpolate (K) neighbors --
+    inds_full = th.zeros((_B,nH1,nW1,K,3),device=inds.device,dtype=inds.dtype)
+    dnls_cuda.interpolate_inds(inds,inds_full,scale,stride,scale*stride)
+
+    # -- final reshape --
+    shape_str = '(b H t) h w k tr -> b H (t h w) k tr'
+    inds_full = rearrange(inds_full,shape_str,H=nheads,t=T)
+
+    return inds_full
+
+def run_idk(inds,scale,stride,T,H,W):
+
     # -- use --
     nH0 = (H-1)//stride + 1
     nW0 = (W-1)//stride + 1
@@ -20,9 +42,9 @@ def run(inds,scale,stride,T,H,W):
     print("nH1: ",nH1)
     _B = inds.shape[0]
 
-    # -- interpolate (K-1) neighbors --
+    # -- interpolate (K) neighbors --
     inds_k = inds[:,:,:,1:].contiguous()
-    inds_full = th.zeros((_B,nH1,nW1,K-1,3),device=inds.device,dtype=inds.dtype)
+    inds_full = th.zeros((_B,nH1,nW1,K,3),device=inds.device,dtype=inds.dtype)
     dnls_cuda.interpolate_inds(inds_k,inds_full,scale)
 
     # -- interpolate grid (K==0) --

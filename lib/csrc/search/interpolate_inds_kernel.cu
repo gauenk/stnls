@@ -41,7 +41,7 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 __global__ void interpolate_inds_forward_kernel(
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds_full,
-    int scale){
+    int scale, int stride, int stride_sparse){
 
   // -- unpack indices --
   int B = inds_full.size(0);
@@ -51,37 +51,43 @@ __global__ void interpolate_inds_forward_kernel(
   int KnHW = K*nH*nW;
   int raster_index = blockIdx.y * blockDim.x + threadIdx.x;
 
+  // -- image indices for video --
+  int iH = nH*stride;
+  int iW = nW*stride;
+
   // -- assign inds --
   int bi = blockIdx.x;
   int ki = raster_index % K;
   raster_index = raster_index / K;
-  int hi = raster_index % nW;
-  int wi = raster_index / nW;
+  int hi = raster_index % nH;
+  int wi = (raster_index/nH) % nW;
   
-  // -- full inds to smaller inds --
-  int hj = hi / scale;
-  int wj = wi / scale;
-  bool at_grid = (hi % scale == 0) && (wi % scale == 0);
-  int kj = ki;
-  int shift_h = 0;
-  int shift_w = 0;
+  // -- shifts --
+  int shift_h = ki % scale;//(raster_index/scale) % scale;
+  int shift_w = ki / scale;//raster_index % scale;
 
-  if (!copy){
-    // -- (k == 0) is actually our 1st neighbor (NOT "self") --
-    shift_h = hi % scale;
-    shift_w = wi % scale;
-  }
+  // -- sparse index inds --
+  int hi_sparse = hi / scale;
+  int wi_sparse = wi / scale;
+
+  // -- selected shifted sparse --
+  int hj = hi_sparse + shift_h;
+  int wj = wi_sparse + shift_w;
+
+  // -- the (h,w) shift in the full resolution space --
+  int delta_h = stride*hi - stride_sparse*hj;
+  int delta_w = stride*wi - stride_sparse*wj;
 
   // -- copy --
   inds_full[bi][hi][wi][ki][0] = inds[bi][hj][wj][ki][0];
-  inds_full[bi][hi][wi][ki][1] = inds[bi][hj][wj][ki][1]-shift_h;
-  inds_full[bi][hi][wi][ki][2] = inds[bi][hj][wj][ki][2]-shift_w;
+  inds_full[bi][hi][wi][ki][1] = bounds(inds[bi][hj][wj][ki][1]+delta_h,iH);
+  inds_full[bi][hi][wi][ki][2] = bounds(inds[bi][hj][wj][ki][2]+delta_w,iW);
 
 } // fxn
 
 void interpolate_inds_forward_cuda(
     torch::Tensor inds, torch::Tensor inds_full,
-    int scale){
+    int scale, int stride, int stride_sparse){
 
    // -- unpack --
    int B = inds_full.size(0);  
@@ -95,9 +101,10 @@ void interpolate_inds_forward_cuda(
    // -- nthreads --
    int nwarps = 29;
    int warp_size = 32;
-   int nthreads = warp_size*nwarps;
-   // nthreads = min(nthreads,KnHW);
-   // dim3 nthreads(nthreads);
+   int num_threads = warp_size*nwarps;
+   num_threads = min(num_threads,KnHW);
+   // dim3 nthreads(nH,nW);
+   int nthreads = num_threads;
 
    // -- nblocks --
    // int nquery_blocks = (QHW-1)/nthreads+1;
@@ -109,7 +116,7 @@ void interpolate_inds_forward_cuda(
    interpolate_inds_forward_kernel<<<nblocks, nthreads>>>(
        inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
        inds_full.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-       scale);
+       scale,stride,stride_sparse);
 }
 
 

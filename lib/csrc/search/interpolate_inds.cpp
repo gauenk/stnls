@@ -6,7 +6,7 @@
 
 void interpolate_inds_forward_cuda(
     torch::Tensor inds, torch::Tensor inds_full,
-    int scale);
+    int scale, int stride, int stride_sparse);
 
 // C++ interface
 
@@ -17,9 +17,11 @@ void interpolate_inds_forward_cuda(
 void interpolate_inds_forward(
     torch::Tensor inds,
     torch::Tensor inds_full,
-    int scale){
+    int scale, int stride, int stride_sparse){
   CHECK_INPUT(inds);
-  interpolate_inds_forward_cuda(inds,inds_full,scale);
+  CHECK_INPUT(inds_full);
+  interpolate_inds_forward_cuda(inds,inds_full,scale,
+                                stride,stride_sparse);
 }
 
 // python bindings
