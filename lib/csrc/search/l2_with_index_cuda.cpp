@@ -14,17 +14,17 @@ void l2_search_with_index_forward_cuda(
     int dilation, int stride1, bool use_adj,
     bool reflect_bounds, bool search_abs,
     bool full_ws, bool anchor_self,
-    torch::Tensor tranges,
-    torch::Tensor n_tranges, torch::Tensor min_tranges);
+    torch::Tensor tranges, torch::Tensor n_tranges, torch::Tensor min_tranges);
 
 void l2_search_with_index_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor dists, torch::Tensor inds,
-    int qstart, int stride0, int n_h0, int n_w0,
-    int h0_off, int w0_off, int h1_off, int w1_off,
+    torch::Tensor rands, int qstart, int stride0,
+    int n_h0, int n_w0, int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int dilation, bool use_adj,
-    bool reflect_bounds, bool use_rand, bool exact);
+    bool reflect_bounds, int ngroups, bool use_rand,
+    bool exact, int npt, int bpt);
 
 void remove_self_from_search_cuda(
     torch::Tensor dists, torch::Tensor mask,
@@ -71,22 +71,23 @@ void l2_search_with_index_backward(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor dists, torch::Tensor inds,
-    int qstart, int stride0, int n_h0, int n_w0,
-    int h0_off, int w0_off, int h1_off, int w1_off,
+    torch::Tensor rands, int qstart, int stride0,
+    int n_h0, int n_w0, int h0_off, int w0_off, int h1_off, int w1_off,
     int ps,int pt, int dilation, bool use_adj, bool reflect_bounds,
-    bool use_rand, bool exact) {
+    int ngroups, bool use_rand, bool exact, int npt, int bpt) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
+  CHECK_INPUT(rands);
   l2_search_with_index_backward_cuda(grad_vid0,grad_vid1,vid0,vid1,
-                                     dists,inds,
+                                     dists,inds,rands,
                                      qstart,stride0,n_h0,n_w0,
                                      h0_off,w0_off,h1_off,w1_off,
                                      ps,pt,dilation,use_adj,reflect_bounds,
-                                     use_rand,exact);
+                                     ngroups,use_rand,exact,npt,bpt);
 }
 
 void remove_self_from_search(
