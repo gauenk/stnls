@@ -521,7 +521,8 @@ void search_l2_backward_cuda(
   }
 
   // -- compute number of color threads --
-  int cpt = exact ? 1 : colors;
+  int cpt = 1;//exact ? 1 : colors;
+  // int cpt = exact ? 1 : colors;
   int color_nthreads = (colors - 1)/cpt + 1;
 
   // -- compute number of blocks --

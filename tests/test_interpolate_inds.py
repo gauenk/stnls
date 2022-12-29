@@ -37,7 +37,7 @@ def pytest_generate_tests(metafunc):
     test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
                   "dilation":[1],"wt":[0],"ws":[23],"k":[15],
                   "ws_r":[3],"k_r":[7],
-                  "exact":[True],"nheads":[4],"seed":[0],"anchor_self":[False]}
+                  "exact":[True],"nheads":[4],"seed":[0],"anchor_self":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -91,21 +91,19 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    b,t,color,h,w = shape
+    B,T,color,H,W = shape
     vshape = vid.shape
     chnls = vid.shape[-3]
+    # B,T,C,H,W = vid.shape
 
-    # -- pads --
-    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
-    n_h0,n_w0 = n0[0],n0[1]
-    n_h1,n_w1 = n1[0],n1[1]
-    h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
 
     # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h0 * n_w0
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    ntotal = T * nH * nW
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
+    h0_off,w0_off = 0,0
+    h1_off,w1_off = 0,0
 
     # -- exec fold fxns --
     search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
@@ -122,6 +120,7 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
 
     # -- [gt] search --
     dists_gt,inds_gt = search_gt(vid,0,ntotal)
+    inds_gt2 = rearrange(inds_gt,'b h (t hw) k tr -> b h t hw k tr',t=T)
 
     #
     # -- [te] search --
@@ -129,40 +128,35 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
 
     # -- search big stride --
     scale = 2
-    search_gt.stride0 = scale*stride0
+    stride0_s = scale * stride0
+    search_gt.stride0 = stride0_s
+    nH,nW = (H-1)//stride0_s+1,(W-1)//stride0_s+1
+    ntotal = T * nH * nW
     _,inds_te = search_gt(vid,0,ntotal)
 
     # -- upsample --
-    B,T,C,H,W = vid.shape
-    print("vid.shape: ",vid.shape)
-    print("inds_gt.shape: ",inds_gt.shape)
-    inds_te = dnls.search.interpolate_inds.run(inds_gt,scale,stride0,T,H,W)
-    print("inds_te.shape: ",inds_te.shape)
+    inds_te = dnls.search.interpolate_inds.run(inds_te,scale,stride0,T,H,W)
 
     # -- reshape --
     inds_gt = rearrange(inds_gt,'b h (t hw) k tr -> b h t hw k tr',t=T)
     inds_te = rearrange(inds_te,'b h (t hw) k tr -> b h t hw k tr',t=T)
 
     # -- eq and neq ind args --
-    # idiff = inds_gt - inds_te
-    # idiff = idiff.type(th.float32).abs().sum(-1)
-    # eq_inds = th.where(idiff<1e-10)
-    # neq_inds = th.where(idiff>1e-10)
-    # neq_ibools = idiff.abs()>0
-    # print(len(eq_inds[0]))
-    # print(len(neq_inds[0]))
     print("inds_gt.shape: ",inds_gt.shape)
     print("inds_te.shape: ",inds_te.shape)
     print("-"*20)
-    print(inds_gt[0,0,0,:20,0])
-    print(inds_te[0,0,0,:20,0])
+    print(inds_gt[0,0,0,:3,:10])
+    print(inds_te[0,0,0,:3,:10])
+    # print(inds_gt[0,0,0,:20,0])
+    # print(inds_te[0,0,0,:20,0])
     print("-"*20)
 
     #
     # -- equal inds @ k == 0 --
     #
 
-    diff = th.sum(th.abs(inds_gt[...,0,:] - inds_te[...,::2,0,:]))
+    # diff = th.sum(th.abs(inds_gt[...,0,:] - inds_te[...,::2,0,:]))
+    diff = th.sum(th.abs(inds_gt[...,0,:] - inds_te[...,:,0,:]))
     assert diff < 1e-10
 
 

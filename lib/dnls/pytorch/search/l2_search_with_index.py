@@ -19,7 +19,8 @@ class L2SearchFunction_with_index(th.autograd.Function):
                 dilation=1,stride1=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
                 full_ws=False,anchor_self=False,remove_self=False,
-                nbwd=1,rbwd=True,nbwd_mode="median",exact=False):
+                nbwd=1,rbwd=True,nbwd_mode="median",exact=False,
+                ngroups=-1,npt=4,qpt=4):
         """
         vid0 = [T,C,H,W]
         qinds = [NumQueries,K,3]
@@ -34,6 +35,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         # print("n_h0,n_w0: ",n_h0,n_w0)
 
         # -- allocs --
+        nqueries = n_h0*n_w0 if nqueries <= 0 else nqueries
         Q = nqueries
         dists_exh,inds_exh = allocate_exh(B*Q,wt,ws_h,ws_w,device)
         dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
@@ -112,6 +114,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.vid_shape = vid0.shape
         ctx.nbwd_mode = nbwd_mode
+        ctx.ngroups = ngroups
         ctx.qstart,ctx.stride0 = qstart,stride0
         ctx.ps,ctx.pt,ctx.dil = ps,pt,dilation
         ctx.reflect_bounds = reflect_bounds
@@ -120,6 +123,8 @@ class L2SearchFunction_with_index(th.autograd.Function):
         ctx.n_h0,ctx.n_w0 = n_h0,n_w0
         ctx.h0_off,ctx.w0_off = h0_off, w0_off
         ctx.h1_off,ctx.w1_off = h1_off, w1_off
+        ctx.neighs_per_thread = npt
+        ctx.queries_per_thread = qpt
         return dists,inds
 
     @staticmethod
@@ -128,6 +133,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         vid_shape,nbwd = ctx.vid_shape,ctx.nbwd
         qstart,stride0 = ctx.qstart,ctx.stride0
         ps,pt,dil = ctx.ps,ctx.pt,ctx.dil
+        ngroups = ctx.ngroups
         rbwd = ctx.rbwd
         exact,use_adj = ctx.exact,ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
@@ -135,24 +141,32 @@ class L2SearchFunction_with_index(th.autograd.Function):
         h0_off, w0_off = ctx.h0_off,ctx.w0_off
         h1_off, w1_off = ctx.h1_off,ctx.w1_off
         nbwd_mode = ctx.nbwd_mode
+        device = grad_dists.device
+        nqueries = grad_dists.shape[1]
+        npt = ctx.neighs_per_thread
+        qpt = ctx.queries_per_thread
+        # print("ngroups: ",ngroups)
 
         # -- allow for repeated exec --
         if nbwd == 1:
             # print(grad_vid0.shape,vid0.shape,grad_dists.shape,inds.shape)
+            rands = get_rands(nqueries,device,rbwd)
             grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
             grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
             dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
                                                     vid0,vid1,
-                                                    grad_dists,inds,
+                                                    grad_dists,inds,rands,
                                                     qstart,stride0,n_h0,n_w0,
                                                     h0_off, w0_off, h1_off, w1_off,
                                                     ps,pt,dil, use_adj,
-                                                    reflect_bounds,rbwd,exact)
+                                                    reflect_bounds,ngroups,rbwd,
+                                                    exact,npt,qpt)
         else:
             if nbwd_mode == "mean":
                 grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
                 for _ in range(nbwd):
+                    rands = get_rands(nqueries,device,rbwd)
                     grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                     grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
                     dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
@@ -162,11 +176,12 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                             h0_off, w0_off,
                                                             h1_off, w1_off,
                                                             ps,pt,dil,use_adj,
-                                                            reflect_bounds,rbwd,exact)
-                    grad_vid0 += grad_vid0_i
-                    grad_vid1 += grad_vid1_i
-                grad_vid0 /= nbwd
-                grad_vid1 /= nbwd
+                                                            reflect_bounds,ngroups,
+                                                            rbwd,exact,npt,qpt)
+                    grad_vid0 += grad_vid0_i/nbwd
+                    grad_vid1 += grad_vid1_i/nbwd
+                # grad_vid0 = nbwd
+                # grad_vid1 = nbwd
             elif nbwd_mode == "median":
                 grad_vid0 = []
                 grad_vid1 = []
@@ -180,7 +195,8 @@ class L2SearchFunction_with_index(th.autograd.Function):
                                                             h0_off, w0_off,
                                                             h1_off, w1_off,
                                                             ps,pt,dil,use_adj,
-                                                            reflect_bounds,rbwd,exact)
+                                                            reflect_bounds,ngroups,
+                                                            rbwd,exact)
                     grad_vid0.append(grad_vid0_i)
                     grad_vid1.append(grad_vid1_i)
                 grad_vid0 = th.stack(grad_vid0,0)
@@ -190,9 +206,9 @@ class L2SearchFunction_with_index(th.autograd.Function):
             else:
                 raise ValueError(f"Uknown nbwd_mode [{nbwd_mode}]")
 
-        return grad_vid0,grad_vid1,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,None
+        return grad_vid0,grad_vid1,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None,None
 
 class L2Search_with_index(th.nn.Module):
 
@@ -201,7 +217,8 @@ class L2Search_with_index(th.nn.Module):
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, nbwd=1, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
-                 anchor_self=False,rbwd=True,nbwd_mode="median"):
+                 anchor_self=False,rbwd=True,nbwd_mode="mean",ngroups=-1,
+                 npt=4, qpt=4):
         super(L2Search_with_index, self).__init__()
         self.k = k
         self.ps = ps
@@ -229,6 +246,9 @@ class L2Search_with_index(th.nn.Module):
         self.exact = exact
         self.rbwd = rbwd
         self.nbwd_mode = nbwd_mode
+        self.ngroups = ngroups
+        self.npt = npt
+        self.qpt = qpt
 
     def query_batch_info(self,vshape,only_full=True,use_pad=True):
         n_h,n_w = get_num_img(vshape,self.stride0,self.ps,self.dilation,
@@ -258,7 +278,7 @@ class L2Search_with_index(th.nn.Module):
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
-    def forward(self, vid0, qstart, nqueries, vid1=None):
+    def forward(self, vid0, qstart=0, nqueries=-1, vid1=None):
         assert vid0.shape[0] == 1
         if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
@@ -275,5 +295,6 @@ class L2Search_with_index(th.nn.Module):
                                                  self.reflect_bounds,self.search_abs,
                                                  self.full_ws,self.anchor_self,
                                                  self.remove_self,self.nbwd,
-                                                 self.rbwd,self.nbwd_mode,self.exact)
+                                                 self.rbwd,self.nbwd_mode,self.exact,
+                                                 self.ngroups,self.npt,self.qpt)
 

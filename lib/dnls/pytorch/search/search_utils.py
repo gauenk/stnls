@@ -359,3 +359,11 @@ def upscale_inds(inds,stride,H,W):
     inds = th.cat([inds_t,inds_i],1)
     inds = rearrange(inds,'(b k) tr h w -> b (h w) k tr')
     return inds
+
+def get_rands(nqueries,device,rbwd):
+    if rbwd == False:
+        return th.zeros((nqueries,1,1),device=device)
+    elif rbwd == True:
+        return th.rand((nqueries,1,1),device=device)
+    else:
+        raise ValueError(f"Uknown rbwd value [{rbwd}]")

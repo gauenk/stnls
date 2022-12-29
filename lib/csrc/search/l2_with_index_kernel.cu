@@ -367,14 +367,14 @@ void l2_search_with_index_forward_cuda(
    // fprintf(stdout,"qstart, nqueries: %d,%d\n",qstart,nqueries);
    // launch params
    // our many (too many?) registers limit the number of threads
-   int ws_h_threads = std::min(ws_h,29);
-   int ws_w_threads = std::min(ws_w,29);
+   int ws_h_threads = std::min(ws_h,25);
+   int ws_w_threads = std::min(ws_w,25);
    int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
 
    int nbatch = vid0.size(0);
-   int bpb = 2;
+   int bpb = 4;
    int nblocks_queries = ((nqueries - 1) / bpb) + 1;
    nblocks_queries = min(nblocks_queries,65535);
    bpb = ((nqueries - 1) / nblocks_queries) + 1;
@@ -457,8 +457,9 @@ __global__ void l2_search_with_index_backward_kernel(
   // -- get indices --
   int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.x);
   int i1_start = threadIdx.y * npt;
-  int c0_start = threadIdx.z * cpt;
-  int ibatch = blockIdx.y;
+  // int c0_start = threadIdx.z * cpt;
+  int c0_start = blockIdx.y * cpt;
+  int ibatch = blockIdx.z;
 
   // -- get block limits --
   int i0_end = min(i0_start + bpt,i0_max);
@@ -545,11 +546,12 @@ void l2_search_with_index_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor grad_dists, torch::Tensor inds,
-    int qstart, int stride0, int n_h0, int n_w0,
-    int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps, int pt, int dilation,
-    bool use_adj, bool reflect_bounds, bool use_rand,
-    bool exact) {
+    torch::Tensor rands, int qstart, int stride0,
+    int n_h0, int n_w0, int h0_off, int w0_off,
+    int h1_off, int w1_off, int ps, int pt, int dilation,
+    bool use_adj, bool reflect_bounds,
+    int ngroups, bool use_rand, bool exact,
+    int npt, int bpt) {
 
   // -- unpack --
   int nbatch = vid0.size(0);
@@ -562,25 +564,29 @@ void l2_search_with_index_backward_cuda(
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
-  int npt = 4;
+  // int npt = 4;
   int neigh_nthreads = (k-1) / npt + 1;
-  if (neigh_nthreads > 32){
-    neigh_nthreads = 32;
-    npt = (k-1)/neigh_nthreads + 1;
-  }
+  int kd32 = (k-1)/32+1;
   if (exact){
     neigh_nthreads = 1;
     npt = k;
   }
 
   // -- compute number of color threads --
-  int cpt = exact ? 1 : colors;
-  int color_nthreads = (colors - 1)/cpt + 1;
+  // int cpt = exact ? 1 : colors;
+  ngroups = (ngroups > 0) ? ngroups : colors;
+  ngroups = std::min(ngroups,colors);
+  int color_nblocks = exact ? colors : ngroups;
+  int cpt = (colors-1) / color_nblocks + 1;
+  // int cpt = exact ? 1 : ((ngroups > 0) ? ((colors-1)/ngroups+1) : colors);
+  // int color_nblocks = (colors - 1)/cpt + 1;
 
   // -- compute number of blocks --
   //    [think: parallelization over "nqueries"]
-  int bpt = 2;
-  int query_nthreads = 28;
+  int MAX_NTHREADS = 28*32;
+  // int bpt = 4;
+  // int query_nthreads = 32;
+  int query_nthreads = std::max(MAX_NTHREADS/neigh_nthreads,1);
   int total_per_block = bpt * query_nthreads;
   int nblocks_queries = ((nqueries - 1) / total_per_block) + 1;
   if (exact){
@@ -588,12 +594,20 @@ void l2_search_with_index_backward_cuda(
     query_nthreads = 1;
     nblocks_queries = 1;
   }
-  dim3 nblocks(nblocks_queries,nbatch);
+  dim3 nblocks(nblocks_queries,color_nblocks,nbatch);
 
   // -- launch params --
-  dim3 nthreads(query_nthreads, neigh_nthreads, color_nthreads);
+  dim3 nthreads(query_nthreads, neigh_nthreads);//, color_nthreads);
 
   // -- info --
+  // fprintf(stdout,
+  //         "query_nthreads, neigh_nthreads: %d,%d\n",
+  //         query_nthreads, neigh_nthreads);
+  // fprintf(stdout,
+  //         "nblocks_queries, color_nblocks, nbatch: %d,%d,%d\n",
+  //         nblocks_queries, color_nblocks, nbatch);
+  // fprintf(stdout,"cpt,colors: %d,%d\n",cpt,colors);
+
   // fprintf(stdout,
   //         "query_nthreads, neigh_nthreads, color_nthreads: %d,%d,%d\n",
   //         query_nthreads, neigh_nthreads, color_nthreads);
@@ -604,15 +618,15 @@ void l2_search_with_index_backward_cuda(
   // fprintf(stdout,"ps,pt,dil: %d,%d,%d\n",ps,pt,dilation);
 
   // -- allocate random values --
-  auto cu_index = grad_vid0.device().index();
-  auto options = torch::TensorOptions().device(torch::kCUDA,
-                                               cu_index).dtype(torch::kFloat32);
-  torch::Tensor rand_nums;
-  if (use_rand){
-    rand_nums = torch::rand({nqueries,1,1},options);
-  }else{
-    rand_nums = torch::zeros({nqueries,1,1},options);
-  }
+  // auto cu_index = grad_vid0.device().index();
+  // auto options = torch::TensorOptions().device(torch::kCUDA,
+  //                                              cu_index).dtype(torch::kFloat32);
+  // torch::Tensor rand_nums;
+  // if (use_rand){
+  //   rand_nums = torch::rand({nqueries,1,1},options);
+  // }else{
+  //   rand_nums = torch::zeros({nqueries,1,1},options);
+  // }
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {
@@ -623,7 +637,7 @@ void l2_search_with_index_backward_cuda(
         vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
-        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        rands.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0, h0_off, w0_off, h1_off, w1_off,
         ps,pt,dilation,use_adj,reflect_bounds,
         bpt,npt,cpt);
