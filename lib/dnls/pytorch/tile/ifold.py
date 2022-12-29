@@ -28,8 +28,11 @@ class ifold(th.autograd.Function):
     def forward(ctx, patches, vid, coords, qStart, stride, dilation, adj,
                 only_full,reflect_bounds):
         top,left,btm,right = coords
+        # print(top,left,btm,right,qStart)
         dnls_cuda.ifold_forward(vid, patches, top, left, btm, right,
                                 qStart, stride, dilation, adj, only_full, reflect_bounds)
+        # print("ifold [vid>0]: ",th.any(vid.abs()>0).item())
+        # print(vid)
         ctx.coords = coords
         ctx.qStart = qStart
         ctx.stride = stride

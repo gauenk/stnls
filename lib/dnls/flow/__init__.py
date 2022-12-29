@@ -5,7 +5,7 @@ Wrap the opencv optical flow
 # -- linalg --
 import numpy as np
 import torch as th
-import jax.numpy as jnp
+# import jax.numpy as jnp
 from einops import rearrange,repeat
 
 # -- misc --

@@ -150,7 +150,7 @@ def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
     # mask[args,-1] = 0
     # print(mask.sum(1))
     # print(th.all(mask.sum(1)==1))
-    rm_dists = th.masked_select(dists,mask)
+    # rm_dists = th.masked_select(dists,mask)
     rm_dists = th.masked_select(dists,mask).view(b,nq,k-1)
     rm_inds = []
     for i in range(3): # |(t,h,w)| == 3

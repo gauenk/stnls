@@ -203,6 +203,7 @@ void dnls_cuda_ifold_forward(
   int sq_hp = btm_p - top_p;
   int sq_wp = right_p - left_p;
   int sq_hwp = sq_hp * sq_wp;
+  //  fprintf(stdout,"sq_hp,sq_wp,sq_hwp: %d,%d,%d\n",sq_hp,sq_wp,sq_hwp);
 
   // launch params
   int nthreads = 512;
@@ -210,6 +211,8 @@ void dnls_cuda_ifold_forward(
   int num_kernels = nframes*sq_hwp;
   int nblocks_queries = (num_kernels-1) / nthreads+1;
   dim3 nblocks(nblocks_queries,bsize);
+  // fprintf(stdout,"nthreads,nblocks_queries,bsize: %d,%d,%d\n",
+  //         nthreads,nblocks_queries,bsize);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifold_forward_kernel", ([&] {

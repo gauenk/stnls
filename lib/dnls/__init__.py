@@ -3,7 +3,7 @@ sys.setdlopenflags(os.RTLD_GLOBAL | os.RTLD_LAZY)
 
 # -- api --
 from . import pytorch
-from . import jax # jax after pytorch
+# from . import jax # jax after pytorch
 from . import utils
 from . import flow
 

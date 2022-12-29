@@ -127,7 +127,7 @@ def test_nn_with_unfold(ps,stride,dilation):
 
     # -- our forward --
     fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,
-                         adj=ps//2,use_reflect=True,only_full=True)
+                         adj=ps//2,reflect_bounds=True,only_full=True)
     vid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
 
     vid_nn_s  = vid_nn /vid_nn.max()
@@ -540,7 +540,7 @@ def test_single_fold():
     # -- init vars --
     device = "cuda:0"
     clean_flow = True
-    comp_flow = True
+    comp_flow = False
     exact = True
     exact = True
     gpu_stats = False
