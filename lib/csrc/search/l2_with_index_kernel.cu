@@ -550,7 +550,7 @@ void l2_search_with_index_backward_cuda(
     int n_h0, int n_w0, int h0_off, int w0_off,
     int h1_off, int w1_off, int ps, int pt, int dilation,
     bool use_adj, bool reflect_bounds,
-    int ngroups, bool use_rand, bool exact,
+    int nchannel_groups, bool use_rand, bool exact,
     int npt, int bpt) {
 
   // -- unpack --
@@ -574,11 +574,11 @@ void l2_search_with_index_backward_cuda(
 
   // -- compute number of color threads --
   // int cpt = exact ? 1 : colors;
-  ngroups = (ngroups > 0) ? ngroups : colors;
-  ngroups = std::min(ngroups,colors);
-  int color_nblocks = exact ? colors : ngroups;
+  nchannel_groups = (nchannel_groups > 0) ? nchannel_groups : colors;
+  nchannel_groups = std::min(nchannel_groups,colors);
+  int color_nblocks = exact ? colors : nchannel_groups;
   int cpt = (colors-1) / color_nblocks + 1;
-  // int cpt = exact ? 1 : ((ngroups > 0) ? ((colors-1)/ngroups+1) : colors);
+  // int cpt = exact ? 1 : ((nchannel_groups > 0) ? ((colors-1)/nchannel_groups+1) : colors);
   // int color_nblocks = (colors - 1)/cpt + 1;
 
   // -- compute number of blocks --

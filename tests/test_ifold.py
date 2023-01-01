@@ -219,7 +219,8 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- exec fold fxns --
     unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0)
+    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0,
+                         reflect_bounds=False)
 
     # -- patches for ifold --
     index = 0
