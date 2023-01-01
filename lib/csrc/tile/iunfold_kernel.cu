@@ -121,18 +121,20 @@ __global__ void dnls_iunfold_forward_kernel(
         wi = (qi_mod % n_w) * stride + left;
 
         // -- valid ind --
-        valid_hw = (hi >= -fill_pad) && (hi < (height+fill_pad));
-        valid_hw = valid_hw && (wi >= -fill_pad) && (wi < (width+fill_pad));
-        // valid_hw = (hi >= (top-fill_pad)) && (hi < (btm+fill_pad));
-        // valid_hw = valid_hw && (wi >= (left-fill_pad)) && (wi < (right+fill_pad));
+        // valid_hw = (hi >= -fill_pad) && (hi < (height+fill_pad));
+        // valid_hw = valid_hw && (wi >= -fill_pad) && (wi < (width+fill_pad));
+        valid_hw = (hi >= (top-fill_pad)) && (hi < (btm+fill_pad));
+        valid_hw = valid_hw && (wi >= (left-fill_pad)) && (wi < (right+fill_pad));
         valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- fill across cuda threads --
         // vi_h = hi+dilation*(pi - psHalf);
         // vi_w = wi+dilation*(pj - psHalf);
         if (use_reflect){
-          vi_h = bounds(hi+dilation*(pi - psHalf + adj),0.,height);
-          vi_w = bounds(wi+dilation*(pj - psHalf + adj),0.,width);
+          // vi_h = bounds(hi+dilation*(pi - psHalf + adj),0.,height);
+          // vi_w = bounds(wi+dilation*(pj - psHalf + adj),0.,width);
+          vi_h = bounds(hi+dilation*(pi - psHalf + adj),top,btm);
+          vi_w = bounds(wi+dilation*(pj - psHalf + adj),left,right);
         }else{
           vi_h = hi+dilation*(pi - psHalf + adj);
           vi_w = wi+dilation*(pj - psHalf + adj);

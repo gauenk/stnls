@@ -278,6 +278,14 @@ class L2Search_with_index(th.nn.Module):
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
+    def update_flow(self,vshape,device,flows=None):
+        b,t,c,h,w = vshape
+        zflow = th.zeros((b,t,2,h,w),device=device)
+        noflow = flows is None
+        # print("noflow: ",noflow)
+        self.fflow = zflow if noflow else flows.fflow
+        self.bflow = zflow if noflow else flows.bflow
+
     def forward(self, vid0, qstart=0, nqueries=-1, vid1=None):
         assert vid0.shape[0] == 1
         if vid1 is None: vid1 = vid0
