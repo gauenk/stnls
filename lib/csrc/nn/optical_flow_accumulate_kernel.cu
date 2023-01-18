@@ -13,60 +13,70 @@ __global__ void optical_flow_accumulate_kernel(
     int stride0, int locs_per_thread){
 
   // -- unpack --
-  int T = fflow.size(1);
   int bi = blockIdx.y;
   int raster_index = locs_per_thread*(threadIdx.x + blockDim.x * blockIdx.x);
-  int H = fflow.size(4);
-  int W = fflow.size(5);
+  int T = fflow.size(1);
+  int H = fflow.size(3);
+  int W = fflow.size(4);
   int nH = (H-1)/stride0+1;
   int nW = (W-1)/stride0+1;
   int nHW = nH*nW;
+  int hj = 0;
+  int wj = 0;
 
   // -- get location --
-  for (int loc; loc < locs_per_thread; loc++){
+  for (int loc = 0; loc < locs_per_thread; loc++){
 
     // -- get location --
     int qi = raster_index + loc;
-    int i_mod = qi % nHW;
+    int qi_mod = qi % nHW;
     int ti = qi / nHW;
-    int wi = ((i_mod % nW) * stride0) % W;
-    int hi = ((i_mod / nW) * stride0) % H;
+    int wn = qi_mod % nW;
+    int hn = (qi_mod / nW) % nH;
+    int wi = ((qi_mod % nW) * stride0) % W;
+    int hi = ((qi_mod / nW) * stride0) % H;
     float hf = hi;
     float wf = wi;
 
-    // -- accumulate flow counter --
-    int ta = 0;
-
     // -- run left --
+    int ta = 0;
     auto flow = bflow;
     auto pflow = pbflow;
-    hf,wf = hi,wi;
-    for(int tj=ti-1; tj >= 0; tj--){
+    hj = hi;
+    wj = wi;
+    for(int tj=ti; tj > 0; tj--){
 
       // -- accumulate --
-      hf += flow[bi][tj][0][hi][wi];
-      wf += flow[bi][tj][1][hi][wi];
+      hf = (float)(hj) + flow[bi][tj][1][hj][wj];
+      wf = (float)(wj) + flow[bi][tj][0][hj][wj];
+      hj = (int)max(0,min(H-1,int(hf+0.5)));
+      wj = (int)max(0,min(W-1,int(wf+0.5)));
 
       // -- fill the pre-computed offsets --
-      pflow[bi][ta][ti][0][hi][wi] = int(hf);
-      pflow[bi][ta][ti][1][hi][wi] = int(wf);
+      pflow[bi][ta][ti][1][hn][wn] = (float)(hj);
+      pflow[bi][ta][ti][0][hn][wn] = (float)(wj);
 
       // -- incriment pre-computed frame index --
       ta++;
     }
 
     // -- run right --
+    ta = 0;
     flow = fflow;
     pflow = pfflow;
-    hf,wf = hi,wi;
-    for(int tj=ti+1; tj < T; tj--){
+    hj = hi;
+    wj = wi;
+    for(int tj=ti; tj < (T-1); tj++){
+
       // -- accumulate --
-      hf += flow[bi][tj][0][hi][wi];
-      wf += flow[bi][tj][1][hi][wi];
+      hf = (float)(hj) + flow[bi][tj][1][hj][wj];
+      wf = (float)(wj) + flow[bi][tj][0][hj][wj];
+      hj = (int)max(0,min(H-1,int(hf+0.5)));
+      wj = (int)max(0,min(W-1,int(wf+0.5)));
 
       // -- fill the pre-computed offsets --
-      pflow[bi][ta][ti][0][hi][wi] = int(hf);
-      pflow[bi][ta][ti][1][hi][wi] = int(wf);
+      pflow[bi][ta][ti][1][hn][wn] = (float)(hj);
+      pflow[bi][ta][ti][0][hn][wn] = (float)(wj);
 
       // -- incriment pre-computed frame index --
       ta++;
@@ -93,10 +103,13 @@ void optical_flow_accumulate_cuda(
   int nRun = T*nH*nW;
 
   // -- kernel params --
-  int _nthreads = 1024;
+  int locs_per_thread = 1;
+  int _nthreads = 256;
   dim3 nthreads(_nthreads);
-  int _nblocks = (nRun-1)/_nthreads+1;
-  dim3 nblocks(B,_nblocks);
+  int _nblocks = (nRun-1)/(_nthreads*locs_per_thread)+1;
+  dim3 nblocks(_nblocks,B);
+  // fprintf(stdout,"nblocks,nthreads: %d,%d\n",_nblocks,_nthreads);
+  // fprintf(stdout,"stride0: %d\n",stride0);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(fflow.type(), "optical_flow_accumulate_kernel", ([&] {
@@ -105,7 +118,7 @@ void optical_flow_accumulate_cuda(
        bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
        pfflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
        pbflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-       stride0,1);
+       stride0,locs_per_thread);
       }));
 
 }

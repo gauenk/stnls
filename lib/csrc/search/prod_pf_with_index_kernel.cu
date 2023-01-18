@@ -84,6 +84,7 @@ __global__ void search_prod_pf_with_index_forward_kernel(
 
   // decls
   int ti,hi,wi;
+  int hn,wn;
   int n_ti,n_hi,n_wi;
   int vH,vW,vT,nH,nW,nT;
   bool valid,vvalid,nvalid;
@@ -95,9 +96,9 @@ __global__ void search_prod_pf_with_index_forward_kernel(
   bool eq_dim;
   // bool eq_ti,eq_hi,eq_wi,eq_dim;
 
-  float cw0,ch0,ct0,cw_f,ch_f;
-  int l_cw0,l_ch0,l_ct0;
-  int cw_i,ch_i,ch,cw,ct;
+  float cw_f,ch_f;
+  // int cw_i,ch_i;
+  int ch,cw,ct;
   float v_pix,n_pix;
   double _dist,dist;
 
@@ -117,6 +118,8 @@ __global__ void search_prod_pf_with_index_forward_kernel(
     ti = qindex / n_hw0;
     wi = ((i_mod % n_w0) * stride0) % width ;
     hi = ((i_mod / n_w0) * stride0) % height;
+    wn = (i_mod % n_w0);
+    hn = (i_mod / n_w0) % n_h0;
 
     // -- valid (anchor pixel) --
     valid_ti = (ti < nframes) && (ti >= 0);
@@ -146,6 +149,7 @@ __global__ void search_prod_pf_with_index_forward_kernel(
       wt_k = threadIdx.z + blockDim.z*_wt_k;
       if (wt_k > n_tranges[ti]){ continue; }
       int n_ti = tranges[ti][wt_k];
+      int tj = 0;
 
       // ------------------------
       //      init direction
@@ -159,18 +163,20 @@ __global__ void search_prod_pf_with_index_forward_kernel(
 
         // -- access flows --
         if (direction > 0 ){
-          cw_f = cw0 + fflow[bindex][wt_k][ti][0][hi][wi];
-          ch_f = ch0 + fflow[bindex][wt_k][ti][1][hi][wi];
+          tj = n_ti - ti - 1;
+          cw_f = fflow[bindex][tj][ti][0][hn][wn];
+          ch_f = fflow[bindex][tj][ti][1][hn][wn];
         }else{
-          cw_f = cw0 + bflow[bindex][wt_k][ti][0][hi][wi];
-          ch_f = ch0 + bflow[bindex][wt_k][ti][1][hi][wi];
+          tj = ti - n_ti - 1;
+          cw_f = bflow[bindex][tj][ti][0][hn][wn];
+          ch_f = bflow[bindex][tj][ti][1][hn][wn];
         }
-        cw_i = int(cw_f+0.5);
-        ch_i = int(ch_f+0.5);
+        // cw_i = int(cw_f+0.5);
+        // ch_i = int(ch_f+0.5);
 
         // -- rounding --
-        cw = max(0,min(width-1,cw_i));
-        ch = max(0,min(height-1,ch_i));
+        cw = max(0,min(width-1,int(cw_f+0.5)));
+        ch = max(0,min(height-1,int(ch_f+0.5)));
         ct = n_ti;
 
       }else{

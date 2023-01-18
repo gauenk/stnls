@@ -41,8 +41,8 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
-                  "ws":[-1,8],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
+    test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[1],
+                  "ws":[3],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[12],
                   "exact":[True],"seed":[123]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
@@ -50,7 +50,7 @@ def pytest_generate_tests(metafunc):
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def test_fwd(ps,stride,dilation,exact):
+def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     """
 
     Test the CUDA code with torch code
@@ -64,37 +64,42 @@ def test_fwd(ps,stride,dilation,exact):
     dil = dilation
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    k,pt = 1,1
-    wt = 0
-    ws = -1
-    k = -1
+    pt = 1
     stride0 = stride
     stride1 = 1
 
     # -- init vars --
     device = "cuda:0"
     clean_flow = True
-    comp_flow = False
+    comp_flow = True
     gpu_stats = False
     adj = False
     reflect_bounds = False
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
-    vid = vid.to(device)[:,:1,].contiguous()
+    vid = vid.to(device)[:,:3,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
     vid = th.cat([vid,vid],-1)
-    # vid = th.cat([vid,vid],-1)
-    # vid = th.cat([vid,vid],-2)
     vid = th.cat([vid,vid],-2)
-
-    # -- normalize --
-    vid /= vid.max()
+    # print(vid.shape)
 
     # -- compute flow --
     flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    pflows = dnls.nn.ofa.run(flows,stride0=stride0)
+    # pflows.fflow = pflows.bflow
+    # pflows.fflow = th.randn_like(pflows.bflow)
+    # print(flows.fflow.max(),flows.fflow.min())
+    # print(flows.fflow.shape)
+    # print(pflows.fflow.shape)
+    # print(flows.fflow[0,:,:,0,36])
+    # print(pflows.fflow[0,:,0,:,0,36])
+    # print(pflows.fflow[0,0,:,:,0,36])
+
+    # -- normalize --
+    vid /= vid.max()
 
     # -- unpack image --
     device = vid.device
@@ -118,13 +123,21 @@ def test_fwd(ps,stride,dilation,exact):
 
     # -- exec fold fxns --
     use_adj = True
-    search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search = dnls.search.init("prod_pf_with_index",pflows.fflow, pflows.bflow,
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               chnls=-1,dilation=dil,
                               stride0=stride0, stride1=stride1,
-                              reflect_bounds=reflect_bounds,use_k=False,
-                              search_abs=True,use_adj=use_adj,
-                              exact=exact)
+                              reflect_bounds=reflect_bounds,
+                              use_k=False,search_abs=False,
+                              use_adj=use_adj,exact=exact)
+    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+                                 k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
+                                 chnls=-1,dilation=dil,
+                                 stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,
+                                 use_k=False,use_adj=use_adj,
+                                 search_abs=False,exact=exact)
+
     # -- query inds --
 
     # -- run search --
@@ -144,59 +157,28 @@ def test_fwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
     qindex = 0
     score_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
+    score_gt,inds_gt = search_gt(vid,qindex,nbatch,vid1=vidr)
+    args = th.where(th.abs(score_te - score_gt)>1e-6)
 
-    # -- flip cu --
-    # print(score_te.shape) # == B,Q,K
-    # score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
-
-    # -- run search --
-    B = vid.shape[0]
-    mode = "reflect" if reflect_bounds else "zero"
-    score_gt = []
-    for b in range(B):
-        score_gt_b,_ = dnls.simple.prod_search_nn.run_nn(vid[b],ps,stride=stride0,
-                                                         mode=mode,dilation=dil,
-                                                         vid1=vidr[b])
-        score_gt.append(score_gt_b)
-    score_gt = th.stack(score_gt)
-    score_gt = rearrange(score_gt,'b h w sh sw -> b (sh sw) (h w)')
-
-    # -- viz --
-    # print(score_gt.shape)
-    # print(score_te.shape)
-
-    # -- viz --
-    # print(score_te[0,0,:5,:5])
-    # print(score_gt[0,0,:5,:5])
-    # print("-"*10)
-    # print(score_te[0,0,5:10,5:10])
-    # print(score_gt[0,0,5:10,5:10])
-    # print("-"*10)
-    # print(score_te[0,0,16:18,16:18])
-    # print(score_gt[0,0,16:18,16:18])
-
-    # diff = th.abs(score_te - score_gt).mean((-1,-2))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
-
-    # diff = th.abs(score_te - score_gt).mean((0,1))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # -- compare inds --
+    diff = th.sum(th.abs(1.*(inds_te - inds_gt))).item()
+    assert diff < 1e-10
 
     # -- compare --
-    args0 = th.where(th.logical_not(th.isinf(score_gt))) # remove all inf
+    is_inf = th.isinf(score_gt)
+    is_nan = th.isnan(score_gt)
+    is_invalid = th.logical_or(is_nan,is_inf)
+    args0 = th.where(th.logical_not(is_invalid)) # remove all inf
     diff = th.abs(score_te - score_gt) / (score_gt.abs() + 1e-5)
     diff = diff[args0]
 
     tol = 1e-5
-    error = th.mean(th.abs(score_te - score_gt)).item()
+    error = th.mean(diff).item()
     if error > tol: print("error: ",error)
     assert error < tol
 
     tol = 1e-4
-    max_error = th.abs(score_te - score_gt).max().item()
+    max_error = th.abs(diff).max().item()
     if max_error > tol: print("max error: ",max_error)
     assert max_error < tol
 

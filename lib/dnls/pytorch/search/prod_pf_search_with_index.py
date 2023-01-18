@@ -79,7 +79,7 @@ class ProductPfSearchFunction_with_index(th.autograd.Function):
             ps, pt, ws_h, ws_w, wt, chnls, stride1, dilation,
             use_search_abs, reflect_bounds, use_adj, full_ws,
             anchor_self, use_self, oh0, ow0, oh1, ow1,
-            tranges,n_tranges,min_tranges)
+            tranges,n_tranges)#,min_tranges)
 
         # th.cuda.synchronize()
         # -- shape for output --
@@ -199,14 +199,14 @@ class ProductPfSearchFunction_with_index(th.autograd.Function):
             None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
-class ProductSearch_with_index(th.nn.Module):
+class ProductPfSearch_with_index(th.nn.Module):
 
     def __init__(self, fflow, bflow, k, ps, pt, ws, wt, oh0=0, ow0=0, oh1=0, ow1=0,
                  chnls=-1, stride0=1, stride1=1, dilation=1, lam = 1.,
                  search_abs=False, reflect_bounds=True, use_adj=True, use_k=True,
                  anchor_self = False, use_self=False, remove_self=False,
                  full_ws=False, nbwd=1, rbwd=True, exact=True):
-        super(ProductSearch_with_index, self).__init__()
+        super().__init__()
         self.k = k
         self.ps = ps
         self.pt = pt
@@ -257,20 +257,25 @@ class ProductSearch_with_index(th.nn.Module):
         self.fflow = zflow if noflow else flows.fflow
         self.bflow = zflow if noflow else flows.bflow
 
-    def _update_flow(self,vshape,device):
+    def _update_flow(self,vshape,device,stride0):
         b,t,c,h,w = vshape
-        zflow = th.zeros((b,t-1,t,2,h,w),device=device)
+        nh = (h-1)//stride0+1
+        nw = (w-1)//stride0+1
+        tgt_shape = (b,t-1,t,2,nh,nw)
+        zflow = th.zeros((b,t-1,t,2,nh,nw),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
-        for i in [0,1,2,4,5]:
-            assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
-            assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
+        # for (i,j) in zip([0,2,4,5],[0,1,3,4]):
+        # print(self.fflow.shape,self.bflow.shape,tgt_shape)
+        for i in range(len(tgt_shape)):
+            assert self.fflow.shape[i] == tgt_shape[i],"Must be equal size: %d" % i
+            assert self.bflow.shape[i] == tgt_shape[i],"Must be equal size: %d" % i
 
     def forward(self, vid0, qstart, nqueries, vid1=None):
         if vid1 is None: vid1 = vid0
-        self._update_flow(vid0.shape,vid0.device)
+        self._update_flow(vid0.shape,vid0.device,self.stride0)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
-        return ProductSearchFunction_with_index.apply(
+        return ProductPfSearchFunction_with_index.apply(
             vid0,vid1,self.fflow,self.bflow,qstart,nqueries,
             k,self.ps,self.pt,ws_h,ws_w,wt,chnls,
             self.stride0,self.stride1,self.dilation,self.lam,
