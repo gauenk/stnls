@@ -8,8 +8,8 @@ template <typename scalar_t>
 __global__ void optical_flow_accumulate_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> pfflow,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> pbflow,
+    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> pfflow,
+    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> pbflow,
     int stride0, int locs_per_thread){
 
   // -- unpack --
@@ -53,8 +53,8 @@ __global__ void optical_flow_accumulate_kernel(
       wj = (int)max(0,min(W-1,int(wf+0.5)));
 
       // -- fill the pre-computed offsets --
-      pflow[bi][ta][ti][1][hn][wn] = (float)(hj);
-      pflow[bi][ta][ti][0][hn][wn] = (float)(wj);
+      pflow[bi][ta][ti][1][hn][wn] = hj;
+      pflow[bi][ta][ti][0][hn][wn] = wj;
 
       // -- incriment pre-computed frame index --
       ta++;
@@ -75,8 +75,8 @@ __global__ void optical_flow_accumulate_kernel(
       wj = (int)max(0,min(W-1,int(wf+0.5)));
 
       // -- fill the pre-computed offsets --
-      pflow[bi][ta][ti][1][hn][wn] = (float)(hj);
-      pflow[bi][ta][ti][0][hn][wn] = (float)(wj);
+      pflow[bi][ta][ti][1][hn][wn] = hj;
+      pflow[bi][ta][ti][0][hn][wn] = wj;
 
       // -- incriment pre-computed frame index --
       ta++;
@@ -116,8 +116,8 @@ void optical_flow_accumulate_cuda(
      optical_flow_accumulate_kernel<scalar_t><<<nblocks, nthreads>>>(
        fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
        bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-       pfflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-       pbflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+       pfflow.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+       pbflow.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
        stride0,locs_per_thread);
       }));
 

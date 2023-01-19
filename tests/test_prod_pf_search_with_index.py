@@ -1,7 +1,12 @@
 
 
+# -- to remove --
+import data_hub
+from dev_basics import flow
+
 # -- data mgnmt --
 from pathlib import Path
+from easydict import EasyDict as edict
 
 # -- testing --
 import pytest
@@ -41,8 +46,8 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
-    test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[1],
-                  "ws":[3],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[12],
+    test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[3],
+                  "ws":[3],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[9],
                   "exact":[True],"seed":[123]}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
@@ -67,6 +72,7 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     pt = 1
     stride0 = stride
     stride1 = 1
+    use_k = k > 0
 
     # -- init vars --
     device = "cuda:0"
@@ -79,16 +85,49 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:3,].contiguous()
-    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
-
-    # -- grow img --
-    vid = th.cat([vid,vid],-1)
-    vid = th.cat([vid,vid],-2)
+    # cfg = edict()
+    # cfg.dname = "set8"
+    # cfg.dset = "te"
+    # cfg.sigma = 30
+    # cfg.nframes = 4
+    # # cfg.isize = "512_512"
+    # cfg.isize = "256_256"
+    # # cfg.isize = "128_128"
+    # cfg.cropmode = "center"
+    # cfg.vid_name = "snowboard"
+    # cfg.frame_start = 0
+    # cfg.frame_end = cfg.frame_start + cfg.nframes - 1
+    # data,loader = data_hub.sets.load(cfg)
+    # indices = data_hub.filter_subseq(data[cfg.dset],cfg.vid_name,
+    #                                  cfg.frame_start,cfg.frame_end)
+    # vid = data[cfg.dset][indices[0]]['clean'][None,:]
+    # vid = vid.to(device).contiguous()
+    # vid = th.clamp(255*th.randn_like(vid),0,255)
     # print(vid.shape)
+
+    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
     flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    # flow_type = "svnlb"
+    # flow_type = "cv2"
+    # flow_type = "cv2_tvl1"
+    # flow_type = "cv2_tvl1p_gpu"
+    # flow_type = "cv2_nofs_gpu"
+    # print(flow_type)
+
+    # -- normalize --
+    vid /= vid.max()
+    # flows = flow.orun(vid,comp_flow,sigma=0.,ftype=flow_type)
     pflows = dnls.nn.ofa.run(flows,stride0=stride0)
+    for i in range(2):
+        for key in ['fflow','bflow']:
+            print(i,key,flows[key][:,:,i].max(),flows[key][:,:,i].min())
+    # flows.fflow = th.zeros_like(flows.fflow)
+    # flows.bflow = th.zeros_like(flows.bflow)
+    # for i in range(2):
+    #     for key in ['fflow','bflow']:
+    #         print(i,key,pflows[key][...,i,:,:].max(),pflows[key][...,i,:,:].min())
     # pflows.fflow = pflows.bflow
     # pflows.fflow = th.randn_like(pflows.bflow)
     # print(flows.fflow.max(),flows.fflow.min())
@@ -97,9 +136,6 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     # print(flows.fflow[0,:,:,0,36])
     # print(pflows.fflow[0,:,0,:,0,36])
     # print(pflows.fflow[0,0,:,:,0,36])
-
-    # -- normalize --
-    vid /= vid.max()
 
     # -- unpack image --
     device = vid.device
@@ -128,14 +164,14 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
                               chnls=-1,dilation=dil,
                               stride0=stride0, stride1=stride1,
                               reflect_bounds=reflect_bounds,
-                              use_k=False,search_abs=False,
+                              use_k=use_k,search_abs=False,
                               use_adj=use_adj,exact=exact)
     search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,
-                                 use_k=False,use_adj=use_adj,
+                                 use_k=use_k,use_adj=use_adj,
                                  search_abs=False,exact=exact)
 
     # -- query inds --
@@ -143,8 +179,8 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     # -- run search --
     # vidr = None
     # vidr = 10*th.ones_like(vid)
-    # vidr = vid
-    vidr = th.rand_like(vid)
+    vidr = vid
+    # vidr = th.rand_like(vid)
     # vidr[th.where(th.abs(vidr) > 0.2)] = 1
     # vidr[th.where(th.abs(vidr) < 1)] = 0
     # print(th.unique(vidr))
@@ -159,6 +195,18 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     score_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
     score_gt,inds_gt = search_gt(vid,qindex,nbatch,vid1=vidr)
     args = th.where(th.abs(score_te - score_gt)>1e-6)
+    # print(score_te[args])
+    # print(score_gt[args])
+    # print(inds_te[args])
+    # print(inds_gt[args])
+
+    # -- viz --
+    is_inf = th.isinf(score_gt)
+    is_nan = th.isnan(score_gt)
+    is_invalid = th.logical_or(is_nan,is_inf)
+    scores = score_gt[th.logical_not(is_invalid)]
+    quants = th.Tensor([.1,.25,.5,.75,.9]).to(device)
+    # print(th.quantile(scores,quants))
 
     # -- compare inds --
     diff = th.sum(th.abs(1.*(inds_te - inds_gt))).item()

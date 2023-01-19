@@ -48,7 +48,9 @@ class ProductSearchFunction_with_index(th.autograd.Function):
         # bufs = allocate_bufs(nq,t,ws_h,ws_w,wt,device)
         B,Q = bsize,nqueries
         BQ = B*Q
-        dists_exh,inds_exh = allocate_exh_prod(BQ,wt,ws_h,ws_w,device,dtype)
+        nframes = vid0.shape[1]
+        st = min(2*wt+1,nframes)
+        dists_exh,inds_exh = allocate_exh_prod(BQ,st,ws_h,ws_w,device,dtype)
         dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
         inds_exh = inds_exh.view(B,Q,-1,ws_h,ws_w,3)
 
