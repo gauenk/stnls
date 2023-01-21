@@ -195,10 +195,10 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     score_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
     score_gt,inds_gt = search_gt(vid,qindex,nbatch,vid1=vidr)
     args = th.where(th.abs(score_te - score_gt)>1e-6)
-    # print(score_te[args])
-    # print(score_gt[args])
-    # print(inds_te[args])
-    # print(inds_gt[args])
+    print(score_te[args])
+    print(score_gt[args])
+    print(inds_te[args])
+    print(inds_gt[args])
 
     # -- viz --
     is_inf = th.isinf(score_gt)

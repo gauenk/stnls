@@ -76,11 +76,12 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
         # -- viz --
-        print("vid0.shape: " ,vid0.shape)
-        print("vid1.shape: " ,vid1.shape)
-        print("fflow.shape: " ,fflow.shape)
-        print("bflow.shape: " ,bflow.shape)
-        print("dists_exh.shape: " ,dists_exh.shape)
+        # print("prod_search_with_heads.")
+        # print("vid0.shape: " ,vid0.shape)
+        # print("vid1.shape: " ,vid1.shape)
+        # print("fflow.shape: " ,fflow.shape)
+        # print("bflow.shape: " ,bflow.shape)
+        # print("dists_exh.shape: " ,dists_exh.shape)
         # print("inds_exh.shape: " ,inds_exh.shape)
 
         # -- setup flows --

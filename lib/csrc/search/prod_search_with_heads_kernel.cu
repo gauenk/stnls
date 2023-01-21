@@ -71,6 +71,7 @@ __global__ void prod_search_with_heads_forward_kernel(
   width = vid0.size(5);
   int n_hw0 = n_h0 * n_w0;
   int nqueries = dists.size(2);
+  int st = dists.size(3);
 
   // constants
   float nan = __int_as_float(0xffe00000);
@@ -87,11 +88,11 @@ __global__ void prod_search_with_heads_forward_kernel(
   // cuda index
   int bindex = blockIdx.x;
   int head = blockIdx.y;
-  int blkDimX = blockDim.y; // num threads in x-block
-  int blkDimY = blockDim.z; // num threads in y-block
+  int block_start = blockIdx.z*bpt;
+  int blkDimX = blockDim.x; // num threads in x-block
+  int blkDimY = blockDim.y; // num threads in y-block
   int cu_tidX = threadIdx.x;
   int cu_tidY = threadIdx.y;
-  int block_start = blockIdx.z*bpt;
   int bidx,ws_i,ws_j;
 
   // accumulate time offsets
@@ -117,6 +118,7 @@ __global__ void prod_search_with_heads_forward_kernel(
   // float dist,v_pix,n_pix;
   // scalar_t cw0,ch0;//,ct0;//,cw_f,ch_f;
   scalar_t dist,v_pix,n_pix;
+  int qindex,i_mod;
 
   for (int _bidx = 0; _bidx < bpt; _bidx++){
 
@@ -129,8 +131,8 @@ __global__ void prod_search_with_heads_forward_kernel(
     if (bidx >= nqueries){ continue; }
 
     // -- unpack pixel locs --
-    int qindex = bidx + qstart;
-    int i_mod = qindex % n_hw0;
+    qindex = bidx + qstart;
+    i_mod = qindex % n_hw0;
     ti = qindex / n_hw0;
     wi = ((i_mod % n_w0) * stride0) % width ;
     hi = ((i_mod / n_w0) * stride0) % height;
@@ -163,7 +165,7 @@ __global__ void prod_search_with_heads_forward_kernel(
     // -- reset flow search --
     dir_fwd = true;
     swap_dir = false;
-    for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
+    for( int wt_k = 0; wt_k < st; wt_k++){
       int n_ti = tranges[ti][wt_k];
       int dt = n_ti - min_t;
 
@@ -376,21 +378,21 @@ void prod_search_with_heads_forward_cuda(
    dim3 nthreads(ws_h_threads,ws_w_threads);
 
    int bsize = vid0.size(0);
-   int rem_blocks = (65535-1)/nheads+1;
+   // int rem_blocks = (65535-1)/nheads+1;
    int bpt = 2;
    int nquery_blocks = ((nqueries - 1) / bpt) + 1;
-   nquery_blocks = min(nquery_blocks,rem_blocks);
-   bpt = ((nqueries - 1) / nquery_blocks) + 1;
+   // nquery_blocks = min(nquery_blocks,rem_blocks);
+   // bpt = ((nqueries - 1) / nquery_blocks) + 1;
    dim3 nblocks(bsize,nheads,nquery_blocks);
 
-   fprintf(stdout,"ps,pt,n_h0,n_w0,wt,chnls,stride0: %d,%d,%d,%d,%d,%d,%d\n",ps,pt,n_h0,n_w0,wt,chnls,stride0);
-   fprintf(stdout,"bsize,nheads,nquery_blocks: %d,%d,%d\n",
-           bsize,nheads,nquery_blocks);
-   fprintf(stdout,"bpt,nquery_blocks,ws_h_threads,ws_w_threads: %d,%d,%d,%d\n",
-           bpt,nquery_blocks,ws_h_threads,ws_w_threads);
-   fprintf(stdout,"reflect_bounds,search_abs,full_ws,anchor_self,use_self: %d,%d,%d,%d,%d\n",
-           reflect_bounds,search_abs,full_ws,anchor_self,use_self);
-   fprintf(stdout,"ws_h_iters,ws_w_iters,ws_h,ws_w: %d,%d,%d,%d,\n",ws_h_iters,ws_w_iters,ws_h,ws_w);
+   // fprintf(stdout,"ps,pt,n_h0,n_w0,wt,chnls,stride0,ws_h,ws_w: %d,%d,%d,%d,%d,%d,%d,%d,%d\n",ps,pt,n_h0,n_w0,wt,chnls,stride0,ws_h,ws_w);
+   // fprintf(stdout,"bsize,nheads,nquery_blocks: %d,%d,%d\n",
+   //         bsize,nheads,nquery_blocks);
+   // fprintf(stdout,"bpt,nquery_blocks,ws_h_threads,ws_w_threads: %d,%d,%d,%d\n",
+   //         bpt,nquery_blocks,ws_h_threads,ws_w_threads);
+   // fprintf(stdout,"reflect_bounds,search_abs,full_ws,anchor_self,use_self: %d,%d,%d,%d,%d\n",
+   //         reflect_bounds,search_abs,full_ws,anchor_self,use_self);
+   // fprintf(stdout,"ws_h_iters,ws_w_iters,ws_h,ws_w: %d,%d,%d,%d,\n",ws_h_iters,ws_w_iters,ws_h,ws_w);
     
    // launch kernel
    AT_DISPATCH_FLOATING_TYPES(vid0.type(),

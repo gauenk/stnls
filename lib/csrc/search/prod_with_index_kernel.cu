@@ -106,7 +106,7 @@ __global__ void search_prod_with_index_forward_kernel(
   int l_cw0,l_ch0,l_ct0;
   int cw_i,ch_i,ch,cw,ct;
   float v_pix,n_pix;
-  double _dist,dist;
+  scalar_t _dist,dist;
 
   for (int _bidx = 0; _bidx < bpt; _bidx++){
 

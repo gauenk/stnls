@@ -10,6 +10,8 @@ setup(name='dnls',
           CUDAExtension('dnls_cuda', [
               'lib/csrc/nn/pfc.cpp',
               'lib/csrc/nn/pfc_kernel.cu',
+              'lib/csrc/nn/temporal_inds.cpp',
+              'lib/csrc/nn/temporal_inds_kernel.cu',
               'lib/csrc/nn/optical_flow_accumulate.cpp',
               'lib/csrc/nn/optical_flow_accumulate_kernel.cu',
               'lib/csrc/search/interpolate_inds.cpp',

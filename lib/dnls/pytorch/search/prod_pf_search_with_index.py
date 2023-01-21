@@ -69,6 +69,7 @@ class ProductPfSearchFunction_with_index(th.autograd.Function):
         # print(tranges)
 
         # -- testing [delete me] --
+        # print("prod_pf_search_with_index.")
         # print("vid0.shape: ",vid0.shape)
         # print("vid1.shape: ",vid1.shape)
         # print("fflow.shape: ",fflow.shape)
