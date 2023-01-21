@@ -28,21 +28,28 @@ __global__ void temporal_inds_kernel(
   int wj = 0;
   float hf = 0;
   float wf = 0;
+  int QK = Q*K;
 
   // -- get location --
   for (int loc = 0; loc < locs_per_thread; loc++){
 
     // -- get location --
     int ni = raster_index + loc;
-    // int ni_mod = ni % Q;
-    int qi = ni / Q;
-    int ki = ni % K;
+    int qi = ni / K;
+    int ki = (ni - qi*K) % K;
     int ti = inds[bi][qi][ki][0];
     int hi = inds[bi][qi][ki][1];
     int wi = inds[bi][qi][ki][2];
-    int t_shift = min(0,ti - nT_half) + max(0,ti + nT_half - T);
+    int t_shift = min(0,ti - nT_half) + max(0,ti + nT_half - (T-1));
     int t_left = max(ti - nT_half - t_shift,0);
     int t_right = min(T-1,ti + nT_half - t_shift);
+
+    // -- debug only [delete me] --
+    for(int tj=0; tj < nT; tj++){
+      inds_t[bi][qi][ki][tj][0] = 10;
+      inds_t[bi][qi][ki][tj][1] = 10;
+      inds_t[bi][qi][ki][tj][2] = 10;
+    }
 
     // -- run left --
     int ta = 0;
@@ -67,7 +74,6 @@ __global__ void temporal_inds_kernel(
     }
 
     // -- run right --
-    ta = 0;
     flow = fflow;
     hj = hi;
     wj = wi;
@@ -116,7 +122,6 @@ void temporal_inds_cuda(
   int _nblocks = (nRun-1)/(_nthreads*locs_per_thread)+1;
   dim3 nblocks(_nblocks,B);
   // fprintf(stdout,"nblocks,nthreads: %d,%d\n",_nblocks,_nthreads);
-  // fprintf(stdout,"stride0: %d\n",stride0);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(fflow.type(), "temporal_inds_kernel", ([&] {

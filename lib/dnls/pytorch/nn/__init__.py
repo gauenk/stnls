@@ -1,5 +1,6 @@
 from . import pfc
 from . import optical_flow_accumulate as ofa
+from . import temporal_inds
 
 def init(version,*args,**kwargs):
     if version == "pfc":
