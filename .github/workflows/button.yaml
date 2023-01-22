@@ -21,8 +21,10 @@ jobs:
         # cuda cache files are stored in `/usr/local/cuda/` on Linux/macOS
         path: |
           /usr/local/cuda*
-        key: ${{ runner.os }}-
+        key: ${{ runner.os }}-build-${{ env.cache-name }}
         restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
           ${{ runner.os }}-
     - name: Setup Ninja
       uses: ashutoshvarma/setup-ninja@master
