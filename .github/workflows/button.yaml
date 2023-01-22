@@ -42,13 +42,13 @@ jobs:
         cuda: '11.3.0'
     - name: Export CUDA Paths
       run: |
-        export CUDA_PATH=/usr/bin/cuda/
+        export CUDA_PATH=/usr/bin/cuda-11.3/
         export PATH="$CUDA_PATH/bin:$PATH"
+        export LD_LIBRARY_PATH="/usr/local/cuda-11.3/lib64:$LD_LIBRARY_PATH"
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip' # caching pip dependencies
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
