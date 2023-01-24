@@ -55,12 +55,13 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         B,H,t,c,h,w = vid0.shape
         vshape = (t,c,h,w)
         n_h0,n_w0 = get_num_img(vshape,stride0,ps,dilation)
-        nqueries = n_h0*n_w0 if nqueries <= 0 else nqueries
+        nqueries = t*n_h0*n_w0 if nqueries <= 0 else nqueries
         Q = nqueries
 
         # -- allocs --
         BHQ = B*H*Q
-        dists_exh,inds_exh = allocate_exh_prod(BHQ,wt,ws_h,ws_w,device,dtype)
+        st = min(2*wt+1,t)
+        dists_exh,inds_exh = allocate_exh_prod(BHQ,st,ws_h,ws_w,device,dtype)
         dists_exh = dists_exh.view(B,H,Q,-1,ws_h,ws_w)
         inds_exh = inds_exh.view(B,H,Q,-1,ws_h,ws_w,3)
 
@@ -75,6 +76,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
         # -- viz --
+        # print("prod_search_with_heads.")
         # print("vid0.shape: " ,vid0.shape)
         # print("vid1.shape: " ,vid1.shape)
         # print("fflow.shape: " ,fflow.shape)
@@ -96,7 +98,8 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                                                  qstart, stride0, n_h0, n_w0,
                                                  h0_off, w0_off, h1_off, w1_off,
                                                  ps, pt, ws_h, ws_w,
-                                                 wt, chnls, dilation, stride1, use_adj,
+                                                 wt, chnls, dilation, stride1,
+                                                 use_adj,
                                                  reflect_bounds, search_abs, full_ws,
                                                  anchor_self, use_self, tranges,
                                                  n_tranges, min_tranges)
@@ -332,6 +335,16 @@ class ProdSearchWithHeads(th.nn.Module):
         for i in [0,1,3,4]:
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
+
+    def set_flows(self,flows,vid):
+        (b,t,c,h,w),device = vid.shape,vid.device
+        nh = (h-1)//self.stride0+1
+        nw = (w-1)//self.stride0+1
+        zflow = th.zeros((b,t-1,t,2,nh,nw),device=device,dtype=th.int32)
+        zflow = th.zeros((b,t-1,t,2,nh,nw),device=device,dtype=th.int32)
+        noflow = flows is None
+        self.fflow = zflow if noflow else flows.fflow
+        self.bflow = zflow if noflow else flows.bflow
 
     def forward(self, vid0, qstart=0, nqueries=-1, vid1=None):
         if vid1 is None: vid1 = vid0

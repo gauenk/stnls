@@ -1,3 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cu113
+torch==1.12.1+cu113
+torchvision==0.13.1
 easydict
 einops
 pathlib
@@ -7,9 +10,4 @@ numpy
 numba
 https://storage.googleapis.com/jax-releases/cuda11/jaxlib-0.3.0+cuda11.cudnn805-cp310-none-manylinux2010_x86_64.whl # jaxlib
 jax==0.3.0
-torch==1.12.1+cu113
-torchvision==0.13.1
 opencv-contrib-python==4.5.*
---extra-index-url https://download.pytorch.org/whl/cu113
-
-

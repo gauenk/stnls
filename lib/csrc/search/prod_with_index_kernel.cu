@@ -47,7 +47,7 @@ __global__ void search_prod_with_index_forward_kernel(
     int h0_off, int w0_off, int h1_off, int w1_off,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
     torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
-    torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
+    // torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
     int ws_h_iters, int ws_w_iters, int bpt){
 
   // shapes
@@ -76,7 +76,7 @@ __global__ void search_prod_with_index_forward_kernel(
   bool dir_fwd = true; // forward
   bool swap_dir = false;
   int prev_h,prev_w,prev_t;
-  int min_t;
+  // int min_t;
 
   // column index
   int blkDimX = blockDim.x; // num threads in x-block
@@ -106,7 +106,7 @@ __global__ void search_prod_with_index_forward_kernel(
   int l_cw0,l_ch0,l_ct0;
   int cw_i,ch_i,ch,cw,ct;
   float v_pix,n_pix;
-  double _dist,dist;
+  scalar_t _dist,dist;
 
   for (int _bidx = 0; _bidx < bpt; _bidx++){
 
@@ -124,7 +124,7 @@ __global__ void search_prod_with_index_forward_kernel(
     ti = qindex / n_hw0;
     wi = ((i_mod % n_w0) * stride0) % width ;
     hi = ((i_mod / n_w0) * stride0) % height;
-    min_t = min_tranges[ti];
+    // min_t = min_tranges[ti];
 
     // -- valid (anchor pixel) --
     valid_ti = (ti < nframes) && (ti >= 0);
@@ -156,7 +156,7 @@ __global__ void search_prod_with_index_forward_kernel(
     swap_dir = false;
     for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
       int n_ti = tranges[ti][wt_k];
-      int dt = n_ti - min_t;
+      // int dt = n_ti - min_t;
 
       // ------------------------
       //      init direction
@@ -176,9 +176,9 @@ __global__ void search_prod_with_index_forward_kernel(
       if (direction != 0){
 
         // -- get offset at index --
-        cw0 = 1.*prev_w;
-        ch0 = 1.*prev_h;
-        ct0 = 1.*prev_t;
+        cw0 = (float)prev_w;
+        ch0 = (float)prev_h;
+        ct0 = (float)prev_t;
         
         // -- legalize access --
         l_cw0 = int(max(0,min(width-1,int(cw0))));
@@ -395,7 +395,7 @@ void search_prod_with_index_forward_cuda(
          anchor_self, use_self, h0_off, w0_off, h1_off, w1_off,
          tranges.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
          n_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-         min_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+         // min_tranges.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
          ws_h_iters, ws_w_iters, bpt);
        }));
 }

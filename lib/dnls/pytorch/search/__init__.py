@@ -4,6 +4,7 @@ from . import l2_search_with_index
 from . import l2_search_with_heads
 from . import prod_search
 from . import prod_search_with_index
+from . import prod_pf_search_with_index
 from . import prod_search_with_heads
 from . import prod_dists
 from . import prod_refine
@@ -25,6 +26,8 @@ def init(version,*args,**kwargs):
         return prod_search.ProductSearch(*args,**kwargs)
     elif version == "prod_with_index":
         return prod_search_with_index.ProductSearch_with_index(*args,**kwargs)
+    elif version == "prod_pf_with_index":
+        return prod_pf_search_with_index.ProductPfSearch_with_index(*args,**kwargs)
     elif version == "prod_with_heads":
         return prod_search_with_heads.ProdSearchWithHeads(*args,**kwargs)
     elif version == "prod_dists":
