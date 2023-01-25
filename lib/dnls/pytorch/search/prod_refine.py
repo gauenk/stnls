@@ -318,7 +318,7 @@ class ProdRefineWithHeads(th.nn.Module):
         return ws_h,ws_w,k,chnls
 
 
-    def forward(self, vid0, qstart, inds_exh, vid1=None):
+    def forward(self, vid0, vid1, qstart, inds_exh):
         if vid1 is None: vid1 = vid0
         ws_h,ws_w,k,chnls = self._get_args(vid0.shape)
         ws_og = self.ws_og
@@ -344,7 +344,7 @@ class ProdRefineWithHeads(th.nn.Module):
         # print("vid0.shape: ",vid0.shape)
         # print("vid1.shape: ",vid1.shape)
         # print("inds_p.shape: ",inds_p.shape)
-        dists,inds = self(vid0,qstart,inds_p,vid1)
+        dists,inds = self(vid0,vid1,qstart,inds_p)
         # print("dists.shape: ",dists.shape)
         # print("inds.shape: ",inds.shape)
         return dists[:,0],inds[:,0]

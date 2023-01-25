@@ -128,10 +128,10 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
                                  exact=exact)
 
     # -- [gt] search --
-    dists_gt,inds_gt = search_gt(vid,0,ntotal)
+    dists_gt,inds_gt = search_gt(vid,vid,0,ntotal)
 
     # -- [te] search --
-    dists_te,inds_te = prod_refine(vid,0,inds_gt)
+    dists_te,inds_te = prod_refine(vid,vid,0,inds_gt)
 
     # -- slice to k_r --
     dists_gt = dists_gt[...,:k_r]
@@ -160,15 +160,15 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     eq_inds = th.where(idiff<1e-10)
     neq_inds = th.where(idiff>1e-10)
     neq_ibools = idiff.abs()>0
-    print(len(eq_inds[0]))
-    print(len(neq_inds[0]))
-    print("-"*20)
-    print(dists_gt[0,0,0])
-    print(dists_te[0,0,0])
-    print("-"*20)
-    print(inds_gt[0,0,0])
-    print(inds_te[0,0,0])
-    print("-"*20)
+    # print(len(eq_inds[0]))
+    # print(len(neq_inds[0]))
+    # print("-"*20)
+    # print(dists_gt[0,0,0])
+    # print(dists_te[0,0,0])
+    # print("-"*20)
+    # print(inds_gt[0,0,0])
+    # print(inds_te[0,0,0])
+    # print("-"*20)
 
     #
     # -- equal dists @ equal inds --
@@ -190,14 +190,14 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     #
     # -- te > gt @ non-equal inds --
     #
-    print(neq_inds)
-    print(dists_gt[neq_inds])
-    print(dists_te[neq_inds])
-    print(inds_gt[neq_inds])
-    print(inds_te[neq_inds])
+    # print(neq_inds)
+    # print(dists_gt[neq_inds])
+    # print(dists_te[neq_inds])
+    # print(inds_gt[neq_inds])
+    # print(inds_te[neq_inds])
 
-    geq_bools = dists_te[neq_inds] > dists_gt[neq_inds]
-    print(geq_bools)
+    # geq_bools = dists_te[neq_inds] > dists_gt[neq_inds]
+    # print(geq_bools)
     # assert th.all(geq_bools).item(),"Must be greater than gt."
 
 
