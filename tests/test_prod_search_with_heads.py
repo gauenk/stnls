@@ -131,7 +131,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  exact=exact)
 
     # -- [testing] search --
-    dists_te,inds_te = search_te(vid,0,ntotal)
+    dists_te,inds_te = search_te(vid,vid,0,ntotal)
     th.cuda.synchronize()
 
     # -- [groundtruth] search --
@@ -141,7 +141,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     for h in range(nheads):
         cinds = slice(_c*h,_c*(h+1))
         vid_c = vid[:,:,cinds].contiguous()
-        dists_h,inds_h = search_gt(vid_c,0,ntotal)
+        dists_h,inds_h = search_gt(vid_c,vid_c,0,ntotal)
         # dists_h,inds_h = search_te(vid_c,0,ntotal)
         # dists_h,inds_h = dists_h[0],inds_h[0]
         dists_gt.append(dists_h)
@@ -278,7 +278,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
 
     # -- [testing] search --
     # print("vid.shape: ",vid.shape)
-    dists_te,inds_te = search_te(vid_te0,0,ntotal,vid_te1)
+    dists_te,inds_te = search_te(vid_te0,vid_te1,0,ntotal)
     th.cuda.synchronize()
 
     # -- [groundtruth] search --
@@ -289,7 +289,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         cinds = slice(_c*h,_c*(h+1))
         vid_c0 = vid_gt0[:,:,cinds].contiguous()
         vid_c1 = vid_gt1[:,:,cinds].contiguous()
-        dists_h,inds_h = search_gt(vid_c0,0,ntotal,vid_c1)
+        dists_h,inds_h = search_gt(vid_c0,vid_c1,0,ntotal)
         # dists_h,inds_h = search_te(vid_c,0,ntotal)
         # dists_h,inds_h = dists_h[0],inds_h[0]
         dists_gt.append(dists_h)
@@ -462,7 +462,7 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  exact=exact)
 
     # -- [testing] search --
-    dists_te,inds_te = search_te(vid,0,ntotal)
+    dists_te,inds_te = search_te(vid,vid,0,ntotal)
     th.cuda.synchronize()
 
     # -- [groundtruth] search --
@@ -472,7 +472,7 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     for h in range(nheads):
         cinds = slice(_c*h,_c*(h+1))
         vid_c = vid[:,:,cinds].contiguous()
-        dists_h,inds_h = search_gt(vid_c,0,ntotal)
+        dists_h,inds_h = search_gt(vid_c,vid_c,0,ntotal)
         # dists_h,inds_h = search_te(vid_c,0,ntotal)
         # dists_h,inds_h = dists_h[0],inds_h[0]
         dists_gt.append(dists_h)
@@ -481,7 +481,7 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     inds_gt  = th.stack(inds_gt,1)
 
     # -- view --
-    print(inds_gt)
+    # print(inds_gt)
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf

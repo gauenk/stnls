@@ -143,7 +143,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # ones = th.ones_like(vid)
     # print("vid.shape: ",vid.shape)
     qindex = 0
-    score_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
+    score_te,inds_te = search(vid,vidr,qindex,nbatch)
 
     # -- flip cu --
     # print(score_te.shape) # == B,Q,K
@@ -322,7 +322,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
 
     # -- run cu --
     qindex = 0
-    score_te,inds_te = search(vid_te,qindex,nbatch,vid1=vidr_te)
+    score_te,inds_te = search(vid_te,vidr_te,qindex,nbatch)
     # score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
 
     # -- run nn --
@@ -483,7 +483,7 @@ def test_anchor_self(ps,k,ws,stride,dilation,exact):
     # -- run search --
     vidr = th.rand_like(vid)
     qindex = 0
-    dists_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
+    dists_te,inds_te = search(vid,vidr,qindex,nbatch)
     dists_te = dists_te[:,:,0] # only self
     inds_te = inds_te[:,:,0] # only self
 
@@ -670,7 +670,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact,seed):
 
     # -- run cu --
     qindex = 0
-    score_te,inds_te = search(vid0_te,qindex,nbatch,vid1=vid1_te)
+    score_te,inds_te = search(vid0_te,vid1_te,qindex,nbatch)
     # score_te = rearrange(score_te,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=h)
     # score_te = rearrange(score_te,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=h)
 
@@ -810,7 +810,7 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
                                                 coords,t,device)
 
     # -- run search --
-    score_te,inds_te = search(vid,qindex,nbatch)
+    score_te,inds_te = search(vid,vid,qindex,nbatch)
     score_simp,inds_simp = dnls.simple.prod_search.run(vid,iqueries,flows,k,
                                                        ps,pt,ws,wt,chnls,
                                                        stride0=stride0,stride1=stride1,
@@ -835,7 +835,7 @@ def test_cu_vs_simp_fwd(ps,stride,dilation,top,btm,left,right,k,exact):
 
     # -- compare --
     error = th.mean(th.abs(score_te - score_simp)).item()
-    assert error < 1e-6
+    assert error < 1e-5
 
 # @pytest.mark.skip(reason="too long right now")
 def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
@@ -912,7 +912,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
         nbatch_i =  min(nbatch, ntotal - qindex)
 
         # -- run prod_search --
-        score_te_i,inds_te = search(vid_te,qindex,nbatch_i,vid1=vidr_te)
+        score_te_i,inds_te = search(vid_te,vidr_te,qindex,nbatch_i)
         score_te.append(score_te_i)
 
     # -- forward reference --

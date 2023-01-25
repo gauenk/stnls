@@ -153,7 +153,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
 
     # -- testing code --
-    score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
+    score_te,inds_te = search(vid,vidr,qindex,ntotal)
     # if ws == -1:
     #     score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
     # print(score_gt)
@@ -272,7 +272,7 @@ def test_cu_vs_simp_fwd(ws,wt,k,ps,stride0,stride1,dilation,reflect_bounds,exact
                                                     h1_off=h1_off,w1_off=w1_off,
                                                     vid1=vidr)
     # -- testing code --
-    score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
+    score_te,inds_te = search(vid,vidr,qindex,ntotal)
 
     # -- viz --
     # print(ws)
@@ -402,7 +402,7 @@ def test_exact_bwd(ps,k,stride0,stride1,dilation,reflect_bounds):
     # -- run my search --
     vid_te = vid.clone()
     vid_te.requires_grad_(True)
-    score_te,inds_te = search(vid_te,qindex,ntotal,vid1=vid_te)
+    score_te,inds_te = search(vid_te,vid_te,qindex,ntotal)
     # print(n_h0,n_w0)
     # print(score_te.shape)
     score_grad = th.rand_like(score_te)
@@ -532,7 +532,7 @@ def test_cu_full_ws(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- testing code --
     qindex = 0
-    score_te,inds_te = search(vid,qindex,ntotal,vid1=vidr)
+    score_te,inds_te = search(vid,vidr,qindex,ntotal)
     assert th.all(score_te<th.inf).item()
 
 #
@@ -637,7 +637,7 @@ def test_cu_vs_th_bwd(ps,stride0,stride1,dilation,reflect_bounds,exact):
 
     # -- run search --
     qindex = 0
-    score_te,inds_te = search(vid0_te,qindex,ntotal,vid1=vid1_te)
+    score_te,inds_te = search(vid0_te,vid1_te,qindex,ntotal)
     score_te = rearrange(score_te,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=n_h1)
 
     # -- comparison --
