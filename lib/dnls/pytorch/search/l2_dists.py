@@ -27,12 +27,12 @@ class L2DistsFunction(th.autograd.Function):
 
         # -- unpack --
         device = vid0.device
-        t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0.shape,stride0,ps,dilation)
+        b,t,c,h,w = vid0.shape
+        n_h0,n_w0 = get_num_img(vid0[0].shape,stride0,ps,dilation)
 
         # -- allocs --
-        nq,nn,_ = inds.shape
-        dists = th.zeros((nq,nn),dtype=th.float32,device=device)
+        b,nq,nn,_ = inds.shape
+        dists = th.zeros((b,nq,nn),dtype=th.float32,device=device)
 
         # -- forward --
         gpuid = th.cuda.current_device()
@@ -140,9 +140,8 @@ class L2Dists(th.nn.Module):
         self.exact = exact
         self.use_rand = use_rand
 
-    def forward(self, vid0, inds, qstart, vid1=None):
-        if vid1 is None: vid1 = vid0
-        if self.chnls <= 0: chnls = vid0.shape[1]
+    def forward(self, vid0, vid1, inds, qstart):
+        if self.chnls <= 0: chnls = vid0.shape[-3]
         else: chnls = self.chnls
         return L2DistsFunction.apply(vid0,vid1,inds,
                                      qstart,self.stride0,

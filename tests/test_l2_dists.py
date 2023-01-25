@@ -68,7 +68,8 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     """
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
     wt = 0
     ws = -1
@@ -87,8 +88,8 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     only_full = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -103,24 +104,24 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
-    chnls = vid.shape[1]
+    chnls = vid.shape[2]
 
     # -- unpack --
-    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
     n_h0,n_w0 = n0[0],n0[1]
     n_h1,n_w1 = n1[0],n1[1]
 
     # -- exec fold fxns --
     use_adj = True
-    h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
-    h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
+    h0_off,w0_off,_,_ = comp_pads(vid[0].shape, ps, stride0, 1)
+    h1_off,w1_off,_,_ = comp_pads(vid[0].shape, ps, stride1, 1)
     search = dnls.search.init("l2_with_index",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, dilation=dil,
@@ -139,21 +140,21 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
                                 h1_off=h1_off,w1_off=w1_off)
 
     # -- batching info --
-    n_h0,n_w0 = search.query_batch_info(vid.shape) # just showing api
+    n_h0,n_w0 = search.query_batch_info(vid[0].shape) # just showing api
     ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
     qindex = 0
 
     # -- ground-truth --
-    dists_gt,inds_gt = search(vid,qindex,ntotal,vid1=vidr)
+    dists_gt,inds_gt = search(vid,vidr,qindex,ntotal)
     if k == -1:
-        dists_gt = rearrange(dists_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
+        dists_gt = rearrange(dists_gt,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=n_h1)
 
     # -- testing code --
-    dists_te = l2_dists(vid,inds_gt,qindex,vid1=vidr)
+    dists_te = l2_dists(vid,vidr,inds_gt,qindex)
     if k == -1:
-        dists_te = rearrange(dists_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
+        dists_te = rearrange(dists_te,'b (sh sw) (h w) -> b h w sh sw',sh=n_h0,h=n_h1)
 
     # -- compare --
     tol = 1e-5
@@ -176,7 +177,8 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     """
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     k,pt = 1,1
     wt = 0
     ws = -1
@@ -195,8 +197,8 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     only_full = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
-    vid = th.from_numpy(vid).to(device)[:1,].contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- grow img --
@@ -221,24 +223,24 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     vid1_gt.requires_grad_(True)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
     shape = vid.shape
-    t,color,h,w = shape
+    b,t,color,h,w = shape
     vshape = vid.shape
-    chnls = vid.shape[1]
+    chnls = vid.shape[2]
 
     # -- unpack --
-    _,_,n0,n1 = get_batching_info(vid.shape,stride0,stride1,ps,dil)
+    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
     n_h0,n_w0 = n0[0],n0[1]
     n_h1,n_w1 = n1[0],n1[1]
 
     # -- exec fold fxns --
     use_adj = True
-    h0_off,w0_off,_,_ = comp_pads(vid.shape, ps, stride0, 1)
-    h1_off,w1_off,_,_ = comp_pads(vid.shape, ps, stride1, 1)
+    h0_off,w0_off,_,_ = comp_pads(vid[0].shape, ps, stride0, 1)
+    h1_off,w1_off,_,_ = comp_pads(vid[0].shape, ps, stride1, 1)
     search = dnls.search.init("l2_with_index",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, dilation=dil,
@@ -257,19 +259,19 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
                                 h1_off=h1_off,w1_off=w1_off)
 
     # -- batching info --
-    n_h0,n_w0 = search.query_batch_info(vid.shape) # just showing api
+    n_h0,n_w0 = search.query_batch_info(vid[0].shape) # just showing api
     ntotal = t * n_h0 * n_w0
     nbatch = ntotal
     nbatches = (ntotal-1) // nbatch + 1
     qindex = 0
 
     # -- ground-truth --
-    dists_gt,inds_gt = search(vid0_gt,qindex,ntotal,vid1=vid1_gt)
+    dists_gt,inds_gt = search(vid0_gt,vid1_gt,qindex,ntotal)
     if k == -1:
         dists_gt = rearrange(dists_gt,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 
     # -- testing code --
-    dists_te = l2_dists(vid0_te,inds_gt,qindex,vid1=vid1_te)
+    dists_te = l2_dists(vid0_te,vid1_te,inds_gt,qindex)
     if k == -1:
         dists_te = rearrange(dists_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=n_h1)
 

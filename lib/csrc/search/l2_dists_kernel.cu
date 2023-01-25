@@ -39,10 +39,10 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 
 template <typename scalar_t>
 __global__ void l2_dists_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid1,
-    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
-    torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> dists,
+    torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int dilation, int chnls,
@@ -55,10 +55,10 @@ __global__ void l2_dists_forward_kernel(
 
   // -- image shapes --
   int nframes,color,h,w,height,width,n_hw0;
-  nframes = vid0.size(0);
-  color = vid0.size(1);
-  h = vid0.size(2);
-  w = vid0.size(3);
+  nframes = vid0.size(1);
+  color = vid0.size(2);
+  h = vid0.size(3);
+  w = vid0.size(4);
   height = h;
   width = w;
   n_hw0 = n_h0 * n_w0;
@@ -68,13 +68,14 @@ __global__ void l2_dists_forward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // -- access boundary --
-  int i0_max = inds.size(0);
-  int i1_max = inds.size(1);
+  int i0_max = inds.size(1);
+  int i1_max = inds.size(2);
 
   // -- get indices --
   int i0_start = qpt * blockIdx.x;
   int i1_start = npt * threadIdx.x;
   int c0_start = 0;
+  int ibatch = blockIdx.y;
 
   // -- get block limits --
   int i0_end = min(i0_start + qpt,i0_max);
@@ -113,9 +114,9 @@ __global__ void l2_dists_forward_kernel(
     for (int i1 = i1_start; i1 < i1_end; i1++){
 
       // -- neighbor [unpack] --
-      int n_tj = inds[i0][i1][0];
-      int n_hj = inds[i0][i1][1];
-      int n_wj = inds[i0][i1][2];
+      int n_tj = inds[ibatch][i0][i1][0];
+      int n_hj = inds[ibatch][i0][i1][1];
+      int n_wj = inds[ibatch][i0][i1][2];
 
       dist = 0;
       for (int pk = 0; pk < pt; pk++){
@@ -148,15 +149,15 @@ __global__ void l2_dists_forward_kernel(
             // __syncthreads();
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-              pix_i =  valid_i ? vid0[ti][c0][hi][wi] : 0.;
-              pix_j =  valid_j ? vid1[tj][c0][hj][wj] : 0.;
+              pix_i =  valid_i ? vid0[ibatch][ti][c0][hi][wi] : 0.;
+              pix_j =  valid_j ? vid1[ibatch][tj][c0][hj][wj] : 0.;
               _dist = (pix_i - pix_j);
               dist += _dist * _dist;
             }
           }
         }
       }
-      dists[i0][i1] = dist;
+      dists[ibatch][i0][i1] = dist;
     }
   }
 }
@@ -171,8 +172,9 @@ void l2_dists_forward_cuda(
     bool use_adj, bool reflect_bounds, bool anchor_self){
 
     // -- shapes --
-    int nqueries = inds.size(0);
-    int nneighs = inds.size(1);
+    int nbatch = inds.size(0);
+    int nqueries = inds.size(1);
+    int nneighs = inds.size(2);
 
     // -- threads --
     int tpt = 2;
@@ -182,17 +184,18 @@ void l2_dists_forward_cuda(
  
     // -- blocks --
     int qpt = 2;
-    int nblocks = ((nqueries - 1) / qpt) + 1;
-    nblocks = min(nblocks,65535);
-    qpt = ((nqueries - 1) / nblocks) + 1;
+    int nblocks_q = ((nqueries - 1) / qpt) + 1;
+    nblocks_q = min(nblocks_q,65535);
+    dim3 nblocks(nblocks_q,nbatch);
+    qpt = ((nqueries - 1) / nblocks_q) + 1;
 
     // launch kernel
     AT_DISPATCH_FLOATING_TYPES(vid0.type(), "l2_dists_forward_kernel", ([&] {
        l2_dists_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-         vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-         vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-         dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-         inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+         vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+         vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+         dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
          qstart, stride0, n_h0, n_w0, h0_off, w0_off, h1_off, w1_off,
          ps, pt, dilation, chnls, use_adj, reflect_bounds, anchor_self,
          qpt, tpt);
@@ -208,12 +211,12 @@ void l2_dists_forward_cuda(
 
 template <typename scalar_t>
 __global__ void l2_dists_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid0,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_vid1,
-    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
-    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> grad_dists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid0,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid1,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
+    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> grad_dists,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
@@ -221,12 +224,12 @@ __global__ void l2_dists_backward_kernel(
     int bpt, int npt, int cpt) {
 
   // -- shape --
-  int nq = grad_dists.size(0);
-  int k =  grad_dists.size(1);
-  int nframes = vid0.size(0);
-  int colors = vid0.size(1);
-  int height = vid0.size(2);
-  int width = vid0.size(3);
+  int nq = grad_dists.size(1);
+  int k =  grad_dists.size(2);
+  int nframes = vid0.size(1);
+  int colors = vid0.size(2);
+  int height = vid0.size(3);
+  int width = vid0.size(4);
   int n_hw0 = n_h0 * n_w0;
 
   // -- fwd decl registers --
@@ -244,13 +247,14 @@ __global__ void l2_dists_backward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // -- limits --
-  int i0_max = inds.size(0);
-  int i1_max = inds.size(1);
+  int i0_max = inds.size(1);
+  int i1_max = inds.size(2);
 
   // -- get indices --
   int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.x);
   int i1_start = threadIdx.y * npt;
   int c0_start = threadIdx.z * cpt;
+  int ibatch = blockIdx.y;
 
   // -- get block limits --
   int i0_end = min(i0_start + bpt,i0_max);
@@ -278,10 +282,10 @@ __global__ void l2_dists_backward_kernel(
 
     // k neighbors
     for (int i1=i1_start; i1 < i1_end; i1++){
-      ti = inds[i0][i1][0];
-      hi = inds[i0][i1][1];
-      wi = inds[i0][i1][2];
-      weight = grad_dists[i0][i1];
+      ti = inds[ibatch][i0][i1][0];
+      hi = inds[ibatch][i0][i1][1];
+      wi = inds[ibatch][i0][i1][2];
+      weight = grad_dists[ibatch][i0][i1];
 
       for (int pk = 0; pk < pt; pk++){
         for (int pi = 0; pi < ps; pi++){
@@ -314,15 +318,15 @@ __global__ void l2_dists_backward_kernel(
             // __syncthreads();
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-              pix0 =  valid_k ? vid0[tk][c0][hk][wk] : 0.;
-              pix1 =  valid_j ? vid1[tj][c0][hj][wj] : 0.;
+              pix0 =  valid_k ? vid0[ibatch][tk][c0][hk][wk] : 0.;
+              pix1 =  valid_j ? vid1[ibatch][tj][c0][hj][wj] : 0.;
               pix = 2 * weight * (pix0 - pix1);
 
               if (valid_j){
-                grad_vid1[tj][c0][hj][wj] -= pix;
+                grad_vid1[ibatch][tj][c0][hj][wj] -= pix;
               }
               if (valid_k){
-                grad_vid0[tk][c0][hk][wk] += pix;
+                grad_vid0[ibatch][tk][c0][hk][wk] += pix;
               }
 
             }
@@ -344,12 +348,13 @@ void l2_dists_backward_cuda(
     bool use_rand, bool exact) {
 
   // -- unpack --
-  int nframes = vid0.size(0);
-  int colors = vid0.size(1);
-  int height = vid0.size(2);
-  int width = vid0.size(3);
-  int nqueries = inds.size(0);
-  int k = grad_dists.size(1);
+  int nbatch = vid0.size(0);
+  int nframes = vid0.size(1);
+  int colors = vid0.size(2);
+  int height = vid0.size(3);
+  int width = vid0.size(4);
+  int nqueries = inds.size(1);
+  int k = grad_dists.size(2);
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
@@ -373,12 +378,13 @@ void l2_dists_backward_cuda(
   int bpt = 2;
   int query_nthreads = 32;
   int total_per_block = bpt * query_nthreads;
-  int nblocks = ((nqueries - 1) / total_per_block) + 1;
+  int nblocks_q = ((nqueries - 1) / total_per_block) + 1;
   if (exact){
     bpt = nqueries;
     query_nthreads = 1;
-    nblocks = 1;
+    nblocks_q = 1;
   }
+  dim3 nblocks(nblocks_q,nbatch);
 
   // -- launch params --
   dim3 nthreads(query_nthreads, neigh_nthreads, color_nthreads);
@@ -407,12 +413,12 @@ void l2_dists_backward_cuda(
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {
     l2_dists_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        grad_vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        grad_vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        grad_dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+        grad_vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        grad_vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        grad_dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0, h0_off, w0_off, h1_off, w1_off,
         ps,pt,dilation,use_adj,reflect_bounds,

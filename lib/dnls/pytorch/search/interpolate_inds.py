@@ -4,6 +4,11 @@ from einops import rearrange,repeat
 import torch.nn.functional as nnf
 import dnls_cuda
 
+def init(scale,stride,T,H,W):
+    def wrap(inds):
+        return run(inds,scale,stride,T,H,W)
+    return wrap
+
 def run(inds,scale,stride,T,H,W):
 
     # -- num h,w across vid --

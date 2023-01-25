@@ -286,9 +286,8 @@ class L2Search_with_index(th.nn.Module):
         self.fflow = zflow if noflow else flows.fflow
         self.bflow = zflow if noflow else flows.bflow
 
-    def forward(self, vid0, qstart=0, nqueries=-1, vid1=None):
-        assert vid0.shape[0] == 1
-        if vid1 is None: vid1 = vid0
+    def forward(self, vid0, vid1, qstart=0, nqueries=-1):
+        # assert vid0.shape[0] == 1
         self._update_flow(vid0.shape,vid0.device)
         # vid0,vid1 = vid0[0],vid1[0]
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)

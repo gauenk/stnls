@@ -34,5 +34,7 @@ def init(version,*args,**kwargs):
         return prod_dists.ProdDistsWithHeads(*args,**kwargs)
     elif version == "prod_refine":
         return prod_refine.ProdRefineWithHeads(*args,**kwargs)
+    elif version == "interpolate_inds":
+        return interpolate_inds.init(*args,**kwargs)
     else:
         raise ValueError(f"Uknown version [{version}]")
