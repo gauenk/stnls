@@ -282,4 +282,4 @@ class ProductSearch_with_index(th.nn.Module):
             self.full_ws,self.nbwd,self.rbwd,self.exact)
 
     def wrap_fwd(self,vid0,qstart,nqueries,vid1,_):
-        return self(vid0,qstart,nqueries,vid1)
+        return self(vid0,vid1,qstart,nqueries)

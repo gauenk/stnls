@@ -336,8 +336,7 @@ class ProductPfSearch_with_index(th.nn.Module):
             assert self.fflow.shape[i] == tgt_shape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == tgt_shape[i],"Must be equal size: %d" % i
 
-    def forward(self, vid0, qstart=0, nqueries=-1, vid1=None):
-        if vid1 is None: vid1 = vid0
+    def forward(self, vid0, vid1, qstart=0, nqueries=-1):
         self._update_flow(vid0.shape,vid0.device,self.stride0)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
         return ProductPfSearchFunction_with_index.apply(

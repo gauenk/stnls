@@ -120,9 +120,9 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     vid /= vid.max()
     # flows = flow.orun(vid,comp_flow,sigma=0.,ftype=flow_type)
     pflows = dnls.nn.ofa.run(flows,stride0=stride0)
-    for i in range(2):
-        for key in ['fflow','bflow']:
-            print(i,key,flows[key][:,:,i].max(),flows[key][:,:,i].min())
+    # for i in range(2):
+    #     for key in ['fflow','bflow']:
+    #         print(i,key,flows[key][:,:,i].max(),flows[key][:,:,i].min())
     # flows.fflow = th.zeros_like(flows.fflow)
     # flows.bflow = th.zeros_like(flows.bflow)
     # for i in range(2):
@@ -192,13 +192,13 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     # ones = th.ones_like(vid)
     # print("vid.shape: ",vid.shape)
     qindex = 0
-    score_te,inds_te = search(vid,qindex,nbatch,vid1=vidr)
-    score_gt,inds_gt = search_gt(vid,qindex,nbatch,vid1=vidr)
+    score_te,inds_te = search(vid,vidr,qindex,nbatch)
+    score_gt,inds_gt = search_gt(vid,vidr,qindex,nbatch)
     args = th.where(th.abs(score_te - score_gt)>1e-6)
-    print(score_te[args])
-    print(score_gt[args])
-    print(inds_te[args])
-    print(inds_gt[args])
+    # print(score_te[args])
+    # print(score_gt[args])
+    # print(inds_te[args])
+    # print(inds_gt[args])
 
     # -- viz --
     is_inf = th.isinf(score_gt)
@@ -352,7 +352,7 @@ def test_bwd(ps,stride,dilation,exact):
 
     # -- run cu --
     qindex = 0
-    score_te,inds_te = search(vid_te,qindex,nbatch,vid1=vidr_te)
+    score_te,inds_te = search(vid_te,vidr_te,qindex,nbatch)
     # score_te = rearrange(score_te,'(sh sw) (h w) -> h w sh sw',sh=n_h0,h=h)
 
     # -- run nn --
