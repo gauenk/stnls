@@ -4,34 +4,33 @@ import torch as th
 from einops import rearrange,repeat
 
 def dimN_dim2(dists,inds,dim):
-    dshape = list(dists.shape)
-    ishape = list(inds.shape)
-    dists = run_permute(dists,dim)
-    inds = run_ipermute(inds,dim)
+    dists,dshape = dimN_dim2_dists(dists,dim)
+    inds,ishape = dimN_dim2_inds(inds,dim)
     return dists,inds,dshape,ishape
 
 def dim2_dimN(dists,inds,dshape,ishape,dim,K):
     dshape[dim] = K
     ishape[dim] = K
-    dists = inv_permute(dists,dshape,dim)
-    inds = inv_ipermute(inds,ishape,dim)
+    dists = dim2_dimN_dists(dists,dshape,dim)
+    inds = dim2_dimN_inds(inds,ishape,dim)
     return dists,inds
 
-def run_permute(tensor,dim):
+def dimN_dim2_dists(tensor,dim):
     """
 
-    paired with "inv_permute"
+    paired with "dim2_dimN_dists"
     Transforms tensor: (a1,a2,...,aN) -> (a1 x a2 x ... x aN, aX)
 
     """
+    shape = tensor.shape
     D = tensor.shape[dim]
     tensor = tensor.transpose(0,dim).reshape(D,-1).T
-    return tensor.contiguous()
+    return tensor.contiguous(),list(shape)
 
-def inv_permute(tensor,shape,dim):
+def dim2_dimN_dists(tensor,shape,dim):
     """
 
-    paired with "run_permute"
+    paired with "dimN_dim2_dists"
     Transforms tensor: (a1 x a2 x ... x aN, aX) -> (a1,a2,...,aN)
 
     """
@@ -46,21 +45,23 @@ def inv_permute(tensor,shape,dim):
     return tensor.T.reshape(shape).transpose(dim,0)
 
 
-def run_ipermute(tensor,dim):
+
+def dimN_dim2_inds(tensor,dim):
     """
 
-    paired with "run_ipermute"
+    paired with "dimN_dim2_inds"
     Transforms tensor: (a1,a2,...,aN) -> (a1 x a2 x ... x aN, aX)
 
     """
+    shape = tensor.shape
     D = tensor.shape[dim]
     tensor = tensor.transpose(0,dim).reshape(D,-1,3).transpose(0,1)
-    return tensor.contiguous()
+    return tensor.contiguous(),list(shape)
 
-def inv_ipermute(tensor,shape,dim):
+def dim2_dimN_inds(tensor,shape,dim):
     """
 
-    paired with "inv_ipermute"
+    paired with "dim2_dimN_inds"
     Transforms tensor: (a1 x a2 x ... x aN, aX, 3) -> (a1,a2,...,aN,3)
 
     """

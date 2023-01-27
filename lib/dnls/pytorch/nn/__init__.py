@@ -4,13 +4,17 @@ from . import temporal_inds as temporal_inds_f
 from . import interpolate_inds as interpolate_inds_f
 from . import topk as topk_f
 from . import anchor_self as anchor_self_f
+from . import jitter_unique_inds as jitter_unique_inds_f
 
 # -- allow to be run dnls.nn.NAME_HERE --
 temporal_inds = temporal_inds_f.run
 interpolate_inds = interpolate_inds_f.run
 topk = topk_f.run
 anchor_self = anchor_self_f.run
+jitter_unique_inds =jitter_unique_inds_f.run
 
+
+# -- api v2 --
 def init(version,*args,**kwargs):
     if version == "pfc":
         return pfc.PatchFC(*args,**kwargs)

@@ -41,6 +41,7 @@ void init_temporal_inds(py::module &);
 void init_unique_topk(py::module &);
 void init_interpolate_inds(py::module &);
 void init_anchor_self(py::module &);
+void init_jitter_unique_inds(py::module &);
 
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -78,6 +79,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_temporal_inds(m);
   init_unique_topk(m);
   init_anchor_self(m);
+  init_jitter_unique_inds(m);
 
 }
 
