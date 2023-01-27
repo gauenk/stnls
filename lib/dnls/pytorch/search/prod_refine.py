@@ -11,7 +11,10 @@ import torch.nn.functional as nnf
 import dnls_cuda
 
 # -- local --
-from .search_utils import *
+from ..nn import topk
+# from .search_utils import *
+
+
 
 class ProdRefineWithHeadsFunction(th.autograd.Function):
 
@@ -111,25 +114,24 @@ class ProdRefineWithHeadsFunction(th.autograd.Function):
             dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qstart,
                                                       stride0,n_h0,n_w0)
 
-        # -- shape for next step --
-        dists_exh = dists_exh.view(B*H*Q,-1)#.contiguous()
-        inds_exh = inds_exh.view(B*H*Q,-1,3)#.contiguous()
-        # print("inds_exh")
-        # print(inds_exh[0,:5])
-
         # -- topk [with uniques] --
         assert use_k is True,"Must topk to efficiently remove duplicates"
         if use_k:
-            # print("inds_exh.shape: ",inds_exh.shape)
-            K_exh = inds_exh.shape[1]
-            dists,inds = allocate_rtn(B*H*Q,K_exh,device,dtype)
 
-            # -- sort --
-            topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
-            # get_topk_prod(dists_exh,inds_exh,dists,inds)
+            if anchor_self:
+                dnls.nn.anchor_self(dists,inds,qstart,stride0,H,W)
+            dists_k,inds_k = topk(dists,inds,k,dim=3,anchor=anchor_self,
+                                  descending=True,unique=True)
+            # # print("inds_exh.shape: ",inds_exh.shape)
+            # K_exh = inds_exh.shape[1]
+            # dists,inds = allocate_rtn(B*H*Q,K_exh,device,dtype)
 
-            # -- only unique --
-            dists,inds = only_unique(dists,inds,k)
+            # # -- sort --
+            # topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
+            # # get_topk_prod(dists_exh,inds_exh,dists,inds)
+
+            # # -- only unique --
+            # dists,inds = only_unique(dists,inds,k)
 
         else:
             dists,inds = dists_exh,inds_exh
@@ -318,22 +320,21 @@ class ProdRefineWithHeads(th.nn.Module):
         return ws_h,ws_w,k,chnls
 
 
-    def forward(self, vid0, vid1, qstart, inds_exh):
-        if vid1 is None: vid1 = vid0
+    def forward(self, vid0, vid1, inds_exh, qstart=0):
         ws_h,ws_w,k,chnls = self._get_args(vid0.shape)
         ws_og = self.ws_og
         return ProdRefineWithHeadsFunction.apply(vid0,vid1,
-                                         inds_exh,qstart,self.stride0,
-                                         self.h0_off,self.w0_off,
-                                         self.h1_off,self.w1_off,
-                                         k,self.ps,self.pt,ws_h,ws_w,
-                                         ws_og,ws_og,self.nheads,chnls,
-                                         self.dilation,self.stride1,
-                                         self.use_k,self.use_adj,
-                                         self.reflect_bounds,self.search_abs,
-                                         self.full_ws,self.anchor_self,
-                                         self.use_self, self.remove_self,
-                                         self.nbwd,self.rbwd,self.exact)
+                                   inds_exh,qstart,self.stride0,
+                                   self.h0_off,self.w0_off,
+                                   self.h1_off,self.w1_off,
+                                   k,self.ps,self.pt,ws_h,ws_w,
+                                   ws_og,ws_og,self.nheads,chnls,
+                                   self.dilation,self.stride1,
+                                   self.use_k,self.use_adj,
+                                   self.reflect_bounds,self.search_abs,
+                                   self.full_ws,self.anchor_self,
+                                   self.use_self, self.remove_self,
+                                   self.nbwd,self.rbwd,self.exact)
 
     def wrap_fwd(self,vid0,qstart,nqueries,vid1,inds_p):
         # print("vid0.shape: ",vid0.shape)

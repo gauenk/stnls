@@ -68,7 +68,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         # -- allocates self --
         assert use_self == anchor_self
         if anchor_self:
-            self_dists = -th.inf * th.ones((B,H,Q),device=device,dtype=dtype)
+            self_dists = th.zeros((B,H,Q),device=device,dtype=dtype)
         else:
             self_dists = -th.inf * th.ones((1,1,1),device=device,dtype=dtype)
 
@@ -338,10 +338,8 @@ class ProdSearchWithHeads(th.nn.Module):
 
     def set_flows(self,flows,vid):
         (b,t,c,h,w),device = vid.shape,vid.device
-        nh = (h-1)//self.stride0+1
-        nw = (w-1)//self.stride0+1
-        zflow = th.zeros((b,t-1,t,2,nh,nw),device=device,dtype=th.int32)
-        zflow = th.zeros((b,t-1,t,2,nh,nw),device=device,dtype=th.int32)
+        zflow = th.zeros((b,t,2,h,w),device=device,dtype=th.int32)
+        zflow = th.zeros((b,t,2,h,w),device=device,dtype=th.int32)
         noflow = flows is None
         self.fflow = zflow if noflow else flows.fflow
         self.bflow = zflow if noflow else flows.bflow

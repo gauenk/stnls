@@ -131,7 +131,7 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     dists_gt,inds_gt = search_gt(vid,vid,0,ntotal)
 
     # -- [te] search --
-    dists_te,inds_te = prod_refine(vid,vid,0,inds_gt)
+    dists_te,inds_te = prod_refine(vid,vid,inds_gt,0)
 
     # -- slice to k_r --
     dists_gt = dists_gt[...,:k_r]
@@ -190,6 +190,7 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     #
     # -- te > gt @ non-equal inds --
     #
+
     # print(neq_inds)
     # print(dists_gt[neq_inds])
     # print(dists_te[neq_inds])

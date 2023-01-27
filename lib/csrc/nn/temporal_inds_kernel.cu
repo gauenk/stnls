@@ -51,49 +51,49 @@ __global__ void temporal_inds_kernel(
       inds_t[bi][qi][ki][tj][2] = 10;
     }
 
-    // -- run left --
-    int ta = 0;
-    auto flow = bflow;
-    hj = hi;
-    wj = wi;
-    for(int tj=ti; tj > t_left; tj--){
+  //   // -- run left --
+  //   int ta = 0;
+  //   auto flow = bflow;
+  //   hj = hi;
+  //   wj = wi;
+  //   for(int tj=ti; tj > t_left; tj--){
 
-      // -- accumulate --
-      hf = (float)(hj) + flow[bi][tj][1][hj][wj];
-      wf = (float)(wj) + flow[bi][tj][0][hj][wj];
-      hj = (int)max(0,min(H-1,int(hf+0.5)));
-      wj = (int)max(0,min(W-1,int(wf+0.5)));
+  //     // -- accumulate --
+  //     hf = (float)(hj) + flow[bi][tj][1][hj][wj];
+  //     wf = (float)(wj) + flow[bi][tj][0][hj][wj];
+  //     hj = (int)max(0,min(H-1,int(hf+0.5)));
+  //     wj = (int)max(0,min(W-1,int(wf+0.5)));
 
-      // -- fill the pre-computed offsets --
-      inds_t[bi][qi][ki][ta][0] = tj;
-      inds_t[bi][qi][ki][ta][1] = hj;
-      inds_t[bi][qi][ki][ta][2] = wj;
+  //     // -- fill the pre-computed offsets --
+  //     inds_t[bi][qi][ki][ta][0] = tj;
+  //     inds_t[bi][qi][ki][ta][1] = hj;
+  //     inds_t[bi][qi][ki][ta][2] = wj;
 
-      // -- incriment pre-computed frame index --
-      ta++;
-    }
+  //     // -- incriment pre-computed frame index --
+  //     ta++;
+  //   }
 
-    // -- run right --
-    flow = fflow;
-    hj = hi;
-    wj = wi;
-    for(int tj=ti; tj < t_right; tj++){
+  //   // -- run right --
+  //   flow = fflow;
+  //   hj = hi;
+  //   wj = wi;
+  //   for(int tj=ti; tj < t_right; tj++){
 
-      // -- accumulate --
-      hf = (float)(hj) + flow[bi][tj][1][hj][wj];
-      wf = (float)(wj) + flow[bi][tj][0][hj][wj];
-      hj = (int)max(0,min(H-1,int(hf+0.5)));
-      wj = (int)max(0,min(W-1,int(wf+0.5)));
+  //     // -- accumulate --
+  //     hf = (float)(hj) + flow[bi][tj][1][hj][wj];
+  //     wf = (float)(wj) + flow[bi][tj][0][hj][wj];
+  //     hj = (int)max(0,min(H-1,int(hf+0.5)));
+  //     wj = (int)max(0,min(W-1,int(wf+0.5)));
 
-      // -- fill the pre-computed offsets --
-      inds_t[bi][qi][ki][ta][0] = tj;
-      inds_t[bi][qi][ki][ta][1] = hj;
-      inds_t[bi][qi][ki][ta][2] = wj;
+  //     // -- fill the pre-computed offsets --
+  //     inds_t[bi][qi][ki][ta][0] = tj;
+  //     inds_t[bi][qi][ki][ta][1] = hj;
+  //     inds_t[bi][qi][ki][ta][2] = wj;
 
-      // -- incriment pre-computed frame index --
-      ta++;
-    }
-    assert(ta == nT);//,"Must be equal."
+  //     // -- incriment pre-computed frame index --
+  //     ta++;
+  //   }
+  //   assert(ta == nT);//,"Must be equal."
 
   }
     

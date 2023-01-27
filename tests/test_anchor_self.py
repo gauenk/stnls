@@ -37,7 +37,8 @@ def pytest_generate_tests(metafunc):
     test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
                   "dilation":[1],"wt":[0],"ws":[23],"k":[15],
                   "ws_r":[3],"k_r":[7],
-                  "exact":[True],"nheads":[4],"seed":[0],"anchor_self":[True]}
+                  "exact":[True],"nheads":[4],"seed":[0],
+                  "anchor_self":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -96,7 +97,6 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     chnls = vid.shape[-3]
     # B,T,C,H,W = vid.shape
 
-
     # -- batching info --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     ntotal = T * nH * nW
@@ -106,57 +106,46 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     h1_off,w1_off = 0,0
 
     # -- exec fold fxns --
-    search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt, nheads,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
-                                 search_abs=False,use_adj=use_adj,
-                                 anchor_self=anchor_self,use_self=use_self,
-                                 exact=exact)
-
+    search_nok = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+                                  k, ps, pt, ws, wt, nheads,
+                                  chnls=-1,dilation=dil,
+                                  stride0=stride0, stride1=stride1,
+                                  reflect_bounds=reflect_bounds,use_k=False,
+                                  h0_off=h0_off, w0_off=w0_off,
+                                  h1_off=h1_off, w1_off=w1_off,
+                                  search_abs=False,use_adj=use_adj,
+                                  anchor_self=False,use_self=False,
+                                  exact=exact)
+    search_k = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+                                k, ps, pt, ws, wt, nheads,
+                                chnls=-1,dilation=dil,
+                                stride0=stride0, stride1=stride1,
+                                reflect_bounds=reflect_bounds,use_k=True,
+                                h0_off=h0_off, w0_off=w0_off,
+                                h1_off=h1_off, w1_off=w1_off,
+                                search_abs=False,use_adj=use_adj,
+                                anchor_self=anchor_self,use_self=use_self,
+                                exact=exact)
 
     # -- [gt] search --
-    dists_gt,inds_gt = search_gt(vid,vid)
-    inds_gt2 = rearrange(inds_gt,'b h (t hw) k tr -> b h t hw k tr',t=T)
+    dists,inds = search_nok(vid,vid)
+    dists_gt,inds_gt = search_k(vid,vid)
 
-    #
-    # -- [te] search --
-    #
-
-    # -- search big stride --
-    scale = 2
-    stride0_s = scale * stride0
-    search_gt.stride0 = stride0_s
-    nH,nW = (H-1)//stride0_s+1,(W-1)//stride0_s+1
-    ntotal = T * nH * nW
-    _,inds_te = search_gt(vid,vid)
-
-    # -- upsample --
-    inds_te = dnls.search.interpolate_inds.run(inds_te,scale,stride0,T,H,W)
-
-    # -- reshape --
-    inds_gt = rearrange(inds_gt,'b h (t hw) k tr -> b h t hw k tr',t=T)
-    inds_te = rearrange(inds_te,'b h (t hw) k tr -> b h t hw k tr',t=T)
-
-    # -- eq and neq ind args --
-    print("inds_gt.shape: ",inds_gt.shape)
-    print("inds_te.shape: ",inds_te.shape)
-    print("-"*20)
-    print(inds_gt[0,0,0,:3,:10])
-    print(inds_te[0,0,0,:3,:10])
-    # print(inds_gt[0,0,0,:20,0])
-    # print(inds_te[0,0,0,:20,0])
-    print("-"*20)
-
-    #
-    # -- equal inds @ k == 0 --
-    #
-
-    # diff = th.sum(th.abs(inds_gt[...,0,:] - inds_te[...,::2,0,:]))
-    diff = th.sum(th.abs(inds_gt[...,0,:] - inds_te[...,:,0,:]))
+    # -- testing --
+    if anchor_self:
+        dnls.nn.anchor_self(dists,inds,stride0,H,W)
+    dists_te,inds_te = dnls.nn.topk(dists,inds,k,dim=3,
+                                    anchor=anchor_self,descending=True)
+    # -- compare 1st --
+    diff = th.sum(th.abs(dists_gt[...,:1] - dists_te[...,:1]))
     assert diff < 1e-10
 
+    # -- compare --
+    diff = th.abs(dists_gt - dists_te)
+    args = th.where(diff>1.)
 
+    # -- compare --
+    diff = th.mean(th.abs(dists_gt - dists_te)).item()
+    assert diff < 1e-5
+    diff = th.mean(th.abs(1.*inds_gt - 1.*inds_te)).item()
+    assert diff < 1e-5

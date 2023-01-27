@@ -9,7 +9,6 @@ from . import prod_search_with_heads
 from . import prod_dists
 from . import prod_refine
 from . import window_search
-from . import interpolate_inds
 
 def init(version,*args,**kwargs):
     if version == "l2":
@@ -34,7 +33,5 @@ def init(version,*args,**kwargs):
         return prod_dists.ProdDistsWithHeads(*args,**kwargs)
     elif version == "prod_refine":
         return prod_refine.ProdRefineWithHeads(*args,**kwargs)
-    elif version == "interpolate_inds":
-        return interpolate_inds.init(*args,**kwargs)
     else:
         raise ValueError(f"Uknown version [{version}]")

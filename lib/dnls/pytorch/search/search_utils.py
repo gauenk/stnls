@@ -98,6 +98,10 @@ def topk_anchor(dists,inds,self_dists,dists_exh,inds_exh):#,wt,ws_h,ws_w):
     for i in range(inds.shape[-1]):
         inds[:b,:,i] = th.gather(inds_exh[:,:,i],1,order[:,:k])
 
+    # -- view --
+    # print(dists[95,9])
+    # print(dists[95,12])
+
     # -- fill dists --
     dists[:b,0] = self_dists
 
@@ -109,33 +113,19 @@ def run_anchor_self(dists,inds,self_dists,dists_exh,inds_exh):#,wt,ws_h,ws_w):
 
     # -- fill dists --
     dists[:,0] = self_dists.view(BQ)
-    print("self_dists.shape: ",self_dists.shape)
-    print("dists_exh.shape: ",dists_exh.shape)
-    print("dists.shape: ",dists.shape)
-    print("inds.shape: ",inds.shape)
-    print("inds_exh.shape: ",inds_exh.shape)
 
     # -- fill inds --
     isinf = th.isinf(dists_exh)
     ispos = dists_exh>0
     args0 = th.where(th.logical_and(isinf,ispos))
-    print(inds_exh)
-    print("minmax: ",th.min(th.stack(args0)),th.max(th.stack(args0)))
-    print(args0)
-    # exit(0)
+
     inds_self = []
     for i in range(3):
-        print("inds_exh[...,i].shape: ",inds_exh[...,i].shape)
         inds_i = inds_exh[...,i][args0].view(BQ)
         inds_self.append(inds_i)
     inds_self = th.stack(inds_self,-1)
-    # print("inds_self.shape: ",inds_self.shape)
     inds[:,0] = inds_self
     th.cuda.synchronize()
-    # c_st = wt
-    # c_ws_h = ws_h//2
-    # c_ws_w = ws_w//2
-    # inds[:,0] = inds_exh[:,c_st,c_ws_h,c_ws_w]
 
 def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
     # print("dists.shape,inds.shape:" ,dists.shape,inds.shape,n_h,n_w)
@@ -338,9 +328,6 @@ def unique(x, dim=-1):
     # print(unique)
     # print(unique[0,:10])
     # print(th.unique_consecutive(unique[0,:10],dim=dim))
-    print(unique[:10,0])
-    print(th.unique_consecutive(unique[:10,0],dim=dim))
-    exit(0)
     perm = th.arange(inverse.size(dim), dtype=inverse.dtype, device=inverse.device)
     inverse, perm = inverse.flip([dim]), perm.flip([dim])
     # return unique, inverse.new_empty(unique.size(dim)).scatter_(dim, inverse, perm)
