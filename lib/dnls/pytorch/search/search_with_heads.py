@@ -74,15 +74,7 @@ class NonLocalSearchFunction(th.autograd.Function):
         # -- reshape with heads --
         dtype = vid0.dtype
         device = vid0.device
-        assert vid0.ndim in [5], "Must be 5 dims."
-        if vid0.ndim == 5:
-            c = vid0.shape[2]
-            assert c % nheads == 0,"must be multiple of each other."
-            shape_str = 'b t (HD c) h w -> b HD t c h w'
-            vid0 = rearrange(vid0,shape_str,HD=nheads).contiguous()
-            vid1 = rearrange(vid1,shape_str,HD=nheads).contiguous()
-        assert vid0.shape[1] == nheads
-        # vid0,vid1 = shape_vids(nheads,[vid0,vid1])
+        vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
 
         # -- derived shapes --
@@ -138,12 +130,9 @@ class NonLocalSearchFunction(th.autograd.Function):
         else:
             dists,inds = dists_exh,inds_exh
 
-        # -- contiguous --
-        # dists = dists.contiguous()
-        # inds = inds.contiguous()
-
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
+        ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
         ctx_vars = {"qshift":qshift,"stride0":stride0,"ps":ps,"pt":pt,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
