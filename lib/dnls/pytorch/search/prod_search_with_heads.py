@@ -121,6 +121,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- topk --
         if use_k:
+            print("[prod.] running top-k.")
             dists,inds = allocate_rtn(B*H*Q,k,device,dtype)
             topk_with_anchor(dists_exh,inds_exh,dists,inds,self_dists,anchor_self)
             # get_topk_prod(dists_exh,inds_exh,dists,inds)

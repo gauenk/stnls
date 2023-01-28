@@ -25,15 +25,17 @@ def descending_menu(dist_type):
     return menu[dist_type]
 
 def init_dist_val_menu(dist_type):
-    menu = {"prod":-np.inf,"l2":np.inf}
+    menu = {"prod":-th.inf,"l2":th.inf}
     return menu[dist_type]
 
 def allocate_pair(base_shape,device,dtype,idist_val):
-    dists = idist_val * th.ones(base_shape,device=device,dtype=dtype)
-    inds =  -th.ones(base_shape+(3,),device=device,dtype=th.int32)
+    dists = th.zeros(base_shape,device=device,dtype=dtype)
+    dists[...] = idist_val
+    inds = th.zeros(base_shape+(3,),device=device,dtype=th.int32)
+    inds[...] = -1
     return dists,inds
 
-def shape_vids(nheads,*vids):
+def shape_vids(nheads,vids):
     _vids = []
     for vid in vids:
         # -- reshape with heads --
@@ -68,7 +70,19 @@ class NonLocalSearchFunction(th.autograd.Function):
 
         # -- reshape with heads --
         device = vid0.device
-        vid0,vid1 = shape_vids(nheads,vid0,vid1)
+
+        # -- reshape with heads --
+        dtype = vid0.dtype
+        device = vid0.device
+        assert vid0.ndim in [5], "Must be 5 dims."
+        if vid0.ndim == 5:
+            c = vid0.shape[2]
+            assert c % nheads == 0,"must be multiple of each other."
+            shape_str = 'b t (HD c) h w -> b HD t c h w'
+            vid0 = rearrange(vid0,shape_str,HD=nheads).contiguous()
+            vid1 = rearrange(vid1,shape_str,HD=nheads).contiguous()
+        assert vid0.shape[1] == nheads
+        # vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
 
         # -- derived shapes --
@@ -112,9 +126,11 @@ class NonLocalSearchFunction(th.autograd.Function):
         # -- manage self dists --
         assert not(remove_self and anchor_self)
         if remove_self:
+            print("remove self.")
             dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qshift,
                                                       stride0,nH0,nW0)
         if anchor_self:
+            print("anchor self.")
             dnls.nn.anchor_self(dists_exh,inds_exh,stride0,H,W)
 
         # -- topk --

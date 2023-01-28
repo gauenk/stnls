@@ -39,6 +39,7 @@ def run_l2_search_with_index(rec,fflow,bflow,
                              stride0,stride1,
                              t,c,h,w,device):
     # -- misc --
+    th.cuda.empty_cache()
     name = "l2_search_with_index"
 
     # -- init search params --
@@ -78,6 +79,7 @@ def run_prod_search(rec,fflow,bflow,
     # -- burn-in --
     dists,inds = search(vid0,vid1)
     th.cuda.synchronize()
+    th.cuda.empty_cache()
 
     # -- entire search --
     with rec(name,True):
@@ -88,6 +90,7 @@ def run_prod_search_v2(rec,fflow,bflow,
                        stride0,stride1,anchor_self,
                        b,t,c,h,w,device):
     # -- misc --
+    th.cuda.empty_cache()
     name = "refactored_search"
 
     # -- init search params --
@@ -103,6 +106,7 @@ def run_prod_search_v2(rec,fflow,bflow,
     # -- burn-in --
     dists,inds = search(vid0,vid1,fflow,bflow)
     th.cuda.synchronize()
+    th.cuda.empty_cache()
 
     # -- iqueries --
     with rec(name,True):
@@ -137,10 +141,10 @@ def main():
     #                          t,c,h,w,device)
     # print(rec)
 
-    run_prod_search(rec,fflow,bflow,k,ps,ws,wt,nheads,stride0,
-                    stride1,anchor_self,b,t,c,h,w,device)
     run_prod_search_v2(rec,fflow,bflow,k,ps,ws,wt,nheads,stride0,
                        stride1,anchor_self,b,t,c,h,w,device)
+    run_prod_search(rec,fflow,bflow,k,ps,ws,wt,nheads,stride0,
+                    stride1,anchor_self,b,t,c,h,w,device)
     print(rec)
 
 
