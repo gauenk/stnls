@@ -67,12 +67,14 @@ def run_prod_search(rec,fflow,bflow,
     fflow = th.rand((b,t,2,h,w),device=device)
     bflow = th.rand((b,t,2,h,w),device=device)
     pt = 1
+    use_k = k > 0
 
     search = dnls.search.init("prod_search_with_heads",
                               fflow, bflow,
                               k, ps, pt, ws, wt, nheads,
                               chnls=-1,stride0=stride0, stride1=stride1,
-                              anchor_self=anchor_self,use_self=anchor_self)
+                              anchor_self=anchor_self,use_self=anchor_self,
+                              use_k=use_k)
     # -- burn-in --
     dists,inds = search(vid0,vid1)
     th.cuda.synchronize()
@@ -117,7 +119,7 @@ def main():
     # -- params --
     fflow,bflow = None,None
     nheads = 3
-    k,ps,pt = 10,10,1
+    k,ps,pt = -1,10,1
     ws,wt = 15,5
     dil,stride0,stride1 = 1,4,1
     b,t,c,h,w = 1,5,3,512,512

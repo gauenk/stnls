@@ -15,7 +15,7 @@ using namespace at;
 
 ****************************/
 
-inline __host__ __device__ int bounds(int val, int lim ){
+__forceinline__ __host__ __device__ int bounds(int val, int lim ){
   int vval = val;
   if (val < 0){
     vval = -val;
@@ -25,7 +25,7 @@ inline __host__ __device__ int bounds(int val, int lim ){
   return vval;
 }
 
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void get_pixel_loc(int& ti, int& hi, int& wi,  int qindex,
                   int i_mod, int stride0, int nW0, int nHW0, int H, int W){
   i_mod = qindex % nHW0;
@@ -34,21 +34,21 @@ void get_pixel_loc(int& ti, int& hi, int& wi,  int qindex,
   hi = ((i_mod / nW0) * stride0) % H;
 }
 
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void check_bounds(bool& valid_anchor, int ti, int hi, int wi, int T, int H, int W){
   valid_anchor = (ti < T) && (ti >= 0);
   valid_anchor = valid_anchor && (hi < H) && (hi >= 0);
   valid_anchor = valid_anchor && (wi < W) && (wi >= 0);
 }
 
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void set_time_range(int& t_min, int t_shift, int ti, int T, int wt){
     t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1));
     t_min = max(ti - wt - t_shift,0);
     // t_max = min(T-1,ti + wt - t_shift);
 }
 
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void set_search_offsets(int& wsOff_h, int& wsOff_w, int hi, int wi, int stride1,
                         int wsHalf_h, int wsHalf_w, int wsMax_h, int wsMax_w,
                         int H, int W, bool full_ws){
@@ -68,7 +68,7 @@ void set_search_offsets(int& wsOff_h, int& wsOff_w, int hi, int wi, int stride1,
 }
 
 
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void increment_frame(int& n_ti, int& prev_ti, int& t_inc,
                      bool& swap_dir, int& dir, int ti, int t_min){
   prev_ti = n_ti;
@@ -81,14 +81,14 @@ void increment_frame(int& n_ti, int& prev_ti, int& t_inc,
   dir = max(-1,min(1,n_ti - ti));
 }
 
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void reset_centers(int& hj_center, int& wj_center, bool swap_dir, int wi, int hi){
   wj_center = swap_dir ? wi : wj_center;
   hj_center = swap_dir ? hi : hj_center;
 }
 
 template<typename scalar_t>
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void update_centers(int& hj_center, int& wj_center, int dir, int H, int W,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> fflow,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> bflow){
@@ -111,7 +111,7 @@ void update_centers(int& hj_center, int& wj_center, int dir, int H, int W,
   }
 }
 
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void set_search_patch(int& n_hi, int& n_wi, int hj_center, int wj_center,
                       int stride1, int ws_i, int ws_j, int wsOff_h,
                       int wsOff_w, int search_abs){
@@ -125,7 +125,7 @@ void set_search_patch(int& n_hi, int& n_wi, int hj_center, int wj_center,
 }
 
 template<typename scalar_t, int DIST_TYPE>
-inline __host__ __device__
+__forceinline__ __host__ __device__
 void compute_dist(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,

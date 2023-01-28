@@ -119,6 +119,7 @@ class NonLocalSearchFunction(th.autograd.Function):
 
         # -- topk --
         if k > 0:
+            print("running top-k.")
             dists,inds = dnls.nn.topk(dists_exh,inds_exh,k,dim=3,anchor=anchor_self,
                                       descending=descending,unique=False)
         else:
