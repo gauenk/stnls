@@ -49,12 +49,12 @@ def shape_vids(nheads,*vids):
         _vids.append(vid)
     return _vids
 
-class PatchSearch(th.autograd.Function):
+class NonLocalSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
-                qshift, Q, ws, wt, ps, k, nheads,
-                dist_type="prod",  stride0=4, stride1=1,
+                ws, wt, ps, k, nheads=1, qshift=0, Q=-1,
+                dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False,remove_self=False,
                 use_adj=True,h0_off=0, w0_off=0, h1_off=0, w1_off=0,
@@ -190,7 +190,9 @@ class PatchSearch(th.autograd.Function):
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
 
-class SearchWithHeads(th.nn.Module):
+nls = NonLocalSearchFunction.apply # api
+
+class NonLocalSearch(th.nn.Module):
 
 
     def __init__(self, ws, wt, ps, k, nheads,
@@ -239,16 +241,16 @@ class SearchWithHeads(th.nn.Module):
         return zflow
 
     def forward(self, vid0, vid1, fflow, bflow, qshift=0, nqueries=-1):
-        return PatchSearch.apply(vid0,vid1,fflow,bflow,
-                                 qshift,nqueries,
-                                 self.ws,self.wt,self.ps,self.k,self.nheads,
-                                 self.dist_type,self.stride0,self.stride1,
-                                 self.dilation,self.pt,
-                                 self.reflect_bounds,self.full_ws,
-                                 self.anchor_self,self.remove_self,
-                                 self.use_adj,self.h0_off,self.w0_off,
-                                 self.h1_off,self.w1_off,
-                                 self.rbwd,self.nbwd,self.exact)
+        return NonLocalSearchFunction.apply(vid0,vid1,fflow,bflow,
+                                            self.ws,self.wt,self.ps,self.k,
+                                            self.nheads,qshift,nqueries,
+                                            self.dist_type,self.stride0,self.stride1,
+                                            self.dilation,self.pt,
+                                            self.reflect_bounds,self.full_ws,
+                                            self.anchor_self,self.remove_self,
+                                            self.use_adj,self.h0_off,self.w0_off,
+                                            self.h1_off,self.w1_off,
+                                            self.rbwd,self.nbwd,self.exact)
 
     def flops(self,HD,T,F,H,W):
 

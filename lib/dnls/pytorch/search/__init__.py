@@ -7,10 +7,21 @@ from . import prod_search_with_index
 from . import prod_pf_search_with_index
 from . import prod_search_with_heads
 from . import prod_dists
-from . import prod_refine
 from . import window_search
 from . import search_with_heads
 
+from . import prod_refine
+
+# -- api --
+nls = search_with_heads.nls
+# nls_aflows = non_local_search_accumulated_flows_f.apply
+# refine = refinement_f.apply
+# approx_t = approximate_time_f.apply
+# approx_s = approximate_space_f.apply
+# approx_st = approximate_spacetime_f.apply
+# window = window_search_f.apply
+
+# -- original api --
 def init(version,*args,**kwargs):
     if version == "l2":
         return l2_search.L2Search(*args,**kwargs)
@@ -35,6 +46,6 @@ def init(version,*args,**kwargs):
     elif version == "prod_refine":
         return prod_refine.ProdRefineWithHeads(*args,**kwargs)
     elif version == "search_with_heads":
-        return search_with_heads.SearchWithHeads(*args,**kwargs)
+        return search_with_heads.NonLocalSearch(*args,**kwargs)
     else:
         raise ValueError(f"Uknown version [{version}]")

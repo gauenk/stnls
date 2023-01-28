@@ -53,6 +53,59 @@ def run_l2_search_with_index(rec,fflow,bflow,
     with rec(name,True):
         dists,inds = search(vid0,qindex,ntotal,vid1)
 
+def run_prod_search(rec,fflow,bflow,
+                    k,ps,ws,wt,nheads,
+                    stride0,stride1,
+                    anchor_self,
+                    b,t,c,h,w,device):
+    # -- misc --
+    name = "prod_search"
+
+    # -- init search params --
+    vid0 = th.rand((b,t,nheads*c,h,w),device=device)
+    vid1 = th.rand((b,t,nheads*c,h,w),device=device)
+    fflow = th.rand((b,t,2,h,w),device=device)
+    bflow = th.rand((b,t,2,h,w),device=device)
+    pt = 1
+
+    search = dnls.search.init("prod_search_with_heads",
+                              fflow, bflow,
+                              k, ps, pt, ws, wt, nheads,
+                              chnls=-1,stride0=stride0, stride1=stride1,
+                              anchor_self=anchor_self,use_self=anchor_self)
+    # -- burn-in --
+    dists,inds = search(vid0,vid1)
+    th.cuda.synchronize()
+
+    # -- entire search --
+    with rec(name,True):
+        dists,inds = search(vid0,vid1)
+
+def run_prod_search_v2(rec,fflow,bflow,
+                       k,ps,ws,wt,nheads,
+                       stride0,stride1,anchor_self,
+                       b,t,c,h,w,device):
+    # -- misc --
+    name = "refactored_search"
+
+    # -- init search params --
+    vid0 = th.rand((b,t,nheads*c,h,w),device=device)
+    vid1 = th.rand((b,t,nheads*c,h,w),device=device)
+    fflow = th.rand((b,t,2,h,w),device=device)
+    bflow = th.rand((b,t,2,h,w),device=device)
+    search = dnls.search.init("search_with_heads",
+                              ws, wt, ps, k, nheads,
+                              stride0=stride0, stride1=stride1,
+                              anchor_self=anchor_self)
+
+    # -- burn-in --
+    dists,inds = search(vid0,vid1,fflow,bflow)
+    th.cuda.synchronize()
+
+    # -- iqueries --
+    with rec(name,True):
+        dists,inds = search(vid0,vid1,fflow,bflow)
+
 def main():
 
 
@@ -63,22 +116,31 @@ def main():
 
     # -- params --
     fflow,bflow = None,None
+    nheads = 3
     k,ps,pt = 10,10,1
     ws,wt = 15,5
-    dil,stride0,stride1 = 1,4,4
-    t,c,h,w = 1,3,512,512
+    dil,stride0,stride1 = 1,4,1
+    b,t,c,h,w = 1,5,3,512,512
     device = "cuda:0"
+    anchor_self = False
 
     # -- comparisons --
-    run_l2_search(rec,fflow,bflow,
-                  k,ps,pt,ws,wt,dil,
-                  stride0,stride1,
-                  t,c,h,w,device)
-    run_l2_search_with_index(rec,fflow,bflow,
-                             k,ps,pt,ws,wt,dil,
-                             stride0,stride1,
-                             t,c,h,w,device)
+    # run_l2_search(rec,fflow,bflow,
+    #               k,ps,pt,ws,wt,dil,
+    #               stride0,stride1,
+    #               t,c,h,w,device)
+    # run_l2_search_with_index(rec,fflow,bflow,
+    #                          k,ps,pt,ws,wt,dil,
+    #                          stride0,stride1,
+    #                          t,c,h,w,device)
+    # print(rec)
+
+    run_prod_search(rec,fflow,bflow,k,ps,ws,wt,nheads,stride0,
+                    stride1,anchor_self,b,t,c,h,w,device)
+    run_prod_search_v2(rec,fflow,bflow,k,ps,ws,wt,nheads,stride0,
+                       stride1,anchor_self,b,t,c,h,w,device)
     print(rec)
+
 
 if __name__ == "__main__":
     main()

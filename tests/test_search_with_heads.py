@@ -131,6 +131,10 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
 
+    # -- test api --
+    # print(dnls.search.nls(vid,vid,flows.fflow,flows.bflow,
+    #                                ws, wt, ps, k))
+
     # -- [testing] search --
     dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
@@ -448,9 +452,6 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # -- [testing] search --
     dists_gt,inds_gt = search_gt(vid,vid)
     th.cuda.synchronize()
-
-    print(dists_te[0,0,0])
-    print(dists_gt[0,0,0])
 
     # -- view --
     # print(inds_gt)
