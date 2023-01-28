@@ -14,7 +14,7 @@ using namespace torch::indexing;
 
 // CUDA forward declarations
 
-void optical_flow_accumulate_cuda(
+void accumulate_flow_cuda(
     const torch::Tensor fflow,const torch::Tensor bflow,
     torch::Tensor pfflow, torch::Tensor pbflow,
     int stride0);
@@ -25,7 +25,7 @@ void optical_flow_accumulate_cuda(
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-void optical_flow_accumulate(
+void accumulate_flow(
     const torch::Tensor fflow, const torch::Tensor bflow,
     const torch::Tensor pfflow, const torch::Tensor pbflow,
     int stride0){
@@ -33,13 +33,13 @@ void optical_flow_accumulate(
   CHECK_INPUT(bflow);
   CHECK_INPUT(pfflow);
   CHECK_INPUT(pbflow);
-  optical_flow_accumulate_cuda(fflow, bflow, pfflow, pbflow, stride0);
+  accumulate_flow_cuda(fflow, bflow, pfflow, pbflow, stride0);
 }
 
 
 
 // python bindings
-void init_optical_flow_accumulate(py::module &m){
-  m.def("optical_flow_accumulate", &optical_flow_accumulate,
+void init_accumulate_flow(py::module &m){
+  m.def("accumulate_flow", &accumulate_flow,
         "Accumulate Offsets from Optical Flow (CUDA)");
 }

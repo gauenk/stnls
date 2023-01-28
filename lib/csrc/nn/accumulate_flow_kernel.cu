@@ -5,7 +5,7 @@
 #include <vector>
 
 template <typename scalar_t>
-__global__ void optical_flow_accumulate_kernel(
+__global__ void accumulate_flow_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> pfflow,
@@ -87,7 +87,7 @@ __global__ void optical_flow_accumulate_kernel(
 }
 
 
-void optical_flow_accumulate_cuda(
+void accumulate_flow_cuda(
      const torch::Tensor fflow, const torch::Tensor bflow,
      torch::Tensor pfflow, torch::Tensor pbflow, int stride0){
   
@@ -112,8 +112,8 @@ void optical_flow_accumulate_cuda(
   // fprintf(stdout,"stride0: %d\n",stride0);
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(fflow.type(), "optical_flow_accumulate_kernel", ([&] {
-     optical_flow_accumulate_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(fflow.type(), "accumulate_flow_kernel", ([&] {
+     accumulate_flow_kernel<scalar_t><<<nblocks, nthreads>>>(
        fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
        bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
        pfflow.packed_accessor32<int,6,torch::RestrictPtrTraits>(),

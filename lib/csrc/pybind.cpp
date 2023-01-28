@@ -36,7 +36,7 @@ void init_iunfold(py::module &);
 
 // -- nn --
 void init_pfc(py::module &);
-void init_optical_flow_accumulate(py::module &);
+void init_accumulate_flow(py::module &);
 void init_temporal_inds(py::module &);
 void init_unique_topk(py::module &);
 void init_interpolate_inds(py::module &);
@@ -75,7 +75,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_iunfold(m);
 
   init_pfc(m);
-  init_optical_flow_accumulate(m);
+  init_accumulate_flow(m);
   init_temporal_inds(m);
   init_unique_topk(m);
   init_anchor_self(m);

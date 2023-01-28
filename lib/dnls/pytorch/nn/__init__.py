@@ -1,25 +1,27 @@
+
+# -- imports --
 from . import pfc
-# from . import optical_flow_accumulate as ofa
-from . import temporal_inds as temporal_inds_f
-from . import interpolate_inds as interpolate_inds_f
 from . import topk as topk_f
 from . import anchor_self as anchor_self_f
+from . import temporal_inds as temporal_inds_f
+from . import accumulate_flow as accumulate_flow_f
+from . import interpolate_inds as interpolate_inds_f
 from . import jitter_unique_inds as jitter_unique_inds_f
 
-# -- allow to be run dnls.nn.NAME_HERE --
-temporal_inds = temporal_inds_f.run
-interpolate_inds = interpolate_inds_f.run
+# -- [register] so we can run dnls.nn.NAME_HERE --
 topk = topk_f.run
 anchor_self = anchor_self_f.run
+temporal_inds = temporal_inds_f.run
+accumulate_flow = accumulate_flow_f.run
+interpolate_inds = interpolate_inds_f.run
 jitter_unique_inds =jitter_unique_inds_f.run
-
 
 # -- api v2 --
 def init(version,*args,**kwargs):
     if version == "pfc":
         return pfc.PatchFC(*args,**kwargs)
-    elif version in ["ofa","optical_flow_accumulate"]:
-        return optical_flow_accumulate_f.init(*args)
+    elif version in ["accumulate_flow"]:
+        return accumulate_flow_f.init(*args)
     elif version == "interpolate_inds":
         return interpolate_inds_f.init(*args)
     else:
