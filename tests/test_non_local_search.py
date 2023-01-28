@@ -29,7 +29,7 @@ from torch.nn.functional import fold,unfold,pad
 from torchvision.transforms.functional import center_crop
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/search_with_heads")
+SAVE_DIR = Path("./output/tests/non_local_search")
 
 def pytest_generate_tests(metafunc):
     seed = 123
@@ -37,7 +37,7 @@ def pytest_generate_tests(metafunc):
     np.random.seed(seed)
     test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
                   "dilation":[1],"wt":[0],"ws":[9],
-                  "k":[3],"exact":[True],"nheads":[1,4],
+                  "k":[-1],"exact":[True],"nheads":[1],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -97,7 +97,6 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     shape = vid.shape
     b,t,color,h,w = shape
     vshape = vid.shape
-    chnls = vid.shape[2]
 
     # -- pads --
     _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
@@ -112,21 +111,16 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("search_with_heads",
-                                 ws, wt, ps, k, nheads,
+    search_te = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
-                                 rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search.init("prod_search_with_heads",flows.fflow, flows.bflow,
+                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
                                  search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
@@ -252,21 +246,16 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vid_gt1.requires_grad_(True)
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("search_with_heads",
-                                 ws, wt, ps, k, nheads,
+    search_te = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
-                                 rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search.init("prod_search_with_heads",flows.fflow, flows.bflow,
+                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
                                  search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
@@ -437,21 +426,17 @@ def test_dev_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vid_gt1.requires_grad_(True)
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("search_with_heads",
+    search_te = dnls.search.NonLocalSearch(
                                  ws, wt, ps, k, nheads,
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
-                                 rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search.init("prod_search_with_heads",flows.fflow, flows.bflow,
+                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
                                  search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
@@ -612,21 +597,16 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("search_with_heads",
-                                 ws, wt, ps, k, nheads,
+    search_te = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
-                                 rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search.init("prod_search_with_heads",flows.fflow, flows.bflow,
+                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
                                  search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)

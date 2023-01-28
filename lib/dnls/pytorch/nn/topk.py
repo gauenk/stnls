@@ -25,6 +25,8 @@ def run(dists,inds,k,dim=1,anchor=False,descending=True,unique=False):
     Wrap the topk menu so the input to top-k is always square
 
     """
+    # -- no run if k <= 0 --
+    if not(k > 0): return dists,inds
 
     # -- get squares --
     dists,inds,dshape,ishape = dimN_dim2(dists,inds,dim)

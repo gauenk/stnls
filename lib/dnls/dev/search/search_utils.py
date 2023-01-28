@@ -9,7 +9,7 @@ import torch.nn.functional as nnf
 
 # -- padding --
 from ...utils.pads import comp_pads
-from .unique_topk import unique_topk
+# from .unique_topk import unique_topk
 
 # -- cpp cuda kernel --
 import dnls_cuda

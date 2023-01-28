@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <pybind11/pybind11.h>
-#include "../jax_pybind.h"
+#include "../../jax_pybind.h"
 using namespace torch::indexing;
 
 

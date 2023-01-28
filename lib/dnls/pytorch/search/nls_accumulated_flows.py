@@ -4,9 +4,6 @@ import torch as th
 import numpy as np
 from einops import rearrange
 
-# -- softmax --
-import torch.nn.functional as nnf
-
 # -- cpp cuda kernel --
 import dnls_cuda
 
@@ -14,44 +11,9 @@ import dnls_cuda
 import dnls
 
 # -- local --
-from .search_utils import *
+from .utils import *
 
-def dist_menu(dist_type):
-    menu = {"prod":0,"l2":1}
-    return menu[dist_type]
-
-def descending_menu(dist_type):
-    menu = {"prod":True,"l2":False}
-    return menu[dist_type]
-
-def init_dist_val_menu(dist_type):
-    menu = {"prod":-th.inf,"l2":th.inf}
-    return menu[dist_type]
-
-def allocate_pair(base_shape,device,dtype,idist_val):
-    dists = th.zeros(base_shape,device=device,dtype=dtype)
-    dists[...] = idist_val
-    inds = th.zeros(base_shape+(3,),device=device,dtype=th.int32)
-    inds[...] = -1
-    return dists,inds
-
-def shape_vids(nheads,vids):
-    _vids = []
-    for vid in vids:
-        # -- reshape with heads --
-        dtype = vid.dtype
-        device = vid.device
-        assert vid.ndim in [5], "Must be 5 dims."
-        if vid.ndim == 5:
-            c = vid.shape[2]
-            assert c % nheads == 0,"must be multiple of each other."
-            shape_str = 'b t (HD c) h w -> b HD t c h w'
-            vid = rearrange(vid,shape_str,HD=nheads).contiguous()
-        assert vid.shape[1] == nheads
-        _vids.append(vid)
-    return _vids
-
-class NonLocalSearchFunction(th.autograd.Function):
+class AccFlowsSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
@@ -193,9 +155,7 @@ class NonLocalSearchFunction(th.autograd.Function):
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
 
-nls = NonLocalSearchFunction.apply # api
-
-class NonLocalSearch(th.nn.Module):
+class AccFlowsSearch(th.nn.Module):
 
 
     def __init__(self, ws, wt, ps, k, nheads,
@@ -244,7 +204,7 @@ class NonLocalSearch(th.nn.Module):
         return zflow
 
     def forward(self, vid0, vid1, fflow, bflow, qshift=0, nqueries=-1):
-        return NonLocalSearchFunction.apply(vid0,vid1,fflow,bflow,
+        return AccFlowsSearchFunction.apply(vid0,vid1,fflow,bflow,
                                             self.ws,self.wt,self.ps,self.k,
                                             self.nheads,qshift,nqueries,
                                             self.dist_type,self.stride0,self.stride1,
@@ -274,3 +234,5 @@ class NonLocalSearch(th.nn.Module):
             flops += sort_flops
 
         return flops
+
+_apply = AccFlowsSearchFunction.apply # api
