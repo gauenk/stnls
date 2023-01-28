@@ -15,6 +15,7 @@ void init_window_search(py::module &);
 void init_prod_search_with_heads(py::module &);
 void init_prod_dists(py::module &);
 void init_prod_refine(py::module &);
+void init_search_with_heads(py::module &);
 // void init_prod_search_patches_with_heads(py::module &);
 
 // -- reducing --
@@ -57,8 +58,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_prod_with_index_search(m);
   init_prod_pf_with_index_search(m);
   init_prod_search_with_heads(m);
+  init_search_with_heads(m);
   // init_prod_search_patches_with_heads(m);
-  init_interpolate_inds(m);
 
   init_wpsum(m);
   init_iwpsum(m);
@@ -78,8 +79,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_accumulate_flow(m);
   init_temporal_inds(m);
   init_unique_topk(m);
+  init_interpolate_inds(m);
   init_anchor_self(m);
   init_jitter_unique_inds(m);
+
 
 }
 

@@ -9,6 +9,7 @@ from . import prod_search_with_heads
 from . import prod_dists
 from . import prod_refine
 from . import window_search
+from . import search_with_heads
 
 def init(version,*args,**kwargs):
     if version == "l2":
@@ -27,11 +28,13 @@ def init(version,*args,**kwargs):
         return prod_search_with_index.ProductSearch_with_index(*args,**kwargs)
     elif version == "prod_pf_with_index":
         return prod_pf_search_with_index.ProductPfSearch_with_index(*args,**kwargs)
-    elif version == "prod_with_heads":
+    elif version in ["prod_with_heads","prod_search_with_heads"]:
         return prod_search_with_heads.ProdSearchWithHeads(*args,**kwargs)
     elif version == "prod_dists":
         return prod_dists.ProdDistsWithHeads(*args,**kwargs)
     elif version == "prod_refine":
         return prod_refine.ProdRefineWithHeads(*args,**kwargs)
+    elif version == "search_with_heads":
+        return search_with_heads.SearchWithHeads(*args,**kwargs)
     else:
         raise ValueError(f"Uknown version [{version}]")

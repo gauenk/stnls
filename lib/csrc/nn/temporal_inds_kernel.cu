@@ -22,8 +22,8 @@ __global__ void temporal_inds_kernel(
   int B = inds_t.size(0);
   int Q = inds_t.size(1);
   int K = inds_t.size(2);
-  int nT = inds_t.size(3);
-  int nT_half = (nT-1)/2+1;
+  int nT = inds_t.size(3); // always even.
+  int nT_half = (nT-1)/2+1; // *should* always be == nT/2
   int hj = 0;
   int wj = 0;
   float hf = 0;
