@@ -126,16 +126,13 @@ class NonLocalSearchFunction(th.autograd.Function):
         # -- manage self dists --
         assert not(remove_self and anchor_self)
         if remove_self:
-            print("remove self.")
             dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qshift,
                                                       stride0,nH0,nW0)
         if anchor_self:
-            print("anchor self.")
             dnls.nn.anchor_self(dists_exh,inds_exh,stride0,H,W)
 
         # -- topk --
         if k > 0:
-            print("running top-k.")
             dists,inds = dnls.nn.topk(dists_exh,inds_exh,k,dim=3,anchor=anchor_self,
                                       descending=descending,unique=False)
         else:

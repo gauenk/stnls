@@ -123,7 +123,7 @@ def main():
     # -- params --
     fflow,bflow = None,None
     nheads = 3
-    k,ps,pt = -1,10,1
+    k,ps,pt = 10,10,1
     ws,wt = 15,5
     dil,stride0,stride1 = 1,4,1
     b,t,c,h,w = 1,5,3,512,512
