@@ -131,7 +131,7 @@ void compute_dist(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     // const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid0,
     // const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid1,
-    scalar_t v_pix, scalar_t n_pix, int chnls,
+    scalar_t v_pix, scalar_t n_pix, int F,
     int ti, int hi, int wi, int n_ti, int n_hi, int n_wi,
     int vH, int vW, int vT, int nH, int nW, int nT,
     bool vvalid_t,bool vvalid_h,bool vvalid_w, bool vvalid,
@@ -177,7 +177,7 @@ void compute_dist(scalar_t& dist,
         nvalid = nvalid_t && nvalid_h && nvalid_w;
 
         // -- all channels --
-        for (int ci = 0; ci < chnls; ci++){
+        for (int ci = 0; ci < F; ci++){
 
           // -- get data --
           v_pix = vvalid ? vid0[vT][ci][vH][vW] : (scalar_t)0.;
@@ -217,7 +217,7 @@ __global__ void search_with_heads_forward_kernel(
     int qshift, int stride0, int nH0, int nW0,
     int off_H0, int off_W0, int off_H1, int off_W1,
     int ps, int pt, int ws_h, int ws_w, int wt,
-    int chnls, int dilation, int stride1,
+    int dilation, int stride1,
     bool use_adj, bool reflect_bounds, bool search_abs,
     bool full_ws, int ws_h_iters, int ws_w_iters, int q_per_thread){
 
@@ -233,8 +233,11 @@ __global__ void search_with_heads_forward_kernel(
   int st = dists.size(3);
 
   // constants
-  float nan = __int_as_float(0xffe00000);
-  float inf = __int_as_float(0x7f800000);
+  // float nan = __int_as_float(0xffe00000);
+  float invalid = __int_as_float(0x7f800000);
+  if(DIST_TYPE == 0){ // prod
+    invalid = -invalid;
+  }
 
   // offsets
   int psHalf = (ps)/2;
@@ -351,7 +354,7 @@ __global__ void search_with_heads_forward_kernel(
           //  -- compute patch difference --
           if (valid){
             compute_dist<scalar_t,DIST_TYPE>(dist,vid0[bi][head],vid1[bi][head],
-                         v_pix, n_pix, chnls,
+                         v_pix, n_pix, F,
                          ti,hi,wi,n_ti,n_hi,n_wi,
                          vH, vW, vT, nH, nW, nT,
                          vvalid_t,vvalid_h,vvalid_w, vvalid,
@@ -361,7 +364,7 @@ __global__ void search_with_heads_forward_kernel(
           }
 
           // -- assignent --
-          if (!valid){ dist = nan; }
+          if (!valid){ dist = invalid; }
           dists[bi][head][qi][st_i][ws_i][ws_j] = dist;
           inds[bi][head][qi][st_i][ws_i][ws_j][0] = n_ti;
           inds[bi][head][qi][st_i][ws_i][ws_j][1] = n_hi;
@@ -380,7 +383,7 @@ void search_with_heads_forward_cuda(
     int qstart, int stride0, int nH0, int nW0,
     int off_H0, int off_W0, int off_H1, int off_W1,
     int ps, int pt, int ws_h, int ws_w, int wt,
-    int chnls, int dilation, int stride1, bool use_adj,
+    int dilation, int stride1, bool use_adj,
     bool reflect_bounds, bool search_abs, bool full_ws, int dist_type){
 
     // # -- launch params --
@@ -431,7 +434,7 @@ void search_with_heads_forward_cuda(
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             qstart, stride0, nH0, nW0,
             off_H0, off_W0, off_H1, off_W1,
-            ps, pt, ws_h, ws_w, wt, chnls, dilation, stride1,
+            ps, pt, ws_h, ws_w, wt, dilation, stride1,
             use_adj, reflect_bounds, search_abs, full_ws,
             ws_h_iters, ws_w_iters, q_per_thread);
           }));
@@ -447,7 +450,7 @@ void search_with_heads_forward_cuda(
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             qstart, stride0, nH0, nW0,
             off_H0, off_W0, off_H1, off_W1,
-            ps, pt, ws_h, ws_w, wt, chnls, dilation, stride1,
+            ps, pt, ws_h, ws_w, wt, dilation, stride1,
             use_adj, reflect_bounds, search_abs, full_ws,
             ws_h_iters, ws_w_iters, q_per_thread);
           }));
@@ -463,7 +466,7 @@ void search_with_heads_forward_cuda(
 
 ****************************/
 
-template <typename scalar_t>
+template <typename scalar_t, int DIST_TYPE>
 __global__ void search_with_heads_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid0,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid1,
@@ -497,7 +500,7 @@ __global__ void search_with_heads_backward_kernel(
   // bool valid_hk,valid_wk;
   bool valid,valid_j,valid_k;
   // float 
-  scalar_t weight,pix0,pix1;
+  scalar_t weight,pix0,pix1,pix;
 
   // -- declare constants --
   int psHalf = ps/2;
@@ -578,10 +581,18 @@ __global__ void search_with_heads_backward_kernel(
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
               if(valid){
-                pix0 = weight*vid0[bi][head][tk][c0][hk][wk];
-                pix1 = weight*vid1[bi][head][tj][c0][hj][wj];
-                grad_vid1[bi][head][tj][c0][hj][wj] += pix0;
-                grad_vid0[bi][head][tk][c0][hk][wk] += pix1;
+                pix0 = vid0[bi][head][tk][c0][hk][wk];
+                pix1 = vid1[bi][head][tj][c0][hj][wj];
+                if (DIST_TYPE == 0){
+                  pix0 = weight*pix0;
+                  pix1 = weight*pix1;
+                  grad_vid1[bi][head][tj][c0][hj][wj] += pix0;
+                  grad_vid0[bi][head][tk][c0][hk][wk] += pix1;
+                }else if(DIST_TYPE == 1){
+                  pix = 2 * weight * (pix0 - pix1);
+                  grad_vid1[bi][head][tj][c0][hj][wj] -= pix;
+                  grad_vid0[bi][head][tk][c0][hk][wk] += pix;
+                }
               }
             }
           }
@@ -595,14 +606,15 @@ void search_with_heads_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor grad_dists, torch::Tensor inds,
-    int qstart, int nheads, int stride0, int nH0, int nW0,
+    int qstart, int stride0, int nH0, int nW0,
     int off_H0, int off_W0, int off_H1, int off_W1,
     int ps, int pt, int dilation,
     bool use_adj, bool reflect_bounds, bool use_rand,
-    bool exact) {
+    bool exact, int dist_type) {
 
   // -- unpack --
   int bsize = vid0.size(0);
+  int HD = vid0.size(1);
   int T = vid0.size(2);
   int colors = vid0.size(3);
   int H = vid0.size(4);
@@ -638,7 +650,7 @@ void search_with_heads_backward_cuda(
     query_nthreads = 1;
     nquery_blocks = 1;
   }
-  dim3 nblocks(bsize,nquery_blocks,nheads);
+  dim3 nblocks(bsize,nquery_blocks,HD);
 
   // -- launch params --
   dim3 nthreads(query_nthreads, neigh_nthreads, color_nthreads);
@@ -666,21 +678,38 @@ void search_with_heads_backward_cuda(
     rand_nums = torch::zeros({nqueries,1,1},options);
   }
 
-  // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(),
-                             "search_with_heads_backward_kernel", ([&] {
-    search_with_heads_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
-        qstart, stride0, nH0, nW0, off_H0, off_W0, off_H1, off_W1,
-        ps, pt, dilation, use_adj, reflect_bounds, q_per_thread, npt, cpt);
-  }));
 
+  // -- launch kernel --
+  if (dist_type == 0){ // prod
+    AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                               "search_with_heads_backward_kernel", ([&] {
+    search_with_heads_backward_kernel<scalar_t,0><<<nblocks, nthreads>>>(
+          grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+          qstart, stride0, nH0, nW0, off_H0, off_W0, off_H1, off_W1,
+          ps, pt, dilation, use_adj, reflect_bounds, q_per_thread, npt, cpt);
+    }));
+  }else if (dist_type == 1){ // l2
+    AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                               "search_with_heads_backward_kernel", ([&] {
+    search_with_heads_backward_kernel<scalar_t,1><<<nblocks, nthreads>>>(
+          grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+          qstart, stride0, nH0, nW0, off_H0, off_W0, off_H1, off_W1,
+          ps, pt, dilation, use_adj, reflect_bounds, q_per_thread, npt, cpt);
+    }));
+  }else{
+     throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }
 }
 
 

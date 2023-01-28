@@ -171,28 +171,34 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
         grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
 
+        # -- ensure contiguous --
+        grad_dists = grad_dists.contiguous()
+        inds = inds.contiguous()
+
         # -- allow for repeated exec --
+        bwd_fxn = dnls_cuda.prod_search_with_heads_backward
         if nbwd == 1:
-            dnls_cuda.prod_search_with_heads_backward(grad_vid0,grad_vid1,
-                                                      vid0,vid1,
-                                                      grad_dists,inds,
-                                                      qstart,nheads,stride0,n_h0,n_w0,
-                                                      h0_off, w0_off, h1_off, w1_off,
-                                                      ps,pt,dil, use_adj,
-                                                      reflect_bounds,rbwd,exact)
+            bwd_fxn(grad_vid0,grad_vid1,
+                    vid0,vid1,
+                    grad_dists,inds,
+                    qstart,nheads,stride0,
+                    n_h0,n_w0,
+                    h0_off, w0_off, h1_off, w1_off,
+                    ps,pt,dil, use_adj,
+                    reflect_bounds,rbwd,exact)
         else:
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.prod_search_with_heads_backward(grad_vid0_i,grad_vid1_i,
-                                                          vid0,vid1,
-                                                          grad_dists,inds,
-                                                          qstart,nheads,stride0,
-                                                          n_h0,n_w0,
-                                                          h0_off, w0_off,
-                                                          h1_off, w1_off,
-                                                          ps,pt,dil,use_adj,
-                                                          reflect_bounds,rbwd,exact)
+                bwd_fxn(grad_vid0_i,grad_vid1_i,
+                        vid0,vid1,
+                        grad_dists,inds,
+                        qstart,nheads,stride0,
+                        n_h0,n_w0,
+                        h0_off, w0_off,
+                        h1_off, w1_off,
+                        ps,pt,dil,use_adj,
+                        reflect_bounds,rbwd,exact)
                 grad_vid0 += grad_vid0_i
                 grad_vid1 += grad_vid1_i
             grad_vid0 /= nbwd

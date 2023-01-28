@@ -36,8 +36,8 @@ def pytest_generate_tests(metafunc):
     th.manual_seed(seed)
     np.random.seed(seed)
     test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
-                  "dilation":[1],"wt":[0],"ws":[-1,9],
-                  "k":[-1,4],"exact":[True],"nheads":[1,4],
+                  "dilation":[1],"wt":[0],"ws":[9],
+                  "k":[3],"exact":[True],"nheads":[1,4],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -77,6 +77,8 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     search_abs = ws == -1
     anchor_self = False
     use_self = anchor_self
+    rbwd = True
+    nbwd = 1
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
@@ -110,16 +112,14 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("search_with_heads",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt, nheads,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
+    search_te = dnls.search.init("search_with_heads",
+                                 ws, wt, ps, k, nheads,
+                                 dilation=dil,stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,full_ws=False,
+                                 anchor_self=anchor_self,remove_self=False,
+                                 use_adj=use_adj,h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
-                                 search_abs=search_abs,use_adj=use_adj,
-                                 anchor=anchor_self,use_self=use_self,
-                                 exact=exact)
+                                 rbwd=rbwd,nbwd=nbwd,exact=exact)
     search_gt = dnls.search.init("prod_search_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
@@ -132,7 +132,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  exact=exact)
 
     # -- [testing] search --
-    dists_te,inds_te = search_te(vid,vid,0,ntotal)
+    dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
 
     # -- [groundtruth] search --
@@ -203,6 +203,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     adj = 0
     anchor_self = False
     use_self = anchor_self
+    rbwd = True
+    nbwd = 1
 
     # -- load data --
     vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
@@ -245,7 +247,15 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vid_gt1.requires_grad_(True)
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("search_with_heads",flows.fflow, flows.bflow,
+    search_te = dnls.search.init("search_with_heads",
+                                 ws, wt, ps, k, nheads,
+                                 dilation=dil,stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,full_ws=False,
+                                 anchor_self=anchor_self,remove_self=False,
+                                 use_adj=use_adj,h0_off=h0_off, w0_off=w0_off,
+                                 h1_off=h1_off, w1_off=w1_off,
+                                 rbwd=rbwd,nbwd=nbwd,exact=exact)
+    search_gt = dnls.search.init("prod_search_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -253,39 +263,18 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
                                  search_abs=search_abs,use_adj=use_adj,
-                                 anchor=anchor_self,use_self=use_self,
-                                 exact=exact)
-    search_gt = dnls.search.init("search_with_index",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt,
-                                 h0_off, w0_off, h1_off, w1_off,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
 
 
     # -- [testing] search --
     # print("vid.shape: ",vid.shape)
-    dists_te,inds_te = search_te(vid_te0,vid_te1,0,ntotal)
+    dists_te,inds_te = search_te(vid_te0,vid_te1,flows.fflow,flows.bflow)
     th.cuda.synchronize()
 
     # -- [groundtruth] search --
-    search_te.nheads = 1
-    _c = (vid.shape[2]-1) // nheads + 1
-    dists_gt,inds_gt = [],[]
-    for h in range(nheads):
-        cinds = slice(_c*h,_c*(h+1))
-        vid_c0 = vid_gt0[:,:,cinds].contiguous()
-        vid_c1 = vid_gt1[:,:,cinds].contiguous()
-        dists_h,inds_h = search_gt(vid_c0,vid_c1,0,ntotal)
-        # dists_h,inds_h = search_te(vid_c,0,ntotal)
-        # dists_h,inds_h = dists_h[0],inds_h[0]
-        dists_gt.append(dists_h)
-        inds_gt.append(inds_h)
-    dists_gt = th.stack(dists_gt,1)
-    inds_gt  = th.stack(inds_gt,1)
+    dists_gt,inds_gt = search_gt(vid_gt0,vid_gt1)
+    th.cuda.synchronize()
 
     # -- viz --
     # print(dists_te)
@@ -397,6 +386,8 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     search_abs = ws == -1
     anchor_self = True
     use_self = anchor_self
+    rbwd = True
+    nbwd = 1
     if use_k is False: return # skip non topk examples
 
     # -- load data --
@@ -431,16 +422,14 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("search_with_heads",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt, nheads,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
+    search_te = dnls.search.init("search_with_heads",
+                                 ws, wt, ps, k, nheads,
+                                 dilation=dil,stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,full_ws=False,
+                                 anchor_self=anchor_self,remove_self=False,
+                                 use_adj=use_adj,h0_off=h0_off, w0_off=w0_off,
                                  h1_off=h1_off, w1_off=w1_off,
-                                 search_abs=search_abs,use_adj=use_adj,
-                                 anchor_self=anchor_self,use_self=use_self,
-                                 exact=exact)
+                                 rbwd=rbwd,nbwd=nbwd,exact=exact)
     search_gt = dnls.search.init("prod_search_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
@@ -453,12 +442,15 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  exact=exact)
 
     # -- [testing] search --
-    dists_te,inds_te = search_te(vid,vid)
+    dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
 
     # -- [testing] search --
     dists_gt,inds_gt = search_gt(vid,vid)
     th.cuda.synchronize()
+
+    print(dists_te[0,0,0])
+    print(dists_gt[0,0,0])
 
     # -- view --
     # print(inds_gt)

@@ -521,11 +521,12 @@ __global__ void l2_search_with_heads_backward_kernel(
               pix0 =  valid_k ? vid0[head][tk][c0][hk][wk] : 0.;
               pix1 =  valid_j ? vid1[head][tj][c0][hj][wj] : 0.;
 
+              // this is wrong, but unused.
               if (valid_j){
-                grad_vid1[head][tj][c0][hj][wj] += pix0;
+                grad_vid1[head][tj][c0][hj][wj] += pix0*1000000;
               }
               if (valid_k){
-                grad_vid0[head][tk][c0][hk][wk] += pix1;
+                grad_vid0[head][tk][c0][hk][wk] += pix1*10000;
               }
 
             }

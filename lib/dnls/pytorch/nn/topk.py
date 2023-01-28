@@ -8,7 +8,7 @@ import torch.nn.functional as nnf
 import dnls_cuda
 
 # -- local --
-from .anchor_self import run as anchor_self
+# from .anchor_self import run as anchor_self
 
 # -- import shape info --
 # from .shape_utils import dimN_dim2,dim2_dimN
