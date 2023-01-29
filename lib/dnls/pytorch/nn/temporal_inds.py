@@ -7,8 +7,7 @@ Get temporal inds from spatial inds
 import torch as th
 import dnls_cuda
 
-def run(inds,flows,wt):
-
+def run(inds,ws,fflow,bflow):
 
     # -- shaping --
     B,Q,K,_ = inds.shape

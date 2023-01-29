@@ -58,6 +58,4 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
     grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')
     grad_vid1 = rearrange(grad_vid1,'B H t c h w -> B t (H c) h w')
 
-    return grad_vid0,grad_vid1,None,None,None,None,\
-        None,None,None,None,None,None,None,None,None,None,None,\
-        None,None,None,None,None,None,None,None,None,None,None
+    return grad_vid0,grad_vid1

@@ -96,7 +96,11 @@ class NonLocalSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
-        return nls_backward(ctx, grad_dists, grad_inds_is_none)
+        return nls_backward(ctx, grad_dists, grad_inds_is_none),\
+            None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None
+
 
 class NonLocalSearch(th.nn.Module):
 

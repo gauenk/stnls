@@ -59,10 +59,6 @@ class RefineSearchFunction(th.autograd.Function):
         # -- allocate results --
         base_shape = (B,HD,Q,K,wr_h,wr_w)
         dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
-        print(dist_type_i)
-        print(vid0.shape)
-        print(dists.shape,inds.shape)
-        print(wr,ws,qshift,reflect_bounds,full_ws,use_adj)
 
         # -- run --
         dnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
@@ -100,8 +96,10 @@ class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
-        return nls_backward(ctx, grad_dists, grad_inds_is_none)
-
+        return nls_backward(ctx, grad_dists, grad_inds_is_none),\
+            None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None
 
 class RefineSearch(th.nn.Module):
 
