@@ -116,23 +116,18 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
                                  use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search_dev.init("prod_search_with_heads",
-                                     flows.fflow, flows.bflow,
-                                     k, ps, pt, ws, wt, nheads,
-                                     chnls=-1,dilation=dil,
-                                     stride0=stride0, stride1=stride1,
-                                     reflect_bounds=reflect_bounds,use_k=use_k,
-                                     search_abs=search_abs,use_adj=use_adj,
-                                     anchor_self=anchor_self,use_self=use_self,
-                                     exact=exact)
+    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
+                                 k, ps, pt, ws, wt, nheads,
+                                 chnls=-1,dilation=dil,
+                                 stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,use_k=use_k,
+                                 search_abs=search_abs,use_adj=use_adj,
+                                 anchor_self=anchor_self,use_self=use_self,
+                                 exact=exact)
 
     # -- test api --
-    # dists_e,inds_e = dnls.search.nls(vid0,vid1,flows.fflow,flows.bflow,
-    #                                  ws, wt, ps, k)
-    # dists_a,inds_a = dnls.search.approx_time(vid,vid,flows.fflow,flows.bflow,
-    #                                           ws, wt, ps, k)
-    # -- diff = th.abs(dists_e - dists_e).mean()
-
+    # print(dnls.search.nls(vid,vid,flows.fflow,flows.bflow,
+    #                                ws, wt, ps, k))
 
     # -- [testing] search --
     dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
