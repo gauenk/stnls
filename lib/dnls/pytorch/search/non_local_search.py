@@ -13,6 +13,7 @@ import dnls
 # -- local --
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
 from .shared import manage_self
+from .nls_bwd_impl import nls_backward
 
 class NonLocalSearchFunction(th.autograd.Function):
 
@@ -21,18 +22,17 @@ class NonLocalSearchFunction(th.autograd.Function):
                 ws, wt, ps, k, nheads=1, qshift=0, Q=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-                anchor_self=False,remove_self=False,
-                use_adj=True,off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                rbwd=True,nbwd=1,exact=False):
+                anchor_self=False, remove_self=False,
+                use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+                rbwd=True, nbwd=1, exact=False):
 
         """
-        vid0 = [B,T,C,H,W] or [B,H,T,C,H,W]
+        Run the non-local search
+
+        vid0 = [B,T,C,H,W] or [B,HD,T,C,H,W]
         ws = search Window Spatial (ws)
         wt = search Window Time (wt)
         """
-
-        # -- reshape with heads --
-        device = vid0.device
 
         # -- reshape with heads --
         dtype = vid0.dtype
@@ -62,9 +62,9 @@ class NonLocalSearchFunction(th.autograd.Function):
         # -- forward --
         dnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
                                            dists, inds,
-                                           wt, ps, k, qshift, dist_type_i,
-                                           stride0, stride1, dilation,
-                                           pt, reflect_bounds, search_abs, full_ws,
+                                           wt, ps, k, dist_type_i, stride0,
+                                           stride1, dilation, pt, qshift,
+                                           reflect_bounds, full_ws, search_abs,
                                            use_adj, off_H0, off_W0, off_H1, off_W1)
 
         # -- compress search region --
@@ -72,8 +72,8 @@ class NonLocalSearchFunction(th.autograd.Function):
         inds=inds.view(B,HD,Q,-1,3)
 
         # -- manage self dists --
-        # dists,inds = manage_self(dists,inds,anchor_self,
-        #                          remove_self,qshift,stride0,H,W)
+        dists,inds = manage_self(dists,inds,anchor_self,
+                                 remove_self,qshift,stride0,H,W)
 
         # -- topk --
         dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
@@ -91,63 +91,19 @@ class NonLocalSearchFunction(th.autograd.Function):
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 
+        # -- return --
         return dists,inds
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
-
-        # -- populate names --
-        inds,vid0,vid1 = ctx.saved_tensors
-
-        # -- allocate grads --
-        grad_vid0 = allocate_vid(ctx.vid_shape,grad_dists.device)
-        grad_vid1 = allocate_vid(ctx.vid_shape,grad_dists.device)
-
-        # -- ensure contiguous --
-        grad_dists = grad_dists.contiguous()
-        inds = inds.contiguous()
-
-        # -- derived shapes --
-        H,W = ctx.vid_shape[-2:]
-        nH0 = (H-1)//ctx.stride0+1
-        nW0 = (W-1)//ctx.stride0+1
-
-        # -- allow for repeated exec --
-        bwd_fxn = dnls_cuda.non_local_search_backward
-        if ctx.nbwd == 1:
-            bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,
-                    grad_dists,inds,ctx.qshift,ctx.stride0,nH0,nW0,
-                    ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,
-                    ctx.ps,ctx.pt,ctx.dil,ctx.use_adj,
-                    ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i)
-        else:
-            for _ in range(ctx.nbwd):
-                grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
-                grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                bwd_fxn(grad_vid0_i,grad_vid1_i,vid0,vid1,
-                        grad_dists,inds,ctx.qshift,ctx.stride0,nH0,nW0,
-                        ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,
-                        ctx.ps,ctx.pt,ctx.dil,ctx.use_adj,
-                        ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i)
-                grad_vid0 += grad_vid0_i
-                grad_vid1 += grad_vid1_i
-            grad_vid0 /= ctx.nbwd
-            grad_vid1 /= ctx.nbwd
-
-        # -- finalize shape --
-        grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')
-        grad_vid1 = rearrange(grad_vid1,'B H t c h w -> B t (H c) h w')
-
-        return grad_vid0,grad_vid1,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None
+        return nls_backward(ctx, grad_dists, grad_inds_is_none)
 
 class NonLocalSearch(th.nn.Module):
 
 
-    def __init__(self, ws, wt, ps, k, nheads,
+    def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
-                 reflect_bounds=True, full_ws = False,
+                 reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
                  use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
                  rbwd=True, nbwd=1, exact=False):

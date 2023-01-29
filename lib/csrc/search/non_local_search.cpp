@@ -8,10 +8,10 @@ void non_local_search_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor fflow, const torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
-    int wt, int ps, int k, int qshift, int dist_type,
-    int stride0, int stride1, int dilation, int pt,
-    bool reflect_bounds, bool search_abs, bool full_ws, bool use_adj,
-    int off_H0, int off_W0, int off_H1, int off_W1);
+    int wt, int ps, int k, int dist_type,
+    int stride0, int stride1, int dilation, int pt, int qshift,
+    bool reflect_bounds, bool full_ws, bool search_abs,
+    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1);
 
 void non_local_search_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
@@ -28,19 +28,14 @@ void non_local_search_backward_cuda(
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-    // torch::Tensor dists, torch::Tensor inds,
-    // int ps, int k, int qshift, int dist_type,
-    // int stride0, int stride1, int dilation, int pt,
-    // bool reflect_bounds, bool search_abs, bool full_ws, bool use_adj,
-    // int off_H0, int off_W0, int off_H1, int off_W1){
 
 void non_local_search_forward(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor fflow, const torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
-    int wt, int ps, int k, int qshift, int dist_type,
-    int stride0, int stride1, int dilation, int pt,
-    bool reflect_bounds, bool search_abs, bool full_ws, bool use_adj,
+    int wt, int ps, int k, int dist_type,
+    int stride0, int stride1, int dilation, int pt, int qshift,
+    bool reflect_bounds, bool full_ws, bool search_abs, bool use_adj,
     int off_H0, int off_W0, int off_H1, int off_W1){
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
@@ -49,10 +44,10 @@ void non_local_search_forward(
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   non_local_search_forward_cuda(vid0, vid1, fflow, bflow, dists, inds,
-                                wt, ps, k, qshift, dist_type,
-                                stride0, stride1, dilation, pt,
-                                reflect_bounds, search_abs, full_ws, use_adj,
-                                off_H0, off_W0, off_H1, off_W1);
+                                wt, ps, k, dist_type,
+                                stride0, stride1, dilation, pt, qshift,
+                                reflect_bounds, full_ws, search_abs,
+                                use_adj, off_H0, off_W0, off_H1, off_W1);
 }
 
 void non_local_search_backward(
