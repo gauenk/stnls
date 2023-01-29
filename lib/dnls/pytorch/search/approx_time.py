@@ -10,7 +10,7 @@ import dnls_cuda
 import dnls
 
 # -- local --
-from .utils import dist_type_select,shape_vids
+from .utils import dist_type_select,shape_vids,filter_k
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
 from .non_local_search import _apply as nls_apply
@@ -49,7 +49,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         if wt > 0:
-            inds_t = dnls.nn.temporal_inds(inds[...,:kr,:],wt,fflow,bflow)
+            inds_t = dnls.nn.temporal_inds(filter_k(inds,kr),wt,fflow,bflow)
             inds_t = rearrange(inds_t,'B HD Q ST K tr -> B HD Q (ST K) tr')
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -62,7 +62,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
             anchor_self_r = False
             remove_self_r = False
             _dists,_inds = refine_apply(vid0, vid1, inds_t,
-                                        wr,ws,ps,k,nheads,qshift,
+                                        ws,ps,k,wr,-1,nheads,qshift,
                                         dist_type,stride0,stride1,
                                         dilation,pt,reflect_bounds,full_ws,
                                         anchor_self_r,remove_self_r,use_adj,

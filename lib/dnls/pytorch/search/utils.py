@@ -22,6 +22,19 @@ def allocate_vid(vid_shape,device):
 
 #
 #
+# -- Filtering Indices for Approximate Search Methods
+#
+#
+
+def filter_k(inds,kr):
+    K = inds.shape[-2]
+    if kr <= 0: return inds
+    if 0 < kr and kr < 1: Ks = int(K*kr)
+    else: Ks = int(kr)
+    return inds[...,:Ks,:].contiguous()
+
+#
+#
 # -- Shaping input videos with Heads --
 #
 #

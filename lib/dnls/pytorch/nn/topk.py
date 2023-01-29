@@ -89,6 +89,7 @@ def unique_topk(dists,inds,K,descending=False,unique=True):
 
     # -- run --
     if unique:
+        inds = inds.contiguous()
         dnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)
 
     # -- return --

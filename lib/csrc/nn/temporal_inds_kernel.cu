@@ -98,7 +98,7 @@ __global__ void temporal_inds_kernel(
       // -- incriment pre-computed frame index --
       ta++;
     }
-    // assert(ta == nT);//,"Must be equal."
+    assert(ta == nT);//,"Must be equal."
 
   }
     

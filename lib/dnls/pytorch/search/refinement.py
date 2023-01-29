@@ -10,7 +10,9 @@ import dnls_cuda
 import dnls
 
 # -- local --
-from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
+from .utils import filter_k
+from .utils import shape_vids,dist_type_select
+from .utils import allocate_pair,allocate_vid
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
 
@@ -18,7 +20,7 @@ class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, qinds,
-                wr, ws, ps, k, nheads=1, qshift=0,
+                ws, ps, k, wr, kr, nheads=1, qshift=0,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
@@ -39,6 +41,9 @@ class RefineSearchFunction(th.autograd.Function):
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
         assert qinds.shape[1] == HD
+
+        # -- filter only to kr --
+        qinds = filter_k(qinds,kr)
 
         # -- derived shapes --
         Q = qinds.shape[2]
@@ -103,7 +108,7 @@ class RefineSearchFunction(th.autograd.Function):
 
 class RefineSearch(th.nn.Module):
 
-    def __init__(self, wr, ws, ps, k, nheads=1,
+    def __init__(self, ws, ps, k, wr, kr, nheads=1,
                  dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
                  reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
@@ -112,10 +117,11 @@ class RefineSearch(th.nn.Module):
         super().__init__()
 
         # -- core search params --
-        self.wr = wr
         self.ws = ws
         self.ps = ps
         self.k = k
+        self.wr = wr
+        self.kr = kr
         self.nheads = nheads
         self.dist_type = dist_type
         self.stride0 = stride0
@@ -145,8 +151,8 @@ class RefineSearch(th.nn.Module):
 
     def forward(self,vid0,vid1,qinds,qshift=0):
         return RefineSearchFunction.apply(vid0,vid1,qinds,
-                                          self.wr,self.ws,self.ps,self.k,
-                                          self.nheads,qshift,
+                                          self.ws,self.ps,self.k,
+                                          self.wr,self.kr,self.nheads,qshift,
                                           self.dist_type,self.stride0,self.stride1,
                                           self.dilation,self.pt,
                                           self.reflect_bounds,self.full_ws,

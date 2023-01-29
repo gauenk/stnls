@@ -10,8 +10,7 @@ import dnls_cuda
 import dnls
 
 # -- local --
-from .utils import dist_type_select,shape_vids
-from .shared import manage_self
+from .utils import dist_type_select,shape_vids,filter_k
 from .nls_bwd_impl import nls_backward
 from .non_local_search import _apply as nls_apply
 from .refinement import _apply as refine_apply
@@ -20,7 +19,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
-                ws, wt, ps, k, scale, nheads=1, qshift=0, Q=-1,
+                ws, wt, ps, k, wr, kr, scale, nheads=1, qshift=0, Q=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
@@ -36,11 +35,12 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         assert isinstance(scale,int),"Must be int."
         stride0_c = scale*stride0
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
+        anchor_self_e = True
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,0,ps,k,nheads,qshift,Q,
+                               ws,wt,ps,-1,nheads,qshift,Q,
                                dist_type,stride0_c,stride1,
                                dilation,pt,reflect_bounds,full_ws,
-                               anchor_self,remove_self,use_adj,
+                               anchor_self_e,remove_self,use_adj,
                                off_H0,off_W0,off_H1,off_W1,
                                rbwd,nbwd,exact)
 
@@ -51,7 +51,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         T,_,H,W = vid0.shape[-4:]
-        inds = dnls.nn.interpolate_inds(inds,scale,stride0,T,H,W)
+        inds = dnls.nn.interpolate_inds(filter_k(inds,kr),scale,stride0,T,H,W)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -60,41 +60,15 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         dists,inds = refine_apply(vid0, vid1, inds,
-                                  wr,ws,ps,k,nheads,qshift,
+                                  ws,ps,k,wr,-1,nheads,qshift,
                                   dist_type,stride0,stride1,
                                   dilation,pt,reflect_bounds,full_ws,
-                                  anchor_self_r,remove_self_r,use_adj,
+                                  anchor_self,remove_self,use_adj,
                                   off_H0,off_W0,off_H1,off_W1,
                                   rbwd,nbwd,exact)
 
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-        #
-        #     4.) Merge Results Together
-        #
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-        # dists,inds = dnls.nn.merge_interpolated_inds(dists,inds,dists_n,inds_n,
-        #                                              scale,stride0,H,W)
-
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-        #
-        #      4.) Manage Self & Top-K
-        #
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-        # -- unpack --
-        H,W = vid0.shape[-2:]
-        dist_type_i,descending,dval = dist_type_select(dist_type)
-
-        # -- manage self dists --
-        dists,inds = manage_self(dists,inds,anchor_self,
-                                 remove_self,qshift,stride0,H,W)
-
-        # -- topk --
-        dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                  descending=descending,unique=False)
-
         # -- setup ctx --
+        dist_type_i,descending,dval = dist_type_select(dist_type)
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
@@ -120,7 +94,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
 
 class ApproxSpaceSearch(th.nn.Module):
 
-    def __init__(self, ws, wt, ps, k, scale, nheads=1,
+    def __init__(self, ws, wt, ps, k, wr, kr, scale, nheads=1,
                  dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
                  reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
@@ -133,6 +107,8 @@ class ApproxSpaceSearch(th.nn.Module):
         self.wt = wt
         self.ps = ps
         self.k = k
+        self.wr = wr
+        self.kr = kr
         self.scale = scale
         self.nheads = nheads
         self.dist_type = dist_type
@@ -164,7 +140,8 @@ class ApproxSpaceSearch(th.nn.Module):
     def forward(self, vid0, vid1, fflow, bflow, qshift=0, nqueries=-1):
         fxn = ApproxSpaceSearchFunction.apply
         return fxn(vid0,vid1,fflow,bflow,
-                   self.ws,self.wt,self.ps,self.k,self.scale,
+                   self.ws,self.wt,self.ps,self.k,
+                   self.wr,self.kr,self.scale,
                    self.nheads,qshift,nqueries,
                    self.dist_type,self.stride0,self.stride1,
                    self.dilation,self.pt,

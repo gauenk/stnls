@@ -62,9 +62,9 @@ __global__ void interpolate_inds_forward_kernel(
   int hi = raster_index % nH;
   int wi = (raster_index/nH) % nW;
   
-  // -- shifts [could be randomized] --
-  int shift_h = ki % scale;
-  int shift_w = ki / scale;
+  // -- shifts [could be randomized; fixed across ki] --
+  int shift_h = 0;//raster_index % scale;
+  int shift_w = 0;//raster_index / scale;
 
   // -- sparse index inds --
   int hi_sparse = hi / scale;
