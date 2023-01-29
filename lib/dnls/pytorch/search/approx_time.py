@@ -10,7 +10,6 @@ import dnls_cuda
 import dnls
 
 # -- local --
-# from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
 from .utils import dist_type_select,shape_vids
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
@@ -28,11 +27,11 @@ class ApproxTimeSearchFunction(th.autograd.Function):
                 use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
                 rbwd=True, nbwd=1, exact=False):
 
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
-        #       1.) Run Exact Search
+        #       1.) Run Exact Search Without Time
         #
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
@@ -42,7 +41,6 @@ class ApproxTimeSearchFunction(th.autograd.Function):
                                anchor_self,remove_self,use_adj,
                                off_H0,off_W0,off_H1,off_W1,
                                rbwd,nbwd,exact)
-
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -73,11 +71,11 @@ class ApproxTimeSearchFunction(th.autograd.Function):
             dists = th.cat([dists,_dists],3)
             inds = th.cat([inds,_inds],3)
 
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
         #      4.) Manage Self & Top-K
         #
-        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         # -- unpack --
         H,W = vid0.shape[-2:]

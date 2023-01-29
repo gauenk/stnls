@@ -104,7 +104,6 @@ class NonLocalSearchFunction(th.autograd.Function):
 
 class NonLocalSearch(th.nn.Module):
 
-
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
                  reflect_bounds=True, full_ws=False,

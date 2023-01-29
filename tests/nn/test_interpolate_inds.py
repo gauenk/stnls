@@ -106,16 +106,16 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     h1_off,w1_off = 0,0
 
     # -- exec fold fxns --
-    search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt, nheads,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 h0_off=h0_off, w0_off=w0_off,
-                                 h1_off=h1_off, w1_off=w1_off,
-                                 search_abs=False,use_adj=use_adj,
-                                 anchor_self=anchor_self,use_self=use_self,
-                                 exact=exact)
+    search_gt = dnls.search_dev.init("prod_with_heads",flows.fflow, flows.bflow,
+                                     k, ps, pt, ws, wt, nheads,
+                                     chnls=-1,dilation=dil,
+                                     stride0=stride0, stride1=stride1,
+                                     reflect_bounds=reflect_bounds,use_k=use_k,
+                                     h0_off=h0_off, w0_off=w0_off,
+                                     h1_off=h1_off, w1_off=w1_off,
+                                     search_abs=False,use_adj=use_adj,
+                                     anchor_self=anchor_self,use_self=use_self,
+                                     exact=exact)
 
 
     # -- [gt] search --
@@ -135,7 +135,7 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     _,inds_te = search_gt(vid,vid)
 
     # -- upsample --
-    inds_te = dnls.search.interpolate_inds.run(inds_te,scale,stride0,T,H,W)
+    inds_te = dnls.nn.interpolate_inds(inds_te,scale,stride0,T,H,W)
 
     # -- reshape --
     inds_gt = rearrange(inds_gt,'b h (t hw) k tr -> b h t hw k tr',t=T)

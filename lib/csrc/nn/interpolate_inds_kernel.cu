@@ -41,7 +41,7 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 __global__ void interpolate_inds_forward_kernel(
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds_full,
-    int scale, int stride, int stride_sparse){
+    int scale, int stride, int stride_sparse, int iH, int iW){
 
   // -- unpack indices --
   int B = inds_full.size(0);
@@ -52,8 +52,8 @@ __global__ void interpolate_inds_forward_kernel(
   int raster_index = blockIdx.y * blockDim.x + threadIdx.x;
 
   // -- image indices for video --
-  int iH = nH*stride;
-  int iW = nW*stride;
+  // int iH = nH*stride;
+  // int iW = nW*stride;
 
   // -- assign inds --
   int bi = blockIdx.x;
@@ -62,9 +62,9 @@ __global__ void interpolate_inds_forward_kernel(
   int hi = raster_index % nH;
   int wi = (raster_index/nH) % nW;
   
-  // -- shifts --
-  int shift_h = ki % scale;//(raster_index/scale) % scale;
-  int shift_w = ki / scale;//raster_index % scale;
+  // -- shifts [could be randomized] --
+  int shift_h = ki % scale;
+  int shift_w = ki / scale;
 
   // -- sparse index inds --
   int hi_sparse = hi / scale;
@@ -87,7 +87,7 @@ __global__ void interpolate_inds_forward_kernel(
 
 void interpolate_inds_forward_cuda(
     torch::Tensor inds, torch::Tensor inds_full,
-    int scale, int stride, int stride_sparse){
+    int scale, int stride, int stride_sparse, int iH, int iW){
 
    // -- unpack --
    int B = inds_full.size(0);  
@@ -116,7 +116,7 @@ void interpolate_inds_forward_cuda(
    interpolate_inds_forward_kernel<<<nblocks, nthreads>>>(
        inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
        inds_full.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-       scale,stride,stride_sparse);
+       scale,stride,stride_sparse,iH,iW);
 }
 
 
