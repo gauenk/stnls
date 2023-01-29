@@ -36,7 +36,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
 
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,0,ps,-1,nheads,qshift,Q,
+                               ws,0,ps,k,nheads,qshift,Q,
                                dist_type,stride0,stride1,
                                dilation,pt,reflect_bounds,full_ws,
                                anchor_self,remove_self,use_adj,
@@ -51,7 +51,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         if wt > 0:
-            inds_t = dnls.nn.temporal_inds(inds[...,:1,:],wt,fflow,bflow)
+            inds_t = dnls.nn.temporal_inds(inds[...,:kr,:],wt,fflow,bflow)
             inds_t = rearrange(inds_t,'B HD Q ST K tr -> B HD Q (ST K) tr')
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -64,7 +64,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
             anchor_self_r = False
             remove_self_r = False
             _dists,_inds = refine_apply(vid0, vid1, inds_t,
-                                        wr,ws,ps,-1,nheads,qshift,
+                                        wr,ws,ps,k,nheads,qshift,
                                         dist_type,stride0,stride1,
                                         dilation,pt,reflect_bounds,full_ws,
                                         anchor_self_r,remove_self_r,use_adj,

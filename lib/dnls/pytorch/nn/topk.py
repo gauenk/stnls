@@ -35,6 +35,7 @@ def run(dists,inds,k,dim=1,anchor=False,descending=True,unique=False):
     dists,inds = topk_menu(dists,inds,k,anchor,descending,unique)
 
     # -- return squares --
+    k = inds.shape[1]
     dists,inds = dim2_dimN(dists,inds,dshape,ishape,dim,k)
     return dists,inds
 
@@ -100,6 +101,7 @@ def standard_topk(dists,inds,K,descending):
 
     # -- order --
     order = th.argsort(dists,dim=1,descending=descending)[:,:K]
+    K = order.shape[1]
 
     # -- topk dists --
     dists_k = th.gather(dists,1,order)

@@ -59,7 +59,6 @@ class NonLocalSearchFunction(th.autograd.Function):
         base_shape = (B,HD,Q,st,ws_h,ws_w)
         dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
-        print(fflow[0,:,:,4,52])
         # -- forward --
         dnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
                                            dists, inds,
