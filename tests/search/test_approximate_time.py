@@ -35,9 +35,9 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
-                  "dilation":[1],"wt":[0],"ws":[9], "wr":[9],
-                  "k":[-1],"kr":[1],"exact":[True],"nheads":[1],
+    test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
+                  "dilation":[1],"wt":[1],"ws":[3], "wr":[3],
+                  "k":[9*3],"kr":[-1],"exact":[True],"nheads":[1],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -75,7 +75,7 @@ def test_fwd(wr,kr,ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_adj = False
     adj = 0
     search_abs = ws == -1
-    anchor_self = False
+    anchor_self = True
     use_self = anchor_self
     rbwd = True
     nbwd = 1
@@ -116,20 +116,7 @@ def test_fwd(wr,kr,ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     th.cuda.synchronize()
 
     # -- compare --
-    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
-    diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
-    diff = diff[args0]
-
-    # -- test --
-    tol = 1e-5
-    error = diff.mean().item()
-    if error > tol: print("error: ",error)
-    assert error < tol
-
-    tol = 1e-4
-    max_error = diff.max().item()
-    if max_error > tol: print("max error: ",max_error)
-    assert max_error < tol
+    assert th.all(dists_te >= dists_gt)
 
 
 @pytest.mark.slow

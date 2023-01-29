@@ -62,8 +62,8 @@ class RefineSearchFunction(th.autograd.Function):
 
         # -- run --
         dnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
-                                     ws_h, ws_w, ps, k, dist_type_i, stride0, stride1,
-                                     dilation, pt, qshift,
+                                     ws_h, ws_w, ps, k, dist_type_i,
+                                     stride0, stride1, dilation, pt, qshift,
                                      reflect_bounds, full_ws, use_adj,
                                      off_H0, off_W0, off_H1, off_W1)
 
@@ -96,8 +96,8 @@ class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
-        return nls_backward(ctx, grad_dists, grad_inds_is_none),\
-            None,None,None,None,\
+        grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
+        return grad0,grad1,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
 

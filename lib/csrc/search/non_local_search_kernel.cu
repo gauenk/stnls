@@ -130,8 +130,10 @@ __global__ void non_local_search_forward_kernel(
 
       // -- increment frame index --
       increment_frame(n_ti,prev_ti,t_inc,swap_dir,dir,ti,t_min);
+
       // -- possibly reset (hj_center,wj_center) --
       reset_centers(hj_center,wj_center,swap_dir,wi,hi);
+
       // -- compute offset with optical flow --
       update_centers<scalar_t>(hj_center,wj_center,dir,H,W,
                                fflow[ibatch][prev_ti],bflow[ibatch][prev_ti]);

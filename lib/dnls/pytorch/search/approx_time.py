@@ -11,7 +11,7 @@ import dnls
 
 # -- local --
 # from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
-from .utils import dist_type_select
+from .utils import dist_type_select,shape_vids
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
 from .non_local_search import _apply as nls_apply
@@ -34,13 +34,15 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+        vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,wt,ps,k,nheads,qshift,Q,
+                               ws,0,ps,-1,nheads,qshift,Q,
                                dist_type,stride0,stride1,
                                dilation,pt,reflect_bounds,full_ws,
                                anchor_self,remove_self,use_adj,
                                off_H0,off_W0,off_H1,off_W1,
                                rbwd,nbwd,exact)
+
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -49,7 +51,8 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         if wt > 0:
-            inds_t = dnls.nn.temporal_inds(inds,wt,fflow,bflow)
+            inds_t = dnls.nn.temporal_inds(inds[...,:1,:],wt,fflow,bflow)
+            inds_t = rearrange(inds_t,'B HD Q ST K tr -> B HD Q (ST K) tr')
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -58,15 +61,17 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
         if wt > 0:
+            anchor_self_r = False
+            remove_self_r = False
             _dists,_inds = refine_apply(vid0, vid1, inds_t,
-                                        wr,ws,ps,k,nheads,qshift,
+                                        wr,ws,ps,-1,nheads,qshift,
                                         dist_type,stride0,stride1,
                                         dilation,pt,reflect_bounds,full_ws,
-                                        anchor_self,remove_self,use_adj,
+                                        anchor_self_r,remove_self_r,use_adj,
                                         off_H0,off_W0,off_H1,off_W1,
                                         rbwd,nbwd,exact)
-            dists = th.cat([dists,_dists],2)
-            inds = th.cat([inds,_inds],2)
+            dists = th.cat([dists,_dists],3)
+            inds = th.cat([inds,_inds],3)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -103,11 +108,11 @@ class ApproxTimeSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
-
-        return nls_backward(ctx, grad_dists, grad_inds_is_none),\
-            None,None,None,None,\
+        grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
+        return grad0,grad1,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None,None,\
+            None,None
 
 class ApproxTimeSearch(th.nn.Module):
 

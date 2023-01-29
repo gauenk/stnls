@@ -109,16 +109,37 @@ void update_centers(int& hj_center, int& wj_center, int dir, int H, int W,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> fflow,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> bflow){
 
+  // -- fixed so we can read both --
+  int hj_tmp = hj_center;
+  int wj_tmp = wj_center;
+
   // -- optical flow --
   if (dir != 0){
 
     // -- access flows --
     if (dir > 0 ){
-      wj_center = int(1.*wj_center + fflow[0][hj_center][wj_center] + 0.5);
-      hj_center = int(1.*hj_center + fflow[1][hj_center][wj_center] + 0.5);
+
+      // -- tells me [14,0]; probably "0=-4" --
+      // wj_center = int(fflow[0][4][52] + 0.5);
+      // hj_center = int(fflow[1][4][52] + 0.5);
+
+      // -- tells me [0,14] --
+      // wj_center = int(fflow[0][wj_center][hj_center] + 0.5);
+      // hj_center = int(fflow[1][wj_center][hj_center] + 0.5);
+
+      // -- tells me [0,0] --
+      // wj_center = int(fflow[0][hj_center][wj_center] + 0.5);
+      // hj_center = int(fflow[1][hj_center][wj_center] + 0.5);
+
+      // -- tells me [4,52] --
+      // wj_center = wj_center;
+      // hj_center = hj_center;
+
+      wj_center = int(1.*wj_center + fflow[0][hj_tmp][wj_tmp] + 0.5);
+      hj_center = int(1.*hj_center + fflow[1][hj_tmp][wj_tmp] + 0.5);
     }else{
-      wj_center = int(1.*wj_center + bflow[0][hj_center][wj_center] + 0.5);
-      hj_center = int(1.*hj_center + bflow[1][hj_center][wj_center] + 0.5);
+      wj_center = int(1.*wj_center + bflow[0][hj_tmp][wj_tmp] + 0.5);
+      hj_center = int(1.*hj_center + bflow[1][hj_tmp][wj_tmp] + 0.5);
     }
 
     // -- rounding --

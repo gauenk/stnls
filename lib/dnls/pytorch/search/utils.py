@@ -30,9 +30,7 @@ def shape_vids(nheads,vids):
     _vids = []
     for vid in vids:
         # -- reshape with heads --
-        dtype = vid.dtype
-        device = vid.device
-        assert vid.ndim in [5], "Must be 5 dims."
+        assert vid.ndim in [5,6], "Must be 5 or 6 dims."
         if vid.ndim == 5:
             c = vid.shape[2]
             assert c % nheads == 0,"must be multiple of each other."
