@@ -1,7 +1,10 @@
 
 # -- misc --
-import dnls
 import torch as th
+import dnls
+
+# -- data mngment --
+from easydict import EasyDict as edict
 
 # -- benchmarking imports --
 from dnls.utils.timer import ExpTimer
@@ -9,49 +12,52 @@ from dnls.utils.bench import RecordIt
 from dnls.utils.gpu_mem import GpuRecord
 from dnls.utils.inds import get_batching_info
 
-def run_l2_search(rec,fflow,bflow,
-                  k,ps,pt,ws,wt,dil,
-                  stride0,stride1,
-                  t,c,h,w,device):
+def init_data(cfg):
+    B = cfg.batchsize
+    T = cfg.nframes
+    HD = cfg.nheads
+    F_HD = cfg.nftrs_per_head
+    H = cfg.height
+    W = cfg.width
+    device = cfg.device
+    vid0 = th.rand((B,T,HD*F_HD,H,W),device=device)
+    vid1 = th.rand((B,T,HD*F_HD,H,W),device=device)
+    fflow = th.rand((B,T,2,H,W),device=device)
+    bflow = th.rand((B,T,2,H,W),device=device)
+    return vid0,vid1,fflow,bflow
+
+def search_wrap(name,search):
+    if "refine" in name:
+        def wrap(vid0,vid1,fflow,bflow,inds):
+            return search(vid0,vid1,inds)
+        return wrap
+    else:
+        def wrap(vid0,vid1,fflow,bflow,inds):
+            return search(vid0,vid1,fflow,bflow)
+        return wrap
+
+def run_search(rec,cfg):
+
     # -- misc --
-    name = "l2_search"
+    th.cuda.empty_cache()
 
     # -- init search params --
-    vid0 = th.rand((t,c,h,w),device=device)
-    vid1 = th.rand((t,c,h,w),device=device)
-    search = dnls.search.init("l2",fflow, bflow, k, ps, pt, ws, wt,
-                              dilation=dil, stride=stride1)
-    ntotal,_,_,_ = get_batching_info(vid0.shape,stride0,stride1,ps,dil)
-    nbatch,qindex = ntotal,0
+    vid0,vid1,fflow,bflow = init_data(cfg)
+    esearch = dnls.search.non_local_search.init(cfg)
+    search = dnls.search.init(cfg)
 
-    # -- entire search --
-    with rec(name,True):
-        qinds = dnls.utils.inds.get_query_batch(qindex,nbatch,stride0,
-                                                t,h,w,device)
-        dists,inds = search(vid0,qinds,vid1)
+    # -- exact search --
+    dists_e,inds_e = esearch(vid0,vid1,fflow,bflow)
+    search = search_wrap(cfg.search_name,search)
 
-    # -- only search --
-    with rec(name + "_only_search",True):
-        dists,inds = search(vid0,qinds,vid1)
-
-def run_l2_search_with_index(rec,fflow,bflow,
-                             k,ps,pt,ws,wt,dil,
-                             stride0,stride1,
-                             t,c,h,w,device):
-    # -- misc --
-    name = "l2_search_with_index"
-
-    # -- init search params --
-    vid0 = th.rand((t,c,h,w),device=device)
-    vid1 = th.rand((t,c,h,w),device=device)
-    search = dnls.search.init("l2_with_index",fflow, bflow, k, ps, pt, ws, wt,
-                              dilation=dil, stride0=stride0, stride1=stride1)
-    ntotal,_,_,_ = get_batching_info(vid0.shape,stride0,stride1,ps,dil)
-    nbatch,qindex = ntotal,0
+    # -- burn-in --
+    dists,inds = search(vid0,vid1,fflow,bflow,inds_e)
+    th.cuda.synchronize()
+    th.cuda.empty_cache()
 
     # -- iqueries --
-    with rec(name,True):
-        dists,inds = search(vid0,qindex,ntotal,vid1)
+    with rec(cfg.search_name,True):
+        dists,inds = search(vid0,vid1,fflow,bflow,inds_e)
 
 def main():
 
@@ -62,23 +68,17 @@ def main():
     rec = RecordIt(gpu_rec,timer)
 
     # -- params --
-    fflow,bflow = None,None
-    k,ps,pt = 10,10,1
-    ws,wt = 15,5
-    dil,stride0,stride1 = 1,4,4
-    t,c,h,w = 1,3,512,512
-    device = "cuda:0"
-
-    # -- comparisons --
-    run_l2_search(rec,fflow,bflow,
-                  k,ps,pt,ws,wt,dil,
-                  stride0,stride1,
-                  t,c,h,w,device)
-    run_l2_search_with_index(rec,fflow,bflow,
-                             k,ps,pt,ws,wt,dil,
-                             stride0,stride1,
-                             t,c,h,w,device)
+    cfg = {"k":10,"ps":10,"pt":1,"ws":15,"wt":3,"wr":1,"kr":1,"scale":4,
+           "nheads":3,"dil":1,"stride0":4,"stride1":1,
+           "batchsize":1,"nframes":3,"nftrs_per_head":9,
+           "height":256,"width":256,"device":"cuda:0","dist_type":"prod"}
+    cfg = edict(cfg)
+    search_names = ["nls","refine","approx_t","approx_s","approx_st"]
+    for search_name in search_names:
+        cfg["search_name"] = search_name
+        run_search(rec,cfg)
     print(rec)
+
 
 if __name__ == "__main__":
     main()

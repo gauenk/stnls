@@ -6,6 +6,7 @@ from . import pytorch
 # from . import jax # jax after pytorch
 from . import utils
 from . import flow
+from . import dev
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -14,13 +15,14 @@ from . import flow
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 # -- submodules --
+from .pytorch import nn
 from .pytorch import search
 from .pytorch import reducers
 from .pytorch import tile
 from .pytorch import tile_k
 from .pytorch import simple
 from .pytorch import testing
-from .pytorch import nn
+from .dev import search as search_dev
 
 #
 # -- unpack functions into namespace --

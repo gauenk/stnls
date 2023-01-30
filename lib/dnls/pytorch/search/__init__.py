@@ -1,38 +1,32 @@
-from . import l2_dists
-from . import l2_search
-from . import l2_search_with_index
-from . import l2_search_with_heads
-from . import prod_search
-from . import prod_search_with_index
-from . import prod_pf_search_with_index
-from . import prod_search_with_heads
-from . import prod_dists
-from . import prod_refine
-from . import window_search
-from . import interpolate_inds
 
-def init(version,*args,**kwargs):
-    if version == "l2":
-        return l2_search.L2Search(*args,**kwargs)
-    elif version == "l2_dists":
-        return l2_dists.L2Dists(*args,**kwargs)
-    elif version == "window":
-        return window_search.WindowSearch(*args,**kwargs)
-    elif version == "l2_with_index":
-        return l2_search_with_index.L2Search_with_index(*args,**kwargs)
-    elif version == "l2_with_heads":
-        return l2_search_with_heads.L2Search_with_index(*args,**kwargs)
-    elif version == "prod":
-        return prod_search.ProductSearch(*args,**kwargs)
-    elif version == "prod_with_index":
-        return prod_search_with_index.ProductSearch_with_index(*args,**kwargs)
-    elif version == "prod_pf_with_index":
-        return prod_pf_search_with_index.ProductPfSearch_with_index(*args,**kwargs)
-    elif version == "prod_with_heads":
-        return prod_search_with_heads.ProdSearchWithHeads(*args,**kwargs)
-    elif version == "prod_dists":
-        return prod_dists.ProdDistsWithHeads(*args,**kwargs)
-    elif version == "prod_refine":
-        return prod_refine.ProdRefineWithHeads(*args,**kwargs)
-    else:
-        raise ValueError(f"Uknown version [{version}]")
+# -- packages --
+from . import non_local_search as non_local_search_f
+from . import refinement as refinement_f
+from . import approx_space as approx_space_f
+from . import approx_time as approx_time_f
+from . import approx_spacetime as approx_spacetime_f
+from . import window_search as window_search_f
+from . import nls_accumulated_flows as nls_accumulated_flows_f
+from .utils import empty_flow
+
+# -- api to programatically access search functions --
+from . import api # access uniformly
+from .api import init,extract_config
+
+# -- functional api --
+nls = non_local_search_f._apply
+refine = refinement_f._apply
+approx_time = approx_time_f._apply
+approx_space = approx_space_f._apply
+approx_spacetime = approx_spacetime_f._apply
+window = window_search_f._apply
+nls_af = nls_accumulated_flows_f._apply
+
+# -- class api --
+NonLocalSearch = non_local_search_f.NonLocalSearch
+RefineSearch = refinement_f.RefineSearch
+ApproxTimeSearch = approx_time_f.ApproxTimeSearch
+ApproxSpaceSearch = approx_space_f.ApproxSpaceSearch
+ApproxSpaceTimeSearch = approx_spacetime_f.ApproxSpaceTimeSearch
+WindowSearch = window_search_f.WindowSearch
+AccFlowsSearch = nls_accumulated_flows_f.AccFlowsSearch

@@ -11,7 +11,7 @@ import torch.nn.functional as nnf
 import dnls_cuda
 
 # -- local --
-from .search_utils import *
+# from .search_utils import *
 
 class WindowSearchFunction(th.autograd.Function):
 
@@ -358,3 +358,5 @@ class WindowSearch(th.nn.Module):
                                           self.remove_self,
                                           self.nbwd,self.rbwd,self.exact)
 
+# -- api --
+_apply = WindowSearchFunction.apply
