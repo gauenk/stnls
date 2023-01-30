@@ -84,3 +84,14 @@ def init_dist_val_menu(dist_type):
     menu = {"prod":-th.inf,"l2":th.inf}
     return menu[dist_type]
 
+#
+#
+# -- API Utils --
+#
+#
+
+def extract_pairs(pairs,_cfg):
+    for key,default in pairs.items():
+        if key in _cfg: continue
+        _cfg[key] = pairs[key]
+    return _cfg

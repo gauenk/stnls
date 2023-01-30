@@ -9,6 +9,10 @@ from . import window_search as window_search_f
 from . import nls_accumulated_flows as nls_accumulated_flows_f
 from .utils import empty_flow
 
+# -- api to programatically access search functions --
+from . import api # access uniformly
+from .api import init,extract_config
+
 # -- functional api --
 nls = non_local_search_f._apply
 refine = refinement_f._apply

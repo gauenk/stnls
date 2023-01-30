@@ -9,6 +9,9 @@ import dnls_cuda
 # -- package --
 import dnls
 
+# -- api --
+from .utils import extract_pairs
+
 # -- local --
 from .utils import dist_type_select,shape_vids,filter_k
 from .nls_bwd_impl import nls_backward
@@ -172,3 +175,32 @@ class ApproxSpaceSearch(th.nn.Module):
         return flops
 
 _apply = ApproxSpaceSearchFunction.apply # api
+
+#
+#
+# -- API to programmtically switch search methods --
+#
+#
+
+def extract_config(cfg):
+    pairs = {"nheads":1,"dist_type":"prod",
+             "stride0":4, "stride1":1, "dilation":1, "pt":1,
+             "reflect_bounds":True, "full_ws":False,
+             "anchor_self":False, "remove_self":False,
+             "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
+             "rbwd":True, "nbwd":1, "exact":False}
+    return extract_pairs(pairs,cfg)
+
+def init(cfg):
+    search = ApproxSpaceSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k,
+                               cfg.wr, cfg.kr, cfg.scale,
+                          nheads=cfg.nheads, dist_type=cfg.dist_type,
+                          stride0=cfg.stride0, stride1=cfg.stride1,
+                          dilation=cfg.dilation, pt=cfg.pt,
+                          reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
+                          anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
+                          use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
+                          off_H1=cfg.off_H1,off_W1=cfg.off_W1,
+                          rbwd=cfg.rbwd, nbwd=cfg.nbwd, exact=cfg.exact)
+    return search
+

@@ -9,6 +9,9 @@ import dnls_cuda
 # -- package --
 import dnls
 
+# -- api --
+from .utils import extract_pairs
+
 # -- local --
 from .utils import dist_type_select,shape_vids,filter_k
 from .shared import manage_self
@@ -20,7 +23,7 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
-                ws, wt, ps, k, scale, wr, kr, nheads=1, qshift=0, Q=-1,
+                ws, wt, ps, k, wr, kr, scale, nheads=1, qshift=0, Q=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
@@ -33,9 +36,8 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-        vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         dists,inds = approx_space_apply(vid0,vid1,fflow,bflow,
-                                        ws,0,ps,k,scale,nheads,qshift,Q,
+                                        ws,0,ps,k,1,k,scale,nheads,qshift,Q,
                                         dist_type,stride0,stride1,
                                         dilation,pt,reflect_bounds,full_ws,
                                         anchor_self,remove_self,use_adj,
@@ -116,7 +118,7 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
 class ApproxSpaceTimeSearch(th.nn.Module):
 
 
-    def __init__(self, ws, wt, ps, k, scale, nheads=1,
+    def __init__(self, ws, wt, ps, k, wr, kr, scale, nheads=1,
                  dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
                  reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
@@ -129,6 +131,8 @@ class ApproxSpaceTimeSearch(th.nn.Module):
         self.wt = wt
         self.ps = ps
         self.k = k
+        self.wr = wr
+        self.kr = kr
         self.scale = scale
         self.nheads = nheads
         self.dist_type = dist_type
@@ -161,7 +165,7 @@ class ApproxSpaceTimeSearch(th.nn.Module):
         fxn = ApproxSpaceTimeSearchFunction.apply
         return fxn(vid0,vid1,fflow,bflow,
                    self.ws,self.wt,self.ps,self.k,
-                   self.scale,self.wr,self.kr,
+                   self.wr,self.kr,self.scale,
                    self.nheads,qshift,nqueries,
                    self.dist_type,self.stride0,self.stride1,
                    self.dilation,self.pt,
@@ -193,3 +197,25 @@ class ApproxSpaceTimeSearch(th.nn.Module):
 
 
 _apply = ApproxSpaceTimeSearchFunction.apply # api
+
+def extract_config(cfg):
+    pairs = {"nheads":1,"dist_type":"prod",
+             "stride0":4, "stride1":1, "dilation":1, "pt":1,
+             "reflect_bounds":True, "full_ws":False,
+             "anchor_self":False, "remove_self":False,
+             "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
+             "rbwd":True, "nbwd":1, "exact":False}
+    return extract_pairs(pairs,cfg)
+
+def init(cfg):
+    search = ApproxSpaceTimeSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k,
+                                   cfg.wr, cfg.kr, cfg.scale,
+                          nheads=cfg.nheads, dist_type=cfg.dist_type,
+                          stride0=cfg.stride0, stride1=cfg.stride1,
+                          dilation=cfg.dilation, pt=cfg.pt,
+                          reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
+                          anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
+                          use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
+                          off_H1=cfg.off_H1,off_W1=cfg.off_W1,
+                          rbwd=cfg.rbwd, nbwd=cfg.nbwd, exact=cfg.exact)
+    return search
