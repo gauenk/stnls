@@ -199,18 +199,19 @@ class ApproxSpaceTimeSearch(th.nn.Module):
 _apply = ApproxSpaceTimeSearchFunction.apply # api
 
 def extract_config(cfg):
-    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr":1,"kr":-1,"scale":2,
+    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,
+             "wr_st":1,"kr_st":-1,"scale_st":2,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":False,
-             "anchor_self":False, "remove_self":False,
+             "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "rbwd":True, "nbwd":1, "exact":False}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
     search = ApproxSpaceTimeSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k,
-                                   cfg.wr, cfg.kr, cfg.scale,
+                                   cfg.wr_st, cfg.kr_st, cfg.scale_st,
                           nheads=cfg.nheads, dist_type=cfg.dist_type,
                           stride0=cfg.stride0, stride1=cfg.stride1,
                           dilation=cfg.dilation, pt=cfg.pt,

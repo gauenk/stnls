@@ -21,6 +21,12 @@ def run(inds,wt,fflow,bflow):
     inds_t = th.ones((B,HD,Q,K,nT,3),device=inds.device,dtype=inds.dtype)
     inds_t[...] = -1
 
+    # -- viz --
+    # print("inds.shape: ",inds.shape)
+    # print("fflow.shape: ",fflow.shape)
+    # print("bflow.shape: ",bflow.shape)
+    # print("inds_t.shape: ",inds_t.shape)
+
     # -- run --
     dnls_cuda.temporal_inds(inds,fflow,bflow,inds_t)
     th.cuda.synchronize()

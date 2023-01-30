@@ -6,6 +6,7 @@ import torch.nn.functional as nnf
 
 # -- our package --
 import dnls_cuda
+import dnls
 
 # -- local --
 # from .anchor_self import run as anchor_self
@@ -19,7 +20,7 @@ def init(K,dim=1,anchor=False,descending=True,unqiue=False):
         return run(dists,inds,K,dim)
     return wrap
 
-def run(dists,inds,k,dim=1,anchor=False,descending=True,unique=False):
+def run(dists,inds,k,dim=1,anchor=False,descending=True,unique=False,qinds=None):
     """
 
     Wrap the topk menu so the input to top-k is always square
@@ -32,56 +33,78 @@ def run(dists,inds,k,dim=1,anchor=False,descending=True,unique=False):
     dists,inds,dshape,ishape = dimN_dim2(dists,inds,dim)
 
     # -- run top-k --
-    dists,inds = topk_menu(dists,inds,k,anchor,descending,unique)
+    dists,inds = topk_menu(dists,inds,k,anchor,descending,unique,qinds)
 
     # -- return squares --
     k = inds.shape[1]
     dists,inds = dim2_dimN(dists,inds,dshape,ishape,dim,k)
     return dists,inds
 
-def topk_menu(dists,inds,k,anchor=False,descending=True,unique=False):
+def topk_menu(dists,inds,k,anchor=False,descending=True,unique=False,qinds=None):
     """
 
     Select which topk to run
 
     """
     if anchor:
-        return anchored_topk(dists,inds,k,descending,unique)
+        return anchored_topk(dists,inds,k,descending,unique,qinds)
     elif unique:
         return unique_topk(dists,inds,k,descending)
     else:
         return standard_topk(dists,inds,k,descending)
 
-def anchored_topk(dists,inds,k,descending,unique):
+def anchored_topk(dists,inds,k,descending,unique,qinds):
 
     # -- unpack first --
     dists0 = dists[:,[0]]
     inds0 = inds[:,[0]]
 
-    # -- unpack dists --
+    # -- sort non-anchor --
     _dists = dists[:,1:]
     _inds = inds[:,1:]
-
-    # -- find top-(k-1) --
-    dists_k,inds_k = topk_menu(_dists,_inds,k-1,anchor=False,
-                               descending=descending,unique=unique)
+    k_s = _dists.shape[1] if unique else k-1
+    _dists,_inds = standard_topk(_dists,_inds,k_s,descending)
 
     # -- combine with anchor --
-    dists = th.cat([dists0,dists_k],1)
-    inds = th.cat([inds0,inds_k],1)
+    dists = th.cat([dists0,_dists],1)
+    inds = th.cat([inds0,_inds],1)
+
+    # -- check -1 --
+    # dists_tmp = dists.clone()
+    # inds_tmp = inds.clone()
+    # assert not(th.any(inds[:,:k]==-1).item()),"[%s] No -1 indices" % __file__
+
+    # -- run --
+    if unique:
+        dists,inds = unique_select(dists,inds,k,descending)
+
+    # -- check dups -
+    # dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+    # args = th.where(dups == True)
+    # if len(args[0]) > 0:
+    #     print(inds.shape,dups.shape)
+    #     print(inds[args[0][0]])
+    #     print(dists[args[0][0]])
+    #     print(dups[args[0][0]])
+    #     print(inds_tmp[args[0][0]])
+    #     print(dists_tmp[args[0][0]])
+    # assert not(any_dup)
+
+    # -- info --
+    # args = th.where(inds==-1)
+    # if len(args[0]) > 0:
+    #     print(qinds[args[0][0]])
+    #     print(inds_tmp[args[0][0]])
+    #     print(inds[args[0][0]])
+
+    # -- check -1 --
+    # assert not(th.any(inds==-1).item()),"[%s] No -1 indices" % __file__
 
     return dists,inds
 
 
-def unique_topk(dists,inds,K,descending=False,unique=True):
+def unique_topk(dists,inds,K,descending=False):
 
-    # -- allocate --
-    device = dists.device
-    Q,S = dists.shape
-    dists_topk = th.ones((Q,K),device=device,dtype=dists.dtype)
-    dists_topk[...] = th.inf
-    inds_topk = th.ones((Q,K,3),device=device,dtype=inds.dtype)
-    inds_topk[...] = -1
 
     # -- sort by dists --
     args = th.argsort(dists,dim=1,descending=descending)
@@ -90,11 +113,30 @@ def unique_topk(dists,inds,K,descending=False,unique=True):
         inds[...,i] = th.gather(inds[...,i],1,args)
 
     # -- run --
-    if unique:
-        inds = inds.contiguous()
-        dnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)
+    dists_topk,inds_topk = unique_select(dists,inds,K,descending)
 
     # -- return --
+    return dists_topk,inds_topk
+
+def unique_select(dists,inds,K,descending):
+    inds = inds.contiguous()
+    dists_topk,inds_topk = allocate_topk(dists,inds,K,descending)
+    dnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)
+    return dists_topk,inds_topk
+
+def allocate_topk(dists,inds,K,descending):
+
+    # -- unpack --
+    Q,S = dists.shape
+    device = dists.device
+    dtype = dists.dtype
+    itype = inds.dtype
+
+    # -- allocate --
+    dists_topk = th.zeros((Q,K),device=device,dtype=dtype)
+    dists_topk[...] = -th.inf if descending else th.inf
+    inds_topk = th.zeros((Q,K,3),device=device,dtype=itype)
+    inds_topk[...] = -1
     return dists_topk,inds_topk
 
 def standard_topk(dists,inds,K,descending):

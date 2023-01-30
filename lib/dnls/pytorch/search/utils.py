@@ -26,10 +26,12 @@ def allocate_vid(vid_shape,device):
 #
 #
 
-def filter_k(inds,kr):
-    K = inds.shape[-2]
+def filter_k(inds,kr,k=None):
+    K = inds.shape[-2] if k is None else k
     if kr <= 0: return inds
-    if 0 < kr and kr < 1: Ks = int(K*kr)
+    if isinstance(kr,float):
+        assert (0 < kr and kr <= 1)
+        Ks = int(K*kr)
     else: Ks = int(kr)
     return inds[...,:Ks,:].contiguous()
 

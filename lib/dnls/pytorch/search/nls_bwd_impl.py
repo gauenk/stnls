@@ -18,6 +18,7 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
 
     # -- populate names --
     inds,vid0,vid1 = ctx.saved_tensors
+    assert not(th.any(inds==-1).item()),"No -1 indices"
 
     # -- allocate grads --
     grad_vid0 = allocate_vid(ctx.vid_shape,grad_dists.device)

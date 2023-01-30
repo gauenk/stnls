@@ -45,8 +45,15 @@ class RefineSearchFunction(th.autograd.Function):
         B,HD,T,F,H,W = vid0.shape
         assert qinds.shape[1] == HD
 
+        # -- check qinds --
+        # args = th.where(qinds == -1)
+        # if len(args[0]) > 0:
+        #     print("refinment.")
+        #     print(qinds[0,0,args[0][2]])
+
         # -- filter only to kr --
         qinds = filter_k(qinds,kr)
+        qinds = qinds.contiguous()
 
         # -- derived shapes --
         Q = qinds.shape[2]
@@ -69,23 +76,64 @@ class RefineSearchFunction(th.autograd.Function):
         dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
         # -- run --
+        # print("pre refine.")
+        # th.cuda.synchronize()
         dnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
                                      ws_h, ws_w, ps, k, dist_type_i,
                                      stride0, stride1, dilation, pt, qshift,
                                      reflect_bounds, full_ws, use_adj,
                                      off_H0, off_W0, off_H1, off_W1)
+        # print("post refine.")
+        # th.cuda.synchronize()
+        # print("post sync.")
 
         # -- compress search region --
         dists=dists.view(B,HD,Q,-1)
         inds=inds.view(B,HD,Q,-1,3)
 
+
+        # -- viz --
+        # print("[a] pre-manage self")
+        # th.cuda.synchronize()
+        # print("[b] pre-manage self")
+
         # -- manage self dists --
         dists,inds = manage_self(dists,inds,anchor_self,
                                  remove_self,qshift,stride0,H,W)
 
+        # -- viz --
+        # print("[a] post-manage self")
+        # th.cuda.synchronize()
+        # print("[b] post-manage self")
+        # inds_tmp = inds.clone()
+        # dists_tmp = dists.clone()
+        # print("[a] pre-topk")
+        # th.cuda.synchronize()
+        # print("[b] pre-topk")
+
         # -- topk --
+        qinds = rearrange(qinds,'b hd q k tr -> (b hd q) k tr')
         dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                  descending=descending,unique=True)
+                                  descending=descending,unique=True,qinds=qinds)
+
+        # -- viz --
+        # print("[a] post-topk")
+        # th.cuda.synchronize()
+        # print("[b] post-topk")
+
+        # -- check --
+        # assert not(th.any(inds==-1).item()),"[%s] No -1 indices" % __file__
+
+        # -- viz --
+        # args = th.where(inds == -1)
+        # if len(args[0]) > 0:
+        #     print(" refine. ")
+        #     print(qinds[0,0,args[2][0]])
+        #     print(inds[0,0,args[2][0]])
+        #     print(inds_tmp[0,0,args[2][0]])
+        #     print(dists[0,0,args[2][0]])
+        #     print(dists_tmp[0,0,args[2][0]])
+        #     print("."*60)
 
         # -- setup ctx --
         ctx.save_for_backward(inds,vid0,vid1)
@@ -104,6 +152,7 @@ class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
+        # print("refinement: ",grad_dists.shape,grad_inds_is_none)
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
