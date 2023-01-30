@@ -14,7 +14,7 @@ __global__ void temporal_inds_kernel(
     int locs_per_thread){
 
   // -- unpack --
-  int bi = blockIdx.y;
+  int ibatch = blockIdx.y;
   int ihead = blockIdx.z;
   int raster_index = locs_per_thread*(threadIdx.x + blockDim.x * blockIdx.x);
   int T = fflow.size(1);
@@ -24,7 +24,7 @@ __global__ void temporal_inds_kernel(
   int Q = inds_t.size(2);
   int K = inds_t.size(3);
   int nT = inds_t.size(4); // always even since = wt*2
-  int nT_half = (nT-1)/2+1; // *should* always be == nT/2
+  int wt = (nT-1)/2+1; // *should* always be == nT/2
   int hj = 0;
   int wj = 0;
   int QK = Q*K;
@@ -35,14 +35,21 @@ __global__ void temporal_inds_kernel(
 
     // -- get location --
     int ni = raster_index + loc;
-    int qi = ni / K;
+    int qi = (ni / K);
+    if (qi >= Q){continue;}
     int ki = (ni - qi*K) % K;
-    int ti = inds[bi][ihead][qi][ki][0];
-    int hi = inds[bi][ihead][qi][ki][1];
-    int wi = inds[bi][ihead][qi][ki][2];
-    int t_shift = min(0,ti - nT_half) + max(0,ti + nT_half - (T-1));
-    int t_left = max(ti - nT_half - t_shift,0);
-    int t_right = min(T-1,ti + nT_half - t_shift);
+    int ti = inds[ibatch][ihead][qi][ki][0];
+    int hi = inds[ibatch][ihead][qi][ki][1];
+    int wi = inds[ibatch][ihead][qi][ki][2];
+    assert((ti >= 0) && (ti < T));
+    int t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1));
+    int t_left = max(ti - wt - t_shift,0);
+    int t_right = min(T-1,ti + wt - t_shift);
+
+    // -- skip invalid --
+    if (ti < 0){ continue; }
+    if (hi < 0){ continue; }
+    if (wi < 0){ continue; }
 
     // -- run left --
     int ta = 0;
@@ -55,15 +62,15 @@ __global__ void temporal_inds_kernel(
       // -- accumulate --
       hj_tmp = hj;
       wj_tmp = wj;
-      hj = int(1.*hj + flow[bi][t_prev][1][hj_tmp][wj_tmp] + 0.5);
-      wj = int(1.*wj + flow[bi][t_prev][0][hj_tmp][wj_tmp] + 0.5);
+      // hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
+      // wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
       hj = max(0,min(H-1,hj));
       wj = max(0,min(W-1,wj));
 
       // -- fill the pre-computed offsets --
-      inds_t[bi][ihead][qi][ki][ta][0] = tj;
-      inds_t[bi][ihead][qi][ki][ta][1] = hj;
-      inds_t[bi][ihead][qi][ki][ta][2] = wj;
+      inds_t[ibatch][ihead][qi][ki][ta][0] = tj;
+      inds_t[ibatch][ihead][qi][ki][ta][1] = hj;
+      inds_t[ibatch][ihead][qi][ki][ta][2] = wj;
 
       // -- update previous flow --
       t_prev = tj;
@@ -82,15 +89,15 @@ __global__ void temporal_inds_kernel(
       // -- accumulate --
       hj_tmp = hj;
       wj_tmp = wj;
-      hj = int(1.*hj + flow[bi][t_prev][1][hj_tmp][wj_tmp] + 0.5);
-      wj = int(1.*wj + flow[bi][t_prev][0][hj_tmp][wj_tmp] + 0.5);
+      // hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
+      // wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
       hj = max(0,min(H-1,hj));
       wj = max(0,min(W-1,wj));
 
       // -- fill the pre-computed offsets --
-      inds_t[bi][ihead][qi][ki][ta][0] = tj;
-      inds_t[bi][ihead][qi][ki][ta][1] = hj;
-      inds_t[bi][ihead][qi][ki][ta][2] = wj;
+      inds_t[ibatch][ihead][qi][ki][ta][0] = tj;
+      inds_t[ibatch][ihead][qi][ki][ta][1] = hj;
+      inds_t[ibatch][ihead][qi][ki][ta][2] = wj;
 
       // -- update previous flow --
       t_prev = tj;

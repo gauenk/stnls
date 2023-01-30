@@ -14,7 +14,7 @@ from .utils import extract_pairs
 
 # -- local --
 from .utils import dist_type_select,shape_vids,filter_k
-from .shared import manage_self
+# from .shared import manage_self
 from .nls_bwd_impl import nls_backward
 from .non_local_search import _apply as nls_apply
 from .refinement import _apply as refine_apply
@@ -35,25 +35,51 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         #       1.) Run Exact Search Without Time
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
+        # print("approx_t.")
+        gamble = 1 # you're gambling with possibly non-unique inds if "gamble > 1"
+        st = 2*wt
+        k_exact = k-gamble*st
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,0,ps,k,nheads,qshift,Q,
+                               ws,0,ps,k_exact,nheads,qshift,Q,
                                dist_type,stride0,stride1,
                                dilation,pt,reflect_bounds,full_ws,
                                anchor_self,remove_self,use_adj,
                                off_H0,off_W0,off_H1,off_W1,
                                rbwd,nbwd,exact)
+        # print("vid0.shape: ",vid0.shape)
+        # print("wt: ",wt)
+        # print("k_exact: ",k_exact)
+        # print("inds.shape: ",inds.shape)
+
+        # -- viz --
+        # args = th.where(inds==-1)
+        # if len(args[0]) > 0:
+        #     print("[exact]: approx time.")
+        #     print(inds[0,0,args[2][0]])
+        #     print(dists[0,0,args[2][0]])
+        #     print("*"*60)
+        #     exit(0)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
         #      2.) Compute Offset Indices using Optical Flows
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+        # print(vid0.shape,fflow.shape,bflow.shape,kr,inds.shape,k)
+        # for i in range(3):
+        #     print(i,inds[...,i].min(),inds[...,i].max())
 
+        # print("pre temp inds.")
+        # th.cuda.synchronize()
         if wt > 0:
-            inds_t = dnls.nn.temporal_inds(filter_k(inds,kr),wt,fflow,bflow)
+            inds_t = dnls.nn.temporal_inds(filter_k(inds,kr,k),wt,fflow,bflow)
+            # inds_t = dnls.nn.temporal_inds(inds,wt,fflow,bflow)
             inds_t = rearrange(inds_t,'B HD Q ST K tr -> B HD Q (ST K) tr')
+        # th.cuda.synchronize()
+        # print("post temp inds.")
+        # th.cuda.synchronize()
+        # print("ws,wr: ",ws,wr)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -62,6 +88,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
         if wt > 0:
+            # print("inds_t.shape: ",inds_t.shape)
             anchor_self_r = False
             remove_self_r = False
             _dists,_inds = refine_apply(vid0, vid1, inds_t,
@@ -76,7 +103,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
-        #      4.) Manage Self & Top-K
+        #      4.) Top-K
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -85,12 +112,33 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         dist_type_i,descending,dval = dist_type_select(dist_type)
 
         # -- manage self dists --
-        dists,inds = manage_self(dists,inds,anchor_self,
-                                 remove_self,qshift,stride0,H,W)
+        # no need to run since "_dist" ran "manage_self" and is still first.
 
         # -- topk --
         dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                  descending=descending,unique=False)
+                                  descending=descending,unique=True)
+
+        # -- check --
+        # dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+        # args = th.where(dups == True)
+        # print(inds.shape,dups.shape)
+        # print(inds[0,0,args[2][0]])
+        # print(dists[0,0,args[2][0]])
+        # print(dups[0,0,args[2][0]])
+        # print(inds_tmp[0,0,args[2][0]])
+        # print(dists_tmp[0,0,args[2][0]])
+        # assert not(any_dup)
+
+        # -- viz --
+        # args = th.where(inds==-1)
+        # if len(args[0]) > 0:
+        #     print("approx time.")
+        #     print(inds[0,0,args[2][0]])
+        #     # print(inds_tmp[0,0,args[2][0]])
+        #     print(dists[0,0,args[2][0]])
+        #     # print(dists_tmp[0,0,args[2][0]])
+        #     print("*"*60)
+        # assert not(th.any(inds==-1).item()),"[%s] No -1 indices" % __file__
 
         # -- setup ctx --
         ctx.save_for_backward(inds,vid0,vid1)
@@ -109,6 +157,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
+        # print("approx_time: ",grad_dists.shape,grad_inds_is_none)
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
@@ -203,17 +252,17 @@ _apply = ApproxTimeSearchFunction.apply # api
 #
 
 def extract_config(cfg):
-    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr":1,"kr":-1,
+    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr_t":1,"kr_t":-1,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":False,
-             "anchor_self":False, "remove_self":False,
+             "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "rbwd":True, "nbwd":1, "exact":False}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
-    search = ApproxTimeSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, cfg.wr, cfg.kr,
+    search = ApproxTimeSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, cfg.wr_t, cfg.kr_t,
                           nheads=cfg.nheads, dist_type=cfg.dist_type,
                           stride0=cfg.stride0, stride1=cfg.stride1,
                           dilation=cfg.dilation, pt=cfg.pt,

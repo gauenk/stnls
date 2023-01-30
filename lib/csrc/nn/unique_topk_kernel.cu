@@ -52,14 +52,23 @@ __global__ void unique_topk_forward_kernel(
     torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds_topk,
     int k, int qpt){
 
-  // shapes
+  // -- shaping vars --
   int qi_cuda = threadIdx.x + blockDim.x * blockIdx.x;
   int Q = dists.size(0);
   int k_in = dists.size(1);
-  int kj0 = 0;
+
+  // -- major index --
   int kj = 0;
   int qi = 0;
-  float dist = 0;
+
+  // -- checking vars --
+  int kj0 = 0;
+  int diff;
+  int kl;
+  scalar_t dist_curr,dist_prev;
+  bool any_same,reset_check;
+  int check_start;
+  dist_prev = (scalar_t)__int_as_float(0x7f800000);
 
   // -- iterate over blocks --
   for(int qi_ix = 0; qi_ix < qpt; qi_ix++){
@@ -70,6 +79,7 @@ __global__ void unique_topk_forward_kernel(
 
     // -- init --
     kj0 = 0;
+    check_start = 0;
 
     // -- find value for each "k" location --
     for (int ki = 0; ki < k; ki++){
@@ -80,25 +90,40 @@ __global__ void unique_topk_forward_kernel(
       }
 
       // -- assign --
-      dists_topk[qi][ki] = dists[qi][kj0];
+      dist_curr = dists[qi][kj0];
+      dists_topk[qi][ki] = dist_curr;
       inds_topk[qi][ki][0] = inds[qi][kj0][0];
       inds_topk[qi][ki][1] = inds[qi][kj0][1];
       inds_topk[qi][ki][2] = inds[qi][kj0][2];
 
+      // -- update "same dist" history --
+      reset_check = fabs((float)(dist_curr - dist_prev))>1e-5;
+      check_start = reset_check ? kj0 : check_start;
+      dist_prev = dist_curr;
+
       // -- find next kj --
       for (kj = kj0+1; kj < k_in; kj++){
 
-        dist = 0;
-        #pragma unroll
-        for (int ix = 0; ix < 3; ix++){
-          dist += inds[qi][kj0][ix] != inds[qi][kj][ix];
-        }
-        if (dist > 1e-10){
-          break;
+        // -- Keep moving "kj" forward until we find one that is different
+        // -- than all previous "kj" indices with the same "dist" value.
+        any_same = false;
+        for (kl = check_start; kl <= kj0; kl++){
+
+          diff = 0;
+          #pragma unroll
+          for (int ix = 0; ix < 3; ix++){
+            diff += inds[qi][kj][ix] != inds[qi][kl][ix];
+          }
+          any_same = (diff == 0) || any_same;
         }
 
+        // -- stop incrementing at unique kj --
+        if (not any_same){
+          break;
+        }          
+
       }
-      kj0 = kj;
+      kj0 = kj; // update selected neighbor
 
     }
   }
