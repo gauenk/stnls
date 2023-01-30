@@ -20,7 +20,8 @@ from pathlib import Path
 from easydict import EasyDict as edict
 
 def search_menu(name):
-    menu = edict({"nls":"non_local_search","refine":"refinement",
+    menu = edict({"exact":"non_local_search","nls":"non_local_search",
+                  "refine":"refinement",
                   "approx_t":"approx_time","approx_s":"approx_space",
                   "approx_st":"approx_spacetime"})
     if name in menu:

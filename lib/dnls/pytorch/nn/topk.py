@@ -78,8 +78,10 @@ def unique_topk(dists,inds,K,descending=False,unique=True):
     # -- allocate --
     device = dists.device
     Q,S = dists.shape
-    dists_topk = th.inf*th.ones((Q,K),device=device,dtype=dists.dtype)
-    inds_topk = -th.ones((Q,K,3),device=device,dtype=inds.dtype)
+    dists_topk = th.ones((Q,K),device=device,dtype=dists.dtype)
+    dists_topk[...] = th.inf
+    inds_topk = th.ones((Q,K,3),device=device,dtype=inds.dtype)
+    inds_topk[...] = -1
 
     # -- sort by dists --
     args = th.argsort(dists,dim=1,descending=descending)

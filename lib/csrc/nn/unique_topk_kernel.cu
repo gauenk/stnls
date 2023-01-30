@@ -74,8 +74,8 @@ __global__ void unique_topk_forward_kernel(
     // -- find value for each "k" location --
     for (int ki = 0; ki < k; ki++){
 
-      // -- terminate (& fail) if kj too beyond limits --
-      if (kj == (k_in-1)){
+      // -- terminate (& fail) if kj,ki too beyond limits --
+      if (kj0 >= k_in){
         break;
       }
 
@@ -89,8 +89,9 @@ __global__ void unique_topk_forward_kernel(
       for (kj = kj0+1; kj < k_in; kj++){
 
         dist = 0;
+        #pragma unroll
         for (int ix = 0; ix < 3; ix++){
-          dist += fabsf(inds[qi][kj0][ix] - inds[qi][kj][ix]);
+          dist += inds[qi][kj0][ix] != inds[qi][kj][ix];
         }
         if (dist > 1e-10){
           break;

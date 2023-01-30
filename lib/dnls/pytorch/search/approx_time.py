@@ -203,7 +203,8 @@ _apply = ApproxTimeSearchFunction.apply # api
 #
 
 def extract_config(cfg):
-    pairs = {"nheads":1,"dist_type":"prod",
+    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr":1,"kr":-1,
+             "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":False,
              "anchor_self":False, "remove_self":False,
