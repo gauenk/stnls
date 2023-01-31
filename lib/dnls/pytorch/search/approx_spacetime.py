@@ -37,7 +37,8 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-        print(ps,k,wr_t,kr_t,wr_s,kr_s,scale)
+        # -- exact search --
+        # print(ps,k,wr_t,kr_t,wr_s,kr_s,scale)
         gamble = 1 # gamling if > 1
         st = 2*wt
         k_space = k-gamble*st
@@ -89,11 +90,6 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
         # -- unpack --
         H,W = vid0.shape[-2:]
         dist_type_i,descending,dval = dist_type_select(dist_type)
-
-        # -- manage self dists --
-        # no need to run since "_dist" ran "manage_self" and is still first.
-        # dists,inds = manage_self(dists,inds,anchor_self,
-        #                          remove_self,qshift,stride0,H,W)
 
         # -- topk --
         dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
