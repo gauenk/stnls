@@ -2,6 +2,7 @@
 
 import torch as th
 from einops import rearrange
+from easydict import EasyDict as edict
 
 #
 #
@@ -93,7 +94,10 @@ def init_dist_val_menu(dist_type):
 #
 
 def extract_pairs(pairs,_cfg):
+    cfg = edict()
     for key,default in pairs.items():
-        if key in _cfg: continue
-        _cfg[key] = pairs[key]
-    return _cfg
+        if key in _cfg:
+            cfg[key] = _cfg[key]
+        else:
+            cfg[key] = pairs[key]
+    return cfg

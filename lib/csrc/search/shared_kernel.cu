@@ -7,23 +7,12 @@ using namespace at;
 
 #define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)\
   
-
-// #define WS_LOOP(ws_h_per_thread, ws_w_per_thread, ws_h, ws_w,\
-//                 thread_H,blockdim_H, thread_W, blockdim_W)\
-//   for(int _wh = 0; _wh < ws_h_per_thread; _wh++)\
-//       wh = thread_H + blockdim_H*_wh;\
-//       if (wh >= ws_h){ continue; }\
-//       for(int _ww = 0; _ww < ww_h_per_thread; _ww++){\
-//          wh = thread_W + blockdim_W*_ww;\
-//          if (ww >= ws_w){ continue; }\
-
-
 __device__ __forceinline__ int bounds(int val, int lim ){
   int vval = val;
   if (val < 0){
     vval = -val;
   }else if (val >= lim){
-    vval = 2*(lim-1) - val;
+    vval = 2*lim-1-val;
   }
   return vval;
 }

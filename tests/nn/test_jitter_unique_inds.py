@@ -48,7 +48,7 @@ def pytest_generate_tests(metafunc):
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def test(ps,stride,dilation,exact):
+def test_fwd(ps,stride,dilation,exact):
     """
 
     Test the CUDA code with torch code
@@ -57,11 +57,77 @@ def test(ps,stride,dilation,exact):
 
     """
 
-
+    #
     # -- get args --
-    fflow = th.randn((1,3,2,128,128)).to("cuda:0")
-    bflow = th.randn((1,3,2,128,128)).to("cuda:0")
-    flow_acc = dnls.nn.init("ofa")
-    pfflow,pbflow = flow_acc(fflow,bflow)
-    print(pfflow.shape)
-    print(pbflow.shape)
+    #
+
+    # -- data params --
+    B = 1
+    T = 5
+    F = 3
+    H = 256
+    W = 256
+
+    # -- interp params --
+    stride0 = 4
+    scale = 2
+
+    # -- search args --
+    ws = 21
+    wt = 3
+    ps = 7
+    K = 10
+
+    # -- init data --
+    vid0 = th.randn((B,T,F,H,W)).to("cuda:0")
+    vid1 = th.randn((B,T,F,H,W)).to("cuda:0")
+    fflow = th.randn((B,T,2,H,W)).to("cuda:0")
+    bflow = th.randn((B,T,2,H,W)).to("cuda:0")
+
+    # -- run search --
+    dists,inds = dnls.search.nls(vid0,vid1,fflow,bflow,
+                                 ws,wt,ps,K,stride0=stride0)
+    inds_search = inds.clone()
+
+    # -- upsampling --
+    inds = dnls.nn.interpolate_inds(inds,scale,stride0,T,H,W)
+    inds_interp = inds.clone()
+
+    # -- ensure dups --
+    dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+    print(th.sum(dups))
+    assert any_dup, "Want duplicates for test."
+
+    # -- jittering --
+    inds = dnls.nn.jitter_unique_inds(inds,3,K,H,W)
+
+    # -- check delta --
+    args = th.where(th.abs(inds_interp - inds)>0)
+    if len(args[0]) > 0:
+        print(inds_interp[0,0,args[2][0]])
+        print(inds[0,0,args[2][0]])
+
+    # -- ensure no dups --
+    dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+    print(th.sum(dups))
+
+    # -- info --
+    args = th.where(dups == True)
+    if len(args[0]) > 0:
+        scale2 = scale*scale
+        loc = args[2][0]
+        print(loc)
+        print(inds.shape,dups.shape)
+        # print(inds_tmp[0,0,args[2][0]//scale-1])
+        print(inds_search[0,0,args[2][0]//scale])
+        print(inds_interp[0,0,args[2][0]])
+        # print(inds_tmp[0,0,args[2][0]//scale])
+        print(inds[0,0,args[2][0]])
+        print(inds[0,0,args[2][0]] - inds_interp[0,0,args[2][0]])
+        # print(dists[0,0,args[2][0]])
+        # print(dups[0,0,args[2][0]])
+        # print(inds_tmp[0,0,args[2][0]])
+        # print(dists_tmp[0,0,args[2][0]])
+
+    # -- test --
+    assert not(any_dup),"No dups!"

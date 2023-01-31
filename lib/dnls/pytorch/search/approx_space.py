@@ -39,13 +39,17 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         stride0_c = scale*stride0
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         anchor_self_e = True
+        k_exact = k
+        print("k_exact.: ",k)
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,wt,ps,-1,nheads,qshift,Q,
+                               ws,wt,ps,k_exact,nheads,qshift,Q,
                                dist_type,stride0_c,stride1,
                                dilation,pt,reflect_bounds,full_ws,
                                anchor_self_e,remove_self,use_adj,
                                off_H0,off_W0,off_H1,off_W1,
                                rbwd,nbwd,exact)
+        # -- check --
+        assert not(th.any(inds==-1).item())
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -53,8 +57,54 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+        # -- check --
+        dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+        args = th.where(dups == True)
+        if len(args[0]) > 0:
+            print(inds.shape,dups.shape)
+            print(inds[0,0,args[2][0]])
+            print(dists[0,0,args[2][0]])
+            print(dups[0,0,args[2][0]])
+            # print(inds_tmp[0,0,args[2][0]])
+            # print(dists_tmp[0,0,args[2][0]])
+            assert not(any_dup)
+            assert not(th.any(inds==-1).item())
+
+        for i in range(3):
+            print(i,inds[...,i].min().item(),inds[...,i].max().item())
+
         T,_,H,W = vid0.shape[-4:]
-        inds = dnls.nn.interpolate_inds(filter_k(inds,kr),scale,stride0,T,H,W)
+        inds_tmp = inds.clone()
+        print("inds.shape: ",inds.shape)
+        inds = dnls.nn.interpolate_inds(filter_k(inds,kr,k),scale,stride0,T,H,W)
+        print("inds.shape: ",inds.shape)
+
+        # -- check --
+        assert not(th.any(inds==-1).item())
+
+        for i in range(3):
+            print(i,inds[...,i].min().item(),inds[...,i].max().item())
+
+        # -- check --
+        dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+        args = th.where(dups == True)
+        if len(args[0]) > 0:
+            scale2 = scale*scale
+            loc = args[2][0]
+            print(loc)
+            print(inds.shape,dups.shape)
+            print(inds_tmp[0,0,args[2][0]//scale-1])
+            print(inds[0,0,args[2][0]-1])
+            print(inds_tmp[0,0,args[2][0]//scale])
+            # print(inds[0,0,args[2][0]-1])
+            print(inds[0,0,args[2][0]])
+            # print(dists[0,0,args[2][0]])
+            print(dups[0,0,args[2][0]])
+            # print(inds_tmp[0,0,args[2][0]])
+            # print(dists_tmp[0,0,args[2][0]])
+            assert not(any_dup)
+            assert not(th.any(inds==-1).item())
+
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -183,7 +233,8 @@ _apply = ApproxSpaceSearchFunction.apply # api
 #
 
 def extract_config(cfg):
-    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr_s":1,"kr_s":-1,"scale_s":2,
+    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,
+             "wr_s":1,"kr_s":-1,"scale":2,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":False,
@@ -194,7 +245,7 @@ def extract_config(cfg):
 
 def init(cfg):
     search = ApproxSpaceSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k,
-                               cfg.wr_s, cfg.kr_s, cfg.scale_s,
+                               cfg.wr_s, cfg.kr_s, cfg.scale,
                           nheads=cfg.nheads, dist_type=cfg.dist_type,
                           stride0=cfg.stride0, stride1=cfg.stride1,
                           dilation=cfg.dilation, pt=cfg.pt,
