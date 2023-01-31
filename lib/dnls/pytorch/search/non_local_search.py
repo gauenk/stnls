@@ -179,17 +179,25 @@ class NonLocalSearch(th.nn.Module):
 
         return flops
 
-def _apply(vid0,vid1,fflow,bflow,ws,wt,ps,k,**kwargs):
-    cfg = extract_config(kwargs)
+def _apply(vid0, vid1, fflow, bflow,
+           ws, wt, ps, k, nheads=1, qshift=0, nqueries=-1,
+           dist_type="prod", stride0=4, stride1=1,
+           dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+           anchor_self=False, remove_self=False,
+           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=True, nbwd=1, exact=False):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
     fxn = NonLocalSearchFunction.apply
     return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
-               cfg.nheads,cfg.qshift,cfg.nqueries,
-               cfg.dist_type,cfg.stride0,cfg.stride1,
-               cfg.dilation,cfg.pt,cfg.reflect_bounds,
-               cfg.full_ws,cfg.anchor_self,cfg.remove_self,
-               cfg.use_adj,cfg.off_H0,cfg.off_W0,
-               cfg.off_H1,cfg.off_W1,
-               cfg.rbwd,cfg.nbwd,cfg.exact)
+               nheads,qshift,nqueries,
+               dist_type,stride0,stride1,
+               dilation,pt,reflect_bounds,
+               full_ws,anchor_self,remove_self,
+               use_adj,off_H0,off_W0,
+               off_H1,off_W1,
+               rbwd,nbwd,exact)
 
 # _apply = NonLocalSearchFunction.apply # api
 

@@ -28,9 +28,6 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    seed = 123
-    th.manual_seed(seed)
-    np.random.seed(seed)
     # test_lists = {"ps":[3],"stride":[1],"dilation":[1,2],
     #               "top":[3],"btm":[62],"left":[2],"right":[62]}
     # test_lists = {"ps":[4],"stride":[1,2],"dilation":[2],
@@ -39,16 +36,21 @@ def pytest_generate_tests(metafunc):
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
     # test_lists = {"ps":[3],"stride":[2],"dilation":[2],
     #               "top":[3],"btm":[57],"left":[7],"right":[57]}
+    # seed = [13,32,39,40]
+    # seed = [seed[0]]
+    seed = np.arange(200)+100
+    # seed = [217,243]
+    # seed = [217]
     test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
                   "ws":[-1,8],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
-                  "exact":[True],"seed":[123]}
+                  "exact":[True],"seed":seed}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def test_fwd(ps,stride,dilation,exact):
+def test_fwd(ps,stride,dilation,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -67,6 +69,10 @@ def test_fwd(ps,stride,dilation,exact):
     F = 3
     H = 256
     W = 256
+
+    # -- set seed --
+    set_seed(seed)
+    print(random.random())
 
     # -- interp params --
     stride0 = 4
@@ -95,23 +101,29 @@ def test_fwd(ps,stride,dilation,exact):
 
     # -- ensure dups --
     dups,any_dup = dnls.testing.find_duplicate_inds(inds)
-    print(th.sum(dups))
-    assert any_dup, "Want duplicates for test."
+    if not(any_dup):
+        print("No test: Want duplicates for test.")
+        return
 
     # -- jittering --
     inds = dnls.nn.jitter_unique_inds(inds,3,K,H,W)
+    print("a.")
 
     # -- check delta --
     args = th.where(th.abs(inds_interp - inds)>0)
+    print("show dups [pre]")
     if len(args[0]) > 0:
         print(inds_interp[0,0,args[2][0]])
         print(inds[0,0,args[2][0]])
 
+    print("a.")
     # -- ensure no dups --
     dups,any_dup = dnls.testing.find_duplicate_inds(inds)
     print(th.sum(dups))
+    print("a.")
 
     # -- info --
+    print("show dups.")
     args = th.where(dups == True)
     if len(args[0]) > 0:
         scale2 = scale*scale
@@ -128,6 +140,24 @@ def test_fwd(ps,stride,dilation,exact):
         # print(dups[0,0,args[2][0]])
         # print(inds_tmp[0,0,args[2][0]])
         # print(dists_tmp[0,0,args[2][0]])
+    print("a.")
+
+    print("-"*40)
+    loc = 16346
+    print("Show loc %d" % loc)
+    print(inds_interp[0,0,loc])
+    print(inds[0,0,loc])
+    print(inds[0,0,loc] - inds_interp[0,0,loc])
+    print("-"*40)
+
+    # -- info --
+    print("show -1.")
+    args = th.where(inds == -1)
+    if len(args[0]) > 0:
+        print(inds_interp[0,0,args[2][0]])
+        print(inds[0,0,args[2][0]])
 
     # -- test --
     assert not(any_dup),"No dups!"
+    assert not(th.any(inds==-1).item())
+

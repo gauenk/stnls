@@ -23,6 +23,9 @@ def run(inds,scale,stride,T,H,W,only_new=False):
 
     # -- interpolate (K) neighbors --
     inds_full = th.zeros((_B,nH1,nW1,K,3),device=inds.device,dtype=inds.dtype)
+    print("inds.shape: ",inds.shape)
+    print("inds_full.shape: ",inds_full.shape)
+    print("stride,scale*stride,H,W: ",stride,scale*stride,H,W)
     dnls_cuda.interpolate_inds(inds,inds_full,scale,stride,scale*stride,H,W)
 
     # -- extract only new inds --

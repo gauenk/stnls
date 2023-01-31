@@ -26,7 +26,7 @@ __global__ void interpolate_inds_forward_kernel(
   int K = inds_full.size(3);
   int nHW = nH*nW;
   int KnHW = K*nH*nW;
-  int raster_index = blockIdx.y * blockDim.x + threadIdx.x;
+  int raster_index = threadIdx.x + blockDim.x * blockIdx.x;
 
   // -- image indices for video --
   // int iH = nH*stride;
@@ -34,7 +34,7 @@ __global__ void interpolate_inds_forward_kernel(
   if (raster_index >= KnHW){ return; } // don't run invalid threads.
 
   // -- assign inds --
-  int bi = blockIdx.x;
+  int bi = blockIdx.y;
   int ki = raster_index / nHW;
   raster_index = (raster_index - ki*nHW);
   int hi = raster_index / nW;
@@ -91,7 +91,7 @@ void interpolate_inds_forward_cuda(
    // int nquery_blocks = (QHW-1)/nthreads+1;
    int KnHW_blocks = (KnHW-1) / nthreads + 1;
    // qpt = ((nqueries - 1) / nquery_blocks) + 1;
-   dim3 nblocks(B,KnHW_blocks);
+   dim3 nblocks(KnHW_blocks,B);
 
    // launch kernel
    interpolate_inds_forward_kernel<<<nblocks, nthreads>>>(

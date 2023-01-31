@@ -17,6 +17,9 @@ def run(inds,dim,K,H,W):
     # -- shape to 2dim --
     inds,ishape = dimN_dim2_inds(inds,dim)
 
+    # -- K shape --
+    K = K if K > 0 else inds.shape[3]
+
     # -- interpolate (K) neighbors --
     dnls_cuda.jitter_unique_inds(inds,K,H,W)
 

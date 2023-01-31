@@ -69,13 +69,13 @@ def main():
 
     # -- params --
     cfg = {"k":10,"ps":10,"pt":1,"ws":21,"wt":3,
-           "wr_t":1,"kr_t":-1,"wr_s":1,"kr_s":-1,"scale":2,
+           "wr_t":1,"kr_t":-1,"wr_s":1,"kr_s":-1,"scale":4,
            "nheads":3,"dil":1,"stride0":4,"stride1":1,
            "batchsize":1,"nframes":3,"nftrs_per_head":9,
-           "height":256,"width":256,"device":"cuda:0","dist_type":"prod"}
+           "height":512,"width":512,"device":"cuda:0","dist_type":"prod"}
     cfg = edict(cfg)
-    # search_names = ["nls","refine","approx_t","approx_s","approx_st"]
-    search_names = ["approx_s"]
+    search_names = ["nls","refine","approx_t","approx_s"]#,"approx_st"]
+    # search_names = ["nls","approx_s"]
     for search_name in search_names:
         cfg["search_name"] = search_name
         run_search(rec,cfg)
