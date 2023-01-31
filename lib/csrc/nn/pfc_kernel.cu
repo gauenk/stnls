@@ -4,6 +4,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <vector>
+#include "shared_nn_utils.cu"
+
 
 /****************************
 
@@ -17,16 +19,6 @@
   for (index_type i=_i_n_d_e_x; _i_n_d_e_x < (n); _i_n_d_e_x+=blockDim.x * gridDim.x, i=_i_n_d_e_x)
 
 #define CUDA_KERNEL_LOOP(i, n) CUDA_KERNEL_LOOP_TYPE(i, n, int)
-
-__inline__ __device__ int bounds(int val, int lb, int ub ){
-  int vval = val;
-  if (val < lb){
-    vval = 2*lb - val;
-  }else if (val >= ub){
-    vval = 2*(ub-1) - val;
-  }
-  return vval;
-}
 
 
 /**************************************
@@ -348,8 +340,8 @@ __global__ void patch_full_connected_forward_kernel(
             // -- check bounds (we need the patch for the pixel!) --
             valid = (_hi >= (top+ill_bnd)) && (_hi < (btm_bnd-ill_bnd));
             valid = valid && (_wi >= (left+ill_bnd)) && (_wi < (right_bnd-ill_bnd));
-            int hi = use_reflect ? bounds(_hi,top,btm) : _hi;
-            int wi = use_reflect ? bounds(_wi,left,right) : _wi;
+            int hi = use_reflect ? bounds2(_hi,top,btm) : _hi;
+            int wi = use_reflect ? bounds2(_wi,left,right) : _wi;
             // valid = (wi >= left) && (wi < right_bnd);
             // valid = valid && (hi >= top) && (hi < btm_bnd);
 
@@ -415,8 +407,8 @@ __global__ void patch_full_connected_forward_kernel(
                   // -- patch --
                   int hi_in = (hi) + dilation*(_pi - psOffset);// - psOffset - adj);
                   int wi_in = (wi) + dilation*(_pj - psOffset);// - psOffset - adj);
-                  hi_in = bounds(hi_in,top,btm);
-                  wi_in = bounds(wi_in,left,right);
+                  hi_in = bounds2(hi_in,top,btm);
+                  wi_in = bounds2(wi_in,left,right);
                   bool valid_in = (hi_in >= 0) && (hi_in < height);
                   valid_in = valid_in && (wi_in >= 0) && (wi_in < width);
                   // bool valid_in = true;

@@ -37,7 +37,7 @@ __global__ void refinement_forward_kernel(
   int K = qinds.size(3);
 
   // -- invalid constant --
-  float invalid = __int_as_float(0x7f800000);
+  scalar_t invalid = (scalar_t)__int_as_float(0x7f800000);
   if(DIST_TYPE == 0){ // prod
     invalid = -invalid;
   }
@@ -129,13 +129,6 @@ __global__ void refinement_forward_kernel(
 
           // -- check bounds of pixel location --
           check_bounds(valid_n,n_ti,n_hi,n_wi,T,H,W);
-          // valid_n = valid_n && check_interval(n_hi-hi,wrMin_h,wrMax_h);
-          // valid_n = valid_n && check_interval(n_wi-wi,wrMin_w,wrMax_w);
-          // check_search_bounds(abs(n_hi-hi),wrMin_h,wrMax_h);
-          // check_search_bounds(abs(n_hi-hi),wrMin_h,wrMax_h);
-          // set_search_minmax(
-          // valid_n = (abs(n_hi - hi)/stride1 <= ws_h2) && valid_n;
-          // valid_n = (abs(n_wi - wi)/stride1 <= ws_w2) && valid_n;
           valid = valid_n && valid_anchor;
 
           //  -- compute patch difference --
@@ -148,7 +141,8 @@ __global__ void refinement_forward_kernel(
                          vvalid_t,vvalid_h,vvalid_w, vvalid,
                          nvalid_t,nvalid_h,nvalid_w, nvalid,
                          H,W,T,pt,ps,dilation,adj,psHalf,
-                         reflect_bounds,off_H0,off_W0,off_H1,off_W1);
+			 reflect_bounds,off_H0,off_W0,off_H1,off_W1,
+			 invalid);
           }
 
 

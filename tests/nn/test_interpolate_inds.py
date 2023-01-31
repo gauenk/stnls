@@ -48,7 +48,7 @@ def set_seed(seed):
     random.seed(seed)
 
 
-def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
+def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -65,6 +65,7 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     set_seed(seed)
 
     # -- init vars --
+    anchor_self = True
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
@@ -73,7 +74,6 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     use_k = k > 0
     use_adj = False
     adj = 0
-    anchor_self = anchor_self
     use_self = anchor_self
 
     # -- load data --
@@ -106,21 +106,25 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     h1_off,w1_off = 0,0
 
     # -- exec fold fxns --
-    search_gt = dnls.search_dev.init("prod_with_heads",flows.fflow, flows.bflow,
-                                     k, ps, pt, ws, wt, nheads,
-                                     chnls=-1,dilation=dil,
-                                     stride0=stride0, stride1=stride1,
-                                     reflect_bounds=reflect_bounds,use_k=use_k,
-                                     h0_off=h0_off, w0_off=w0_off,
-                                     h1_off=h1_off, w1_off=w1_off,
-                                     search_abs=False,use_adj=use_adj,
-                                     anchor_self=anchor_self,use_self=use_self,
-                                     exact=exact)
+    search_gt = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
+                                 dilation=dil,stride0=stride0, stride1=stride1,
+                                 reflect_bounds=reflect_bounds,full_ws=False,
+                                 anchor_self=anchor_self,remove_self=False)
+    # search_gt = dnls.search_dev.init("prod_with_heads",flows.fflow, flows.bflow,
+    #                                  k, ps, pt, ws, wt, nheads,
+    #                                  chnls=-1,dilation=dil,
+    #                                  stride0=stride0, stride1=stride1,
+    #                                  reflect_bounds=reflect_bounds,use_k=use_k,
+    #                                  h0_off=h0_off, w0_off=w0_off,
+    #                                  h1_off=h1_off, w1_off=w1_off,
+    #                                  search_abs=False,use_adj=use_adj,
+    #                                  anchor_self=anchor_self,use_self=use_self,
+    #                                  exact=exact)
 
 
     # -- [gt] search --
-    dists_gt,inds_gt = search_gt(vid,vid)
-    inds_gt2 = rearrange(inds_gt,'b h (t hw) k tr -> b h t hw k tr',t=T)
+    # dists_gt,inds_gt = search_gt(vid,vid)
+    dists_gt,inds_gt = search_gt(vid,vid,flows.fflow,flows.bflow)
 
     #
     # -- [te] search --
@@ -130,23 +134,26 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     scale = 2
     stride0_s = scale * stride0
     search_gt.stride0 = stride0_s
-    nH,nW = (H-1)//stride0_s+1,(W-1)//stride0_s+1
-    ntotal = T * nH * nW
-    _,inds_te = search_gt(vid,vid)
+    # nH,nW = (H-1)//stride0_s+1,(W-1)//stride0_s+1
+    # ntotal = T * nH * nW
+    # _,inds_te = search_gt(vid,vid)
+    _,inds_te = search_gt(vid,vid,flows.fflow,flows.bflow)
 
     # -- upsample --
     inds_te = dnls.nn.interpolate_inds(inds_te,scale,stride0,T,H,W)
 
     # -- reshape --
-    inds_gt = rearrange(inds_gt,'b h (t hw) k tr -> b h t hw k tr',t=T)
-    inds_te = rearrange(inds_te,'b h (t hw) k tr -> b h t hw k tr',t=T)
+    inds_gt = rearrange(inds_gt,'b hd (t h w) k tr -> b hd t h w k tr',t=T,h=nH)
+    inds_te = rearrange(inds_te,'b hd (t h w) k tr -> b hd t h w k tr',t=T,h=nH)
 
     # -- eq and neq ind args --
     print("inds_gt.shape: ",inds_gt.shape)
     print("inds_te.shape: ",inds_te.shape)
     print("-"*20)
-    print(inds_gt[0,0,0,:3,:10])
-    print(inds_te[0,0,0,:3,:10])
+    print(inds_gt[0,0,0,:3,:3,0])
+    print(inds_te[0,0,0,:3,:3,0])
+    # print(inds_gt[0,0,0,:3,:10])
+    # print(inds_te[0,0,0,:3,:10])
     # print(inds_gt[0,0,0,:20,0])
     # print(inds_te[0,0,0,:20,0])
     print("-"*20)

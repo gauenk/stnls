@@ -35,12 +35,14 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+        # -- exact search -
         assert isinstance(scale,int),"Must be int."
         stride0_c = scale*stride0
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         anchor_self_e = True
+        k_exact = k
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,wt,ps,-1,nheads,qshift,Q,
+                               ws,wt,ps,k_exact,nheads,qshift,Q,
                                dist_type,stride0_c,stride1,
                                dilation,pt,reflect_bounds,full_ws,
                                anchor_self_e,remove_self,use_adj,
@@ -53,8 +55,13 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+        # -- upsampling --
         T,_,H,W = vid0.shape[-4:]
-        inds = dnls.nn.interpolate_inds(filter_k(inds,kr),scale,stride0,T,H,W)
+        inds = dnls.nn.interpolate_inds(filter_k(inds,kr,k),scale,stride0,T,H,W)
+
+
+        # -- jittering to get uniq --
+        inds = dnls.nn.jitter_unique_inds(inds,3,k,H,W)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -62,6 +69,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+        # -- refinement --
         dists,inds = refine_apply(vid0, vid1, inds,
                                   ws,ps,k,wr,-1,nheads,qshift,
                                   dist_type,stride0,stride1,
@@ -154,8 +162,8 @@ class ApproxSpaceSearch(th.nn.Module):
                    self.off_H1,self.off_W1,
                    self.rbwd,self.nbwd,self.exact)
 
-    def flops(self,HD,T,F,H,W):
-
+    def flops(self,B,HD,T,F,H,W):
+        return 0
         # -- unpack --
         ps,pt = self.ps,self.pt
 
@@ -174,6 +182,10 @@ class ApproxSpaceSearch(th.nn.Module):
 
         return flops
 
+    def radius(self,H,W):
+        return 0
+
+
 _apply = ApproxSpaceSearchFunction.apply # api
 
 #
@@ -183,7 +195,8 @@ _apply = ApproxSpaceSearchFunction.apply # api
 #
 
 def extract_config(cfg):
-    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr_s":1,"kr_s":-1,"scale_s":2,
+    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,
+             "wr_s":1,"kr_s":-1,"scale":2,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":False,
@@ -194,7 +207,7 @@ def extract_config(cfg):
 
 def init(cfg):
     search = ApproxSpaceSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k,
-                               cfg.wr_s, cfg.kr_s, cfg.scale_s,
+                               cfg.wr_s, cfg.kr_s, cfg.scale,
                           nheads=cfg.nheads, dist_type=cfg.dist_type,
                           stride0=cfg.stride0, stride1=cfg.stride1,
                           dilation=cfg.dilation, pt=cfg.pt,

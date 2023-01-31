@@ -6,37 +6,6 @@
 #include <vector>
 using namespace at;
 
-/****************************
-
-       Inline Functions
-
-****************************/
-
-__inline__ __device__ int bounds(int val, int lim ){
-  int vval = val;
-  if (val < 0){
-    vval = -val;
-  }else if (val >= lim){
-    vval = 2*(lim-1) - val;
-  }
-  return vval;
-}
-
-inline __host__ __device__
-int unravel_index(int& ti, int& hi, int& wi, const int qindex,
-                  const int h, const int w, const int hw){
-  // index to pixel location
-  int i_mod = qindex % hw;
-  ti = qindex / hw;
-  wi = (i_mod % w);
-  hi = (i_mod / w) % h;
-}
-
-inline __host__ __device__ int get_backward_window_start(const int index, const int KERNEL_SIZE, const int NEIGHBORHOOD_SIZE)
-{
-    return (index < KERNEL_SIZE) ? (0) : index - NEIGHBORHOOD_SIZE;
-}
-
 
 /****************************
 

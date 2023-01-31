@@ -7,23 +7,12 @@ using namespace at;
 
 #define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)\
   
-
-// #define WS_LOOP(ws_h_per_thread, ws_w_per_thread, ws_h, ws_w,\
-//                 thread_H,blockdim_H, thread_W, blockdim_W)\
-//   for(int _wh = 0; _wh < ws_h_per_thread; _wh++)\
-//       wh = thread_H + blockdim_H*_wh;\
-//       if (wh >= ws_h){ continue; }\
-//       for(int _ww = 0; _ww < ww_h_per_thread; _ww++){\
-//          wh = thread_W + blockdim_W*_ww;\
-//          if (ww >= ws_w){ continue; }\
-
-
 __device__ __forceinline__ int bounds(int val, int lim ){
   int vval = val;
   if (val < 0){
     vval = -val;
   }else if (val >= lim){
-    vval = 2*(lim-1) - val;
+    vval = 2*lim-1-val;
   }
   return vval;
 }
@@ -151,7 +140,8 @@ void compute_dist(scalar_t& dist,
     bool vvalid_t,bool vvalid_h,bool vvalid_w, bool vvalid,
     bool nvalid_t, bool nvalid_h, bool nvalid_w, bool nvalid,
     int H, int W, int T, int pt, int ps, int dilation, int adj, int psHalf,
-    bool reflect_bounds, int off_H0, int off_W0, int off_H1, int off_W1){
+    bool reflect_bounds, int off_H0, int off_W0, int off_H1, int off_W1,
+    scalar_t invalid){
   
   for (int pk = 0; pk < pt; pk++){
     // -- anchor time --
@@ -204,7 +194,7 @@ void compute_dist(scalar_t& dist,
             scalar_t _dist = (v_pix - n_pix);
             dist += _dist * _dist;
           }else{ // error
-            dist = -10000000;
+            dist = invalid;
           }
         }
       }

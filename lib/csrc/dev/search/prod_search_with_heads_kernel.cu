@@ -17,7 +17,7 @@ __inline__ __device__ int bounds(int val, int lim ){
   if (val < 0){
     vval = -val;
   }else if (val >= lim){
-    vval = 2*(lim-1) - val;
+    vval = 2*(lim-1)-val;
   }
   return vval;
 }

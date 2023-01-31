@@ -37,7 +37,7 @@ def run_pair(fflow,bflow,stride0=1):
     pbflow = th.zeros((B,T-1,T,2,nH,nW),device=bflow.device,
                       dtype=th.int32)
     # -- run --
-    dnls_cuda.optical_flow_accumulate(fflow,bflow,pfflow,pbflow,stride0)
+    dnls_cuda.accumulate_flow(fflow,bflow,pfflow,pbflow,stride0)
 
     # -- format --
     flows = edict()

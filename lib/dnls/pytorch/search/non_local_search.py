@@ -159,7 +159,8 @@ class NonLocalSearch(th.nn.Module):
                                             self.off_H1,self.off_W1,
                                             self.rbwd,self.nbwd,self.exact)
 
-    def flops(self,HD,T,F,H,W):
+    def flops(self,B,HD,T,F,H,W):
+        return 0
 
         # -- unpack --
         ps,pt = self.ps,self.pt
@@ -179,7 +180,30 @@ class NonLocalSearch(th.nn.Module):
 
         return flops
 
-_apply = NonLocalSearchFunction.apply # api
+    def radius(self,H,W):
+        return 0
+
+def _apply(vid0, vid1, fflow, bflow,
+           ws, wt, ps, k, nheads=1, qshift=0, nqueries=-1,
+           dist_type="prod", stride0=4, stride1=1,
+           dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+           anchor_self=False, remove_self=False,
+           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=True, nbwd=1, exact=False):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
+    fxn = NonLocalSearchFunction.apply
+    return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
+               nheads,qshift,nqueries,
+               dist_type,stride0,stride1,
+               dilation,pt,reflect_bounds,
+               full_ws,anchor_self,remove_self,
+               use_adj,off_H0,off_W0,
+               off_H1,off_W1,
+               rbwd,nbwd,exact)
+
+# _apply = NonLocalSearchFunction.apply # api
 
 #
 #
@@ -194,7 +218,7 @@ def extract_config(cfg):
              "reflect_bounds":True, "full_ws":False,
              "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "rbwd":True, "nbwd":1, "exact":False}
+             "rbwd":True, "nbwd":1, "exact":False,"qshift":0,"nqueries":-1}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
