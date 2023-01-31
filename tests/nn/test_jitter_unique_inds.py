@@ -40,7 +40,7 @@ def pytest_generate_tests(metafunc):
     # seed = [seed[0]]
     seed = np.arange(200)+100
     # seed = [217,243]
-    # seed = [217]
+    seed = [217]
     test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
                   "ws":[-1,8],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
                   "exact":[True],"seed":seed}
@@ -72,7 +72,6 @@ def test_fwd(ps,stride,dilation,exact,seed):
 
     # -- set seed --
     set_seed(seed)
-    print(random.random())
 
     # -- interp params --
     stride0 = 4
@@ -107,25 +106,22 @@ def test_fwd(ps,stride,dilation,exact,seed):
 
     # -- jittering --
     inds = dnls.nn.jitter_unique_inds(inds,3,K,H,W)
-    print("a.")
 
     # -- check delta --
-    args = th.where(th.abs(inds_interp - inds)>0)
-    print("show dups [pre]")
-    if len(args[0]) > 0:
-        print(inds_interp[0,0,args[2][0]])
-        print(inds[0,0,args[2][0]])
+    # args = th.where(th.abs(inds_interp - inds)>0)
+    # if len(args[0]) > 0:
+    #     print("show dups [pre]")
+    #     print(inds_interp[0,0,args[2][0]])
+    #     print(inds[0,0,args[2][0]])
 
-    print("a.")
+
     # -- ensure no dups --
     dups,any_dup = dnls.testing.find_duplicate_inds(inds)
-    print(th.sum(dups))
-    print("a.")
 
     # -- info --
-    print("show dups.")
     args = th.where(dups == True)
     if len(args[0]) > 0:
+        print("show dups.")
         scale2 = scale*scale
         loc = args[2][0]
         print(loc)
@@ -140,24 +136,29 @@ def test_fwd(ps,stride,dilation,exact,seed):
         # print(dups[0,0,args[2][0]])
         # print(inds_tmp[0,0,args[2][0]])
         # print(dists_tmp[0,0,args[2][0]])
-    print("a.")
 
-    print("-"*40)
-    loc = 16346
-    print("Show loc %d" % loc)
-    print(inds_interp[0,0,loc])
-    print(inds[0,0,loc])
-    print(inds[0,0,loc] - inds_interp[0,0,loc])
-    print("-"*40)
+    # print("-"*40)
+    # loc = 16346
+    # print("Show loc %d" % loc)
+    # print(inds_interp[0,0,loc])
+    # print(inds[0,0,loc])
+    # print(inds[0,0,loc] - inds_interp[0,0,loc])
+    # print("-"*40)
 
     # -- info --
-    print("show -1.")
-    args = th.where(inds == -1)
-    if len(args[0]) > 0:
-        print(inds_interp[0,0,args[2][0]])
-        print(inds[0,0,args[2][0]])
+    # args = th.where(inds == -1)
+    # if len(args[0]) > 0:
+    #     print("show -1.")
+    #     print(inds_interp[0,0,args[2][0]])
+    #     print(inds[0,0,args[2][0]])
 
     # -- test --
     assert not(any_dup),"No dups!"
     assert not(th.any(inds==-1).item())
 
+    # -- ensure bounded --
+    bnds = [T,H,W]
+    for i in range(3):
+        assert inds[...,i].min().item() >= 0
+        assert inds[...,i].max().item() < bnds[i]
+    

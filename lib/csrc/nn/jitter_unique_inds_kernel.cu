@@ -184,8 +184,8 @@ void jitter_unique_inds_cuda(
   int K = inds.size(1);
   int sqrt_K = int(std::sqrt(tgt_K)+0.999);
   int sqrt_K2 = sqrt_K/2;
-  fprintf(stdout,"K,tgt_K: %d,%d\n",K,tgt_K);
-  fprintf(stdout,"H,W: %d,%d\n",H,W);
+  // fprintf(stdout,"K,tgt_K: %d,%d\n",K,tgt_K);
+  // fprintf(stdout,"H,W: %d,%d\n",H,W);
 
   // -- num 2 run --
   int nRun = Q;

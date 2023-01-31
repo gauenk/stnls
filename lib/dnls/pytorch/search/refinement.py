@@ -213,6 +213,13 @@ class RefineSearch(th.nn.Module):
                                           self.off_H1,self.off_W1,
                                           self.rbwd,self.nbwd,self.exact)
 
+    def flops(self,B,HD,T,F,H,W):
+        return 0
+
+    def radius(self,H,W):
+        return 0
+
+
 _apply = RefineSearchFunction.apply # api
 
 #

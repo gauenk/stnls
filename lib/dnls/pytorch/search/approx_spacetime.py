@@ -181,7 +181,8 @@ class ApproxSpaceTimeSearch(th.nn.Module):
                    self.off_H1,self.off_W1,
                    self.rbwd,self.nbwd,self.exact)
 
-    def flops(self,HD,T,F,H,W):
+    def flops(self,B,HD,T,F,H,W):
+        return 0
 
         # -- unpack --
         ps,pt = self.ps,self.pt
@@ -200,6 +201,9 @@ class ApproxSpaceTimeSearch(th.nn.Module):
             flops += sort_flops
 
         return flops
+
+    def radius(self,H,W):
+        return 0
 
 
 _apply = ApproxSpaceTimeSearchFunction.apply # api

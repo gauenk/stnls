@@ -22,8 +22,9 @@ from easydict import EasyDict as edict
 def search_menu(name):
     menu = edict({"exact":"non_local_search","nls":"non_local_search",
                   "refine":"refinement",
-                  "approx_t":"approx_time","approx_s":"approx_space",
-                  "approx_st":"approx_spacetime"})
+                  "approx_t":"approx_time","nlat":"approx_time",
+                  "approx_s":"approx_space","nlas":"approx_space",
+                  "approx_st":"approx_spacetime","nlast":"approx_spacetime"})
     if name in menu:
         return menu[name]
     else:

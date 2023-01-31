@@ -47,7 +47,6 @@ class NonLocalSearchFunction(th.autograd.Function):
         nH0 = (H-1)//stride0+1
         nW0 = (W-1)//stride0+1
         Q = T*nH0*nW0 if Q <= 0 else Q
-        print("nH0,nW0: ",nH0,nW0,Q)
 
         # -- search space --
         ws_h,ws_w = ws,ws
@@ -160,7 +159,8 @@ class NonLocalSearch(th.nn.Module):
                                             self.off_H1,self.off_W1,
                                             self.rbwd,self.nbwd,self.exact)
 
-    def flops(self,HD,T,F,H,W):
+    def flops(self,B,HD,T,F,H,W):
+        return 0
 
         # -- unpack --
         ps,pt = self.ps,self.pt
@@ -179,6 +179,9 @@ class NonLocalSearch(th.nn.Module):
             flops += sort_flops
 
         return flops
+
+    def radius(self,H,W):
+        return 0
 
 def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, nheads=1, qshift=0, nqueries=-1,

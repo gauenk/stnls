@@ -101,3 +101,29 @@ def extract_pairs(pairs,_cfg):
         else:
             cfg[key] = pairs[key]
     return cfg
+
+#
+# -- interface --
+#
+
+def search_wrap(name,search):
+    """
+    All for all inputs to enable easier benchmarking
+
+        All calls must include all variables!
+
+      vid0,vid1,fflow,bflow,inds,afflow,abflow
+
+    """
+    if "refine" in name:
+        def wrap(vid0,vid1,fflow,bflow,inds,afflow,abflow):
+            return search(vid0,vid1,inds)
+        return wrap
+    elif "pf" in name:
+        def wrap(vid0,vid1,fflow,bflow,inds,afflow,abflow):
+            return search(vid0,vid1,afflow,abflow)
+        return wrap
+    else:
+        def wrap(vid0,vid1,fflow,bflow,inds,afflow,abflow):
+            return search(vid0,vid1,fflow,bflow)
+        return wrap
