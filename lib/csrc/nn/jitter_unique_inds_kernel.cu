@@ -9,15 +9,18 @@
 __global__ void jitter_unique_inds_kernel(
     torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
     int K, int tgt_K, int H, int W, int sqrt_K, int sqrt_K2,
-    int q_per_thread, int mem_per_thread){
+    int q_per_thread, int elems_per_thread){
 
   // -- shared memory --
+  // the performance depends on "K" because of bank conflicts for shared memory.
+  // if K + int(sqrt(K)+0.99)^2 > 32, I think this will start. Think K > 16.
+  // __shared__ int s[256*(16+16)];
   extern __shared__ bool s[];
-  int mem_start = threadIdx.x*mem_per_thread;
-  // bool* repl = (bool*)&s[mem_start]; // size (K,)
-  // bool* avail = (bool *)(&s[mem_start+K]); // size (sqrt_K,sqrt_K)
-  bool repl[16];
-  bool avail[25];
+  int mem_start = threadIdx.x*elems_per_thread;
+  bool* repl = (bool*)&s[mem_start]; // size (K,)
+  bool* avail = (bool *)&s[mem_start+K]; // size (sqrt_K,sqrt_K)
+  // bool repl[16];
+  // bool avail[16];
 
   // -- alloc --
   int qi;
@@ -182,7 +185,7 @@ void jitter_unique_inds_cuda(
   // -- unpack --
   int Q = inds.size(0);
   int K = inds.size(1);
-  int sqrt_K = int(std::sqrt(tgt_K)+0.999);
+  int sqrt_K = max(int(std::sqrt(tgt_K)+0.999),3);
   int sqrt_K2 = sqrt_K/2;
   // fprintf(stdout,"K,tgt_K: %d,%d\n",K,tgt_K);
   // fprintf(stdout,"H,W: %d,%d\n",H,W);
@@ -199,12 +202,13 @@ void jitter_unique_inds_cuda(
   // fprintf(stdout,"nblocks,nthreads: %d,%d\n",_nblocks,_nthreads);
 
   // -- shared memory size --
-  int mem_per_thread = sizeof(bool) * K * sqrt_K * sqrt_K;
-  int SMEM = 1;//_nthreads * mem_per_thread;
+  int elems_per_thread = K + sqrt_K * sqrt_K;
+  int SMEM_NUM = _nthreads * elems_per_thread;
+  // fprintf(stdout,"SMEM_NUM: %d,%d\n",SMEM_NUM,sizeof(bool));
 
   // -- launch kernel --
-  jitter_unique_inds_kernel<<<nblocks, nthreads, SMEM>>>(
+  jitter_unique_inds_kernel<<<nblocks, nthreads, sizeof(bool) * SMEM_NUM>>>(
        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-       K,tgt_K,H,W,sqrt_K,sqrt_K2,q_per_thread,mem_per_thread);
+       K,tgt_K,H,W,sqrt_K,sqrt_K2,q_per_thread,elems_per_thread);
 
 }

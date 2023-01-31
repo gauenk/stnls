@@ -39,18 +39,17 @@ def pytest_generate_tests(metafunc):
     # seed = [13,32,39,40]
     # seed = [seed[0]]
     seed = np.arange(200)+100
+    # seed = [123]
     # seed = [217,243]
-    seed = [217]
-    test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[0],
-                  "ws":[-1,8],"top":[0],"btm":[64],"left":[0],"right":[64],"k":[-1,5],
-                  "exact":[True],"seed":seed}
+    # seed = [217]
+    test_lists = {"K":[5,10,15,25],"seed":seed}
     # test_lists = {"ps":[3,4,5,6,7,8],"stride":[1,2,3,4,5,8],"dilation":[1,2,3,4,5,8],
     #               "top":[1,11],"btm":[50,57],"left":[3,7],"right":[57,30]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def test_fwd(ps,stride,dilation,exact,seed):
+def test_fwd(K,seed):
     """
 
     Test the CUDA code with torch code
@@ -81,7 +80,6 @@ def test_fwd(ps,stride,dilation,exact,seed):
     ws = 21
     wt = 3
     ps = 7
-    K = 10
 
     # -- init data --
     vid0 = th.randn((B,T,F,H,W)).to("cuda:0")
@@ -101,7 +99,7 @@ def test_fwd(ps,stride,dilation,exact,seed):
     # -- ensure dups --
     dups,any_dup = dnls.testing.find_duplicate_inds(inds)
     if not(any_dup):
-        print("No test: Want duplicates for test.")
+        # print("No test: Want duplicates for test.")
         return
 
     # -- jittering --
@@ -125,9 +123,9 @@ def test_fwd(ps,stride,dilation,exact,seed):
         scale2 = scale*scale
         loc = args[2][0]
         print(loc)
-        print(inds.shape,dups.shape)
+        # print(inds.shape,dups.shape)
         # print(inds_tmp[0,0,args[2][0]//scale-1])
-        print(inds_search[0,0,args[2][0]//scale])
+        # print(inds_search[0,0,args[2][0]//scale])
         print(inds_interp[0,0,args[2][0]])
         # print(inds_tmp[0,0,args[2][0]//scale])
         print(inds[0,0,args[2][0]])
