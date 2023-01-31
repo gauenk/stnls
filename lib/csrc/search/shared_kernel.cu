@@ -140,7 +140,8 @@ void compute_dist(scalar_t& dist,
     bool vvalid_t,bool vvalid_h,bool vvalid_w, bool vvalid,
     bool nvalid_t, bool nvalid_h, bool nvalid_w, bool nvalid,
     int H, int W, int T, int pt, int ps, int dilation, int adj, int psHalf,
-    bool reflect_bounds, int off_H0, int off_W0, int off_H1, int off_W1){
+    bool reflect_bounds, int off_H0, int off_W0, int off_H1, int off_W1,
+    scalar_t invalid){
   
   for (int pk = 0; pk < pt; pk++){
     // -- anchor time --
@@ -193,7 +194,7 @@ void compute_dist(scalar_t& dist,
             scalar_t _dist = (v_pix - n_pix);
             dist += _dist * _dist;
           }else{ // error
-            dist = -10000000;
+            dist = invalid;
           }
         }
       }

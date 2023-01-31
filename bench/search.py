@@ -68,11 +68,11 @@ def main():
     rec = RecordIt(gpu_rec,timer)
 
     # -- params --
-    cfg = {"k":10,"ps":10,"pt":1,"ws":21,"wt":3,
-           "wr_t":1,"kr_t":-1,"wr_s":1,"kr_s":-1,"scale":4,
+    cfg = {"k":10,"ps":7,"pt":1,"ws":21,"wt":3,
+           "wr_t":1,"kr_t":-1,"wr_s":1,"kr_s":-1,"scale":2,
            "nheads":3,"dil":1,"stride0":4,"stride1":1,
            "batchsize":1,"nframes":3,"nftrs_per_head":9,
-           "height":512,"width":512,"device":"cuda:0","dist_type":"prod"}
+           "height":512,"width":512,"device":"cuda:0","dist_type":"l2"}
     cfg = edict(cfg)
     search_names = ["nls","refine","approx_t","approx_s"]#,"approx_st"]
     # search_names = ["nls","approx_s"]

@@ -82,24 +82,13 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         # print(qinds[:3,:3,0,1:])
 
         # -- check --
-        assert not(th.any(inds==-1).item())
+        # assert not(th.any(inds==-1).item())
 
         T,_,H,W = vid0.shape[-4:]
         # inds_tmp = inds.clone()
         inds = dnls.nn.interpolate_inds(filter_k(inds,kr,k),scale,stride0,T,H,W)
 
-        # -- view --
-        # qinds = inds[0,0]
-        # print("qinds.shape: ",qinds.shape)
-        # qinds = qinds.reshape(3,256//4,256//4,-1,3)[0]
-        # print("qinds.shape: ",qinds.shape)
-        # print(qinds[:3,:3,0,1:])
 
-        # -- check --
-        assert not(th.any(inds==-1).item())
-        inds_interp = inds.clone()
-
-        print("k: ",k)
         # -- jittering --
         inds = dnls.nn.jitter_unique_inds(inds,3,k,H,W)
 

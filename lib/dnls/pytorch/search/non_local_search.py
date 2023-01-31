@@ -47,6 +47,7 @@ class NonLocalSearchFunction(th.autograd.Function):
         nH0 = (H-1)//stride0+1
         nW0 = (W-1)//stride0+1
         Q = T*nH0*nW0 if Q <= 0 else Q
+        print("nH0,nW0: ",nH0,nW0,Q)
 
         # -- search space --
         ws_h,ws_w = ws,ws
