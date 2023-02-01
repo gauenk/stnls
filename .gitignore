@@ -5,6 +5,7 @@ data/*
 output/*
 lib/*egg-info/
 .cache_io/*
+.cache
 *.py[co]
 *__pycache__/
 *~
