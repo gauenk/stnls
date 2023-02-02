@@ -32,12 +32,13 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
     H,W = ctx.vid_shape[-2:]
     nH0 = (H-1)//ctx.stride0+1
     nW0 = (W-1)//ctx.stride0+1
+    qshift = 0 # no batching backward.
 
     # -- allow for repeated exec --
     bwd_fxn = dnls_cuda.non_local_search_backward
     if ctx.nbwd == 1:
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,
-                grad_dists,inds,ctx.qshift,ctx.stride0,nH0,nW0,
+                grad_dists,inds,qshift,ctx.stride0,nH0,nW0,
                 ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,
                 ctx.ps,ctx.pt,ctx.dil,ctx.use_adj,
                 ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i)
@@ -46,7 +47,7 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
             grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
             grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
             bwd_fxn(grad_vid0_i,grad_vid1_i,vid0,vid1,
-                    grad_dists,inds,ctx.qshift,ctx.stride0,nH0,nW0,
+                    grad_dists,inds,qshift,ctx.stride0,nH0,nW0,
                     ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,
                     ctx.ps,ctx.pt,ctx.dil,ctx.use_adj,
                     ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i)

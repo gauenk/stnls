@@ -22,7 +22,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
-                ws, wt, ps, k, wr, kr, scale, nheads=1, qshift=0, Q=-1,
+                ws, wt, ps, k, wr, kr, scale, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
@@ -42,7 +42,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         anchor_self_e = True
         k_exact = k
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,wt,ps,k_exact,nheads,qshift,Q,
+                               ws,wt,ps,k_exact,nheads,batchsize,
                                dist_type,stride0_c,stride1,
                                dilation,pt,reflect_bounds,full_ws,
                                anchor_self_e,remove_self,use_adj,
@@ -59,7 +59,6 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         T,_,H,W = vid0.shape[-4:]
         inds = dnls.nn.interpolate_inds(filter_k(inds,kr,k),scale,stride0,T,H,W)
 
-
         # -- jittering to get uniq --
         inds = dnls.nn.jitter_unique_inds(inds,3,k,H,W)
 
@@ -71,7 +70,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
 
         # -- refinement --
         dists,inds = refine_apply(vid0, vid1, inds,
-                                  ws,ps,k,wr,-1,nheads,qshift,
+                                  ws,ps,k,wr,-1,nheads,batchsize,
                                   dist_type,stride0,stride1,
                                   dilation,pt,reflect_bounds,full_ws,
                                   anchor_self,remove_self,use_adj,
@@ -83,7 +82,7 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"qshift":qshift,"stride0":stride0,"ps":ps,"pt":pt,
+        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
@@ -148,13 +147,13 @@ class ApproxSpaceSearch(th.nn.Module):
         self.exact = exact
         self.rbwd = rbwd
 
-    def forward(self, vid0, vid1, fflow, bflow, qshift=0, nqueries=-1):
+    def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
         fxn = ApproxSpaceSearchFunction.apply
         return fxn(vid0,vid1,fflow,bflow,
                    self.ws,self.wt,self.ps,self.k,
                    self.wr,self.kr,self.scale,
-                   self.nheads,qshift,nqueries,
-                   self.dist_type,self.stride0,self.stride1,
+                   self.nheads,batchsize,self.dist_type,
+                   self.stride0,self.stride1,
                    self.dilation,self.pt,
                    self.reflect_bounds,self.full_ws,
                    self.anchor_self,self.remove_self,
@@ -186,7 +185,26 @@ class ApproxSpaceSearch(th.nn.Module):
         return 0
 
 
-_apply = ApproxSpaceSearchFunction.apply # api
+# -- api --
+def _apply(vid0, vid1, fflow, bflow,
+           ws, wt, ps, k, wr, kr, scale, nheads=1, batchsize=-1,
+           dist_type="prod", stride0=4, stride1=1,
+           dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+           anchor_self=True, remove_self=False,
+           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=True, nbwd=1, exact=False):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
+    fxn = ApproxSpaceSearchFunction.apply
+    return fxn(vid0, vid1, fflow, bflow,
+               ws, wt, ps, k, wr, kr, scale,
+               nheads, batchsize, dist_type, stride0, stride1,
+               dilation, pt, reflect_bounds,
+               full_ws, anchor_self, remove_self,
+               use_adj, off_H0, off_W0, off_H1, off_W1,
+               rbwd, nbwd, exact)
+
 
 #
 #

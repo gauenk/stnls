@@ -40,7 +40,7 @@ __global__ void non_local_search_forward_kernel(
   int B = vid0.size(0);
   int HD = vid0.size(1);
   int T = vid0.size(2);
-  int F = vid0.size(3);
+  int C = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
   int Q = dists.size(2);
@@ -79,15 +79,20 @@ __global__ void non_local_search_forward_kernel(
   int prev_ti;
 
   // decls
-  int ti,hi,wi;
-  int n_ti,n_hi,n_wi;
-  int vH,vW,vT,nH,nW,nT;
-  bool valid,vvalid,nvalid;
-  bool valid_anchor,valid_n;
-  bool vvalid_t,vvalid_h,vvalid_w;
-  bool nvalid_t,nvalid_h,nvalid_w;
-  scalar_t dist,v_pix,n_pix;
+  // int ti,hi,wi;
+  // int n_ti,n_hi,n_wi;
+  // int vH,vW,vT,nH,nW,nT;
+  int ref_center[3];
+  int prop_center[3];
+  int ref[3];
+  int prop[3];
+  bool valid;
+  bool valid_ref[4];
+  bool valid_prop[4];
+  scalar_t dist,pix0,pix1;
   int qindex,i_mod;
+  int offsets[4] = {off_H0,off_W0,off_H1,off_W1};
+  int patch_offset = psHalf + adj;
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
@@ -104,7 +109,7 @@ __global__ void non_local_search_forward_kernel(
     get_pixel_loc(ti,hi,wi,qindex,i_mod,stride0,nW0,nHW0,H,W);
 
     // -- check bounds of pixel location --
-    check_bounds(valid_anchor,ti,hi,wi,T,H,W);
+    check_bounds(valid_ref[3],ti,hi,wi,T,H,W);
 
     // -- search region offsets --
     set_search_offsets(wsOff_h,wsOff_w, hi, wi, stride1, wsHalf_h,
@@ -153,10 +158,8 @@ __global__ void non_local_search_forward_kernel(
           // -- compute proposed location --
           set_search_patch(n_hi,n_wi,hj_center,wj_center,stride1,
                            ws_i,ws_j,wsOff_h,wsOff_w,search_abs);
-
-          // -- check bounds of pixel location --
-          check_bounds(valid_n,n_ti,n_hi,n_wi,T,H,W);
-          valid = valid_n && valid_anchor;
+          check_bounds(valid_prop[3],n_ti,n_hi,n_wi,T,H,W);
+          valid = valid_ref[3] && valid_prop[3];
 
           // -- init dist --
           dist = 0;
@@ -165,13 +168,11 @@ __global__ void non_local_search_forward_kernel(
           if (valid){
             compute_dist<scalar_t,DIST_TYPE>(dist,
                          vid0[ibatch][ihead],vid1[ibatch][ihead],
-                         v_pix, n_pix, F,
-                         ti,hi,wi,n_ti,n_hi,n_wi,
-                         vH, vW, vT, nH, nW, nT,
-                         vvalid_t,vvalid_h,vvalid_w, vvalid,
-                         nvalid_t,nvalid_h,nvalid_w, nvalid,
-                         H,W,T,pt,ps,dilation,adj,psHalf,
-                         reflect_bounds,off_H0,off_W0,off_H1,off_W1);
+                         ref_center, prop_center, 
+                         ref, prop, valid_ref, valid_prop,
+                         pt,ps,dilation,reflect_bounds,
+                         patch_offset,center_offsets,invalid,
+                         T,C,H,W,pix0,pix1,pix);
           }
 
           // -- assignent --
@@ -313,27 +314,25 @@ __global__ void non_local_search_backward_kernel(
     int q_shift, int stride0, int nH0, int nW0, int nHW0,
     int off_H0, int off_W0, int off_H1, int off_W1,
     int ps, int pt, int dilation, bool use_adj, bool reflect_bounds,
-    int q_per_thread, int npt, int cpt) {
+    int q_per_thread, int neigh_per_thread, int chnls_per_thread) {
 
   // -- shape --
-  int bs = grad_dists.size(0);
-  int nq = grad_dists.size(2);
-  int k =  grad_dists.size(3);
-  // int bs = vid0.size(0);
+  int B = grad_dists.size(0);
+  int Q = grad_dists.size(2);
+  int K =  grad_dists.size(3);
   int T = vid0.size(2);
-  int F = vid0.size(3);
+  int C = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
 
   // -- fwd decl registers --
-  int ti,hi,wi;
-  int tj,hj,wj;
-  int tk,hk,wk;
-  int tk_a,hk_a,wk_a;
-  // bool valid_hj,valid_wj;
-  // bool valid_hk,valid_wk;
-  bool valid,valid_j,valid_k;
-  // float 
+  int ref_center[3];
+  int proposed_center[3];
+  int ref[3];
+  int proposed[3];
+  bool ref_valid[4];
+  bool proposed_valid[4];
+  bool valid;
   scalar_t weight,pix0,pix1,pix;
 
   // -- declare constants --
@@ -348,90 +347,50 @@ __global__ void non_local_search_backward_kernel(
   int ibatch = blockIdx.x;
   int ihead = blockIdx.z;
   int i0_start = q_per_thread * (threadIdx.x + blockDim.x * blockIdx.y);
-  int i1_start = threadIdx.y * npt;
-  int c0_start = threadIdx.z * cpt;
+  int i1_start = threadIdx.y * neigh_per_thread;
+  int c0_start = threadIdx.z * chnls_per_thread;
 
   // -- get block limits --
   int i0_end = min(i0_start + q_per_thread,i0_max);
-  int i1_end = min(i1_start + npt,i1_max);
-  int c0_end = min(c0_start + cpt,F);
+  int i1_end = min(i1_start + neigh_per_thread,i1_max);
+  int c0_end = min(c0_start + chnls_per_thread,C);
 
   // -- color offset --
   int c0 = 0;
   int c0_dist = c0_end - c0_start;
   int c0_offset = 0;
-  // if (threadIdx.x == 0){
-  //   printf("c0_dist,c0_start,c0_end: %d,%d,%d\n",c0_dist,c0_start,c0_end);
-  // }
+
+  // -- cleaner code --
+  int center_offsets[4] = {off_H0,off_W0,off_H1,off_W1};
+  int patch_offset = psHalf + adj;
 
   // -- each region --
   for (int i0=i0_start; i0 < i0_end; i0++){
 
     int qindex = i0 + q_shift;
     int i_mod = qindex % nHW0;
-    tk_a = qindex / nHW0;
-    wk_a = ((i_mod % nW0) * stride0) % W ;
-    hk_a = ((i_mod / nW0) * stride0) % H;
+    ref_center[0] = qindex / nHW0; // "ti", time
+    ref_center[1] = ((i_mod % nW0) * stride0) % W ; // "wi", width
+    ref_center[2] = ((i_mod / nW0) * stride0) % H; // "hi", height
     c0_offset = __float2int_rd(c0_dist * rand_nums[i0][0][0]);
     // printf("c0_offset: %d\n",c0_offset);
 
-    // k neighbors
+    // -- k neighbors --
     for (int i1=i1_start; i1 < i1_end; i1++){
-      ti = inds[ibatch][ihead][i0][i1][0];
-      hi = inds[ibatch][ihead][i0][i1][1];
-      wi = inds[ibatch][ihead][i0][i1][2];
+      proposed_center[0] = inds[ibatch][ihead][i0][i1][0];
+      proposed_center[1] = inds[ibatch][ihead][i0][i1][1];
+      proposed_center[2] = inds[ibatch][ihead][i0][i1][2];
       weight = grad_dists[ibatch][ihead][i0][i1];
 
-      for (int pk = 0; pk < pt; pk++){
-        for (int pi = 0; pi < ps; pi++){
-          for (int pj = 0; pj < ps; pj++){
-            
+      // -- update patch --
+      update_bwd_patch(grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
+                       vid0[ibatch][ihead],vid1[ibatch][ihead],
+                       weight,ref_center,proposed_center,
+                       ps,pt,dilation,reflect_bounds,
+                       center_offsets,patch_offset,
+                       c0,c0_start,c0_end,c0_offset,c0_dist,
+                       ref,proposed,valid_ref,valid_prop,valid,pix0,pix1,pix);
 
-            // -- anchor patch --
-            hk = (hk_a-off_H0) + dilation*(pi - psHalf + adj);
-            hk = reflect_bounds ? bounds(hk,H) : hk;
-            wk = (wk_a-off_W0) + dilation*(pj - psHalf + adj);
-            wk = reflect_bounds ? bounds(wk,W) : wk;
-            tk = reflect_bounds ? bounds(tk_a+pk,T) : tk_a+pk;
-
-            // -- proposed location --
-            hj = (hi-off_H1) + dilation*(pi - psHalf + adj);
-            hj = reflect_bounds ? bounds(hj,H) : hj;
-            wj = (wi-off_W1) + dilation*(pj - psHalf + adj);
-            wj = reflect_bounds ? bounds(wj,W) : wj;
-            tj = reflect_bounds ? bounds(ti+pk,T) : ti+pk;
-
-            // -- assess if valid --
-            valid_j = (hj >= 0) && (hj < H);
-            valid_j = valid_j && (wj >= 0) && (wj < W);
-            // valid_j = valid_hj && valid_wj;
-
-            valid_k = (hk >= 0) && (hk < H);
-            valid_k = valid_k && (wk >= 0) && (wk < W);
-            // valid_k = valid_hk && valid_wk;
-
-            // __syncthreads();
-            valid = valid_j && valid_k;
-            for (int _c0 = c0_start; _c0 < c0_end; _c0++){
-              c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-              if(valid){
-                pix0 = vid0[ibatch][ihead][tk][c0][hk][wk];
-                pix1 = vid1[ibatch][ihead][tj][c0][hj][wj];
-                if (DIST_TYPE == 0){
-                  pix0 = weight*pix0;
-                  pix1 = weight*pix1;
-                  grad_vid1[ibatch][ihead][tj][c0][hj][wj] += pix0;
-                  grad_vid0[ibatch][ihead][tk][c0][hk][wk] += pix1;
-                }else if(DIST_TYPE == 1){
-                  pix = 2 * weight * (pix0 - pix1);
-                  grad_vid1[ibatch][ihead][tj][c0][hj][wj] -= pix;
-                  grad_vid0[ibatch][ihead][tk][c0][hk][wk] += pix;
-                }
-              }
-            }
-          }
-        }
-      }
     }
   }
 }
@@ -441,61 +400,94 @@ void non_local_search_backward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor grad_dists, torch::Tensor inds,
     int q_shift, int stride0, int nH0, int nW0,
-    int off_H0, int off_W0, int off_H1, int off_W1,
-    int ps, int pt, int dilation,
-    bool use_adj, bool reflect_bounds, bool use_rand,
-    bool exact, int dist_type) {
+    int ps, int pt, int dilation, bool reflect_bounds, 
+    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
+    bool use_rand, bool exact, int dist_type,
+    int channel_groups, int neigh_per_thread, int queries_per_thread) {
+
+// int nchannel_groups, 
+//     int neigh_per_thread, int bpt
 
   // -- unpack --
-  int bsize = vid0.size(0);
+  int B = vid0.size(0);
   int HD = vid0.size(1);
   int T = vid0.size(2);
   int colors = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
   int nqueries = inds.size(2);
-  int k = inds.size(3);
+  int K = inds.size(3);
+  int BHD = B*HD;
   int nHW0 = nH0 * nW0;
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
-  int npt = 4;
-  int neigh_nthreads = (k-1) / npt + 1;
-  if (neigh_nthreads > 32){
-    neigh_nthreads = 32;
-    npt = (k-1)/neigh_nthreads + 1;
-  }
+  int neigh_nthreads = (k-1) / neigh_per_thread + 1;
+  // int kd32 = (k-1)/32+1;
   if (exact){
     neigh_nthreads = 1;
-    npt = k;
+    neigh_per_thread = K;
   }
 
   // -- compute number of color threads --
-  int cpt = exact ? 1 : colors;
-  int color_nthreads = (colors - 1)/cpt + 1;
+  nchannel_groups = (nchannel_groups > 0) ? nchannel_groups : colors;
+  nchannel_groups = std::min(nchannel_groups,colors);
+  int chnls_nblocks = exact ? colors : nchannel_groups;
+  int colors_per_thread = (colors-1) / chnls_nblocks + 1;
 
   // -- compute number of blocks --
-  //    [think: parallelization over "nqueries"]
-  int q_per_thread = 2;
-  int query_nthreads = 32;
-  int total_per_block = q_per_thread * query_nthreads;
-  int nquery_blocks = ((nqueries - 1) / total_per_block) + 1;
+  int MAX_NTHREADS = 28*32;
+  int query_nthreads = std::max(MAX_NTHREADS/neigh_nthreads,1);
+  int queries_per_block = queries_per_thread * query_nthreads;
+  int nblocks_queries = ((nqueries - 1) / queries_per_block) + 1;
   if (exact){
-    q_per_thread = nqueries;
+    bpt = nqueries;
     query_nthreads = 1;
-    nquery_blocks = 1;
+    nblocks_queries = 1;
   }
-  dim3 nblocks(bsize,nquery_blocks,HD);
+
 
   // -- launch params --
-  dim3 nthreads(query_nthreads, neigh_nthreads, color_nthreads);
+  dim3 nblocks(nblocks_queries,chnls_nblocks,BHD);
+  dim3 nthreads(query_nthreads, neigh_nthreads);//, chnls_nthreads);
+
+  // // int neigh_per_thread = 4;
+  // // int neigh_nthreads = (k-1) / neigh_per_thread + 1;
+  // // if (neigh_nthreads > 32){
+  // //   neigh_nthreads = 32;
+  // //   neigh_per_thread = (k-1)/neigh_nthreads + 1;
+  // // }
+  // // if (exact){
+  // //   neigh_nthreads = 1;
+  // //   neigh_per_thread = k;
+  // // }
+
+  // // -- compute number of color threads --
+  // int chnls_per_thread = exact ? 1 : colors;
+  // int chnls_nthreads = (colors - 1)/chnls_per_thread + 1;
+
+  // // -- compute number of blocks --
+  // //    [think: parallelization over "nqueries"]
+  // int q_per_thread = 2;
+  // int query_nthreads = 32;
+  // int total_per_block = q_per_thread * query_nthreads;
+  // int nquery_blocks = ((nqueries - 1) / total_per_block) + 1;
+  // if (exact){
+  //   q_per_thread = nqueries;
+  //   query_nthreads = 1;
+  //   nquery_blocks = 1;
+  // }
+  // dim3 nblocks(bsize,nquery_blocks,HD);
+
+  // // -- launch params --
+  // dim3 nthreads(query_nthreads, neigh_nthreads, chnls_nthreads);
 
   // -- info --
   // fprintf(stdout,
-  //         "query_nthreads, neigh_nthreads, color_nthreads: %d,%d,%d\n",
-  //         query_nthreads, neigh_nthreads, color_nthreads);
+  //         "query_nthreads, neigh_nthreads, chnls_nthreads: %d,%d,%d\n",
+  //         query_nthreads, neigh_nthreads, chnls_nthreads);
   // fprintf(stdout,"nblocks: %d\n",nblocks);
-  // fprintf(stdout,"q_per_thread,npt,cpt: %d,%d,%d\n",q_per_thread,npt,cpt);
+  // fprintf(stdout,"q_per_thread,neigh_per_thread,chnls_per_thread: %d,%d,%d\n",q_per_thread,neigh_per_thread,chnls_per_thread);
   // fprintf(stdout,"off_H0,off_W0,off_H1,off_W1: %d,%d,%d,%d\n",
   //         off_H0,off_W0,off_H1,off_W1);
   // fprintf(stdout,"use_adj,use_reflect: %d,%d\n",
@@ -526,7 +518,8 @@ void non_local_search_backward_cuda(
           inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
           rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
           q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
-          ps, pt, dilation, use_adj, reflect_bounds, q_per_thread, npt, cpt);
+          ps, pt, dilation, use_adj, reflect_bounds,
+          q_per_thread, neigh_per_thread, chnls_per_thread);
     }));
   }else if (dist_type == 1){ // l2
     AT_DISPATCH_FLOATING_TYPES(vid0.type(),"non_local_search_backward_kernel", ([&] {
@@ -539,7 +532,8 @@ void non_local_search_backward_cuda(
           inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
           rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
           q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
-          ps, pt, dilation, use_adj, reflect_bounds, q_per_thread, npt, cpt);
+          ps, pt, dilation, use_adj, reflect_bounds,
+          q_per_thread, neigh_per_thread, chnls_per_thread);
     }));
   }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }

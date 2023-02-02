@@ -129,76 +129,173 @@ void set_search_patch(int& n_hi, int& n_wi, int hj_center, int wj_center,
   }
 }
 
+            compute_dist<scalar_t,DIST_TYPE>(dist,
+                         vid0[ibatch][ihead],vid1[ibatch][ihead],
+                         ref_center, prop_center, 
+                         ref, prop, valid_ref, valid_prop, valid,
+                         pt,ps,dilation,reflect_bounds,
+                         patch_offset,center_offsets,invalid,
+                         T,C,H,W,pix0,pix1,pix);
+
 template<typename scalar_t, int DIST_TYPE>
 __device__ __forceinline__ 
 void compute_dist(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
-    scalar_t v_pix, scalar_t n_pix, int F,
-    int ti, int hi, int wi, int n_ti, int n_hi, int n_wi,
-    int vH, int vW, int vT, int nH, int nW, int nT,
-    bool vvalid_t,bool vvalid_h,bool vvalid_w, bool vvalid,
-    bool nvalid_t, bool nvalid_h, bool nvalid_w, bool nvalid,
-    int H, int W, int T, int pt, int ps, int dilation, int adj, int psHalf,
-    bool reflect_bounds, int off_H0, int off_W0, int off_H1, int off_W1,
-    scalar_t invalid){
-  
+  int* ref_center, int* prop_center, int* ref, int* prop,
+  bool* valid_ref, bool* valid_prop,
+  int ps, int pt, int dilation, bool reflect_bounds,
+  int patch_offset, int* center_offsets, scalar_t invalid,
+  int T, int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t _dist){
+                  
   for (int pk = 0; pk < pt; pk++){
-    // -- anchor time --
-    vT = bounds(ti + pk,T);
-    vvalid_t = (vT < T) && (vT >= 0);
+
+    // -- reference time --
+    ref[0] = bounds(ref_center[0] + pk,T);
+    valid_ref[0] = check_interval(ref[0],0,T);
 
     // -- proposed time --
-    nT = bounds(n_ti + pk,T);
-    nvalid_t = (nT < T) && (nT >= 0);
+    prop[0] = bounds(prop_center[0] + pk,T);
+    valid_prop[0] = check_interval(prop[0],0,T);
     
     for (int pi = 0; pi < ps; pi++){
-      // -- anchor H --
-      vH = (hi-off_H0) + dilation*(pi - psHalf + adj);
-      vH = reflect_bounds ? bounds(vH,H) : vH;
-      vvalid_h = (vH < H) && (vH >= 0);
-      
-      // -- propose H --
-      nH = (n_hi-off_H1) + dilation*(pi - psHalf + adj);
-      nH = reflect_bounds ? bounds(nH,H) : nH;
-      nvalid_h = (nH < H) && (nH >= 0);
 
+      // -- ref height --
+      ref[1] = (ref_center[1]-center_offsets[0])+dilation*(pi - patch_offset);
+      ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
+      valid_ref[1] = check_interval(ref[1],0,H);
+
+      // -- proposed height --
+      prop[1] = (prop_center[1]-center_offsets[1])+dilation*(pi - patch_offset);
+      prop[1] = proplect_bounds ? bounds(prop[1],H) : prop[1];
+      valid_prop[1] = check_interval(prop[1],0,H);
 
       for (int pj = 0; pj < ps; pj++){
         
-        // -- anchor W --
-        vW = (wi-off_W0) + dilation*(pj - psHalf + adj);
-        vW = reflect_bounds ? bounds(vW,W) : vW;
-        vvalid_w = (vW < W) && (vW >= 0);
+        // -- ref width --
+        ref[2] = (ref_center[2]-center_offsets[2])+dilation*(pj - patch_offset);
+        ref[2] = reflect_bounds ? bounds(ref[2],0,W) : ref[2];
+        valid_ref[2] = check_interval(ref[2],0,W);
 
-        // -- propose W --
-        nW = (n_wi-off_W1) + dilation*(pj - psHalf + adj);
-        nW = reflect_bounds ? bounds(nW,W) : nW;
-        nvalid_w = (nW < W) && (nW >= 0);
+        // -- prop width --
+        prop[2] = (prop_center[2]-center_offsets[3])+dilation*(pj - patch_offset);
+        prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
+        valid_prop[2] = check_interval(prop[2],0,W);
 
-        // -- check valid --
-        vvalid = vvalid_t && vvalid_h && vvalid_w;
-        nvalid = nvalid_t && nvalid_h && nvalid_w;
+        // -- ensure valid location --
+        valid_ref[3] = true;
+        valid_prop[3] = true;
+        #pragma unroll
+        for (int bool_idx=0; bool_idx<3; bool_idx++){
+          valid_ref[3] = valid_ref[3] && valid_ref[bool_idx]
+          valid_prop[3] = valid_prop[3] && valid_prop[bool_idx]
+        }
 
-        // -- all channels --
-        for (int ci = 0; ci < F; ci++){
+        // -- fill each channel --
+        for (int ci = 0; ci < C; ci++){
 
           // -- get data --
-          v_pix = vvalid ? vid0[vT][ci][vH][vW] : (scalar_t)0.;
-          n_pix = nvalid ? vid1[nT][ci][nH][nW] : (scalar_t)0.;
+          pix0 = valid_ref[3] ? vid0[ref[0]][ci][ref[1]][ref[2]] : (scalar_t)0.;
+          pix1 = valid_prop[3] ? vid1[prop[0]][ci][prop[1]][prop[2]] : (scalar_t)0.;
 
           // -- compute dist --
           if(DIST_TYPE == 0){ // product
-            dist += v_pix * n_pix;
+            dist += pix0 * pix1;
           }else if(DIST_TYPE == 1){ // l2
-            scalar_t _dist = (v_pix - n_pix);
-            dist += _dist * _dist;
+            _dist = (pix0 - pix1);
+            dist += _dist*_dist;
           }else{ // error
             dist = invalid;
           }
+
         }
       }
     }
   }
+}
 
+
+template<typename scalar_t, int DIST_TYPE>
+__device__ __forceinline__ 
+void update_bwd_patch(
+    torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid0,
+    torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid1,
+    const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
+    const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
+    scalar_t weight, int* ref_center, int* prop_center,
+    int ps, int pt, int dilation, bool reflect_bounds,
+    int* center_offsets, int patch_offset,
+    int c0, int c0_start, int c0_end, int c0_offset, int c0_dist,
+    int* ref, int* prop, bool* valid_ref, bool* valid_prop, bool valid,
+    int T, int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix){
+
+    for (int pk = 0; pk < pt; pk++){
+
+      // -- ref patch --
+      ref[0] = bounds(ref_center[0]+pk,T);
+      valid_ref[0] = check_interval(ref[0],0,T);
+
+      // -- prop patch --
+      prop[0] = bounds(prop_center[0]+pk,T);
+      valid_prop[0] = check_interval(prop[0],0,T);
+
+      for (int pi = 0; pi < ps; pi++){
+
+        // -- ref patch --
+        ref[1] = (ref_center[1]-center_offsets[0])+dilation*(pi - patch_offset);
+        ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
+        valid_ref[1] = check_interval(ref[1],0,H);
+
+        // -- prop patch --
+        prop[1] = (prop_center[1]-center_offsets[1])+dilation*(pi - patch_offset);
+        prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
+        valid_prop[1] = check_interval(prop[1],0,H);
+
+        for (int pj = 0; pj < ps; pj++){
+          
+          // -- ref patch --
+          ref[2] = (ref_center[2]-center_offsets[2])+dilation*(pj - patch_offset);
+          ref[2] = reflect_bounds ? bounds(ref[2],0,W) : ref[2];
+          valid_ref[2] = check_interval(ref[2],0,W);
+
+          // -- prop patch --
+          prop[2] = (prop_center[2]-center_offsets[3])+dilation*(pj - patch_offset);
+          prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
+          valid_prop[2] = check_interval(prop[2],0,W);
+
+          // -- ensure valid location --
+          valid_ref[3] = true;
+          valid_prop[3] = true;
+          #pragma unroll
+          for (int bool_idx=0; bool_idx<3; bool_idx++){
+            valid_ref[3] = valid_ref[3] && valid_ref[bool_idx]
+            valid_prop[3] = valid_prop[3] && valid_prop[bool_idx]
+          }
+
+          // -- fill each channel --
+          for (int _c0 = c0_start; _c0 < c0_end; _c0++){
+            c0 = (_c0 + c0_offset) % c0_dist + c0_start;
+            if (DIST_TYPE == 0){ // prod
+              valid = valid_ref[3] && valid_prop[3];
+              if(valid){
+                pix0 = weight*vid0[ref[0]][c0][ref[1]][ref[2]];
+                pix1 = weight*vid1[prop[0]][c0][prop[1]][prop[2]];
+                grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix1;
+                grad_vid1[prop[0]][c0][prop[1]][prop[2]] += pix0;
+              }
+            }else if(DIST_TYPE == 1){ // l2 norm
+              pix0 = valid_ref[3] ? vid0[ref[0]][c0][ref[1]][ref[2]] : (scalar_t)0.;
+              pix1 = valid_prop[3] ? vid1[prop[0]][c0][prop[1]][prop[2]] : (scalar_t)0.;
+              pix = 2 * weight * (pix0 - pix1);
+              if (valid_ref[3]){
+                grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix;
+              }
+              if (valid_prop[3]){
+                grad_vid1[prop[0]][c0][prop[1]][prop[2]] -= pix;
+              }
+            }
+          }
+        }
+      }
+    }
 }

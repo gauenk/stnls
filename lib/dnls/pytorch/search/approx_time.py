@@ -23,7 +23,7 @@ class ApproxTimeSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
-                ws, wt, ps, k, wr, kr, nheads=1, qshift=0, Q=-1,
+                ws, wt, ps, k, wr, kr, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
@@ -41,45 +41,22 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         k_exact = k-gamble*st
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         dists,inds = nls_apply(vid0,vid1,fflow,bflow,
-                               ws,0,ps,k_exact,nheads,qshift,Q,
+                               ws,0,ps,k_exact,nheads,batchsize,
                                dist_type,stride0,stride1,
                                dilation,pt,reflect_bounds,full_ws,
                                anchor_self,remove_self,use_adj,
                                off_H0,off_W0,off_H1,off_W1,
                                rbwd,nbwd,exact)
-        # print("vid0.shape: ",vid0.shape)
-        # print("wt: ",wt)
-        # print("k_exact: ",k_exact)
-        # print("inds.shape: ",inds.shape)
-
-        # -- viz --
-        # args = th.where(inds==-1)
-        # if len(args[0]) > 0:
-        #     print("[exact]: approx time.")
-        #     print(inds[0,0,args[2][0]])
-        #     print(dists[0,0,args[2][0]])
-        #     print("*"*60)
-        #     exit(0)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
         #      2.) Compute Offset Indices using Optical Flows
         #
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-        # print(vid0.shape,fflow.shape,bflow.shape,kr,inds.shape,k)
-        # for i in range(3):
-        #     print(i,inds[...,i].min(),inds[...,i].max())
 
-        # print("pre temp inds.")
-        # th.cuda.synchronize()
         if wt > 0:
             inds_t = dnls.nn.temporal_inds(filter_k(inds,kr,k),wt,fflow,bflow)
-            # inds_t = dnls.nn.temporal_inds(inds,wt,fflow,bflow)
             inds_t = rearrange(inds_t,'B HD Q ST K tr -> B HD Q (ST K) tr')
-        # th.cuda.synchronize()
-        # print("post temp inds.")
-        # th.cuda.synchronize()
-        # print("ws,wr: ",ws,wr)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -88,11 +65,10 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
         if wt > 0:
-            # print("inds_t.shape: ",inds_t.shape)
             anchor_self_r = False
             remove_self_r = False
             _dists,_inds = refine_apply(vid0, vid1, inds_t,
-                                        ws,ps,k,wr,-1,nheads,qshift,
+                                        ws,ps,k,wr,-1,nheads,batchsize,
                                         dist_type,stride0,stride1,
                                         dilation,pt,reflect_bounds,full_ws,
                                         anchor_self_r,remove_self_r,use_adj,
@@ -118,33 +94,11 @@ class ApproxTimeSearchFunction(th.autograd.Function):
         dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
                                   descending=descending,unique=True)
 
-        # -- check --
-        # dups,any_dup = dnls.testing.find_duplicate_inds(inds)
-        # args = th.where(dups == True)
-        # print(inds.shape,dups.shape)
-        # print(inds[0,0,args[2][0]])
-        # print(dists[0,0,args[2][0]])
-        # print(dups[0,0,args[2][0]])
-        # print(inds_tmp[0,0,args[2][0]])
-        # print(dists_tmp[0,0,args[2][0]])
-        # assert not(any_dup)
-
-        # -- viz --
-        # args = th.where(inds==-1)
-        # if len(args[0]) > 0:
-        #     print("approx time.")
-        #     print(inds[0,0,args[2][0]])
-        #     # print(inds_tmp[0,0,args[2][0]])
-        #     print(dists[0,0,args[2][0]])
-        #     # print(dists_tmp[0,0,args[2][0]])
-        #     print("*"*60)
-        # assert not(th.any(inds==-1).item()),"[%s] No -1 indices" % __file__
-
         # -- setup ctx --
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"qshift":qshift,"stride0":stride0,"ps":ps,"pt":pt,
+        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
@@ -247,7 +201,26 @@ class ApproxTimeSearch(th.nn.Module):
         return 0
 
 
-_apply = ApproxTimeSearchFunction.apply # api
+# -- api --
+def _apply(vid0, vid1, fflow, bflow,
+           ws, wt, ps, k, wr, kr, nheads=1, batchsize=-1,
+           dist_type="prod", stride0=4, stride1=1,
+           dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+           anchor_self=True, remove_self=False,
+           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=True, nbwd=1, exact=False):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
+    fxn = ApproxTimeSearchFunction.apply
+    return fxn(vid0, vid1, fflow, bflow,
+               ws, wt, ps, k, wr, kr, nheads,
+               batchsize, dist_type, stride0, stride1,
+               dilation, pt, reflect_bounds,
+               full_ws, anchor_self, remove_self,
+               use_adj, off_H0, off_W0, off_H1, off_W1,
+               rbwd, nbwd, exact)
+
 
 
 #

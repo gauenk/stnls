@@ -24,9 +24,9 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
                 ws, wt, ps, k, wr_t, kr_t, wr_s, kr_s, scale,
-                nheads=1, qshift=0, Q=-1,
-                dist_type="prod", stride0=4, stride1=1,
-                dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+                nheads=1, batchsize=-1, dist_type="prod",
+                stride0=4, stride1=1, dilation=1, pt=1,
+                reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
                 use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
                 rbwd=True, nbwd=1, exact=False):
@@ -45,7 +45,7 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         dists,inds = approx_space_apply(vid0,vid1,fflow,bflow,
                                         ws,0,ps,k_space,wr_s,kr_s,scale,
-                                        nheads,qshift,Q,
+                                        nheads,batchsize,
                                         dist_type,stride0,stride1,
                                         dilation,pt,reflect_bounds,full_ws,
                                         anchor_self,remove_self,use_adj,
@@ -72,7 +72,7 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
             anchor_self_r = False
             remove_self_r = False
             _dists,_inds = refine_apply(vid0, vid1, inds_t,
-                                        ws,ps,k,wr_t,-1,nheads,qshift,
+                                        ws,ps,k,wr_t,-1,nheads,batchsize,
                                         dist_type,stride0,stride1,
                                         dilation,pt,reflect_bounds,full_ws,
                                         anchor_self_r,remove_self_r,use_adj,
@@ -99,7 +99,7 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"qshift":qshift,"stride0":stride0,"ps":ps,"pt":pt,
+        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
@@ -167,13 +167,14 @@ class ApproxSpaceTimeSearch(th.nn.Module):
         self.exact = exact
         self.rbwd = rbwd
 
-    def forward(self, vid0, vid1, fflow, bflow, qshift=0, nqueries=-1):
+    def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
         fxn = ApproxSpaceTimeSearchFunction.apply
         return fxn(vid0,vid1,fflow,bflow,
                    self.ws,self.wt,self.ps,self.k,
-                   self.wr_t,self.kr_t,self.wr_s,self.kr_s,self.scale,
-                   self.nheads,qshift,nqueries,
-                   self.dist_type,self.stride0,self.stride1,
+                   self.wr_t,self.kr_t,self.wr_s,
+                   self.kr_s,self.scale,
+                   self.nheads,batchsize,self.dist_type,
+                   self.stride0,self.stride1,
                    self.dilation,self.pt,
                    self.reflect_bounds,self.full_ws,
                    self.anchor_self,self.remove_self,
@@ -206,7 +207,26 @@ class ApproxSpaceTimeSearch(th.nn.Module):
         return 0
 
 
-_apply = ApproxSpaceTimeSearchFunction.apply # api
+# -- api --
+def _apply(vid0, vid1, fflow, bflow,
+           ws, wt, ps, k, wr_t, kr_t, wr_s, kr_s, scale,
+           nheads=1, batchsize=-1, dist_type="prod",
+           stride0=4, stride1=1, dilation=1, pt=1,
+           reflect_bounds=True, full_ws=False,
+           anchor_self=False, remove_self=False,
+           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=True, nbwd=1, exact=False):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
+    fxn = ApproxSpaceTimeSearchFunction.apply
+    return fxn(vid0, vid1, fflow, bflow,
+               ws, wt, ps, k, wr_t, kr_t, wr_s, kr_s, scale,
+               nheads, batchsize, dist_type, stride0, stride1,
+               dilation, pt, reflect_bounds,
+               full_ws, anchor_self, remove_self,
+               use_adj, off_H0, off_W0, off_H1, off_W1,
+               rbwd, nbwd, exact)
 
 def extract_config(cfg):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,

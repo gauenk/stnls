@@ -17,12 +17,68 @@ from .utils import extract_pairs
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
+from .batching_utils import run_batched
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#       Forward Logic
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def nls_forward(batchsize,*args):
+    if batchsize <= 0: # shortcut
+        qshift,nqueries = 0,-1
+        return nls_fwd_main(qshift,nqueries,*args)
+    else:
+        vid_idx = 0
+        stride0_idx = 8
+        return run_batched(nls_fwd_main,batchsize,vid_idx,stride0_idx)
+
+def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
+                 wt, ps, k, dist_type_i, stride0,
+                 stride1, dilation, pt, reflect_bounds,
+                 full_ws, search_abs, use_adj,
+                 off_H0, off_W0, off_H1, off_W1):
+
+    # -- allocate results --
+    B,HD,T,C,H,W = vid0.shape
+    st = min(2*wt+1,T)
+    base_shape = (B,HD,Q,st,ws_h,ws_w)
+    dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
+
+    # -- forward --
+    dnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
+                                       dists, inds,
+                                       wt, ps, k, dist_type_i, stride0,
+                                       stride1, dilation, pt, qshift,
+                                       reflect_bounds, full_ws, search_abs,
+                                       use_adj, off_H0, off_W0, off_H1, off_W1)
+
+    # -- compress search region --
+    dists=dists.view(B,HD,Q,-1)
+    inds=inds.view(B,HD,Q,-1,3)
+
+    # -- manage self dists --
+    dists,inds = manage_self(dists,inds,anchor_self,
+                             remove_self,qshift,stride0,H,W)
+
+    # -- topk --
+    dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+                              descending=descending,unique=False)
+
+    return dists,inds
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#     Pytorch Function
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 class NonLocalSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
-                ws, wt, ps, k, nheads=1, qshift=0, Q=-1,
+                ws, wt, ps, k, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
@@ -57,36 +113,19 @@ class NonLocalSearchFunction(th.autograd.Function):
         # -- settings from distance type --
         dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
-        # -- allocate results --
-        st = min(2*wt+1,T)
-        base_shape = (B,HD,Q,st,ws_h,ws_w)
-        dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
-
-        # -- forward --
-        dnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
-                                           dists, inds,
-                                           wt, ps, k, dist_type_i, stride0,
-                                           stride1, dilation, pt, qshift,
-                                           reflect_bounds, full_ws, search_abs,
-                                           use_adj, off_H0, off_W0, off_H1, off_W1)
-
-        # -- compress search region --
-        dists=dists.view(B,HD,Q,-1)
-        inds=inds.view(B,HD,Q,-1,3)
-
-        # -- manage self dists --
-        dists,inds = manage_self(dists,inds,anchor_self,
-                                 remove_self,qshift,stride0,H,W)
-
-        # -- topk --
-        dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                  descending=descending,unique=False)
+        # -- run, optionally batched, forward function --
+        nls_forward(batchsize, vid0, vid1, fflow, bflow,
+                    dists, inds, wt, ps, k, dist_type_i,
+                    stride0, stride1, dilation, pt,
+                    anchor_self, remove_self, reflect_bounds,
+                    full_ws, search_abs, use_adj,
+                    off_H0, off_W0, off_H1, off_W1)
 
         # -- setup ctx --
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"qshift":qshift,"stride0":stride0,"ps":ps,"pt":pt,
+        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
@@ -101,15 +140,21 @@ class NonLocalSearchFunction(th.autograd.Function):
     def backward(ctx, grad_dists, grad_inds_is_none):
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#       Pytorch Module
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
 class NonLocalSearch(th.nn.Module):
 
     def __init__(self, ws, wt, ps, k, nheads=1,
-                 dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
-                 reflect_bounds=True, full_ws=False,
+                 dist_type="prod", stride0=4, stride1=1,
+                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
                  use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
                  rbwd=True, nbwd=1, exact=False):
@@ -147,12 +192,12 @@ class NonLocalSearch(th.nn.Module):
         self.exact = exact
         self.rbwd = rbwd
 
-    def forward(self, vid0, vid1, fflow, bflow, qshift=0, nqueries=-1):
+    def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
         return NonLocalSearchFunction.apply(vid0,vid1,fflow,bflow,
                                             self.ws,self.wt,self.ps,self.k,
-                                            self.nheads,qshift,nqueries,
-                                            self.dist_type,self.stride0,self.stride1,
-                                            self.dilation,self.pt,
+                                            self.nheads,batchsize,
+                                            self.dist_type,self.stride0,
+                                            self.stride1,self.dilation,self.pt,
                                             self.reflect_bounds,self.full_ws,
                                             self.anchor_self,self.remove_self,
                                             self.use_adj,self.off_H0,self.off_W0,
@@ -184,10 +229,10 @@ class NonLocalSearch(th.nn.Module):
         return 0
 
 def _apply(vid0, vid1, fflow, bflow,
-           ws, wt, ps, k, nheads=1, qshift=0, nqueries=-1,
+           ws, wt, ps, k, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-           anchor_self=False, remove_self=False,
+           anchor_self=True, remove_self=False,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
            rbwd=True, nbwd=1, exact=False):
     # wrap "new (2018) apply function
@@ -195,9 +240,8 @@ def _apply(vid0, vid1, fflow, bflow,
     # cfg = extract_config(kwargs)
     fxn = NonLocalSearchFunction.apply
     return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
-               nheads,qshift,nqueries,
-               dist_type,stride0,stride1,
-               dilation,pt,reflect_bounds,
+               nheads,batchsize,dist_type,
+               stride0,stride1,dilation,pt,reflect_bounds,
                full_ws,anchor_self,remove_self,
                use_adj,off_H0,off_W0,
                off_H1,off_W1,
@@ -218,7 +262,7 @@ def extract_config(cfg):
              "reflect_bounds":True, "full_ws":False,
              "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "rbwd":True, "nbwd":1, "exact":False,"qshift":0,"nqueries":-1}
+             "rbwd":True, "nbwd":1, "exact":False}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):

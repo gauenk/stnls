@@ -58,9 +58,9 @@ def shape_vids(nheads,vids):
 
 
 # -- get empty flow --
-def empty_flow(self,vshape,dtype,device):
-    b,t,c,h,w = vshape
-    zflow = th.zeros((b,t,2,h,w),dtype=dtype,device=device)
+def empty_flow(vid):
+    b,t,c,h,w = vid.shape
+    zflow = th.zeros((b,t,2,h,w),dtype=vid.dtype,device=vid.device)
     return zflow
 
 #

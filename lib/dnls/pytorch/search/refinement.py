@@ -17,13 +17,76 @@ from .utils import filter_k
 from .utils import shape_vids,dist_type_select
 from .utils import allocate_pair,allocate_vid
 from .shared import manage_self
+from .batching_utils import run_batched
 from .nls_bwd_impl import nls_backward
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#       Forward Logic
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def refine_forward(batchsize,*args):
+    if batchsize <= 0: # shortcut
+        qshift,nqueries = 0,-1
+        return refine_fwd_main(qshift,nqueries,*args)
+    else:
+        vid_idx = 0
+        stride0_idx = 10
+        return run_batched(refine_fwd_main,batchsize,vid_idx,stride0_idx)
+
+def refine_fwd_main(qshift, Q, vid0, vid1, qinds, dists, inds,
+                    ws_h, ws_w, ps, k, dist_type,
+                    stride0, stride1, dilation, pt,
+                    anchor_self, remove_self, reflect_bounds,
+                    full_ws, use_adj, off_H0, off_W0, off_H1, off_W1):
+
+    # -- fix negative Q --
+    if Q > 0:
+        qinds = qinds[:,:,qshift:qshift+Q].contiguous()
+
+    # -- settings from distance type --
+    dist_type_i,descending,idist_val = dist_type_select(dist_type)
+
+    # -- allocate results --
+    Q = qinds.shape[2] # ignore input Q; only for slicing "qinds"
+    K = qinds.shape[3]
+    base_shape = (B,HD,Q,K,wr_h,wr_w)
+    dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
+
+    # -- run --
+    dnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
+                                 ws_h, ws_w, ps, k, dist_type_i,
+                                 stride0, stride1, dilation, pt, qshift,
+                                 anchor_self, remove_self, reflect_bounds,
+                                 full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
+
+    # -- compress search region --
+    dists=dists.view(B,HD,Q,-1)
+    inds=inds.view(B,HD,Q,-1,3)
+
+
+    # -- manage self dists --
+    dists,inds = manage_self(dists,inds,anchor_self,
+                             remove_self,qshift,stride0,H,W)
+
+    # -- topk --
+    qinds = rearrange(qinds,'b hd q k tr -> (b hd q) k tr')
+    dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+                              descending=descending,unique=True,qinds=qinds)
+    return dists,inds
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#     Pytorch Function
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, qinds,
-                ws, ps, k, wr, kr, nheads=1, qshift=0,
+                ws, ps, k, wr, kr, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
@@ -45,101 +108,32 @@ class RefineSearchFunction(th.autograd.Function):
         B,HD,T,F,H,W = vid0.shape
         assert qinds.shape[1] == HD
 
-        # -- check qinds --
-        # args = th.where(qinds == -1)
-        # if len(args[0]) > 0:
-        #     print("refinment.")
-        #     print(qinds[0,0,args[0][2]])
-
         # -- filter only to kr --
         qinds = filter_k(qinds,kr)
         qinds = qinds.contiguous()
-
-        # -- derived shapes --
-        Q = qinds.shape[2]
-        K = qinds.shape[3]
-        nH0 = (H-1)//stride0+1
-        nW0 = (W-1)//stride0+1
 
         # -- search space --
         wr_h,wr_w = wr,wr
         ws_h,ws_w = ws,ws
         search_abs = ws == -1
         if search_abs:
+            nH0 = (H-1)//stride0+1
+            nW0 = (W-1)//stride0+1
             ws_h,ws_w = nH0,nW0
 
-        # -- settings from distance type --
-        dist_type_i,descending,idist_val = dist_type_select(dist_type)
-
-        # -- allocate results --
-        base_shape = (B,HD,Q,K,wr_h,wr_w)
-        dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
-
-        # -- run --
-        # print("pre refine.")
-        # th.cuda.synchronize()
-        dnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
-                                     ws_h, ws_w, ps, k, dist_type_i,
-                                     stride0, stride1, dilation, pt, qshift,
-                                     reflect_bounds, full_ws, use_adj,
-                                     off_H0, off_W0, off_H1, off_W1)
-        # print("post refine.")
-        # th.cuda.synchronize()
-        # print("post sync.")
-
-        # -- compress search region --
-        dists=dists.view(B,HD,Q,-1)
-        inds=inds.view(B,HD,Q,-1,3)
-
-
-        # -- viz --
-        # print("[a] pre-manage self")
-        # th.cuda.synchronize()
-        # print("[b] pre-manage self")
-
-        # -- manage self dists --
-        dists,inds = manage_self(dists,inds,anchor_self,
-                                 remove_self,qshift,stride0,H,W)
-
-        # -- viz --
-        # print("[a] post-manage self")
-        # th.cuda.synchronize()
-        # print("[b] post-manage self")
-        # inds_tmp = inds.clone()
-        # dists_tmp = dists.clone()
-        # print("[a] pre-topk")
-        # th.cuda.synchronize()
-        # print("[b] pre-topk")
-
-        # -- topk --
-        qinds = rearrange(qinds,'b hd q k tr -> (b hd q) k tr')
-        dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                  descending=descending,unique=True,qinds=qinds)
-
-        # -- viz --
-        # print("[a] post-topk")
-        # th.cuda.synchronize()
-        # print("[b] post-topk")
-
-        # -- check --
-        # assert not(th.any(inds==-1).item()),"[%s] No -1 indices" % __file__
-
-        # -- viz --
-        # args = th.where(inds == -1)
-        # if len(args[0]) > 0:
-        #     print(" refine. ")
-        #     print(qinds[0,0,args[2][0]])
-        #     print(inds[0,0,args[2][0]])
-        #     print(inds_tmp[0,0,args[2][0]])
-        #     print(dists[0,0,args[2][0]])
-        #     print(dists_tmp[0,0,args[2][0]])
-        #     print("."*60)
+        # -- run fwd pass --
+        dists,inds = refine_forward(batchsize, vid0, vid1, qinds, dists, inds,
+                                    ws_h, ws_w, ps, k, dist_type,
+                                    stride0, stride1, dilation, pt,
+                                    anchor_self,remove_self, reflect_bounds,
+                                    full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
 
         # -- setup ctx --
+        dist_type_i = dist_type_select(dist_type)[0]
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"qshift":qshift,"stride0":stride0,"ps":ps,"pt":pt,
+        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
@@ -201,10 +195,10 @@ class RefineSearch(th.nn.Module):
         self.exact = exact
         self.rbwd = rbwd
 
-    def forward(self,vid0,vid1,qinds,qshift=0):
+    def forward(self,vid0,vid1,qinds,batchsize=-1):
         return RefineSearchFunction.apply(vid0,vid1,qinds,
                                           self.ws,self.ps,self.k,
-                                          self.wr,self.kr,self.nheads,qshift,
+                                          self.wr,self.kr,self.nheads,batchsize,
                                           self.dist_type,self.stride0,self.stride1,
                                           self.dilation,self.pt,
                                           self.reflect_bounds,self.full_ws,
@@ -220,7 +214,26 @@ class RefineSearch(th.nn.Module):
         return 0
 
 
-_apply = RefineSearchFunction.apply # api
+# -- api --
+def _apply(vid0, vid1, qinds,
+           ws, ps, k, wr, kr, nheads=1, batchsize=-1,
+           dist_type="prod", stride0=4, stride1=1,
+           dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+           anchor_self=False, remove_self=False,
+           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=True, nbwd=1, exact=False):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
+    fxn = RefineSearchFunction.apply
+    return fxn(vid0, vid1, qinds,
+               ws, ps, k, wr, kr, nheads, batchsize,
+               dist_type, stride0, stride1,
+               dilation, pt, reflect_bounds,
+               full_ws, anchor_self, remove_self,
+               use_adj, off_H0, off_W0, off_H1, off_W1,
+               rbwd, nbwd, exact)
+
 
 #
 #
