@@ -30,7 +30,7 @@ __global__ void refinement_forward_kernel(
   // -- unpack shapes --
   int HD = vid0.size(1);
   int T = vid0.size(2);
-  int F = vid0.size(3);
+  int C = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
   int Q = dists.size(2);
@@ -59,16 +59,30 @@ __global__ void refinement_forward_kernel(
   int ihead = blockIdx.y;
   int q_start = blockIdx.z*q_per_thread;
   int qi,si,wh,ww;
-  int qindex,i_mod;
+  int qindex,qindex_tmp;
 
-  // decls
-  int ti,hi,wi;
-  int n_ti,n_hi,n_wi;
-  int vH,vW,vT,nH,nW,nT;
-  bool valid_anchor,valid_n,valid;
-  bool vvalid_t,vvalid_h,vvalid_w,vvalid;
-  bool nvalid_t,nvalid_h,nvalid_w,nvalid;
-  scalar_t dist,v_pix,n_pix;
+  // -- fwd decls --
+  int prop_center[2];
+  int prop_patch[3];
+  int prop_pix[3];
+  int ref_patch[3];
+  int ref_pix[3];
+  bool valid;
+  bool valid_prop[4];
+  bool valid_ref[4];
+  scalar_t dist,pix0,pix1,_dist;
+
+  // int ti,hi,wi;
+  // int n_ti,n_hi,n_wi;
+  // int vH,vW,vT,nH,nW,nT;
+  // bool valid_anchor,valid_n,valid;
+  // bool vvalid_t,vvalid_h,vvalid_w,vvalid;
+  // bool nvalid_t,nvalid_h,nvalid_w,nvalid;
+
+  // -- cleaner code --
+  int center_offsets[4] = {off_H0,off_W0,off_H1,off_W1};
+  int patch_offset = psHalf + adj;
+
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
@@ -82,16 +96,18 @@ __global__ void refinement_forward_kernel(
     qindex = qi + q_shift;
 
     // -- pixel location from query index --
-    get_pixel_loc(ti,hi,wi,qindex,i_mod,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
 
     // -- check bounds of pixel location --
-    check_bounds(valid_anchor,ti,hi,wi,T,H,W);
+    check_bounds(valid_ref[3],ref_patch,T,H,W);
 
     // -- search region offsets --
-    set_search_offsets(wrOff_h,wrOff_w, hi, wi, stride1, wrHalf_h,
-                       wrHalf_w, wrMax_h, wrMax_w, H, W, full_ws);
-    set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
-    set_search_minmax(wrMax_w, wrMin_w, wrOff_w, wr_w, stride1, full_ws);
+    set_search_offsets(wrOff_h,wrOff_w, ref_patch[1], ref_patch[2],
+                       stride1, wrHalf_h, wrHalf_w, wrMax_h, wrMax_w, H, W, full_ws);
+
+    // -- [unused] set search bounds for [optionally] invaliding expanded region --
+    // set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
+    // set_search_minmax(wrMax_w, wrMin_w, wrOff_w, wr_w, stride1, full_ws);
 
     // ---------------------------------------
     //     for each neighbor in k_search
@@ -101,9 +117,9 @@ __global__ void refinement_forward_kernel(
       if (si >= K){ continue; }
 
       // -- unpack base -- 
-      int n_ti = qinds[ibatch][ihead][qi][si][0]; // no search
-      int hj_center = qinds[ibatch][ihead][qi][si][1];
-      int wj_center = qinds[ibatch][ihead][qi][si][2];
+      prop_patch[0] = qinds[ibatch][ihead][qi][si][0]; // no search
+      prop_center[0] = qinds[ibatch][ihead][qi][si][1];
+      prop_center[1] = qinds[ibatch][ihead][qi][si][2];
 
       // ---------------------------------------
       //     for each position to search
@@ -124,34 +140,30 @@ __global__ void refinement_forward_kernel(
           // ----------------------
           //    spatial center
           // ----------------------
-          n_hi = (hj_center) + stride1 * (wh - wrOff_h);
-          n_wi = (wj_center) + stride1 * (ww - wrOff_w);
+          prop_patch[1] = (prop_center[0]) + stride1 * (wh - wrOff_h);
+          prop_patch[2] = (prop_center[1]) + stride1 * (ww - wrOff_w);
 
           // -- check bounds of pixel location --
-          check_bounds(valid_n,n_ti,n_hi,n_wi,T,H,W);
-          valid = valid_n && valid_anchor;
+          check_bounds(valid_prop[3],prop_patch,T,H,W);
+          valid = valid_ref[3] && valid_prop[3];
 
           //  -- compute patch difference --
           if (valid){
             compute_dist<scalar_t,DIST_TYPE>(dist,
                          vid0[ibatch][ihead],vid1[ibatch][ihead],
-                         v_pix, n_pix, F,
-                         ti,hi,wi,n_ti,n_hi,n_wi,
-                         vH, vW, vT, nH, nW, nT,
-                         vvalid_t,vvalid_h,vvalid_w, vvalid,
-                         nvalid_t,nvalid_h,nvalid_w, nvalid,
-                         H,W,T,pt,ps,dilation,adj,psHalf,
-			 reflect_bounds,off_H0,off_W0,off_H1,off_W1,
-			 invalid);
+                         ref_patch, prop_patch, 
+                         ref_pix, prop_pix, valid_ref, valid_prop,
+                         ps,pt,dilation,reflect_bounds,
+                         patch_offset,center_offsets,invalid,
+                         T,C,H,W,pix0,pix1,_dist);
           }
-
 
           // -- assignent --
           if (!valid){ dist = invalid; }
           dists[ibatch][ihead][qi][si][wh][ww] = dist;
-          inds[ibatch][ihead][qi][si][wh][ww][0] = n_ti;
-          inds[ibatch][ihead][qi][si][wh][ww][1] = n_hi;
-          inds[ibatch][ihead][qi][si][wh][ww][2] = n_wi;
+          inds[ibatch][ihead][qi][si][wh][ww][0] = prop_patch[0];
+          inds[ibatch][ihead][qi][si][wh][ww][1] = prop_patch[1];
+          inds[ibatch][ihead][qi][si][wh][ww][2] = prop_patch[2];
 
         } //  ww
       } // wh

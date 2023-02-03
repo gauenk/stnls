@@ -41,7 +41,8 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
                 grad_dists,inds,qshift,ctx.stride0,nH0,nW0,
                 ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,
                 ctx.ps,ctx.pt,ctx.dil,ctx.use_adj,
-                ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i)
+                ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i,
+                ctx.channel_groups,ctx.neigh_per_thread,ctx.queries_per_thread)
     else:
         for _ in range(ctx.nbwd):
             grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
@@ -50,7 +51,8 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
                     grad_dists,inds,qshift,ctx.stride0,nH0,nW0,
                     ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,
                     ctx.ps,ctx.pt,ctx.dil,ctx.use_adj,
-                    ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i)
+                    ctx.reflect_bounds,ctx.rbwd,ctx.exact,ctx.dist_type_i,
+                    ctx.channel_groups,ctx.neigh_per_thread,ctx.queries_per_thread)
             grad_vid0 += grad_vid0_i
             grad_vid1 += grad_vid1_i
         grad_vid0 /= ctx.nbwd

@@ -35,8 +35,8 @@ def refine_forward(batchsize,*args):
         stride0_idx = 10
         return run_batched(refine_fwd_main,batchsize,vid_idx,stride0_idx)
 
-def refine_fwd_main(qshift, Q, vid0, vid1, qinds, dists, inds,
-                    ws_h, ws_w, ps, k, dist_type,
+def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
+                    ws, wr, ps, k, dist_type,
                     stride0, stride1, dilation, pt,
                     anchor_self, remove_self, reflect_bounds,
                     full_ws, use_adj, off_H0, off_W0, off_H1, off_W1):
@@ -45,12 +45,21 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds, dists, inds,
     if Q > 0:
         qinds = qinds[:,:,qshift:qshift+Q].contiguous()
 
+    # -- search space --
+    wr_h,wr_w = wr,wr
+    ws_h,ws_w = ws,ws
+    search_abs = ws == -1
+    if search_abs:
+        nH0 = (H-1)//stride0+1
+        nW0 = (W-1)//stride0+1
+        ws_h,ws_w = nH0,nW0
+
     # -- settings from distance type --
     dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
     # -- allocate results --
-    Q = qinds.shape[2] # ignore input Q; only for slicing "qinds"
-    K = qinds.shape[3]
+    device = qinds.device
+    B,HD,Q,K = qinds.shape[:-1]
     base_shape = (B,HD,Q,K,wr_h,wr_w)
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
@@ -58,8 +67,8 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds, dists, inds,
     dnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
                                  ws_h, ws_w, ps, k, dist_type_i,
                                  stride0, stride1, dilation, pt, qshift,
-                                 anchor_self, remove_self, reflect_bounds,
-                                 full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
+                                 reflect_bounds, full_ws, use_adj,
+                                 off_H0, off_W0, off_H1, off_W1)
 
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
@@ -67,6 +76,7 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds, dists, inds,
 
 
     # -- manage self dists --
+    H,W = vid0.shape[-2:]
     dists,inds = manage_self(dists,inds,anchor_self,
                              remove_self,qshift,stride0,H,W)
 
@@ -91,7 +101,8 @@ class RefineSearchFunction(th.autograd.Function):
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
                 use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                rbwd=True, nbwd=1, exact=False):
+                rbwd=True, nbwd=1, exact=False, channel_groups=-1,
+                neigh_per_thread=4, queries_per_thread=4):
         """
         Run the refinement search
 
@@ -112,18 +123,9 @@ class RefineSearchFunction(th.autograd.Function):
         qinds = filter_k(qinds,kr)
         qinds = qinds.contiguous()
 
-        # -- search space --
-        wr_h,wr_w = wr,wr
-        ws_h,ws_w = ws,ws
-        search_abs = ws == -1
-        if search_abs:
-            nH0 = (H-1)//stride0+1
-            nW0 = (W-1)//stride0+1
-            ws_h,ws_w = nH0,nW0
-
         # -- run fwd pass --
-        dists,inds = refine_forward(batchsize, vid0, vid1, qinds, dists, inds,
-                                    ws_h, ws_w, ps, k, dist_type,
+        dists,inds = refine_forward(batchsize, vid0, vid1, qinds,
+                                    ws, wr, ps, k, dist_type,
                                     stride0, stride1, dilation, pt,
                                     anchor_self,remove_self, reflect_bounds,
                                     full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
@@ -137,7 +139,10 @@ class RefineSearchFunction(th.autograd.Function):
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
-                    "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
+                    "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i,
+                    "channel_groups":channel_groups,
+                    "neigh_per_thread":neigh_per_thread,
+                    "queries_per_thread":queries_per_thread}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 
@@ -148,7 +153,7 @@ class RefineSearchFunction(th.autograd.Function):
     def backward(ctx, grad_dists, grad_inds_is_none):
         # print("refinement: ",grad_dists.shape,grad_inds_is_none)
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
-        return grad0,grad1,None,None,None,None,\
+        return grad0,grad1,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
 
@@ -159,7 +164,8 @@ class RefineSearch(th.nn.Module):
                  reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
                  use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 rbwd=True, nbwd=1, exact=False):
+                 rbwd=True, nbwd=1, exact=False, channel_groups=-1,
+                 neigh_per_thread=4, queries_per_thread=4):
         super().__init__()
 
         # -- core search params --
@@ -194,6 +200,9 @@ class RefineSearch(th.nn.Module):
         self.nbwd = nbwd
         self.exact = exact
         self.rbwd = rbwd
+        self.channel_groups = channel_groups
+        self.neigh_per_thread = neigh_per_thread
+        self.queries_per_thread = queries_per_thread
 
     def forward(self,vid0,vid1,qinds,batchsize=-1):
         return RefineSearchFunction.apply(vid0,vid1,qinds,
@@ -205,7 +214,11 @@ class RefineSearch(th.nn.Module):
                                           self.anchor_self,self.remove_self,
                                           self.use_adj,self.off_H0,self.off_W0,
                                           self.off_H1,self.off_W1,
-                                          self.rbwd,self.nbwd,self.exact)
+                                          self.rbwd,self.nbwd,self.exact,
+                                          self.channel_groups,
+                                          self.neigh_per_thread,
+                                          self.queries_per_thread)
+
 
     def flops(self,B,HD,T,F,H,W):
         return 0
@@ -221,7 +234,8 @@ def _apply(vid0, vid1, qinds,
            dilation=1, pt=1, reflect_bounds=True, full_ws=False,
            anchor_self=False, remove_self=False,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           rbwd=True, nbwd=1, exact=False):
+           rbwd=True, nbwd=1, exact=False, channel_groups=-1,
+           neigh_per_thread=4, queries_per_thread=4):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -232,7 +246,8 @@ def _apply(vid0, vid1, qinds,
                dilation, pt, reflect_bounds,
                full_ws, anchor_self, remove_self,
                use_adj, off_H0, off_W0, off_H1, off_W1,
-               rbwd, nbwd, exact)
+               rbwd, nbwd, exact,
+               channel_groups, neigh_per_thread, queries_per_thread)
 
 
 #
@@ -248,7 +263,8 @@ def extract_config(cfg):
              "reflect_bounds":True, "full_ws":False,
              "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "rbwd":True, "nbwd":1, "exact":False}
+             "rbwd":True, "nbwd":1, "exact":False,
+             "channel_groups":-1, "neigh_per_thread":4, "queries_per_thread":4}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
@@ -260,6 +276,10 @@ def init(cfg):
                           anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
                           use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
                           off_H1=cfg.off_H1,off_W1=cfg.off_W1,
-                          rbwd=cfg.rbwd, nbwd=cfg.nbwd, exact=cfg.exact)
+                          rbwd=cfg.rbwd, nbwd=cfg.nbwd, exact=cfg.exact,
+                          channel_groups=cfg.channel_groups,
+                          neigh_per_thread=cfg.neigh_per_thread,
+                          queries_per_thread=cfg.neigh_per_thread)
+
     return search
 

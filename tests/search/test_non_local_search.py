@@ -31,10 +31,19 @@ from torchvision.transforms.functional import center_crop
 # -- paths --
 SAVE_DIR = Path("./output/tests/non_local_search")
 
-def pytest_generate_tests(metafunc):
-    seed = 123
+def set_seed(seed):
     th.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
+
+def get_data(dnames,ext,device="cuda:0"):
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid /= vid.max()
+    return vid
+
+def pytest_generate_tests(metafunc):
     test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
                   "dilation":[1],"wt":[0],"ws":[9],
                   "k":[-1],"exact":[True],"nheads":[1],
@@ -42,11 +51,6 @@ def pytest_generate_tests(metafunc):
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
-
-def set_seed(seed):
-    th.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
 
 def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
@@ -79,13 +83,11 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_self = anchor_self
     rbwd = True
     nbwd = 1
+    dist_type = "prod"
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
-    vid = vid.to(device)[:,:5,].contiguous()
-    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
-    vid /= vid.max()
-    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+    vid = get_data(dnames,ext)
+    print(vid.shape)
 
     # -- compute flow --
     flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
@@ -99,31 +101,26 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vshape = vid.shape
 
     # -- pads --
-    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
-    n_h0,n_w0 = n0[0],n0[1]
-    n_h1,n_w1 = n1[0],n1[1]
-    h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
-
-    # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h0 * n_w0
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
+    off_H0,off_W0,off_H1,off_W1 = 0,0,0,0
 
     # -- exec fold fxns --
-    search_te = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
-                                 dilation=dil,stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,full_ws=False,
-                                 anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt, nheads,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 search_abs=search_abs,use_adj=use_adj,
-                                 anchor_self=anchor_self,use_self=use_self,
-                                 exact=exact)
+    sch = dnls.search
+    simp = dnls.simple
+    search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
+                                   dist_type=dist_type,
+                                   dilation=dil,stride0=stride0, stride1=stride1,
+                                   reflect_bounds=reflect_bounds,full_ws=False,
+                                   anchor_self=anchor_self,remove_self=False,
+                                   use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+    search_gt = dnls.search_dev.init("prod_search_with_heads",
+                                     flows.fflow, flows.bflow,
+                                     k, ps, pt, ws, wt, nheads,
+                                     chnls=-1,dilation=dil,
+                                     stride0=stride0, stride1=stride1,
+                                     reflect_bounds=reflect_bounds,use_k=use_k,
+                                     search_abs=search_abs,use_adj=use_adj,
+                                     anchor_self=anchor_self,use_self=use_self,
+                                     exact=exact)
 
     # -- test api --
     # print(dnls.search.nls(vid,vid,flows.fflow,flows.bflow,
@@ -142,8 +139,10 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # print(dists_gt[0,0,0,:])
     # print(dists_te[0,0,1,:10])
     # print(dists_gt[0,0,1,:10])
-    # print(dists_te.shape)
-    # print(dists_gt.shape)
+    print(dists_te[0,0,17,:])
+    print(dists_gt[0,0,17,:])
+    print(dists_te.shape)
+    print(dists_gt.shape)
 
     # -- viz --
     # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
@@ -159,7 +158,13 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
+    args1 = th.where(diff > 1e-3)
     diff = diff[args0]
+    print(args1)
+    print(diff)
+    print(dists_te[args1])
+    print(dists_gt[args1])
+
 
     # -- test --
     tol = 1e-5
@@ -251,14 +256,15 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
                                  use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
-                                 k, ps, pt, ws, wt, nheads,
-                                 chnls=-1,dilation=dil,
-                                 stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,use_k=use_k,
-                                 search_abs=search_abs,use_adj=use_adj,
-                                 anchor_self=anchor_self,use_self=use_self,
-                                 exact=exact)
+    search_gt = dnls.search_dev.init("prod_search_with_heads",
+                                     flows.fflow, flows.bflow,
+                                     k, ps, pt, ws, wt, nheads,
+                                     chnls=-1,dilation=dil,
+                                     stride0=stride0, stride1=stride1,
+                                     reflect_bounds=reflect_bounds,use_k=use_k,
+                                     search_abs=search_abs,use_adj=use_adj,
+                                     anchor_self=anchor_self,use_self=use_self,
+                                     exact=exact)
 
 
     # -- [testing] search --

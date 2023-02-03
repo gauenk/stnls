@@ -5,7 +5,7 @@
 #include <cstddef>
 using namespace at;
 
-#define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)\
+//#define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)    \
   
 __device__ __forceinline__ int bounds(int val, int lim ){
   int vval = val;
@@ -18,12 +18,16 @@ __device__ __forceinline__ int bounds(int val, int lim ){
 }
 
 __device__ __forceinline__ 
-void get_pixel_loc(int& ti, int& hi, int& wi,  int qindex,
-                  int i_mod, int stride0, int nW0, int nHW0, int H, int W){
-  i_mod = qindex % nHW0;
-  ti = qindex / nHW0;
-  wi = ((i_mod % nW0) * stride0) % W ;
-  hi = ((i_mod / nW0) * stride0) % H;
+void get_pixel_loc(int* pix,  int qindex, int tmp, int stride0,
+                   int nW0, int nHW0, int H, int W){
+  int nH_index;
+  tmp = qindex;
+  pix[0] = tmp / nHW0;
+  tmp = (tmp - pix[0]*nHW0);
+  nH_index = tmp / nW0;
+  pix[1] = (nH_index*stride0) % H;
+  tmp = tmp - nH_index*nW0;
+  pix[2] = ((tmp % nW0) * stride0) % W;
 }
 
 __device__ __forceinline__
@@ -31,10 +35,10 @@ bool check_interval(int val, int lower, int upper){
   return (val >= lower) && (val < upper);
 }
 __device__ __forceinline__
-void check_bounds(bool& valid_anchor, int ti, int hi, int wi, int T, int H, int W){
-  valid_anchor = check_interval(ti,0,T);
-  valid_anchor = valid_anchor && check_interval(hi,0,H);
-  valid_anchor = valid_anchor && check_interval(wi,0,W);
+void check_bounds(bool& valid_anchor, int* loc3d, int T, int H, int W){
+  valid_anchor = check_interval(loc3d[0],0,T);
+  valid_anchor = valid_anchor && check_interval(loc3d[1],0,H);
+  valid_anchor = valid_anchor && check_interval(loc3d[2],0,W);
 }
 
 
@@ -87,9 +91,9 @@ void increment_frame(int& n_ti, int& prev_ti, int& t_inc,
 }
 
 __device__ __forceinline__ 
-void reset_centers(int& hj_center, int& wj_center, bool swap_dir, int wi, int hi){
-  wj_center = swap_dir ? wi : wj_center;
-  hj_center = swap_dir ? hi : hj_center;
+void reset_centers(int* prop_patch, int* ref_patch, bool swap_dir){
+  prop_patch[1] = swap_dir ? ref_patch[1] : prop_patch[1];
+  prop_patch[2] = swap_dir ? ref_patch[2] : prop_patch[2];
 }
 
 template<typename scalar_t>
@@ -107,8 +111,8 @@ void update_centers(int& hj_center, int& wj_center, int dir, int H, int W,
 
     // -- access flows --
     auto flow = dir>0 ? fflow : bflow;
-    wj_center = int(1.*wj_center + fflow[0][hj_tmp][wj_tmp] + 0.5);
-    hj_center = int(1.*hj_center + fflow[1][hj_tmp][wj_tmp] + 0.5);
+    wj_center = int(1.*wj_center + flow[0][hj_tmp][wj_tmp] + 0.5);
+    hj_center = int(1.*hj_center + flow[1][hj_tmp][wj_tmp] + 0.5);
 
     // -- rounding --
     wj_center = int(max(0,min(W-1,int(wj_center))));
@@ -117,32 +121,25 @@ void update_centers(int& hj_center, int& wj_center, int dir, int H, int W,
 }
 
 __device__ __forceinline__ 
-void set_search_patch(int& n_hi, int& n_wi, int hj_center, int wj_center,
+void set_search_patch(int* prop, int* frame_anchor,
                       int stride1, int ws_i, int ws_j, int wsOff_h,
                       int wsOff_w, int search_abs){
+  prop[0] = frame_anchor[0];
   if (search_abs){
-    n_hi = stride1 * ws_i;
-    n_wi = stride1 * ws_j;
+    prop[1] = stride1 * ws_i;
+    prop[2] = stride1 * ws_j;
   }else{
-    n_hi = hj_center + stride1 * (ws_i - wsOff_h);
-    n_wi = wj_center + stride1 * (ws_j - wsOff_w);
+    prop[1] = frame_anchor[1] + stride1 * (ws_i - wsOff_h);
+    prop[2] = frame_anchor[2] + stride1 * (ws_j - wsOff_w);
   }
 }
-
-            compute_dist<scalar_t,DIST_TYPE>(dist,
-                         vid0[ibatch][ihead],vid1[ibatch][ihead],
-                         ref_center, prop_center, 
-                         ref, prop, valid_ref, valid_prop, valid,
-                         pt,ps,dilation,reflect_bounds,
-                         patch_offset,center_offsets,invalid,
-                         T,C,H,W,pix0,pix1,pix);
 
 template<typename scalar_t, int DIST_TYPE>
 __device__ __forceinline__ 
 void compute_dist(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
-  int* ref_center, int* prop_center, int* ref, int* prop,
+  int* ref_patch, int* prop_patch, int* ref, int* prop,
   bool* valid_ref, bool* valid_prop,
   int ps, int pt, int dilation, bool reflect_bounds,
   int patch_offset, int* center_offsets, scalar_t invalid,
@@ -151,34 +148,34 @@ void compute_dist(scalar_t& dist,
   for (int pk = 0; pk < pt; pk++){
 
     // -- reference time --
-    ref[0] = bounds(ref_center[0] + pk,T);
+    ref[0] = bounds(ref_patch[0] + pk,T);
     valid_ref[0] = check_interval(ref[0],0,T);
 
     // -- proposed time --
-    prop[0] = bounds(prop_center[0] + pk,T);
+    prop[0] = bounds(prop_patch[0] + pk,T);
     valid_prop[0] = check_interval(prop[0],0,T);
     
     for (int pi = 0; pi < ps; pi++){
 
       // -- ref height --
-      ref[1] = (ref_center[1]-center_offsets[0])+dilation*(pi - patch_offset);
+      ref[1] = (ref_patch[1]-center_offsets[0])+dilation*(pi - patch_offset);
       ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
       valid_ref[1] = check_interval(ref[1],0,H);
 
       // -- proposed height --
-      prop[1] = (prop_center[1]-center_offsets[1])+dilation*(pi - patch_offset);
-      prop[1] = proplect_bounds ? bounds(prop[1],H) : prop[1];
+      prop[1] = (prop_patch[1]-center_offsets[1])+dilation*(pi - patch_offset);
+      prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
       valid_prop[1] = check_interval(prop[1],0,H);
 
       for (int pj = 0; pj < ps; pj++){
         
         // -- ref width --
-        ref[2] = (ref_center[2]-center_offsets[2])+dilation*(pj - patch_offset);
-        ref[2] = reflect_bounds ? bounds(ref[2],0,W) : ref[2];
+        ref[2] = (ref_patch[2]-center_offsets[2])+dilation*(pj - patch_offset);
+        ref[2] = reflect_bounds ? bounds(ref[2],W) : ref[2];
         valid_ref[2] = check_interval(ref[2],0,W);
 
         // -- prop width --
-        prop[2] = (prop_center[2]-center_offsets[3])+dilation*(pj - patch_offset);
+        prop[2] = (prop_patch[2]-center_offsets[3])+dilation*(pj - patch_offset);
         prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
         valid_prop[2] = check_interval(prop[2],0,W);
 
@@ -187,8 +184,8 @@ void compute_dist(scalar_t& dist,
         valid_prop[3] = true;
         #pragma unroll
         for (int bool_idx=0; bool_idx<3; bool_idx++){
-          valid_ref[3] = valid_ref[3] && valid_ref[bool_idx]
-          valid_prop[3] = valid_prop[3] && valid_prop[bool_idx]
+          valid_ref[3] = valid_ref[3] && valid_ref[bool_idx];
+          valid_prop[3] = valid_prop[3] && valid_prop[bool_idx];
         }
 
         // -- fill each channel --
@@ -222,7 +219,7 @@ void update_bwd_patch(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid1,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
-    scalar_t weight, int* ref_center, int* prop_center,
+    scalar_t weight, int* ref_patch, int* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
     int* center_offsets, int patch_offset,
     int c0, int c0_start, int c0_end, int c0_offset, int c0_dist,
@@ -232,34 +229,34 @@ void update_bwd_patch(
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
-      ref[0] = bounds(ref_center[0]+pk,T);
+      ref[0] = bounds(ref_patch[0]+pk,T);
       valid_ref[0] = check_interval(ref[0],0,T);
 
       // -- prop patch --
-      prop[0] = bounds(prop_center[0]+pk,T);
+      prop[0] = bounds(prop_patch[0]+pk,T);
       valid_prop[0] = check_interval(prop[0],0,T);
 
       for (int pi = 0; pi < ps; pi++){
 
         // -- ref patch --
-        ref[1] = (ref_center[1]-center_offsets[0])+dilation*(pi - patch_offset);
+        ref[1] = (ref_patch[1]-center_offsets[0])+dilation*(pi - patch_offset);
         ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
         valid_ref[1] = check_interval(ref[1],0,H);
 
         // -- prop patch --
-        prop[1] = (prop_center[1]-center_offsets[1])+dilation*(pi - patch_offset);
+        prop[1] = (prop_patch[1]-center_offsets[1])+dilation*(pi - patch_offset);
         prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
         valid_prop[1] = check_interval(prop[1],0,H);
 
         for (int pj = 0; pj < ps; pj++){
           
           // -- ref patch --
-          ref[2] = (ref_center[2]-center_offsets[2])+dilation*(pj - patch_offset);
-          ref[2] = reflect_bounds ? bounds(ref[2],0,W) : ref[2];
+          ref[2] = (ref_patch[2]-center_offsets[2])+dilation*(pj - patch_offset);
+          ref[2] = reflect_bounds ? bounds(ref[2],W) : ref[2];
           valid_ref[2] = check_interval(ref[2],0,W);
 
           // -- prop patch --
-          prop[2] = (prop_center[2]-center_offsets[3])+dilation*(pj - patch_offset);
+          prop[2] = (prop_patch[2]-center_offsets[3])+dilation*(pj - patch_offset);
           prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
           valid_prop[2] = check_interval(prop[2],0,W);
 
@@ -268,8 +265,8 @@ void update_bwd_patch(
           valid_prop[3] = true;
           #pragma unroll
           for (int bool_idx=0; bool_idx<3; bool_idx++){
-            valid_ref[3] = valid_ref[3] && valid_ref[bool_idx]
-            valid_prop[3] = valid_prop[3] && valid_prop[bool_idx]
+            valid_ref[3] = valid_ref[3] && valid_ref[bool_idx];
+            valid_prop[3] = valid_prop[3] && valid_prop[bool_idx];
           }
 
           // -- fill each channel --

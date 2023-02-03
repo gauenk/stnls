@@ -16,11 +16,21 @@ void non_local_search_forward_cuda(
 void non_local_search_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor dists, torch::Tensor inds,
-    int qshift, int stride0, int n_h0, int n_w0,
-    int off_H0, int off_W0, int off_H1, int off_W1,
-    int ps, int pt, int dilation, bool use_adj,
-    bool reflect_bounds, bool use_rand, bool exact, int dist_type);
+    torch::Tensor grad_dists, torch::Tensor inds,
+    int q_shift, int stride0, int nH0, int nW0,
+    int ps, int pt, int dilation, bool reflect_bounds,
+    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
+    bool use_rand, bool exact, int dist_type,
+    int channel_groups, int neigh_per_thread, int queries_per_thread);
+
+// void non_local_search_backward_cuda(
+//     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
+//     torch::Tensor vid0, torch::Tensor vid1,
+//     torch::Tensor dists, torch::Tensor inds,
+//     int qshift, int stride0, int n_h0, int n_w0,
+//     int off_H0, int off_W0, int off_H1, int off_W1,
+//     int ps, int pt, int dilation, bool use_adj,
+//     bool reflect_bounds, bool use_rand, bool exact, int dist_type);
 
 // C++ interface
 
@@ -53,23 +63,25 @@ void non_local_search_forward(
 void non_local_search_backward(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     torch::Tensor vid0, torch::Tensor vid1,
-    torch::Tensor dists, torch::Tensor inds,
-    int qshift, int stride0, int n_h0, int n_w0,
-    int off_H0, int off_W0, int off_H1, int off_W1,
-    int ps,int pt, int dilation, bool use_adj, bool reflect_bounds,
-    bool use_rand, bool exact, int dist_type) {
+    torch::Tensor grad_dists, torch::Tensor inds,
+    int q_shift, int stride0, int nH0, int nW0,
+    int ps, int pt, int dilation, bool reflect_bounds,
+    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
+    bool use_rand, bool exact, int dist_type,
+    int channel_groups, int neigh_per_thread, int queries_per_thread) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
-  CHECK_INPUT(dists);
+  CHECK_INPUT(grad_dists);
   CHECK_INPUT(inds);
   non_local_search_backward_cuda(grad_vid0,grad_vid1,vid0,vid1,
-                                  dists,inds,
-                                  qshift,stride0,n_h0,n_w0,
-                                  off_H0,off_W0,off_H1,off_W1,
-                                  ps,pt,dilation,use_adj,reflect_bounds,
-                                  use_rand,exact,dist_type);
+                                 grad_dists,inds,
+                                 q_shift,stride0,nH0,nW0,
+                                 off_H0,off_W0,off_H1,off_W1,
+                                 ps,pt,dilation,use_adj,reflect_bounds,
+                                 use_rand,exact,dist_type,
+                                 channel_groups,neigh_per_thread,queries_per_thread);
 }
 
 
