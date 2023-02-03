@@ -1,5 +1,6 @@
 # dnls
-Differentiable Non-Local Search: A suite of patch-based and batch-friendly CUDA operations within Pytorch.
+
+Differentiable Non-Local Space-Time Search with Optical Flow: A differentiable non-local search module that allowers users to (i) scale to standard resolution images and (ii) search over multiple frames with optical flow.
 
 ## Summary
 
