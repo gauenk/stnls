@@ -207,7 +207,12 @@ class ApproxSpaceTimeSearch(th.nn.Module):
         return 0
 
 
-# -- api --
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#     [Direct API] dnls.search.approx_spacetime(...)
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
 def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, wr_t, kr_t, wr_s, kr_s, scale,
            nheads=1, batchsize=-1, dist_type="prod",
@@ -227,6 +232,12 @@ def _apply(vid0, vid1, fflow, bflow,
                full_ws, anchor_self, remove_self,
                use_adj, off_H0, off_W0, off_H1, off_W1,
                rbwd, nbwd, exact)
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#       [Python Dict API] dnls.search.init(pydict)
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,

@@ -227,7 +227,12 @@ class RefineSearch(th.nn.Module):
         return 0
 
 
-# -- api --
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#        [Direct API]  dnls.search.refine(...)
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
 def _apply(vid0, vid1, qinds,
            ws, ps, k, wr, kr, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
@@ -250,11 +255,11 @@ def _apply(vid0, vid1, qinds,
                channel_groups, neigh_per_thread, queries_per_thread)
 
 
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
+#     [Python Dict API] dnls.search.init(pydict)
 #
-# -- API to programmtically switch search methods --
-#
-#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr":1,"kr":-1,
