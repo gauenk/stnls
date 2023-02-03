@@ -4,6 +4,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <vector>
+using namespace at;
 
 /****************************
 
@@ -39,37 +40,41 @@ int unravel_index(int& ti, int& hi, int& wi, const int qindex,
 
 template <typename scalar_t>
 __global__ void l2_search_with_heads_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> fflow,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> bflow,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
-    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> inds,
-    int qstart, int nqueries, int stride0, int n_h0, int n_w0,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
+    torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
+    int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride1,
     bool use_adj, bool reflect_bounds, bool search_abs,
     bool full_ws, bool anchor_self,
-    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
-    torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
-    torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
+    const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> tranges,
+    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> n_tranges,
+    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> min_tranges,
     int ws_h_iters, int ws_w_iters, int bpt){
 
   // shapes
-  int nheads,nframes,color,h,w,height,width;
-  nheads = vid0.size(0);
-  nframes = vid0.size(1);
-  color = vid0.size(2);
-  h = vid0.size(3);
-  w = vid0.size(4);
-  height = h;
-  width = w;
+  int bsize,nheads,nframes,color,height,width;
+  bsize = vid0.size(0);
+  nheads = vid0.size(1);
+  nframes = vid0.size(2);
+  // height = vid0.size(3);
+  // width = vid0.size(4);
+  // color = vid0.size(5);
+  color = vid0.size(3);
+  height = vid0.size(4);
+  width = vid0.size(5);
   int n_hw0 = n_h0 * n_w0;
+  int nqueries = dists.size(2);
+  int st = dists.size(3);
 
   // constants
   float nan = __int_as_float(0xffe00000);
-  float inf = __int_as_float(0x7f800000);
+  // float inf = __int_as_float(0x7f800000);
 
   // offsets
   int psHalf = (ps)/2;
@@ -80,18 +85,19 @@ __global__ void l2_search_with_heads_forward_kernel(
   int adj = use_adj ? psHalf : 0;
 
   // cuda index
+  int bindex = blockIdx.x;
+  int head = blockIdx.y;
+  int block_start = blockIdx.z*bpt;
   int blkDimX = blockDim.x; // num threads in x-block
   int blkDimY = blockDim.y; // num threads in y-block
   int cu_tidX = threadIdx.x;
   int cu_tidY = threadIdx.y;
-  int block_start = blockIdx.x*bpt;
-  int head = blockIdx.y;
   int bidx,ws_i,ws_j;
 
   // accumulate time offsets
   bool dir_fwd = true; // forward
   bool swap_dir = false;
-  int prev_h,prev_w,prev_t;
+  float prev_h,prev_w,prev_t;
   int min_t;
 
   // decls
@@ -99,17 +105,19 @@ __global__ void l2_search_with_heads_forward_kernel(
   int n_ti,n_hi,n_wi;
   int vH,vW,vT,nH,nW,nT;
   bool valid,vvalid,nvalid;
-  bool valid_ti,valid_hi,valid_wi,valid_anchor;
-  bool valid_n_ti,valid_n_hi,valid_n_wi,valid_n;
+  bool valid_anchor,valid_n;
   bool vvalid_t,vvalid_h,vvalid_w;
   bool nvalid_t,nvalid_h,nvalid_w;
-  bool eq_ti,eq_hi,eq_wi,eq_dim;
+  bool eq_dim;//eq_ti,eq_hi,eq_wi,
   int wsOff_h,wsOff_w;
 
-  float cw0,ch0,ct0,cw_f,ch_f;
   int l_cw0,l_ch0,l_ct0;
-  int cw_i,ch_i,ch,cw,ct;
-  float dist,v_pix,n_pix;
+  int cw_i,ch_i,ch,cw;
+  // float cw0,ch0,ct0,cw_f,ch_f;
+  // float dist,v_pix,n_pix;
+  // scalar_t cw0,ch0;//,ct0;//,cw_f,ch_f;
+  scalar_t dist,v_pix,n_pix;
+  int qindex,i_mod;
 
   for (int _bidx = 0; _bidx < bpt; _bidx++){
 
@@ -122,8 +130,8 @@ __global__ void l2_search_with_heads_forward_kernel(
     if (bidx >= nqueries){ continue; }
 
     // -- unpack pixel locs --
-    int qindex = bidx + qstart;
-    int i_mod = qindex % n_hw0;
+    qindex = bidx + qstart;
+    i_mod = qindex % n_hw0;
     ti = qindex / n_hw0;
     wi = ((i_mod % n_w0) * stride0) % width ;
     hi = ((i_mod / n_w0) * stride0) % height;
@@ -134,10 +142,9 @@ __global__ void l2_search_with_heads_forward_kernel(
     // unravel_index(ti, hi, wi, qindex, height, width, hw);
 
     // -- valid (anchor pixel) --
-    valid_ti = (ti < nframes) && (ti >= 0);
-    valid_hi = (hi < height) && (hi >= 0);
-    valid_wi = (wi < width) && (wi >= 0);
-    valid_anchor = valid_ti && valid_hi && valid_wi;
+    valid_anchor = (ti < nframes) && (ti >= 0);
+    valid_anchor = valid_anchor && (hi < height) && (hi >= 0);
+    valid_anchor = valid_anchor && (wi < width) && (wi >= 0);
 
     // -- search offset --
     if(full_ws){
@@ -154,82 +161,80 @@ __global__ void l2_search_with_heads_forward_kernel(
       wsOff_w = wsHalf_w;
     }
 
-    // ---------------------------------------
-    //     searching loop for (ti,top,left)
-    // ---------------------------------------
+    // -- reset flow search --
+    dir_fwd = true;
+    swap_dir = false;
+    for( int wt_k = 0; wt_k < st; wt_k++){
+      int n_ti = tranges[ti][wt_k];
+      int dt = n_ti - min_t;
 
-    // -- we loop over search space if needed --
-    for (int _xi = 0; _xi < ws_h_iters; _xi++){
+      // ------------------------
+      //      init direction
+      // ------------------------
 
-      int ws_i = cu_tidX + blkDimX*_xi;
-      if (ws_i >= ws_h){ continue; }
+      // -- compute direction --
+      int direction = max(-1,min(1,n_ti - ti));
 
-      for (int _yi = 0; _yi < ws_w_iters; _yi++){
-        ws_j = cu_tidY + blkDimY*_yi;
-        if (ws_j >= ws_w){ continue; }
+      // -- reset to anchor when swapping directions --
+      swap_dir = (dir_fwd == true) && (direction == -1);
+      dir_fwd = swap_dir ? false : dir_fwd;
+      prev_w = swap_dir ? wi : prev_w;
+      prev_h = swap_dir ? hi : prev_h;
+      prev_t = swap_dir ? ti : prev_t;
 
-        // -- reset flow search --
-        dir_fwd = true;
-        swap_dir = false;
-        for( int wt_k = 0; wt_k < n_tranges[ti]; wt_k++){
-          int n_ti = tranges[ti][wt_k];
-          int dt = n_ti - min_t;
+      // -- optical flow --
+      if (direction != 0){
 
-          // ------------------------
-          //      init direction
-          // ------------------------
+        // -- get offset at index --
+        // int dtd = int(dt-direction);
+        // cw0 = 1.*prev_w;
+        // ch0 = 1.*prev_h;
 
-          // -- compute direction --
-          int direction = max(-1,min(1,n_ti - ti));
+        // -- legalize access --
+        l_cw0 = int(max(0,min(width-1,int(prev_w))));
+        l_ch0 = int(max(0,min(height-1,int(prev_h))));
+        l_ct0 = int(max(0,min(nframes-1,int(1.*prev_t))));
 
-          // -- reset to anchor when swapping directions --
-          swap_dir = (dir_fwd == true) && (direction == -1);
-          dir_fwd = swap_dir ? false : dir_fwd;
-          prev_w = swap_dir ? wi : prev_w;
-          prev_h = swap_dir ? hi : prev_h;
-          prev_t = swap_dir ? ti : prev_t;
+        // -- access flows --
+        if (direction > 0 ){
+          prev_w = prev_w + fflow[bindex][l_ct0][0][l_ch0][l_cw0];
+          prev_h = prev_h + fflow[bindex][l_ct0][1][l_ch0][l_cw0];
+        }else{
+          prev_w = prev_w + bflow[bindex][l_ct0][0][l_ch0][l_cw0];
+          prev_h = prev_h + bflow[bindex][l_ct0][1][l_ch0][l_cw0];
+        }
+        cw_i = int(prev_w + 0.5);
+        ch_i = int(prev_h + 0.5);
 
-          // -- optical flow --
-          if (direction != 0){
+        // -- rounding --
+        cw = max(0,min(width-1,cw_i));
+        ch = max(0,min(height-1,ch_i));
+      }else{
+        cw = wi;
+        ch = hi;
+      }
+      
+      // ----------------
+      //     update
+      // ----------------
+      prev_w = cw;
+      prev_h = ch;
+      prev_t = n_ti;
 
-            // -- get offset at index --
-            // int dtd = int(dt-direction);
-            cw0 = 1.*prev_w;
-            ch0 = 1.*prev_h;
-            ct0 = 1.*prev_t;
-
-            // -- legalize access --
-            l_cw0 = int(max(0,min(width-1,int(cw0))));
-            l_ch0 = int(max(0,min(height-1,int(ch0))));
-            l_ct0 = int(max(0,min(nframes-1,int(ct0))));
-
-            // -- access flows --
-            if (direction > 0 ){
-              cw_f = cw0 + fflow[l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + fflow[l_ct0][1][l_ch0][l_cw0];
-            }else{
-              cw_f = cw0 + bflow[l_ct0][0][l_ch0][l_cw0];
-              ch_f = ch0 + bflow[l_ct0][1][l_ch0][l_cw0];
-            }
-            cw_i = int(cw_f + 0.5);
-            ch_i = int(ch_f + 0.5);
-
-            // -- rounding --
-            cw = max(0,min(width-1,cw_i));
-            ch = max(0,min(height-1,ch_i));
-            ct = n_ti;
-          }else{
-            cw = wi;
-            ch = hi;
-            ct = ti;
-          }
-          
-          // ----------------
-          //     update
-          // ----------------
-          prev_w = cw;
-          prev_h = ch;
-          prev_t = ct;
+      // ---------------------------------------
+      //     searching loop for (ti,top,left)
+      // ---------------------------------------
+  
+      // -- we loop over search space if needed --
+      for (int _xi = 0; _xi < ws_h_iters; _xi++){
+  
+        ws_i = cu_tidX + blkDimX*_xi;
+        if (ws_i >= ws_h){ continue; }
+  
+        for (int _yi = 0; _yi < ws_w_iters; _yi++){
+          ws_j = cu_tidY + blkDimY*_yi;
+          if (ws_j >= ws_w){ continue; }
+  
 
           // --------------------
           //      init dists
@@ -250,10 +255,9 @@ __global__ void l2_search_with_heads_forward_kernel(
           // ---------------------------
           //      valid (search "n")
           // ---------------------------
-          valid_n_ti = (n_ti < nframes) && (n_ti >= 0);
-          valid_n_hi = (n_hi < height) && (n_hi >= 0);
-          valid_n_wi = (n_wi < width) && (n_wi >= 0);
-          valid_n = valid_n_ti && valid_n_hi && valid_n_wi;
+          valid_n = (n_ti < nframes) && (n_ti >= 0);
+          valid_n = valid_n && (n_hi < height) && (n_hi >= 0);
+          valid_n = valid_n && (n_wi < width) && (n_wi >= 0);
           valid = valid_n && valid_anchor;
 
           // ---------------------------------
@@ -302,14 +306,12 @@ __global__ void l2_search_with_heads_forward_kernel(
                 for (int ci = 0; ci < chnls; ci++){
 
                   // -- get data --
-                  v_pix = vvalid ? vid0[head][vT][ci][vH][vW] : 0.;
-                  n_pix = nvalid ? vid1[head][nT][ci][nH][nW] : 0.;
+                  v_pix = vvalid ? vid0[bindex][head][vT][ci][vH][vW] : (scalar_t)0.;
+                  n_pix = nvalid ? vid1[bindex][head][nT][ci][nH][nW] : (scalar_t)0.;
 
                   // -- compute dist --
-                  float _dists = (v_pix - n_pix);
-                  dist += _dists;
-                  // if (valid){
-                  // }
+                  scalar_t _dist = (v_pix - n_pix);
+                  dist += _dist * _dist;
                 }
               }
             }
@@ -317,21 +319,21 @@ __global__ void l2_search_with_heads_forward_kernel(
 
           // -- dists --
           if (!valid){ dist = nan; }
-          dists[head][bidx][wt_k][ws_i][ws_j] = dist;
+          dists[bindex][head][bidx][wt_k][ws_i][ws_j] = dist;
 
           // -- inds --
-          inds[head][bidx][wt_k][ws_i][ws_j][0] = n_ti;
-          inds[head][bidx][wt_k][ws_i][ws_j][1] = n_hi;
-          inds[head][bidx][wt_k][ws_i][ws_j][2] = n_wi;
+          inds[bindex][head][bidx][wt_k][ws_i][ws_j][0] = n_ti;
+          inds[bindex][head][bidx][wt_k][ws_i][ws_j][1] = n_hi;
+          inds[bindex][head][bidx][wt_k][ws_i][ws_j][2] = n_wi;
 
           // -- final check [put self@index 0] --
           if (anchor_self){
-            eq_ti = n_ti == ti;
-            eq_hi = n_hi == hi;
-            eq_wi = n_wi == wi;
-            eq_dim = eq_ti && eq_hi && eq_wi;
+            eq_dim = n_ti == ti;
+            eq_dim = eq_dim && (n_hi == hi);
+            eq_dim = eq_dim && (n_wi == wi);
+            // eq_dim = eq_ti && eq_hi && eq_wi;
             if (eq_dim){
-              dists[head][bidx][wt_k][ws_i][ws_j] = inf;
+              dists[bindex][head][bidx][wt_k][ws_i][ws_j] = -1;
             }
           }
           
@@ -345,53 +347,76 @@ void l2_search_with_heads_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor fflow, torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
-    int qstart, int nqueries, int nheads, int stride0, int n_h0, int n_w0,
+    int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
-    int ps, int pt, int ws_h, int ws_w, int wt,
-    int chnls, int dilation, int stride1,
-    bool use_adj, bool reflect_bounds, bool search_abs,
+    int ps, int pt, int ws_h, int ws_w, int wt, int chnls,
+    int dilation, int stride1, bool use_adj,
+    bool reflect_bounds, bool search_abs,
     bool full_ws, bool anchor_self,
     torch::Tensor tranges,
     torch::Tensor n_tranges, torch::Tensor min_tranges){
+// void l2_search_with_heads_forward_cuda(
+//     const torch::Tensor vid0, const torch::Tensor vid1,
+//     const torch::Tensor fflow, const torch::Tensor bflow,
+//     torch::Tensor dists, torch::Tensor inds,
+//     int qstart, int stride0, int n_h0, int n_w0,
+//     int h0_off, int w0_off, int h1_off, int w1_off,
+//     int ps, int pt, int ws_h, int ws_w, int wt,
+//     int chnls, int dilation, int stride1,
+//     bool use_adj, bool reflect_bounds, bool search_abs,
+//     bool full_ws, bool anchor_self,
+//     const torch::Tensor tranges,
+//     const torch::Tensor n_tranges, const torch::Tensor min_tranges){
 
     // # -- launch params --
     // w_threads = min(ws,32)
     // nthreads = (w_threads,w_threads)
     // ws_iters = (ws-1)//w_threads + 1
     // nblocks = (nq-1)//batches_per_block+1
+    // fprintf(stdout,"n_h0,n_w0: %d,%d\n",n_h0,n_w0);
 
    // fprintf(stdout,"qstart, nqueries: %d,%d\n",qstart,nqueries);
    // launch params
    // our many (too many?) registers limit the number of threads
-   int ws_h_threads = std::min(ws_h,29);
-   int ws_w_threads = std::min(ws_w,29);
+   int nheads = dists.size(1);
+   int nqueries = dists.size(2);
+   int ws_h_threads = std::min(ws_h,32);
+   int ws_w_threads = std::min(ws_w,32);
    int ws_h_iters = ((ws_h-1)/ws_h_threads) + 1;
    int ws_w_iters = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
 
-   int rem_blocks = (65535-1)/nheads+1;
+   int bsize = vid0.size(0);
+   // int rem_blocks = (65535-1)/nheads+1;
    int bpt = 2;
    int nquery_blocks = ((nqueries - 1) / bpt) + 1;
-   nquery_blocks = min(nquery_blocks,rem_blocks);
-   bpt = ((nqueries - 1) / nquery_blocks) + 1;
-   dim3 nblocks(nquery_blocks,nheads);
+   // nquery_blocks = min(nquery_blocks,rem_blocks);
+   // bpt = ((nqueries - 1) / nquery_blocks) + 1;
+   dim3 nblocks(bsize,nheads,nquery_blocks);
 
-   // fprintf(stdout,"bpt,nquery_blocks,w_threads: %d,%d,%d,%d\n",
+   // fprintf(stdout,"dilation,reflect_bounds: %d,%d\n",dilation,reflect_bounds);
+   // fprintf(stdout,"stride0,stride1: %d,%d\n",stride0,stride1);
+   // fprintf(stdout,"full_ws: %d\n",full_ws);
+   // fprintf(stdout,"ps,pt,n_h0,n_w0,wt,chnls,stride0,ws_h,ws_w: %d,%d,%d,%d,%d,%d,%d,%d,%d\n",ps,pt,n_h0,n_w0,wt,chnls,stride0,ws_h,ws_w);
+   // fprintf(stdout,"bsize,nheads,nquery_blocks: %d,%d,%d\n",
+   //         bsize,nheads,nquery_blocks);
+   // fprintf(stdout,"bpt,nquery_blocks,ws_h_threads,ws_w_threads: %d,%d,%d,%d\n",
    //         bpt,nquery_blocks,ws_h_threads,ws_w_threads);
-   // fprintf(stdout,"reflect_bounds,search_abs,full_ws,anchor_self: %d,%d,%d,%d\n",
-   //         reflect_bounds,search_abs,full_ws,anchor_self);
-   // fprintf(stdout,"ws_h_iters,ws_w_iters: %d,%d\n",ws_h_iters,ws_w_iters);
+   // fprintf(stdout,"reflect_bounds,search_abs,full_ws,anchor_self,use_self: %d,%d,%d,%d,%d\n",
+   //         reflect_bounds,search_abs,full_ws,anchor_self,use_self);
+   // fprintf(stdout,"ws_h_iters,ws_w_iters,ws_h,ws_w: %d,%d,%d,%d,\n",ws_h_iters,ws_w_iters,ws_h,ws_w);
     
    // launch kernel
-   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "l2_seach_with_heads_forward_kernel", ([&] {
+   AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                              "l2_search_with_heads_forward_kernel", ([&] {
       l2_search_with_heads_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        fflow.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        bflow.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
-        qstart, nqueries, stride0, n_h0, n_w0,
+        vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
+        qstart, stride0, n_h0, n_w0,
         h0_off, w0_off, h1_off, w1_off,
         ps, pt, ws_h, ws_w, wt, chnls, dilation, stride1,
         use_adj, reflect_bounds, search_abs, full_ws, anchor_self,
@@ -411,12 +436,12 @@ void l2_search_with_heads_forward_cuda(
 
 template <typename scalar_t>
 __global__ void l2_search_with_heads_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid0,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid0,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> grad_dists,
-    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid0,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid1,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
+    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_dists,
+    const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
     int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
@@ -424,12 +449,14 @@ __global__ void l2_search_with_heads_backward_kernel(
     int bpt, int npt, int cpt) {
 
   // -- shape --
-  int nq = grad_dists.size(0);
-  int k =  grad_dists.size(1);
-  int nframes = vid0.size(0);
-  int colors = vid0.size(1);
-  int height = vid0.size(2);
-  int width = vid0.size(3);
+  int bs = grad_dists.size(0);
+  int nq = grad_dists.size(2);
+  int k =  grad_dists.size(3);
+  // int bs = vid0.size(0);
+  int nframes = vid0.size(2);
+  int colors = vid0.size(3);
+  int height = vid0.size(4);
+  int width = vid0.size(5);
   int n_hw0 = n_h0 * n_w0;
 
   // -- fwd decl registers --
@@ -437,24 +464,26 @@ __global__ void l2_search_with_heads_backward_kernel(
   int tj,hj,wj;
   int tk,hk,wk;
   int tk_a,hk_a,wk_a;
-  bool valid_hj,valid_wj;
-  bool valid_hk,valid_wk;
+  // bool valid_hj,valid_wj;
+  // bool valid_hk,valid_wk;
   bool valid,valid_j,valid_k;
-  float weight,pix,pix0,pix1;
+  // float 
+  scalar_t weight,pix,pix0,pix1;
 
   // -- declare constants --
   int psHalf = ps/2;
   int adj = use_adj ? psHalf : 0;
 
   // -- limits --
-  int i0_max = inds.size(0);
-  int i1_max = inds.size(1);
+  int i0_max = inds.size(2); // nq
+  int i1_max = inds.size(3); // k
 
   // -- get indices --
-  int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.x);
+  int bindex = blockIdx.x;
+  int i0_start = bpt * (threadIdx.x + blockDim.x * blockIdx.y);
   int i1_start = threadIdx.y * npt;
   int c0_start = threadIdx.z * cpt;
-  int head = blockIdx.y;
+  int head = blockIdx.z;
 
   // -- get block limits --
   int i0_end = min(i0_start + bpt,i0_max);
@@ -482,10 +511,10 @@ __global__ void l2_search_with_heads_backward_kernel(
 
     // k neighbors
     for (int i1=i1_start; i1 < i1_end; i1++){
-      ti = inds[head][i0][i1][0];
-      hi = inds[head][i0][i1][1];
-      wi = inds[head][i0][i1][2];
-      weight = grad_dists[head][i0][i1];
+      ti = inds[bindex][head][i0][i1][0];
+      hi = inds[bindex][head][i0][i1][1];
+      wi = inds[bindex][head][i0][i1][2];
+      weight = grad_dists[bindex][head][i0][i1];
 
       for (int pk = 0; pk < pt; pk++){
         for (int pi = 0; pi < ps; pi++){
@@ -507,28 +536,26 @@ __global__ void l2_search_with_heads_backward_kernel(
             tj = reflect_bounds ? bounds(ti+pk,nframes) : ti+pk;
 
             // -- assess if valid --
-            valid_hj = (hj >= 0) && (hj < height);
-            valid_wj = (wj >= 0) && (wj < width);
-            valid_j = valid_hj && valid_wj;
+            valid_j = (hj >= 0) && (hj < height);
+            valid_j = valid_j && (wj >= 0) && (wj < width);
+            // valid_j = valid_hj && valid_wj;
 
-            valid_hk = (hk >= 0) && (hk < height);
-            valid_wk = (wk >= 0) && (wk < width);
-            valid_k = valid_hk && valid_wk;
+            valid_k = (hk >= 0) && (hk < height);
+            valid_k = valid_k && (wk >= 0) && (wk < width);
+            // valid_k = valid_hk && valid_wk;
 
             // __syncthreads();
             for (int _c0 = c0_start; _c0 < c0_end; _c0++){
               c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-              pix0 =  valid_k ? vid0[head][tk][c0][hk][wk] : 0.;
-              pix1 =  valid_j ? vid1[head][tj][c0][hj][wj] : 0.;
-
-              // this is wrong, but unused.
+              pix0 =  valid_k ? vid0[bindex][head][tk][c0][hk][wk] : 0.;
+              pix1 =  valid_j ? vid1[bindex][head][tj][c0][hj][wj] : 0.;
+              pix = 2 * weight * (pix0 - pix1);
               if (valid_j){
-                grad_vid1[head][tj][c0][hj][wj] += pix0*1000000;
+                grad_vid1[bindex][head][tj][c0][hj][wj] -= pix;
               }
               if (valid_k){
-                grad_vid0[head][tk][c0][hk][wk] += pix1*10000;
+                grad_vid0[bindex][head][tk][c0][hk][wk] += pix;
               }
-
             }
           }
         }
@@ -548,12 +575,13 @@ void l2_search_with_heads_backward_cuda(
     bool exact) {
 
   // -- unpack --
-  int nframes = vid0.size(0);
-  int colors = vid0.size(1);
-  int height = vid0.size(2);
-  int width = vid0.size(3);
-  int nqueries = inds.size(0);
-  int k = grad_dists.size(1);
+  int bsize = vid0.size(0);
+  int nframes = vid0.size(2);
+  int colors = vid0.size(3);
+  int height = vid0.size(4);
+  int width = vid0.size(5);
+  int nqueries = inds.size(2);
+  int k = inds.size(3);
   assert(pt == 1);
 
   // -- compute number of neighbor threads --
@@ -583,7 +611,7 @@ void l2_search_with_heads_backward_cuda(
     query_nthreads = 1;
     nquery_blocks = 1;
   }
-  dim3 nblocks(nquery_blocks,nheads);
+  dim3 nblocks(bsize,nquery_blocks,nheads);
 
   // -- launch params --
   dim3 nthreads(query_nthreads, neigh_nthreads, color_nthreads);
@@ -596,6 +624,8 @@ void l2_search_with_heads_backward_cuda(
   // fprintf(stdout,"bpt,npt,cpt: %d,%d,%d\n",bpt,npt,cpt);
   // fprintf(stdout,"h0_off,w0_off,h1_off,w1_off: %d,%d,%d,%d\n",
   //         h0_off,w0_off,h1_off,w1_off);
+  // fprintf(stdout,"use_adj,use_reflect: %d,%d\n",
+  //         use_adj,reflect_bounds);
   // fprintf(stdout,"ps,pt,dil: %d,%d,%d\n",ps,pt,dilation);
 
   // -- allocate random values --
@@ -610,14 +640,15 @@ void l2_search_with_heads_backward_cuda(
   }
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "l2_seach_with_heads_backward_kernel", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                             "l2_search_with_heads_backward_kernel", ([&] {
     l2_search_with_heads_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        grad_vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        grad_vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        grad_dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
+        grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         qstart, stride0, n_h0, n_w0, h0_off, w0_off, h1_off, w1_off,
         ps, pt, dilation, use_adj, reflect_bounds, bpt, npt, cpt);

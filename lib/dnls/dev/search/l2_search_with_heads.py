@@ -32,22 +32,35 @@ class L2SearchWithHeadsFunction(th.autograd.Function):
         """
 
         # -- reshape with heads --
+        dtype = vid0.dtype
         device = vid0.device
-        if vid0.ndim == 4:
-            c = vid0.shape[1]
+        assert vid0.ndim in [5], "Must be 5 dims."
+        if vid0.ndim == 5:
+            # c = vid0.shape[-1]
+            c = vid0.shape[2]
             assert c % nheads == 0,"must be multiple of each other."
-            vid0 = rearrange(vid0,'t (H c) h w -> H t c h w',H=nheads).contiguous()
-            vid1 = rearrange(vid1,'t (H c) h w -> H t c h w',H=nheads).contiguous()
-        assert vid0.shape[0] == nheads
-        assert vid1.shape[0] == nheads
-        H,t,c,h,w = vid0.shape
-        n_h0,n_w0 = get_num_img(vid0.shape[1:],stride0,ps,dilation)
+            # shape_str = 'b t h w (H c) -> b H t h w c'
+            shape_str = 'b t (H c) h w -> b H t c h w'
+            vid0 = rearrange(vid0,shape_str,H=nheads).contiguous()
+            vid1 = rearrange(vid1,shape_str,H=nheads).contiguous()
+        assert vid0.shape[1] == nheads
+        assert vid1.shape[1] == nheads
+        # vid0 = vid0.contiguous()
+        # vid1 = vid1.contiguous()
+        # B,H,t,h,w,c = vid0.shape
+        B,H,t,c,h,w = vid0.shape
+        vshape = (t,c,h,w)
+        n_h0,n_w0 = get_num_img(vshape,stride0,ps,dilation)
+        nqueries = t*n_h0*n_w0 if nqueries <= 0 else nqueries
+        Q = nqueries
 
         # -- allocs --
-        B = nqueries*nheads
-        dists_exh,inds_exh = allocate_exh_l2(B,wt,ws_h,ws_w,device)
-        dists_exh = dists_exh.view(nheads,nqueries,-1,ws_h,ws_w)
-        inds_exh = inds_exh.view(nheads,nqueries,-1,ws_h,ws_w,3)
+        BHQ = B*nqueries*nheads
+        dists_exh,inds_exh = allocate_exh_l2(BHQ,wt,ws_h,ws_w,device)
+        # dists_exh = dists_exh.view(nheads,nqueries,-1,ws_h,ws_w)
+        # inds_exh = inds_exh.view(nheads,nqueries,-1,ws_h,ws_w,3)
+        dists_exh = dists_exh.view(B,H,Q,-1,ws_h,ws_w)
+        inds_exh = inds_exh.view(B,H,Q,-1,ws_h,ws_w,3)
 
         # -- pre-computed search offsets --
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
@@ -58,20 +71,25 @@ class L2SearchWithHeadsFunction(th.autograd.Function):
         bflow = bflow.to(device)
         th.cuda.set_device(device)
         dnls_cuda.l2_search_with_heads_forward(vid0, vid1, fflow, bflow,
-                                                 dists_exh, inds_exh,
-                                                 qstart, nqueries, nheads, stride0,
-                                                 n_h0, n_w0,
-                                                 h0_off, w0_off, h1_off, w1_off,
-                                                 ps, pt, ws_h, ws_w,
-                                                 wt, chnls, dilation, stride1, use_adj,
-                                                 reflect_bounds, search_abs, full_ws,
-                                                 anchor_self, tranges,
-                                                 n_tranges, min_tranges)
+                                               dists_exh, inds_exh,
+                                               qstart, stride0, n_h0, n_w0,
+                                               h0_off, w0_off, h1_off, w1_off,
+                                               ps, pt, ws_h, ws_w,
+                                               wt, chnls, dilation, stride1,
+                                               use_adj,
+                                               reflect_bounds, search_abs, full_ws,
+                                               anchor_self, tranges,
+                                               n_tranges, min_tranges)
 
-        # -- shape for output --
-        H,b = dists_exh.shape[:2]
-        dists_exh=dists_exh.view(H*b,-1)#.contiguous()
-        inds_exh=inds_exh.view(H*b,-1,3)#.contiguous()
+        # -- shape for next step --
+        B,H,Q = dists_exh.shape[:3]
+        dists_exh=dists_exh.view(B*H*Q,-1)#.contiguous()
+        inds_exh=inds_exh.view(B*H*Q,-1,3)#.contiguous()
+
+        # # -- shape for output --
+        # H,b = dists_exh.shape[:2]
+        # dists_exh=dists_exh.view(H*b,-1)#.contiguous()
+        # inds_exh=inds_exh.view(H*b,-1,3)#.contiguous()
 
         # -- remove self --
         if remove_self:
@@ -94,9 +112,9 @@ class L2SearchWithHeadsFunction(th.autograd.Function):
             # args = th.where(dists == th.inf)
             # dists[args] = 0. # not the inner l2uct value
 
-        # -- shape with heads -
-        dists = dists.view(H,b,-1)
-        inds = inds.view(H,b,-1,3)
+        # -- final shape with heads -
+        dists = dists.view(B,H,Q,-1)
+        inds = inds.view(B,H,Q,-1,3)
 
         # -- for backward --
         ctx.save_for_backward(inds,vid0,vid1)
@@ -156,8 +174,8 @@ class L2SearchWithHeadsFunction(th.autograd.Function):
             grad_vid1 /= nbwd
 
         # -- finalize shape --
-        grad_vid0 = rearrange(grad_vid0,'H t c h w -> t (H c) h w')
-        grad_vid1 = rearrange(grad_vid1,'H t c h w -> t (H c) h w')
+        grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')
+        grad_vid1 = rearrange(grad_vid1,'B H t c h w -> B t (H c) h w')
 
         return grad_vid0,grad_vid1,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
@@ -260,18 +278,17 @@ class L2SearchWithHeads(th.nn.Module):
         return ws_h,ws_w,wt,k,chnls
 
     def _update_flow(self,vshape,device):
-        vshape = vshape[-4:] # (t,c,h,w) NOT (H,t,c,h,w)
-        t,c,h,w = vshape
-        t,c,h,w = vshape
-        zflow = th.zeros((t,2,h,w),device=device)
+        b,t,c,h,w = vshape
+        b,t,c,h,w = vshape
+        zflow = th.zeros((b,t,2,h,w),device=device)
         if self.fflow is None: self.fflow = zflow
         if self.bflow is None: self.bflow = zflow
-        for i in [0,2,3]:
+        for i in [0,1,3,4]:
             assert self.fflow.shape[i] == vshape[i],"Must be equal size: %d" % i
             assert self.bflow.shape[i] == vshape[i],"Must be equal size: %d" % i
 
-    def forward(self, vid0, qstart, nqueries, vid1=None):
-        if vid1 is None: vid1 = vid0
+    def forward(self, vid0, vid1, qstart=0, nqueries=-1):
+        # if vid1 is None: vid1 = vid0
         self._update_flow(vid0.shape,vid0.device)
         ws_h,ws_w,wt,k,chnls = self._get_args(vid0.shape)
         return L2SearchWithHeadsFunction.apply(vid0,vid1,

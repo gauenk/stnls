@@ -23,7 +23,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
                 dilation=1,stride1=1,use_k=True,use_adj=True,
                 reflect_bounds=True,search_abs=False,
                 full_ws=False,anchor_self=False,
-                use_self=False,remove_self=False,
+                remove_self=False,
                 nbwd=1,rbwd=True,exact=False):
         """
         vid0 = [B,T,C,H,W] or [B,H,T,C,H,W]
@@ -66,7 +66,8 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         inds_exh = inds_exh.view(B,H,Q,-1,ws_h,ws_w,3)
 
         # -- allocates self --
-        assert use_self == anchor_self
+        use_self = anchor_self
+        # assert use_self == anchor_self
         if anchor_self:
             self_dists = th.zeros((B,H,Q),device=device,dtype=dtype)
         else:
@@ -222,7 +223,7 @@ class ProdSearchWithHeads(th.nn.Module):
                  use_k=True, use_adj=True, reflect_bounds=True,
                  search_abs=False, full_ws = False, nbwd=1, exact=False,
                  h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
-                 anchor_self=False,use_self=False,rbwd=True):
+                 anchor_self=False,rbwd=True):
         super().__init__()
         self.k = k
         self.ps = ps
@@ -246,7 +247,7 @@ class ProdSearchWithHeads(th.nn.Module):
         self.search_abs = search_abs
         self.full_ws = full_ws
         self.anchor_self = anchor_self
-        self.use_self = use_self
+        # self.use_self = use_self
         self.remove_self = remove_self
         self.nbwd = nbwd
         self.exact = exact
@@ -362,7 +363,7 @@ class ProdSearchWithHeads(th.nn.Module):
                                          self.use_k,self.use_adj,
                                          self.reflect_bounds,self.search_abs,
                                          self.full_ws,self.anchor_self,
-                                         self.use_self, self.remove_self,
+                                         self.remove_self,
                                          self.nbwd,self.rbwd,self.exact)
 
     def flops(self,T,C,H,W):

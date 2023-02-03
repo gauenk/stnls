@@ -22,8 +22,8 @@ def init(version,*args,**kwargs):
         return window_search.WindowSearch(*args,**kwargs)
     elif version == "l2_with_index":
         return l2_search_with_index.L2Search_with_index(*args,**kwargs)
-    elif version == "l2_with_heads":
-        return l2_search_with_heads.L2Search_with_index(*args,**kwargs)
+    elif version in ["l2_with_heads","l2_search_with_heads"]:
+        return l2_search_with_heads.L2SearchWithHeads(*args,**kwargs)
     elif version == "prod":
         return prod_search.ProductSearch(*args,**kwargs)
     elif version == "prod_with_index":

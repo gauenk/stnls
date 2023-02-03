@@ -8,7 +8,7 @@ void l2_search_with_heads_forward_cuda(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor fflow, torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
-    int qstart, int nqueries, int nheads, int stride0, int n_h0, int n_w0,
+    int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt, int chnls,
     int dilation, int stride1, bool use_adj,
@@ -35,8 +35,8 @@ void l2_search_with_heads_backward_cuda(
 void l2_search_with_heads_forward(
     torch::Tensor vid0, torch::Tensor vid1,
     torch::Tensor fflow,torch::Tensor bflow,
-    torch::Tensor dists,torch::Tensor inds,
-    int qstart, int nqueries, int nheads, int stride0, int n_h0, int n_w0,
+    torch::Tensor dists, torch::Tensor inds,
+    int qstart, int stride0, int n_h0, int n_w0,
     int h0_off, int w0_off, int h1_off, int w1_off,
     int ps, int pt, int ws_h, int ws_w, int wt,
     int chnls, int dilation, int stride1,
@@ -53,13 +53,14 @@ void l2_search_with_heads_forward(
   CHECK_INPUT(tranges);
   CHECK_INPUT(n_tranges);
   CHECK_INPUT(min_tranges);
-  l2_search_with_heads_forward_cuda(vid0,vid1,fflow,bflow,dists,inds,
-                                      qstart, nqueries, nheads, stride0, n_h0, n_w0,
-                                      h0_off,w0_off,h1_off,w1_off,
-                                      ps,pt,ws_h,ws_w,wt,chnls,dilation,stride1,
-                                      use_adj,reflect_bounds,search_abs,
-                                      full_ws,anchor_self,
-                                      tranges,n_tranges,min_tranges);
+  l2_search_with_heads_forward_cuda(vid0,vid1,fflow,bflow,
+                                    dists,inds,
+                                    qstart, stride0, n_h0, n_w0,
+                                    h0_off,w0_off,h1_off,w1_off,
+                                    ps,pt,ws_h,ws_w,wt,chnls,dilation,stride1,
+                                    use_adj,reflect_bounds,search_abs,
+                                    full_ws,anchor_self,
+                                    tranges,n_tranges,min_tranges);
 }
 
 void l2_search_with_heads_backward(
@@ -88,8 +89,7 @@ void l2_search_with_heads_backward(
 // python bindings
 void init_l2_search_with_heads(py::module &m){
   m.def("l2_search_with_heads_forward", &l2_search_with_heads_forward,
-        "L2 Search Forward with Heads (CUDA)");
+        "Product Search Forward with Heads (CUDA)");
   m.def("l2_search_with_heads_backward", &l2_search_with_heads_backward,
-        "L2 Search Backward with Heads (CUDA)");
+        "Product Search Backward with Heads (CUDA)");
 }
-
