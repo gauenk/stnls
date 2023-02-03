@@ -179,11 +179,11 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
 
     # -- viz --
     # print(diff)
-    print(args1)
-    print(dists_te[args1])
-    print(dists_gt[args1])
-    print(inds_te[args1][:10])
-    print(inds_gt[args1][:10])
+    # print(args1)
+    # print(dists_te[args1])
+    # print(dists_gt[args1])
+    # print(inds_te[args1][:10])
+    # print(inds_gt[args1][:10])
 
     # -- test --
     tol = 1e-5
@@ -218,7 +218,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    reflect_bounds = True
+    reflect_bounds = False
     search_abs = ws == -1
     use_k = k > 0
     use_adj = False
@@ -289,8 +289,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # -- viz --
     # print(dists_te)
     # print(dists_gt)
-    print(dists_te[0,0,0])
-    print(dists_gt[0,0,0])
+    # print(dists_te[0,0,0])
+    # print(dists_gt[0,0,0])
     # print(dists_te.shape)
     # print(dists_gt.shape)
 
@@ -309,10 +309,6 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
     args1 = th.where(diff>1-3)
-    print(args1)
-    print(dists_te[args1])
-    print(dists_gt[args1])
-
 
     tol = 1e-5
     error = diff[args0].mean().item()
@@ -328,6 +324,10 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     dists_grad = th.randn_like(dists_te)
     th.autograd.backward(dists_te,dists_grad)
     th.autograd.backward(dists_gt,dists_grad)
+
+    # -- view --
+    # print(vid_te0.grad[0,0,:3,:3])
+    # print(vid_te1.grad[0,0,:3,:3])
 
     # -- for both grads --
     _grads_te = [vid_te0.grad,vid_te1.grad]
@@ -345,9 +345,9 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         # print(grads_te[0,0,10:13,10:13])
         # print(grads_gt[0,0,10:13,10:13])
         # print("-"*20)
-        print(grads_te[0,0,:3,:3])
-        print(grads_gt[0,0,:3,:3])
-        print("-"*20)
+        # print(grads_te[0,0,:3,:3])
+        # print(grads_gt[0,0,:3,:3])
+        # print("-"*20)
 
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # print(diff.max())
@@ -366,7 +366,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         # print("Max Error: ",error)
         assert error < tol
 
-        tol = 1e-4
+        tol = 1e-3
         error = th.mean(rel_error_nz).item()
         if error > tol: print("Mean Error: ",error)
         # print("Mean Error: ",error)

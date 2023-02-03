@@ -21,7 +21,7 @@ void non_local_search_backward_cuda(
     int ps, int pt, int dilation, bool reflect_bounds,
     bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
     bool use_rand, bool exact, int dist_type,
-    int channel_groups, int neigh_per_thread, int queries_per_thread);
+    int queries_per_thread, int neigh_per_thread, int channel_groups);
 
 // void non_local_search_backward_cuda(
 //     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
@@ -75,13 +75,12 @@ void non_local_search_backward(
   CHECK_INPUT(vid1);
   CHECK_INPUT(grad_dists);
   CHECK_INPUT(inds);
-  non_local_search_backward_cuda(grad_vid0,grad_vid1,vid0,vid1,
-                                 grad_dists,inds,
-                                 q_shift,stride0,nH0,nW0,
-                                 off_H0,off_W0,off_H1,off_W1,
-                                 ps,pt,dilation,use_adj,reflect_bounds,
-                                 use_rand,exact,dist_type,
-                                 channel_groups,neigh_per_thread,queries_per_thread);
+  non_local_search_backward_cuda(grad_vid0, grad_vid1, vid0, vid1,
+                                 grad_dists, inds, q_shift, stride0, nH0, nW0,
+                                 ps, pt, dilation, reflect_bounds,
+                                 use_adj, off_H0, off_W0, off_H1, off_W1,
+                                 use_rand, exact, dist_type,
+                                 queries_per_thread, neigh_per_thread, channel_groups);
 }
 
 

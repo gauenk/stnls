@@ -83,7 +83,7 @@ __global__ void non_local_search_forward_kernel(
   bool valid_prop[4];
 
   // -- cleaner code --
-  int center_offsets[4] = {off_H0,off_W0,off_H1,off_W1};
+  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
   int patch_offset = psHalf + adj;
 
   // -- indexing --
@@ -322,6 +322,7 @@ __global__ void non_local_search_backward_kernel(
   int B = grad_dists.size(0);
   int Q = grad_dists.size(2);
   int K =  grad_dists.size(3);
+  int HD = vid0.size(1);
   int T = vid0.size(2);
   int C = vid0.size(3);
   int H = vid0.size(4);
@@ -334,7 +335,7 @@ __global__ void non_local_search_backward_kernel(
   int prop[3];
   bool valid_ref[4];
   bool valid_prop[4];
-  int qindex,i_mod;
+  int qindex,qindex_tmp;
   bool valid;
   scalar_t weight,pix0,pix1,pix;
 
@@ -347,11 +348,11 @@ __global__ void non_local_search_backward_kernel(
   int i1_max = inds.size(3); // k
 
   // -- get indices --
-  int ibatch = blockIdx.x;
-  int ihead = blockIdx.z;
+  int ibatch = blockIdx.x / HD;
+  int ihead = blockIdx.x - ibatch*HD;
   int i0_start = q_per_thread * (threadIdx.x + blockDim.x * blockIdx.y);
   int i1_start = threadIdx.y * neigh_per_thread;
-  int c0_start = threadIdx.z * chnls_per_thread;
+  int c0_start = blockIdx.z * chnls_per_thread;
 
   // -- get block limits --
   int i0_end = min(i0_start + q_per_thread,i0_max);
@@ -364,7 +365,7 @@ __global__ void non_local_search_backward_kernel(
   int c0_offset = 0;
 
   // -- cleaner code --
-  int center_offsets[4] = {off_H0,off_W0,off_H1,off_W1};
+  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
   int patch_offset = psHalf + adj;
 
   // -- each region --
@@ -374,7 +375,7 @@ __global__ void non_local_search_backward_kernel(
     qindex = i0 + q_shift;
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qindex,i_mod,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
 
     // -- channel access offset --
     c0_offset = __float2int_rd(c0_dist * rand_nums[i0][0][0]);
@@ -389,6 +390,17 @@ __global__ void non_local_search_backward_kernel(
       weight = grad_dists[ibatch][ihead][i0][i1];
 
       // -- update patch --
+    // torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid0,
+    // torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid1,
+    // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
+    // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
+    // scalar_t weight, int* ref_patch, int* prop_patch,
+    // int ps, int pt, int dilation, bool reflect_bounds,
+    // int* center_offsets, int patch_offset,
+    // int c0, int c0_start, int c0_end, int c0_offset, int c0_dist,
+    // int* ref, int* prop, bool* valid_ref, bool* valid_prop, bool valid,
+    // int T, int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix){
+
       update_bwd_patch<scalar_t,DIST_TYPE>(
                        grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
                        vid0[ibatch][ihead],vid1[ibatch][ihead],
@@ -437,6 +449,8 @@ void non_local_search_backward_cuda(
   channel_groups = std::min(channel_groups,C);
   int chnls_nblocks = exact ? C : channel_groups;
   int chnls_per_thread = (C-1) / chnls_nblocks + 1;
+  // int chnls_nblocks = exact ? C : channel_groups;
+  // int chnls_per_thread = C;
 
   // -- compute number of blocks --
   int MAX_NTHREADS = 28*32;
@@ -450,8 +464,20 @@ void non_local_search_backward_cuda(
   }
 
   // -- launch params --
-  dim3 nblocks(nblocks_queries,chnls_nblocks,BHD);
+  dim3 nblocks(BHD,nblocks_queries,chnls_nblocks);
   dim3 nthreads(query_nthreads, neigh_nthreads);//, chnls_nthreads);
+
+  // -- view launch info --
+  // fprintf(stdout,"queries_per_thread,neigh_per_thread,chnls_per_thread: %d,%d,%d\n",
+  //         queries_per_thread,neigh_per_thread,chnls_per_thread);
+  // fprintf(stdout,"nblocks_queries,chnls_nblocks,BHD: %d,%d,%d\n",
+  //         nblocks_queries,chnls_nblocks,BHD);
+
+  // int ibatch = blockIdx.x / HD;
+  // int ihead = blockIdx.x - ibatch*HD;
+  // int i0_start = q_per_thread * (threadIdx.x + blockDim.x * blockIdx.y);
+  // int i1_start = threadIdx.y * neigh_per_thread;
+  // int c0_start = blockIdx.z * chnls_per_thread;
 
   // -- allocate random values --
   auto cu_index = grad_vid0.device().index();

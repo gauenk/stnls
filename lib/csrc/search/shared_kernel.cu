@@ -10,9 +10,9 @@ using namespace at;
 __device__ __forceinline__ int bounds(int val, int lim ){
   int vval = val;
   if (val < 0){
-    vval = -val;
+    vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
   }else if (val >= lim){
-    vval = 2*lim-1-val;
+    vval = 2*(lim-1)-val; // want ("H" -> "H-2") _not_ ("H" -> "H-1")
   }
   return vval;
 }
@@ -268,12 +268,12 @@ void update_bwd_patch(
             valid_ref[3] = valid_ref[3] && valid_ref[bool_idx];
             valid_prop[3] = valid_prop[3] && valid_prop[bool_idx];
           }
+          valid = valid_ref[3] && valid_prop[3];
 
           // -- fill each channel --
           for (int _c0 = c0_start; _c0 < c0_end; _c0++){
-            c0 = (_c0 + c0_offset) % c0_dist + c0_start;
+            c0 = _c0;//(_c0 + c0_offset) % c0_dist + c0_start;
             if (DIST_TYPE == 0){ // prod
-              valid = valid_ref[3] && valid_prop[3];
               if(valid){
                 pix0 = weight*vid0[ref[0]][c0][ref[1]][ref[2]];
                 pix1 = weight*vid1[prop[0]][c0][prop[1]][prop[2]];
