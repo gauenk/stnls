@@ -23,7 +23,7 @@ void get_pixel_loc(int* pix,  int qindex, int tmp, int stride0,
   int nH_index;
   tmp = qindex;
   pix[0] = tmp / nHW0;
-  tmp = (tmp - pix[0]*nHW0);
+  tmp = (tmp - pix[0]*nHW0); 
   nH_index = tmp / nW0;
   pix[1] = (nH_index*stride0) % H;
   tmp = tmp - nH_index*nW0;
@@ -41,13 +41,6 @@ void check_bounds(bool& valid_anchor, int* loc3d, int T, int H, int W){
   valid_anchor = valid_anchor && check_interval(loc3d[2],0,W);
 }
 
-
-__device__ __forceinline__
-void set_time_range(int& t_min, int t_shift, int ti, int T, int wt){
-    t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1));
-    t_min = max(ti - wt - t_shift,0);
-    // t_max = min(T-1,ti + wt - t_shift);
-}
 
 __device__ __forceinline__
 void set_search_offsets(int& wsOff_h, int& wsOff_w, int hi, int wi, int stride1,
@@ -78,14 +71,21 @@ void set_search_minmax(int& wsMax, int& wsMin, int wsOff,
 }
 
 __device__ __forceinline__
+void set_time_range(int& t_max, int t_shift, int ti, int T, int wt){
+    t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1));
+    // t_min = max(ti - wt - t_shift,0);
+    t_max = min(T-1,ti + wt - t_shift);
+}
+
+__device__ __forceinline__
 void increment_frame(int& n_ti, int& prev_ti, int& t_inc,
-                     bool& swap_dir, int& dir, int ti, int t_min){
+                     bool& swap_dir, int& dir, int ti, int t_max){
   prev_ti = n_ti;
   n_ti += t_inc;
-  swap_dir = n_ti < t_min;
-  t_inc = (t_inc == 0) ? -1 : t_inc; // set after tindex == 0
-  t_inc = swap_dir ? 1 : t_inc;
-  n_ti = swap_dir ? ti+1 : n_ti;
+  swap_dir = n_ti > t_max; // max(t_max) == (T-1), a legal index.
+  t_inc = (t_inc == 0) ? 1 : t_inc; // set after tindex == 0, forward first
+  t_inc = swap_dir ? -1 : t_inc;
+  n_ti = swap_dir ? ti-1 : n_ti;
   prev_ti = swap_dir ? ti : prev_ti;
   dir = max(-1,min(1,n_ti - ti));
 }
@@ -110,7 +110,7 @@ void update_centers(int& hj_center, int& wj_center, int dir, int H, int W,
   if (dir != 0){
 
     // -- access flows --
-    auto flow = dir>0 ? fflow : bflow;
+    auto flow = dir > 0 ? fflow : bflow;
     wj_center = int(1.*wj_center + flow[0][hj_tmp][wj_tmp] + 0.5);
     hj_center = int(1.*hj_center + flow[1][hj_tmp][wj_tmp] + 0.5);
 

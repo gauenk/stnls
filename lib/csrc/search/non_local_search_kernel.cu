@@ -23,7 +23,8 @@ __global__ void non_local_search_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
-    int ws_h, int ws_w, int wt, int ps, int pt, int stride0, int stride1, int dilation,
+    int ws_h, int ws_w, int wt, int ps, int pt,
+    int stride0, int stride1, int dilation,
     int q_shift, int nH0, int nW0, int nHW0,
     bool reflect_bounds, bool full_ws, bool search_abs,
     bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
@@ -37,7 +38,7 @@ __global__ void non_local_search_forward_kernel(
   int H = vid0.size(4);
   int W = vid0.size(5);
   int Q = dists.size(2);
-  int st = dists.size(3);
+  int ST = dists.size(3);
 
   // -- invalid constant --
   float invalid = __int_as_float(0x7f800000);
@@ -56,7 +57,7 @@ __global__ void non_local_search_forward_kernel(
 
   // -- time indices --
   int t_shift;
-  int t_min;
+  int t_max;
 
   // -- cuda index --
   int ibatch = blockIdx.x;
@@ -77,6 +78,7 @@ __global__ void non_local_search_forward_kernel(
   int ref_pix[3];
   int prop_pix[3];
   bool valid;
+  bool valid_ref_patch,valid_prop_patch;
   bool valid_ref[4];
   bool valid_prop[4];
 
@@ -103,14 +105,14 @@ __global__ void non_local_search_forward_kernel(
     get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
 
     // -- check bounds of pixel location --
-    check_bounds(valid_ref[3],ref_patch,T,H,W);
+    check_bounds(valid_ref_patch,ref_patch,T,H,W);
 
     // -- search region offsets --
     set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
                        wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws);
 
     // -- temporal search bounds --
-    set_time_range(t_min,t_shift,ref_patch[0],T,wt);
+    set_time_range(t_max,t_shift,ref_patch[0],T,wt);
 
     // -- init search params --
     frame_anchor[0] = ref_patch[0];
@@ -122,14 +124,14 @@ __global__ void non_local_search_forward_kernel(
     dir = 0;
 
     // -- search across time --
-    for(int st_i = 0; st_i < st; st_i++){
+    for(int st_i = 0; st_i < ST; st_i++){
 
       // ---------------------------------------
       //       compute search center
       // ---------------------------------------
 
       // -- increment frame index --
-      increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_min);
+      increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_max);
 
       // -- possibly reset (frame_anchor <- reference_patch) --
       reset_centers(frame_anchor,ref_patch,swap_dir);
@@ -153,8 +155,8 @@ __global__ void non_local_search_forward_kernel(
           // -- compute proposed location --
           set_search_patch(prop_patch,frame_anchor,stride1,
                            ws_i,ws_j,wsOff_h,wsOff_w,search_abs);
-          check_bounds(valid_prop[3],prop_patch,T,H,W);
-          valid = valid_ref[3] && valid_prop[3];
+          check_bounds(valid_prop_patch,prop_patch,T,H,W);
+          valid = valid_ref_patch && valid_prop_patch;
 
           // -- init dist --
           dist = 0;
@@ -210,7 +212,6 @@ void non_local_search_forward_cuda(
     // nblocks = (nq-1)//batches_per_block+1
     // fprintf(stdout,"nH0,nW0: %d,%d\n",nH0,nW0);
 
-   // fprintf(stdout,"q_shift, nqueries: %d,%d\n",q_shift,nqueries);
    // launch params
    // our many (too many?) registers limit the number of threads
 
@@ -239,6 +240,11 @@ void non_local_search_forward_cuda(
    int q_per_thread = 4;
    int nquery_blocks = ((nqueries - 1) / q_per_thread) + 1;
    dim3 nblocks(B,HD,nquery_blocks);
+
+   // fprintf(stdout,"q_shift, nqueries: %d,%d\n",q_shift,nqueries);
+   // fprintf(stdout,"dilation, reflect_bounds: %d,%d\n",dilation, reflect_bounds);
+   // fprintf(stdout,"stride0,stride1: %d,%d\n",stride0,stride1);
+   // fprintf(stdout,"full_ws: %d\n",full_ws);
 
    // fprintf(stdout,"Q: %d\n",nqueries);
    // fprintf(stdout,"ps,pt,nH0,nW0,wt,chnls,stride0,ws_h,ws_w: %d,%d,%d,%d,%d,%d,%d,%d,%d\n",ps,pt,nH0,nW0,wt,chnls,stride0,ws_h,ws_w);

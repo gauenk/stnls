@@ -98,7 +98,7 @@ __global__ void prod_search_with_heads_forward_kernel(
   // accumulate time offsets
   bool dir_fwd = true; // forward
   bool swap_dir = false;
-  int prev_h,prev_w,prev_t;
+  float prev_h,prev_w,prev_t;
   int min_t;
 
   // decls
@@ -385,6 +385,9 @@ void prod_search_with_heads_forward_cuda(
    // bpt = ((nqueries - 1) / nquery_blocks) + 1;
    dim3 nblocks(bsize,nheads,nquery_blocks);
 
+   // fprintf(stdout,"dilation,reflect_bounds: %d,%d\n",dilation,reflect_bounds);
+   // fprintf(stdout,"stride0,stride1: %d,%d\n",stride0,stride1);
+   // fprintf(stdout,"full_ws: %d\n",full_ws);
    // fprintf(stdout,"ps,pt,n_h0,n_w0,wt,chnls,stride0,ws_h,ws_w: %d,%d,%d,%d,%d,%d,%d,%d,%d\n",ps,pt,n_h0,n_w0,wt,chnls,stride0,ws_h,ws_w);
    // fprintf(stdout,"bsize,nheads,nquery_blocks: %d,%d,%d\n",
    //         bsize,nheads,nquery_blocks);

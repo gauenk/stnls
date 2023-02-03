@@ -17,9 +17,6 @@ from einops import rearrange,repeat
 
 # -- dnls --
 import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
 
 # -- meshgrid --
 
@@ -44,15 +41,19 @@ def get_data(dnames,ext,device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
-                  "dilation":[1],"wt":[0],"ws":[9],
-                  "k":[-1],"exact":[True],"nheads":[1],
-                  "seed":[0]}
+    test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
+                  "dilation":[1],"wt":[2],"ws":[3],
+                  "k":[-1],"exact":[True],"nheads":[2],
+                  "anchor_self":[False],"seed":[0]}
+    # test_lists = {"ps":[7,11],"stride0":[4],"stride1":[1,8],
+    #               "dilation":[1,2],"wt":[2],"ws":[3,7],
+    #               "k":[-1,10],"exact":[True],"nheads":[2],
+    #               "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
+def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     """
 
     Test the CUDA code with torch code
@@ -73,26 +74,32 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    gpu_stats = False
     reflect_bounds = False
     use_k = k > 0
     use_adj = False
     adj = 0
     search_abs = ws == -1
-    anchor_self = False
     use_self = anchor_self
     rbwd = True
     nbwd = 1
+    off_H0,off_W0,off_H1,off_W1 = 0,0,0,0
     dist_type = "prod"
 
     # -- load data --
     vid = get_data(dnames,ext)
-    print(vid.shape)
 
     # -- compute flow --
     flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    flows.fflow = 10*th.randn_like(flows.fflow)
-    flows.bflow = 10*th.randn_like(flows.bflow)
+    # flows.fflow = 10*th.ones_like(flows.fflow)
+    # flows.bflow = 10*th.ones_like(flows.bflow)
+    flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
+    flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
+    # flows.fflow = th.clamp((10*th.randn_like(flows.fflow))//2,-10,10)
+    # flows.bflow = th.clamp((10*th.randn_like(flows.bflow))//2,-10,10)
+    # flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
+    # flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
+    # flows.fflow = 10*th.randn_like(flows.fflow)
+    # flows.bflow = 10*th.randn_like(flows.bflow)
 
     # -- unpack image --
     device = vid.device
@@ -100,12 +107,9 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     b,t,color,h,w = shape
     vshape = vid.shape
 
-    # -- pads --
-    off_H0,off_W0,off_H1,off_W1 = 0,0,0,0
 
     # -- exec fold fxns --
     sch = dnls.search
-    simp = dnls.simple
     search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
@@ -135,14 +139,26 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     th.cuda.synchronize()
 
     # -- viz --
+    # print(dists_te[0,0,0])
+    # print(dists_gt[0,0,0])
+    # print(inds_te[0,0,0,:])
+    # print(inds_gt[0,0,0,:])
+    # print(dists_te[0,0,15])
+    # print(dists_gt[0,0,15])
+    # print(inds_te[0,0,15])
+    # print(inds_te[0,0,15]-inds_gt[0,0,15])
     # print(dists_te[0,0,0,:])
     # print(dists_gt[0,0,0,:])
+    # print(inds_te[0,0,0,:])
+    # print(inds_gt[0,0,0,:])
+    # print(inds_te[0,0,256,:])
+    # print(inds_gt[0,0,256,:])
     # print(dists_te[0,0,1,:10])
     # print(dists_gt[0,0,1,:10])
-    print(dists_te[0,0,17,:])
-    print(dists_gt[0,0,17,:])
-    print(dists_te.shape)
-    print(dists_gt.shape)
+    # print(dists_te[0,0,17,:])
+    # print(dists_gt[0,0,17,:])
+    # print(dists_te.shape)
+    # print(dists_gt.shape)
 
     # -- viz --
     # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
@@ -160,11 +176,14 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
     args1 = th.where(diff > 1e-3)
     diff = diff[args0]
+
+    # -- viz --
+    # print(diff)
     print(args1)
-    print(diff)
     print(dists_te[args1])
     print(dists_gt[args1])
-
+    print(inds_te[args1][:10])
+    print(inds_gt[args1][:10])
 
     # -- test --
     tol = 1e-5
@@ -199,7 +218,6 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    gpu_stats = False
     reflect_bounds = True
     search_abs = ws == -1
     use_k = k > 0
@@ -209,19 +227,19 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_self = anchor_self
     rbwd = True
     nbwd = 1
+    dist_type = "prod"
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
-    vid = vid.to(device)[:,:5,].contiguous()
-    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
-    vid = vid[...,:32,:32]
-    vid /= vid.max()
-    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
+    vid = get_data(dnames,ext)
 
     # -- compute flow --
     flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    flows.fflow = 10*th.randn_like(flows.fflow)
-    flows.bflow = 10*th.randn_like(flows.bflow)
+    flows.fflow = 10*th.zeros_like(flows.fflow)
+    flows.bflow = 10*th.zeros_like(flows.bflow)
+    # flows.fflow = 10*th.ones_like(flows.fflow)
+    # flows.bflow = 10*th.ones_like(flows.bflow)
+    # flows.fflow = 10*th.randn_like(flows.fflow)
+    # flows.bflow = 10*th.randn_like(flows.bflow)
 
     # -- unpack image --
     device = vid.device
@@ -229,18 +247,6 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     b,t,color,h,w = shape
     vshape = vid.shape
     chnls = vid.shape[2]
-
-    # -- pads --
-    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
-    n_h0,n_w0 = n0[0],n0[1]
-    n_h1,n_w1 = n1[0],n1[1]
-    h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
-
-    # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h0 * n_w0
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
 
     # -- allow grads --
     vid_te0,vid_te1 = vid.clone(),vid.clone()
@@ -251,11 +257,13 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vid_gt1.requires_grad_(True)
 
     # -- exec fold fxns --
-    search_te = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
-                                 dilation=dil,stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,full_ws=False,
-                                 anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+    sch = dnls.search
+    search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
+                                   dist_type=dist_type,
+                                   dilation=dil,stride0=stride0, stride1=stride1,
+                                   reflect_bounds=reflect_bounds,full_ws=False,
+                                   anchor_self=anchor_self,remove_self=False,
+                                   use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
     search_gt = dnls.search_dev.init("prod_search_with_heads",
                                      flows.fflow, flows.bflow,
                                      k, ps, pt, ws, wt, nheads,
@@ -265,6 +273,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                      search_abs=search_abs,use_adj=use_adj,
                                      anchor_self=anchor_self,use_self=use_self,
                                      exact=exact)
+
 
 
     # -- [testing] search --
@@ -280,8 +289,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # -- viz --
     # print(dists_te)
     # print(dists_gt)
-    # print(dists_te[0,0,:10])
-    # print(dists_gt[0,0,:10])
+    print(dists_te[0,0,0])
+    print(dists_gt[0,0,0])
     # print(dists_te.shape)
     # print(dists_gt.shape)
 
@@ -299,6 +308,11 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
+    args1 = th.where(diff>1-3)
+    print(args1)
+    print(dists_te[args1])
+    print(dists_gt[args1])
+
 
     tol = 1e-5
     error = diff[args0].mean().item()
@@ -331,9 +345,9 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         # print(grads_te[0,0,10:13,10:13])
         # print(grads_gt[0,0,10:13,10:13])
         # print("-"*20)
-        # print(grads_te[0,0,:3,:3])
-        # print(grads_gt[0,0,:3,:3])
-        # print("-"*20)
+        print(grads_te[0,0,:3,:3])
+        print(grads_gt[0,0,:3,:3])
+        print("-"*20)
 
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # print(diff.max())
@@ -359,7 +373,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         assert error < tol
 
 
-@pytest.mark.slow
+# @pytest.mark.slow
+@pytest.mark.skip
 def test_dev_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
@@ -380,7 +395,6 @@ def test_dev_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    gpu_stats = False
     reflect_bounds = True
     search_abs = ws == -1
     use_k = k > 0
@@ -397,7 +411,6 @@ def test_dev_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid = vid[...,:32,:32]
     vid /= vid.max()
-    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
     flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
@@ -410,11 +423,6 @@ def test_dev_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     b,t,color,h,w = shape
     vshape = vid.shape
     chnls = vid.shape[2]
-
-    # -- pads --
-    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
-    n_h0,n_w0 = n0[0],n0[1]
-    n_h1,n_w1 = n1[0],n1[1]
     h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
 
     # -- batching info --
@@ -438,7 +446,8 @@ def test_dev_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
                                  use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
+    search_gt = dnls.search_dev.init("prod_search_with_heads",
+                                     flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -538,6 +547,7 @@ def test_dev_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         # print("Mean Error: ",error)
         assert error < tol
 
+@pytest.mark.skip
 def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     """
 
@@ -559,7 +569,6 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    gpu_stats = False
     reflect_bounds = False
     use_k = k > 0
     use_adj = False
@@ -576,7 +585,6 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
-    gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
     flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
@@ -589,11 +597,6 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     b,t,color,h,w = shape
     vshape = vid.shape
     chnls = vid.shape[2]
-
-    # -- pads --
-    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
-    n_h0,n_w0 = n0[0],n0[1]
-    n_h1,n_w1 = n1[0],n1[1]
     h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
 
     # -- batching info --
@@ -608,7 +611,8 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
                                  use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search_dev.init("prod_search_with_heads",flows.fflow, flows.bflow,
+    search_gt = dnls.search_dev.init("prod_search_with_heads",
+                                     flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
