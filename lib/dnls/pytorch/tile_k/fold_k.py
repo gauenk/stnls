@@ -80,3 +80,9 @@ class FoldK(th.nn.Module):
         return self.vid,self.wvid
 
 
+def _apply(vshape,patches,dists,inds,dilation=1,rand=True,exact=False,nreps=1):
+    vid,wvid = allocate_vid(vshape,patches.device)
+    vid,wvid = fold_k.apply(patches,dists,inds,vid,wvid,
+                            dilation,rand,exact,nreps)
+    return vid,wvid
+

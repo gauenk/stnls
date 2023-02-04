@@ -272,7 +272,7 @@ void update_bwd_patch(
 
           // -- fill each channel --
           for (int _c0 = c0_start; _c0 < c0_end; _c0++){
-            c0 = _c0;//(_c0 + c0_offset) % c0_dist + c0_start;
+            c0 = (_c0 + c0_offset) % c0_dist + c0_start;
             if (DIST_TYPE == 0){ // prod
               if(valid){
                 pix0 = weight*vid0[ref[0]][c0][ref[1]][ref[2]];

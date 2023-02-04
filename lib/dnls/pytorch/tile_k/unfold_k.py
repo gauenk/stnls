@@ -94,3 +94,8 @@ class UnfoldK(th.nn.Module):
                               self.dilation,self.btype,self.exact,
                               self.adj, self.reflect_bounds)
 
+def _apply(vid,inds,ps,pt=1,dilation=1,btype="default",
+           exact=False,adj=0,reflect_bounds=True,):
+    return unfold_k.apply(vid,inds,ps,pt,dilation,btype,exact,
+                          adj, reflect_bounds)
+

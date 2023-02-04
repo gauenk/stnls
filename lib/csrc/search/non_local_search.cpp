@@ -68,7 +68,7 @@ void non_local_search_backward(
     int ps, int pt, int dilation, bool reflect_bounds,
     bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
     bool use_rand, bool exact, int dist_type,
-    int channel_groups, int neigh_per_thread, int queries_per_thread) {
+    int queries_per_thread, int neigh_per_thread, int channel_groups) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
   CHECK_INPUT(vid0);

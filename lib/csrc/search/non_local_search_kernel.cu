@@ -444,13 +444,11 @@ void non_local_search_backward_cuda(
     neigh_per_thread = K;
   }
 
-  // -- compute number of color threads --
+  // -- compute number of color blocks --
   channel_groups = (channel_groups > 0) ? channel_groups : C;
   channel_groups = std::min(channel_groups,C);
   int chnls_nblocks = exact ? C : channel_groups;
   int chnls_per_thread = (C-1) / chnls_nblocks + 1;
-  // int chnls_nblocks = exact ? C : channel_groups;
-  // int chnls_per_thread = C;
 
   // -- compute number of blocks --
   int MAX_NTHREADS = 28*32;
@@ -468,16 +466,10 @@ void non_local_search_backward_cuda(
   dim3 nthreads(query_nthreads, neigh_nthreads);//, chnls_nthreads);
 
   // -- view launch info --
-  // fprintf(stdout,"queries_per_thread,neigh_per_thread,chnls_per_thread: %d,%d,%d\n",
-  //         queries_per_thread,neigh_per_thread,chnls_per_thread);
-  // fprintf(stdout,"nblocks_queries,chnls_nblocks,BHD: %d,%d,%d\n",
-  //         nblocks_queries,chnls_nblocks,BHD);
-
-  // int ibatch = blockIdx.x / HD;
-  // int ihead = blockIdx.x - ibatch*HD;
-  // int i0_start = q_per_thread * (threadIdx.x + blockDim.x * blockIdx.y);
-  // int i1_start = threadIdx.y * neigh_per_thread;
-  // int c0_start = blockIdx.z * chnls_per_thread;
+  // fprintf(stdout,"BHD,nblocks_queries,chnls_nblocks: %d,%d,%d\n",
+  //         BHD,nblocks_queries,chnls_nblocks);
+  // fprintf(stdout,"query_nthreads,neigh_nthreads: %d,%d\n",
+  //         query_nthreads,neigh_nthreads);
 
   // -- allocate random values --
   auto cu_index = grad_vid0.device().index();
