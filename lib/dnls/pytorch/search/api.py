@@ -2,6 +2,12 @@
 
 Programmtically acesss search functions uniformly
 
+cfg = <pydict of params>
+search = dnls.search.init(cfg)
+
+Keys:
+search_name: Choose which search function
+
 """
 
 from . import non_local_search
@@ -19,21 +25,24 @@ import importlib
 from pathlib import Path
 from easydict import EasyDict as edict
 
-def search_menu(name):
-    menu = edict({"exact":"non_local_search","nls":"non_local_search",
-                  "refine":"refinement",
-                  "approx_t":"approx_time","nlat":"approx_time",
-                  "approx_s":"approx_space","nlas":"approx_space",
-                  "approx_st":"approx_spacetime","nlast":"approx_spacetime"})
-    if name in menu:
-        return menu[name]
+MENU = edict({"exact":"non_local_search",
+              "nls":"non_local_search",
+              "nl":"non_local_search",
+              "refine":"refinement",
+              "approx_t":"approx_time","nlat":"approx_time",
+              "approx_s":"approx_space","nlas":"approx_space",
+              "approx_st":"approx_spacetime","nlast":"approx_spacetime"})
+
+def from_search_menu(name):
+    if name in MENU:
+        return MENU[name]
     else:
         return name
 
 def extract_config(_cfg):
     pairs = {"search_name":"nls"}
     search_name = extract_pairs(pairs,_cfg)["search_name"]
-    pkg_name = search_menu(search_name)
+    pkg_name = from_search_menu(search_name)
     base_name = ".".join(__name__.split(".")[:-1])
     mname = "%s.%s" % (base_name,pkg_name)
     extract_config_s = importlib.import_module(mname).extract_config
@@ -43,6 +52,6 @@ def extract_config(_cfg):
 
 def init(cfg):
     cfg = extract_config(cfg)
-    pkg_name = search_menu(cfg.search_name)
+    pkg_name = from_search_menu(cfg.search_name)
     init_s = importlib.import_module("dnls.pytorch.search.%s" % pkg_name).init
     return init_s(cfg)

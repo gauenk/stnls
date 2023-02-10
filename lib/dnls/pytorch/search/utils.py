@@ -29,6 +29,7 @@ def allocate_vid(vid_shape,device):
 
 def filter_k(inds,kr,k=None):
     K = inds.shape[-2] if k is None else k
+    kr = K if kr is None else kr
     if kr <= 0: return inds
     if isinstance(kr,float):
         assert (0 < kr and kr <= 1)
@@ -105,6 +106,33 @@ def extract_pairs(pairs,_cfg):
 #
 # -- interface --
 #
+
+def search_kwargs_wrap(name,search):
+    """
+    All for all inputs to enable easier benchmarking
+
+        All calls must use keywords!
+
+      vid0,vid1,fflow,bflow,inds,afflow,abflow
+
+    """
+    if "refine" in name:
+        def wrap(vid0,vid1,**kwargs):
+            inds = kwargs['inds']
+            return search(vid0,vid1,inds)
+        return wrap
+    elif "pf" in name:
+        def wrap(vid0,vid1,**kwargs):
+            afflow = kwargs['afflow']
+            abflow = kwargs['abflow']
+            return search(vid0,vid1,afflow,abflow)
+        return wrap
+    else:
+        def wrap(vid0,vid1,**kwargs):
+            fflow = kwargs['fflow']
+            bflow = kwargs['bflow']
+            return search(vid0,vid1,fflow,bflow)
+        return wrap
 
 def search_wrap(name,search):
     """

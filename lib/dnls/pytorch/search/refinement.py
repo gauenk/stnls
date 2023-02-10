@@ -221,7 +221,7 @@ class RefineSearch(th.nn.Module):
                                           self.channel_groups)
 
 
-    def flops(self,B,HD,T,F,H,W):
+    def flops(self,T,F,H,W):
         return 0
 
     def radius(self,H,W):
@@ -241,7 +241,7 @@ def _apply(vid0, vid1, qinds,
            anchor_self=False, remove_self=False,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
            rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
-                neigh_per_thread=4, channel_groups=-1):
+           neigh_per_thread=4, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)

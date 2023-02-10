@@ -222,7 +222,7 @@ class NonLocalSearch(th.nn.Module):
                                             self.neigh_per_thread,
                                             self.channel_groups)
 
-    def flops(self,B,HD,T,F,H,W):
+    def flops(self,T,F,H,W):
         return 0
 
         # -- unpack --
