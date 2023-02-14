@@ -90,7 +90,7 @@ class iunfold(th.autograd.Function):
 class iUnfold(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
 
-    def __init__(self, ps, coords, pt=1, stride=1, dilation=1,
+    def __init__(self, ps, coords=None, pt=1, stride=1, dilation=1,
                  adj=0,only_full=False,match_nn=False,
                  border="reflect"):
         super(iUnfold, self).__init__()

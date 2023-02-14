@@ -7,6 +7,7 @@ from . import temporal_inds as temporal_inds_f
 from . import accumulate_flow as accumulate_flow_f
 from . import interpolate_inds as interpolate_inds_f
 from . import jitter_unique_inds as jitter_unique_inds_f
+from . import compare_inds as compare_inds_f
 
 # -- [register] so we can run dnls.nn.NAME_HERE --
 topk = topk_f.run
@@ -14,7 +15,8 @@ anchor_self = anchor_self_f.run
 temporal_inds = temporal_inds_f.run
 accumulate_flow = accumulate_flow_f.run
 interpolate_inds = interpolate_inds_f.run
-jitter_unique_inds =jitter_unique_inds_f.run
+jitter_unique_inds = jitter_unique_inds_f.run
+compare_inds = compare_inds_f.run
 
 # -- api v2 --
 def init(version,*args,**kwargs):
