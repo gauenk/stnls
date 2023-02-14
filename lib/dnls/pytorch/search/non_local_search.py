@@ -164,8 +164,8 @@ class NonLocalSearch(th.nn.Module):
 
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
-                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-                 anchor_self=False, remove_self=False,
+                 dilation=1, pt=1, reflect_bounds=True,
+                 full_ws=True, anchor_self=False, remove_self=False,
                  use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
                  rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
                  neigh_per_thread=4, channel_groups=-1):
@@ -255,7 +255,7 @@ class NonLocalSearch(th.nn.Module):
 def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
-           dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+           dilation=1, pt=1, reflect_bounds=True, full_ws=True,
            anchor_self=True, remove_self=False,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
            rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
@@ -282,7 +282,7 @@ def extract_config(cfg):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
-             "reflect_bounds":True, "full_ws":False,
+             "reflect_bounds":True, "full_ws":True,
              "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "rbwd":True, "nbwd":1, "exact":False,
