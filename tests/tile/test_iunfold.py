@@ -52,7 +52,8 @@ def pytest_generate_tests(metafunc):
 def test_nn_with_fold(ps,stride,dilation):
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64",]
     chnls,k,pt = 1,1,1
     ws,wt = 10,0
     top,btm,left,right = 0,128,0,128
@@ -64,20 +65,20 @@ def test_nn_with_fold(ps,stride,dilation):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-    vid = th.from_numpy(vid).to(device).contiguous()
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device).contiguous()
 
     # -- make vid bigger --
     vid = th.cat([vid,vid],-1)
     vid = th.cat([vid,vid],-2)
 
-    # -- compute flow --
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    # -- compute optical flow --
+    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image info --
     device = vid.device
     shape = vid.shape
-    t,c,h,w = shape
+    b,t,c,h,w = shape
     npix = t * h * w
 
     # -- sub square --
@@ -113,11 +114,11 @@ def test_nn_with_fold(ps,stride,dilation):
     vid_nn.requires_grad_(True)
 
     # -- run forward --
-    patches_nn = run_unfold(vid_nn,None,ps,stride,dil)
+    patches_nn = run_unfold_batch(vid_nn,None,ps,stride,dil)
     patches_nl = iunfold_nl(vid_nl,0,qTotal)
 
     # -- reshape and grad --
-    shape_str = '(t h w) 1 1 c ph pw -> t h w c ph pw'
+    shape_str = 'b (t h w) 1 1 c ph pw -> b t h w c ph pw'
     patches_nn = rearrange(patches_nn,shape_str,t=t,h=n_h)
     patches_nl = rearrange(patches_nl,shape_str,t=t,h=n_h)
     patches_grad = th.rand_like(patches_nn).type(th.float32)
@@ -135,7 +136,7 @@ def test_nn_with_fold(ps,stride,dilation):
     diff = th.abs(grad_nn - grad_nl)
     dmax = diff.max()
     if dmax > 1e-3: diff /= dmax
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    # dnls.testing.data.save_burst(diff[0],SAVE_DIR,"diff")
 
     # -- check forward --
     # print("-"*20)
@@ -166,7 +167,8 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64",]
     chnls,k,pt = 1,1,1
     ws,wt = 10,0
 
@@ -177,14 +179,14 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-    vid = th.from_numpy(vid).to(device).contiguous()
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device).contiguous()
+    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image info --
     device = vid.device
     shape = vid.shape
-    t,c,h,w = shape
+    b,t,c,h,w = shape
     npix = t * h * w
 
     # -- sub square --
@@ -217,11 +219,11 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     vid_nn.requires_grad_(True)
 
     # -- run forward --
-    patches_nn = run_unfold(vid_nn,None,ps,stride,dil)
+    patches_nn = run_unfold_batch(vid_nn,None,ps,stride,dil)
     patches_nl = iunfold_nl(vid_nl,0,qTotal)
 
     # -- reshape and grad --
-    shape_str = '(t h w) 1 1 c ph pw -> t h w c ph pw'
+    shape_str = 'b (t h w) 1 1 c ph pw -> b t h w c ph pw'
     patches_nn = rearrange(patches_nn,shape_str,t=t,h=n_h)
     patches_nl = rearrange(patches_nl,shape_str,t=t,h=n_h)
     patches_grad = th.rand_like(patches_nn).type(th.float32)
@@ -262,7 +264,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- get args --
     dil = dilation
-    dname,ext = "davis_baseball_64x64","jpg"
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64",]
     chnls,k,pt = 1,1,1
     ws,wt = 10,0
 
@@ -273,14 +276,14 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
-    vid = th.from_numpy(vid).to(device).contiguous()
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device).contiguous()
+    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image info --
     device = vid.device
     shape = vid.shape
-    t,c,h,w = shape
+    b,t,c,h,w = shape
     npix = t * h * w
 
     # -- sub square --
@@ -328,13 +331,13 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
         patches_nl.append(patches_nl_i)
 
     # -- cat for testing --
-    patches_nl = th.cat(patches_nl,0)
+    patches_nl = th.cat(patches_nl,1)
 
     # -- exec forward nn --
-    patches_nn = run_unfold(vid_nn,None,ps,stride,dil)
+    patches_nn = run_unfold_batch(vid_nn,None,ps,stride,dil)
 
     # -- exec backward --
-    shape_str = '(t h w) 1 1 c ph pw -> t h w c ph pw'
+    shape_str = 'b (t h w) 1 1 c ph pw -> b t h w c ph pw'
     patches_nn = rearrange(patches_nn,shape_str,t=t,h=n_h)
     patches_nl = rearrange(patches_nl,shape_str,t=t,h=n_h)
     patches_grad = th.rand_like(patches_nn).type(th.float32)
@@ -376,6 +379,14 @@ def run_fold(_patches,_t,_h,_w,_stride=1,_dil=1):
 
     return vid,wvid
 
+def run_unfold_batch(_vid,_pads,_ps,_stride=1,_dil=1):
+    patches = []
+    for b in range(_vid.shape[0]):
+        patches_b = run_unfold(_vid[b],_pads,_ps,_stride,_dil)
+        patches.append(patches_b)
+    patches = th.stack(patches,0)
+    return patches
+
 def run_unfold(_vid,_pads,_ps,_stride=1,_dil=1):
 
     # -- avoid fixutres --
@@ -399,14 +410,17 @@ def pad_video(vid,coords,ps,stride,dil):
 
     # -- compute pads --
     pad_lg,pad_sm = dil*(ps//2),dil*((ps-1)//2)
-    t,c,h,w = vid.shape
+    t,c,h,w = vid.shape[-4:]
     pcoords = padded_coords(coords,h,w,pad_lg,pad_sm)
     pads = padded_boarder(coords,pcoords,pad_lg,pad_sm)
     top,left,btm,right = pcoords
     # -- include non-refl. boundary if possible --
-    vid_cc = vid[:,:,top:btm,left:right]
+    vid_cc = vid[...,top:btm,left:right]
     # -- reflect to include ps//2 around edges if needed --
+    B = vid_cc.shape[0]
+    vid_cc = rearrange(vid_cc,'b t c h w -> (b t) c h w')
     vid_pad = pad(vid_cc,pads,mode="reflect")
+    vid_pad = rearrange(vid_pad,'(b t) c h w -> b t c h w',b=B)
     return vid_pad
 
 def padded_coords(coords,h,w,pad_lg,pad_sm):

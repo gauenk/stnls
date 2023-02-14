@@ -37,21 +37,21 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
 
 template <typename scalar_t>
 __global__ void dnls_iunfold_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right,
     int start, int stride, int dilation, int adj,
     bool only_full, bool use_reflect, int qpt, int kpt) {
 
     // -- shapes --
-    int nframes = vid.size(0);
-    int colors = vid.size(1);
-    int height = vid.size(2);
-    int width = vid.size(3);
-    int nq = patches.size(0);
-    int k = patches.size(1);
-    int pt = patches.size(2);
-    int ps = patches.size(4);
+    int nframes = vid.size(1);
+    int colors = vid.size(2);
+    int height = vid.size(3);
+    int width = vid.size(4);
+    int nq = patches.size(1);
+    int k = patches.size(2);
+    int pt = patches.size(3);
+    int ps = patches.size(6);
     int psHalf = (int)ps/2;
     int height_width = height*width;
     int fill_pad = dilation * psHalf;
@@ -62,6 +62,7 @@ __global__ void dnls_iunfold_forward_kernel(
     int pj = threadIdx.z;
 
     // -- batching --
+    int bi = blockIdx.y;
     int query_start_block = blockIdx.x*qpt;
     int k_start = threadIdx.x*kpt;
 
@@ -160,11 +161,11 @@ __global__ void dnls_iunfold_forward_kernel(
           // -- colors --
           for(int ci = 0; ci < colors; ci++){
             if (valid){
-              pix = vid[vi_t][ci][vi_h][vi_w];
+              pix = vid[bi][vi_t][ci][vi_h][vi_w];
             }else{
               pix = 0.;
             }
-            patches[qi][ki][pk][ci][pi][pj] = pix;
+            patches[bi][qi][ki][pk][ci][pi][pj] = pix;
           }
         }
       }
@@ -178,15 +179,17 @@ void dnls_cuda_iunfold_forward(
     int adj, bool only_full, bool use_reflect){
 
   // -- kernel blocks --
-  int numQueries = patches.size(0);
+  int batchsize = patches.size(0);
+  int numQueries = patches.size(1);
   int k = 1;
   int qpt = 4;
-  int nblocks = (numQueries-1)/qpt+1;
-  int pt = patches.size(2);
+  int nblocks_queries = (numQueries-1)/qpt+1;
+  dim3 nblocks(nblocks_queries,batchsize);
+  int pt = patches.size(3);
   assert(pt == 1);
 
   // -- kernel threads --
-  int ps = patches.size(5);
+  int ps = patches.size(6);
   int MAX_THREADS = 1024;
   int dim = ps*ps;
   int kpb = MAX_THREADS/dim; // num of "k" managed per block
@@ -197,8 +200,8 @@ void dnls_cuda_iunfold_forward(
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_iunfold_forward_kernel", ([&] {
     dnls_iunfold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top, left, btm, right, start, stride, dilation,
         adj, only_full, use_reflect, qpt, kpt);
       }));
@@ -213,19 +216,19 @@ void dnls_cuda_iunfold_forward(
 
 template <typename scalar_t>
 __global__ void dnls_iunfold_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, int start, int stride, int dilation,
     int adj, bool only_full, bool use_reflect, int num_kernels) {
 
     // -- unpack --
-    int nframes = vid.size(0);
-    int colors = vid.size(1);
-    int height = vid.size(2);
-    int width = vid.size(3);
-    int pt = patches.size(2);
-    int ps = patches.size(5);
-    int numQueries = patches.size(0);
+    int nframes = vid.size(1);
+    int colors = vid.size(2);
+    int height = vid.size(3);
+    int width = vid.size(4);
+    int pt = patches.size(3);
+    int ps = patches.size(6);
+    int numQueries = patches.size(1);
     int psOffset = (ps-1)/2;
     int psHalf = ps/2;
     int hw = height*width;
@@ -252,6 +255,9 @@ __global__ void dnls_iunfold_backward_kernel(
       n_w = (sq_w - (ps-1)*dil - 1)/stride + 1;
     }
     int n_hw = n_h * n_w;
+
+    // -- pick batch --
+    int bi = blockIdx.y;
 
     CUDA_KERNEL_LOOP(_index, num_kernels) {
 
@@ -340,7 +346,7 @@ __global__ void dnls_iunfold_backward_kernel(
               // -- accumulate --
               valid_q = valid && (qi >= 0) && (qi < numQueries);
               if (valid_q){
-                val += patches[qi][0][0][ci][h_ip][w_ip];
+                val += patches[bi][qi][0][0][ci][h_ip][w_ip];
                 // nhits_q += 1;
               }
               // if(valid){
@@ -354,7 +360,7 @@ __global__ void dnls_iunfold_backward_kernel(
         // if (eq_hits){
         //   vid[t_im][ci][h_im][w_im] =  val;
         // }
-        vid[t_im][ci][h_im][w_im] = val;
+        vid[bi][t_im][ci][h_im][w_im] = val;
         // vid[t_im][ci][h_im][w_im] += val;
       } // for colors
     }
@@ -369,9 +375,10 @@ void dnls_cuda_iunfold_backward(
   // -- kernel blocks --
   // int numQueries = patches.size(0);
   // int k = 1;
-  int nframes = grad_vid.size(0);
-  int height = grad_vid.size(2);
-  int width = grad_vid.size(3);
+  int batchsize = grad_vid.size(0);
+  int nframes = grad_vid.size(1);
+  int height = grad_vid.size(3);
+  int width = grad_vid.size(4);
 
   // make square
   int sq_h = btm - top;
@@ -384,7 +391,8 @@ void dnls_cuda_iunfold_backward(
   // int num_kernels = patches.size(0);//nframes*height*width;
   // int num_kernels = nframes*height*width;
   int num_kernels = nframes*sq_hw;
-  int nblocks = (num_kernels-1) / nthreads+1;
+  int nblocks_pix = (num_kernels-1) / nthreads+1;
+  dim3 nblocks(nblocks_pix,batchsize);
 
   // get starting pixel
 
@@ -400,8 +408,8 @@ void dnls_cuda_iunfold_backward(
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_iunfold_backward_kernel", ([&] {
     dnls_iunfold_backward_kernel<scalar_t>
       <<<nblocks, nthreads>>>(
-        grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+        grad_vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top, left, btm, right, start, stride, dilation,
         adj, only_full, use_reflect, num_kernels);
   }));

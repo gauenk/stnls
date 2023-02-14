@@ -16,8 +16,8 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def allocate_patches(nq,k,ps,pt,c,device):
-    patches = th.zeros((nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
+def allocate_patches(b,nq,k,ps,pt,c,device):
+    patches = th.zeros((b,nq,k,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
 class iunfold(th.autograd.Function):
@@ -37,7 +37,7 @@ class iunfold(th.autograd.Function):
         btm,right = coords[2:]
 
         # -- allocate --
-        colors = vid.shape[1]
+        colors = vid.shape[-3]
         device = vid.device
 
         # -- forward --
@@ -117,13 +117,13 @@ class iUnfold(th.nn.Module):
     def _get_coords(self,vshape):
         # top,left,btm,right
         if self.coords is None:
-            t,c,h,w = vshape
+            t,c,h,w = vshape[-4:]
             return [0,0,h,w]
         else:
             return self.coords
 
     def _get_start_num(self,start,num,coords,vshape):
-        t = vshape[0]
+        t = vshape[-4]
         ps,dil,stride = self.ps,self.dilation,self.stride
         if start == -1: start = 0
         if num == -1:
@@ -141,8 +141,9 @@ class iUnfold(th.nn.Module):
     def forward(self, vid, start=-1, num=-1):
         coords = self._get_coords(vid.shape)
         start,num = self._get_start_num(start,num,coords,vid.shape)
-        colors = vid.shape[1]
-        patches = allocate_patches(num,1,self.ps,self.pt,colors,vid.device)
+        b = vid.shape[0]
+        colors = vid.shape[-3]
+        patches = allocate_patches(b,num,1,self.ps,self.pt,colors,vid.device)
         patches = iunfold.apply(patches,vid,start,coords,self.stride,
                                 self.dilation,self.adj,self.only_full,
                                 self.use_reflect)
