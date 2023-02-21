@@ -13,4 +13,6 @@ from . import fold_k_v1
 from . import unfold_k
 from . import unfold_k_bwd
 
+from . import topk_pwd
+
 from . import query

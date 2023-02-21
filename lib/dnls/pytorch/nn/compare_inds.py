@@ -1,15 +1,13 @@
 """
 
-Compute the MSE between the patches from two sets of indices 
-
-This is used to compare the search function
+Compute the minimum MSE of sorted patches distances from two sets of indices
 
 """
 
 import torch as th
 # import dnls
 import dnls_cuda
-
+from .topk_pwd import run as topk_pwd
 
 def run(vid,inds0,inds1,batchsize=-1):
 
@@ -33,9 +31,13 @@ def run(vid,inds0,inds1,batchsize=-1):
         inds1_b = inds1[:,:,start:stop].contiguous()
 
         # -- exec --
-        mse += dnls_cuda.compare_indices(vid,inds0_b,inds1_b)
+        pwd = topk_pwd(vid,inds0_b,inds1_b)
+        print(pwd.shape)
+        mse += th.min(pwd,1)
 
     # -- normalize --
     mse /= nbatches
     return mse
+
+
 

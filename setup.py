@@ -9,6 +9,8 @@ setup(name='dnls',
       ext_modules=[
           CUDAExtension('dnls_cuda', [
               'lib/csrc/nn/shared_nn_utils.cu',
+              'lib/csrc/nn/topk_pwd.cpp',
+              'lib/csrc/nn/topk_pwd_kernel.cu',
               'lib/csrc/nn/pfc.cpp',
               'lib/csrc/nn/pfc_kernel.cu',
               'lib/csrc/nn/temporal_inds.cpp',
