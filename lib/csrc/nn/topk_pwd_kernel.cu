@@ -77,15 +77,17 @@ __global__ void topk_pwd_kernel(
       // -- get pair of k's --
       // --> thank you below <--
       // https://atrebas.github.io/post/2021-01-17-index_to_lower_triangular_subscripts/
-      xform_p = (sqrtf(1.+8.*(pwd_i+1))-1.)/2.;
+      xform_p = (sqrtf(1.+8.*(pwd_i))-1.)/2.;
       xform_i0 = __float2int_rd(xform_p);
       xform_i0p = xform_i0 + 1;
-      xform_tmp = (pwd_i+1)-xform_i0*(xform_i0p)/2;
+      xform_tmp = pwd_i-xform_i0*(xform_i0+1)/2;
       xform_bool = xform_p == xform_i0;
-      ki_0 = xform_bool ? xform_i0 : xform_i0p;
-      ki_1 = xform_bool ? xform_i0 : xform_tmp;
-      ki_0 -= 1;
-      ki_1 -= 1;
+      ki_0 = xform_i0p;
+      ki_1 = xform_tmp;
+      // ki_0 = xform_bool ? xform_i0 : xform_i0p;
+      // ki_1 = xform_bool ? xform_i0 : xform_tmp;
+      // ki_0 -= 1;
+      // ki_1 -= 1;
 
       // -- fill locally --
       #pragma unroll
@@ -123,7 +125,7 @@ void topk_pwd_forward_cuda(const torch::Tensor vid,
   int Q = inds0.size(2);
   int K = inds0.size(3);
   int nPWD = dists.size(3);
-  int _nPWD = K*(K+1)/2;
+  int _nPWD = K*(K-1)/2;
   assert(nPWD == _nPWD);
 
   // -- kernel params --

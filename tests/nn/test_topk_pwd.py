@@ -95,11 +95,6 @@ def test(ps,stride0,dilation,exact):
 
     pwd_te = th.sort(pwd_te,-1)[0]
     pwd_gt = th.sort(pwd_gt,-1)[0]
-    # print("-="*30)
-    # print(pwd_te[0,0,0])
-    # print(pwd_gt[0,0,0])
-    # print("-"*30)
-    # print(pwd_te[0,0,-1])
 
     # -- compare --
     delta = th.mean((pwd_te - pwd_gt)**2).item()

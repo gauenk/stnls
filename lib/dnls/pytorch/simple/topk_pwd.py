@@ -38,7 +38,7 @@ def run(vid,inds0,inds1,ps,pt=1,dilation=1,
     # -- reshape --
     shape = "(b hd q) k0 k1 -> b hd q (k0 k1)"
     pwd = rearrange(pwd,shape,b=B,q=Q)
-    k0,k1 = th.tril_indices(K,K)
+    k0,k1 = th.tril_indices(K,K,-1)
     kinds = k1*K+k0
     pwd = pwd[...,kinds].contiguous()
     # pwd = th.sort(pwd,-1)[0].contiguous()
