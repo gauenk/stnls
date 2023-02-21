@@ -10,7 +10,8 @@ from einops import rearrange
 
 def run(vid,inds0,inds1,ps,pt=1,dilation=1,
         reflect_bounds=True,use_adj=False,
-        off_H0=0,off_W0=0,off_H1=0,off_W1=0):
+        off_H0=0,off_W0=0,off_H1=0,off_W1=0,
+        lower_tri=True):
 
     # -- reshape --
     adj = ps//2 if use_adj else 0
@@ -36,12 +37,14 @@ def run(vid,inds0,inds1,ps,pt=1,dilation=1,
     pwd = th.cdist(patches0,patches1,p=2.0)
 
     # -- reshape --
-    shape = "(b hd q) k0 k1 -> b hd q (k0 k1)"
+    shape = "(b hd q) k0 k1 -> b hd q k0 k1"
     pwd = rearrange(pwd,shape,b=B,q=Q)
-    k0,k1 = th.tril_indices(K,K,-1)
-    kinds = k1*K+k0
-    pwd = pwd[...,kinds].contiguous()
-    # pwd = th.sort(pwd,-1)[0].contiguous()
+    if lower_tri:
+        shape = "b hd q k0 k1 -> b hd q (k0 k1)"
+        pwd = rearrange(pwd,shape)
+        k0,k1 = th.tril_indices(K,K,-1)
+        kinds = k1*K+k0
+        pwd = pwd[...,kinds].contiguous()
 
     return pwd
 
