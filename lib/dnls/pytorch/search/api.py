@@ -17,6 +17,7 @@ from . import approx_time
 from . import approx_spacetime
 from . import window_search
 from . import nls_accumulated_flows
+from . import rand_inds
 from .utils import extract_pairs
 
 
@@ -31,7 +32,8 @@ MENU = edict({"exact":"non_local_search",
               "refine":"refinement",
               "approx_t":"approx_time","nlat":"approx_time",
               "approx_s":"approx_space","nlas":"approx_space",
-              "approx_st":"approx_spacetime","nlast":"approx_spacetime"})
+              "approx_st":"approx_spacetime","nlast":"approx_spacetime",
+              "rand_inds":"rand_inds"})
 
 def from_search_menu(name):
     if name in MENU:
