@@ -105,7 +105,7 @@ __global__ void refinement_forward_kernel(
     set_search_offsets(wrOff_h,wrOff_w, ref_patch[1], ref_patch[2],
                        stride1, wrHalf_h, wrHalf_w, wrMax_h, wrMax_w, H, W, full_ws);
 
-    // -- [unused] set search bounds for [optionally] invaliding expanded region --
+    // -- [unused] set search bounds for [optionally] expanded region --
     // set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
     // set_search_minmax(wrMax_w, wrMin_w, wrOff_w, wr_w, stride1, full_ws);
 
