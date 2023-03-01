@@ -225,7 +225,7 @@ class RefineSearch(th.nn.Module):
         return 0
 
     def radius(self,H,W):
-        return 0
+        return self.ws
 
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
