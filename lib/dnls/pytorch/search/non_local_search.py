@@ -244,7 +244,7 @@ class NonLocalSearch(th.nn.Module):
         return flops
 
     def radius(self,H,W):
-        return 0
+        return self.ws
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
