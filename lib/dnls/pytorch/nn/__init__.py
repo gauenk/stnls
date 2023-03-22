@@ -8,6 +8,7 @@ from . import accumulate_flow as accumulate_flow_f
 from . import interpolate_inds as interpolate_inds_f
 from . import jitter_unique_inds as jitter_unique_inds_f
 from . import compare_inds as compare_inds_f
+from . import flow_patches as flow_patches_f
 
 # -- [register] so we can run dnls.nn.NAME_HERE --
 topk = topk_f.run
@@ -17,6 +18,8 @@ accumulate_flow = accumulate_flow_f.run
 interpolate_inds = interpolate_inds_f.run
 jitter_unique_inds = jitter_unique_inds_f.run
 compare_inds = compare_inds_f.run
+flow_patches = flow_patches_f.get_patches
+flow_patches_mse = flow_patches_f.get_mse
 
 # -- api v2 --
 def init(version,*args,**kwargs):
