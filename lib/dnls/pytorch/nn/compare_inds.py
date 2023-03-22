@@ -28,6 +28,7 @@ def run(vid,inds0,inds1,ps,batchsize=-1):
         start = batch*batchsize
         stop = min(start+batchsize,Q)
         batch_i = stop - start
+        if batch_i == 0: break
 
         # -- batch --
         inds0_b = inds0[:,:,start:stop].contiguous()

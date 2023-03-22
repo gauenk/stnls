@@ -31,8 +31,8 @@ def nls_forward(batchsize,*args):
         return nls_fwd_main(qshift,nqueries,*args)
     else:
         vid_idx = 0
-        stride0_idx = 8
-        return run_batched(nls_fwd_main,batchsize,vid_idx,stride0_idx)
+        stride0_idx = 9
+        return run_batched(nls_fwd_main,batchsize,vid_idx,stride0_idx,*args)
 
 def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                  ws, wt, ps, k, dist_type,

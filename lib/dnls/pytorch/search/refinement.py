@@ -70,6 +70,11 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
                                  reflect_bounds, full_ws, use_adj,
                                  off_H0, off_W0, off_H1, off_W1)
 
+    # -- no negative --
+    # if th.any(qinds[0]<0):
+    #     print(qinds[0])
+    #     print(inds[0])
+
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
     inds=inds.view(B,HD,Q,-1,3)
