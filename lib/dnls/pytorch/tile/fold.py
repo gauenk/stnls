@@ -74,7 +74,7 @@ class Fold(th.nn.Module):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)
         return vid
 
-    def forward(self, patches, qstart):
+    def forward(self, patches, qstart=0):
         bpatches,qstart = patches,qstart
         vid = self.allocate_vid(self.vid_shape,self.device)
         vid = fold.apply(bpatches, vid, qstart,

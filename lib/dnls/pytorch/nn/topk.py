@@ -20,7 +20,8 @@ def init(K,dim=1,anchor=False,descending=True,unqiue=False):
         return run(dists,inds,K,dim)
     return wrap
 
-def run(dists,inds,k,dim=1,anchor=False,descending=True,unique=False,qinds=None):
+def run(dists,inds,k,dim=1,anchor=False,descending=True,
+        unique=False,qinds=None):
     """
 
     Wrap the topk menu so the input to top-k is always square
@@ -40,7 +41,8 @@ def run(dists,inds,k,dim=1,anchor=False,descending=True,unique=False,qinds=None)
     dists,inds = dim2_dimN(dists,inds,dshape,ishape,dim,k)
     return dists,inds
 
-def topk_menu(dists,inds,k,anchor=False,descending=True,unique=False,qinds=None):
+def topk_menu(dists,inds,k,anchor=False,descending=True,
+              unique=False,qinds=None):
     """
 
     Select which topk to run
@@ -157,5 +159,6 @@ def standard_topk(dists,inds,K,descending):
         inds_k[:,:,i] = th.gather(inds[:,:,i],1,order)
 
     return dists_k,inds_k
+
 
 

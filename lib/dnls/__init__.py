@@ -22,6 +22,7 @@ from .pytorch import tile
 from .pytorch import tile_k
 from .pytorch import simple
 from .pytorch import testing
+from .pytorch import warp
 from .dev import search as search_dev
 
 #

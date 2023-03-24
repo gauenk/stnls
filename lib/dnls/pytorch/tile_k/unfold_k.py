@@ -28,6 +28,8 @@ class unfold_k(th.autograd.Function):
         inds = [B,NumQueries,K,3]
         ps = patchsize
         pt = patchsize_time (forward only)
+        patches = [B,Q,K,pt,C,ps,ps]
+
         """
         patches = allocate_patches(inds,ps,pt,vid.shape[-3])
         inds = inds.contiguous()

@@ -79,7 +79,6 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     dists=dists.view(B,HD,Q,-1)
     inds=inds.view(B,HD,Q,-1,3)
 
-
     # -- manage self dists --
     H,W = vid0.shape[-2:]
     dists,inds = manage_self(dists,inds,anchor_self,
