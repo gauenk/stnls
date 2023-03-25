@@ -108,25 +108,29 @@ def get_warps(vid,inds,warp_ps,K,stride0):
         if t < (T-1):
 
             # -- get inds @ t+1 --
-            args_t = th.where(inds_ref[...,0] == t+1)
+            args_t = th.where(inds_ref[...,0] == t)
             inds_t = inds[:,:,args_t[2]]
 
             # -- best match in t --
-            args_k = th.where(inds_t[...,0] == t) # should be one each
+            args_k = th.where(inds_t[...,0] == t+1) # should be one each
             for i in range(3):
                 inds_fwd[t][...,i] = inds_t[...,i][args_k].reshape(1,1,Qt,K)
 
         # -- bwd (t-1 to t) --
         if t > 0:
 
-            # -- get inds @ t+1 --
+            # -- get inds @ t --
             args_t = th.where(inds_ref[...,0] == t)
             inds_t = inds[:,:,args_t[2]]
 
-            # -- best match in t --
+            # -- best match in t-1 --
             args_k = th.where(inds_t[...,0] == t-1) # should be one each
             for i in range(3):
-                inds_bwd[t-1][...,i] = inds_t[...,i][args_k].reshape(1,1,Qt,K)
+                inds_bwd[t][...,i] = inds_t[...,i][args_k].reshape(1,1,Qt,K)
+
+    # -- view --
+    # diff = th.mean((1.*(inds_fwd - inds_bwd))**2).item()
+    # print("diff: ",diff)
 
     # -- reshape --
     inds_fwd = rearrange(inds_fwd,'t b hd q k tr -> b hd (t q) k tr')
@@ -139,6 +143,10 @@ def get_warps(vid,inds,warp_ps,K,stride0):
     return fwd,bwd
 
 def warp_video_inds(vid,inds,ps,stride0):
+
+    # -- view --
+    # print(inds[0,0,:3,0])
+    # print(inds[0,0,-3:,0])
 
     # -- patches --
     UnfoldK = dnls.UnfoldK(ps,adj=0)
