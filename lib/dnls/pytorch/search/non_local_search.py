@@ -17,7 +17,7 @@ from .utils import extract_pairs
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
-from .batching_utils import run_batched
+from .batching_utils import run_batched,batching_info
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -26,13 +26,17 @@ from .batching_utils import run_batched
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def nls_forward(batchsize,*args):
-    if batchsize <= 0: # shortcut
+    vid_idx = 0
+    ws_idx,wt_idx = 4,5
+    stride0_idx = 9
+    ntotal,nbatches,batchsize = batching_info(args[vid_idx],args[stride0_idx],
+                                              args[ws_idx],args[wt_idx],
+                                              batchsize)
+    if nbatches == 1: # shortcut
         qshift,nqueries = 0,-1
         return nls_fwd_main(qshift,nqueries,*args)
     else:
-        vid_idx = 0
-        stride0_idx = 8
-        return run_batched(nls_fwd_main,batchsize,vid_idx,stride0_idx)
+        return run_batched(nls_fwd_main,batchsize,ntotal,nbatches,*args)
 
 def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                  ws, wt, ps, k, dist_type,

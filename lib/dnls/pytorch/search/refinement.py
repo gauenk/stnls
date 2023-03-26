@@ -17,7 +17,7 @@ from .utils import filter_k
 from .utils import shape_vids,dist_type_select
 from .utils import allocate_pair,allocate_vid
 from .shared import manage_self
-from .batching_utils import run_batched
+from .batching_utils import run_batched,batching_info
 from .nls_bwd_impl import nls_backward
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -27,13 +27,17 @@ from .nls_bwd_impl import nls_backward
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def refine_forward(batchsize,*args):
-    if batchsize <= 0: # shortcut
+    vid_idx = 0
+    ws_idx,wt_idx = 3,4
+    stride0_idx = 8
+    ntotal,nbatches,batchsize = batching_info(args[vid_idx],args[stride0_idx],
+                                              args[ws_idx],args[wt_idx],
+                                              batchsize)
+    if nbatches == 1: # shortcut
         qshift,nqueries = 0,-1
         return refine_fwd_main(qshift,nqueries,*args)
     else:
-        vid_idx = 0
-        stride0_idx = 10
-        return run_batched(refine_fwd_main,batchsize,vid_idx,stride0_idx)
+        return run_batched(refine_fwd_main,batchsize,ntotal,nbatches,*args)
 
 def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
                     ws, wr, ps, k, dist_type,
@@ -99,7 +103,7 @@ class RefineSearchFunction(th.autograd.Function):
                 ws, ps, k, wr, kr, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-                anchor_self=False, remove_self=False,
+                anchor_self=True, remove_self=False,
                 use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
                 rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
                 neigh_per_thread=4, channel_groups=-1):
