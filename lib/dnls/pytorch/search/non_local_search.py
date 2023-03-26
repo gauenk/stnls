@@ -36,7 +36,9 @@ def nls_forward(batchsize,*args):
         qshift,nqueries = 0,-1
         return nls_fwd_main(qshift,nqueries,*args)
     else:
-        return run_batched(nls_fwd_main,batchsize,ntotal,nbatches,*args)
+        vid_idx = 0
+        stride0_idx = 9
+        return run_batched(nls_fwd_main,batchsize,vid_idx,stride0_idx,*args)
 
 def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                  ws, wt, ps, k, dist_type,
@@ -68,9 +70,6 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
     # -- forward --
-    # bool reflect_bounds, bool full_ws, bool search_abs, bool use_adj,
-    # int off_H0, int off_W0, int off_H1, int off_W1){
-
     dnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
                                        dists, inds,
                                        wt, ps, k, dist_type_i, stride0,
@@ -248,7 +247,7 @@ class NonLocalSearch(th.nn.Module):
         return flops
 
     def radius(self,H,W):
-        return 0
+        return self.ws
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #

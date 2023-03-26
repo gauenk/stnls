@@ -2,10 +2,11 @@
 
 import torch as th
 
-def run_batched(run_fxn,batchsize,ntotal,nbatches,*args):
+def run_batched(run_fxn,batchsize,vid_idx,stride0_idx,*args):
     dists,inds = [],[]
-    for batch in range(nbatches):
-        qshift = batch*batchsize
+    ntotal,nbatches = batching_info(args[vid_idx],args[stride0_idx],batchsize)
+    for nbatch in range(nbatches):
+        qshift = nbatch*batchsize
         nqueries = min(ntotal-qshift,batchsize)
         # print(nbatches,batch,qshift,nqueries,ntotal)
         assert nqueries > 0

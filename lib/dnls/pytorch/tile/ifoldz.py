@@ -20,8 +20,9 @@ class ifoldz(th.autograd.Function):
     """
     [patches -> video] @ nlInds
 
-    nlInds.shape = [NumQueries,K,3]
-    patches.shape = [NumQueries,K,pt,c,ps,ps]
+    nlInds.shape = [B,NumQueries,K,3]
+    patches.shape = [B,NumQueries,K,pt,c,ps,ps]
+
     """
 
     @staticmethod

@@ -7,6 +7,7 @@ from . import tile
 from . import tile_k
 from . import simple
 from . import testing
+from . import warp
 
 #
 # -- unpack functions into namespace --

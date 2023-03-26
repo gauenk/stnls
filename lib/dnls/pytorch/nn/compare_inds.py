@@ -28,6 +28,7 @@ def run(vid,inds0,inds1,ps,batchsize=-1):
         start = batch*batchsize
         stop = min(start+batchsize,Q)
         batch_i = stop - start
+        if batch_i == 0: break
 
         # -- batch --
         inds0_b = inds0[:,:,start:stop].contiguous()
@@ -36,7 +37,7 @@ def run(vid,inds0,inds1,ps,batchsize=-1):
         # -- exec --
         pwd = topk_pwd.run(vid,inds0_b,inds1_b,ps,lower_tri=False)
         pwd = th.sort(pwd,-1)[0]
-        mse += th.mean(pwd[...,1])/batch_i
+        mse += th.mean(pwd[...,0])/batch_i
 
     return mse
 

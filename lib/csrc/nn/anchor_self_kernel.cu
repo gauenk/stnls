@@ -31,10 +31,18 @@ __global__ void anchor_self_kernel(
     if (qi >= Q){ continue; }
 
     // -- unpack pixel locs --
-    i_mod = qi % nHW;
+    // get_pixel_loc(loc,  qi, tmp,  stride0, nW, nHW, H,W);
+    int tmp = qi;
     loc[0] = qi / nHW;
-    loc[1] = ((i_mod / nW) * stride0) % H;
-    loc[2] = ((i_mod % nW) * stride0) % W;
+    tmp = (tmp - loc[0]*nHW); 
+    int nH_index = tmp / nW;
+    loc[1] = (nH_index*stride0) % H;
+    tmp = tmp - nH_index*nW;
+    loc[2] = ((tmp % nW) * stride0) % W;
+    // i_mod = qi % nHW;
+    // loc[0] = qi / nHW;
+    // loc[1] = ((i_mod / nW) * stride0) % H;
+    // loc[2] = ((i_mod % nW) * stride0) % W;
 
     // -- search for matching index --
     for (self_index = 0; self_index < K; self_index++){
