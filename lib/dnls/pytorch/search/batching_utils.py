@@ -2,9 +2,11 @@
 
 import torch as th
 
-def run_batched(run_fxn,batchsize,vid_idx,stride0_idx,*args):
+def run_batched(run_fxn,batchsize,vid_idx,stride0_idx,ws_idx,wt_idx,*args):
     dists,inds = [],[]
-    ntotal,nbatches = batching_info(args[vid_idx],args[stride0_idx],batchsize)
+    ntotal,nbatches,batchsize = batching_info(args[vid_idx],args[stride0_idx],
+                                              args[ws_idx],args[wt_idx],
+                                              batchsize)
     for nbatch in range(nbatches):
         qshift = nbatch*batchsize
         nqueries = min(ntotal-qshift,batchsize)
@@ -27,7 +29,6 @@ def batching_info(vid,stride0,ws,wt,batchsize):
 
     # -- recompute batch size w.r.t max size --
     batchsize = get_max_batchsize(batchsize,ntotal,ws,wt)
-
 
     nbatches = (ntotal-1)//batchsize+1
     return ntotal,nbatches,batchsize

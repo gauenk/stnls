@@ -37,7 +37,8 @@ def refine_forward(batchsize,*args):
         qshift,nqueries = 0,-1
         return refine_fwd_main(qshift,nqueries,*args)
     else:
-        return run_batched(refine_fwd_main,batchsize,ntotal,nbatches,*args)
+        return run_batched(refine_fwd_main,batchsize,vid_idx,
+                           stride0_idx,ws_idx,wt_idx,*args)
 
 def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
                     ws, wr, ps, k, dist_type,
