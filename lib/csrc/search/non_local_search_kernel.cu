@@ -228,6 +228,8 @@ void non_local_search_forward_cuda(
    int st = dists.size(3);
    int ws_h = dists.size(4);
    int ws_w = dists.size(5);
+   // int ws_h_threads = std::min(ws_h,10);
+   // int ws_w_threads = std::min(ws_w,10);
    int ws_h_threads = std::min(ws_h,27);
    int ws_w_threads = std::min(ws_w,27);
    int ws_h_per_thread = ((ws_h-1)/ws_h_threads) + 1;

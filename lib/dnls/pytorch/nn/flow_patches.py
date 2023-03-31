@@ -44,9 +44,14 @@ def get_patches(vid,flows,ps):
 
 
 # -- api --
-def get_mse(flows):
-    patches = get_patches(flows)
-    mse = th.mean((patches[:,:,0] - patches[:,:,1])**2)
+def get_mse(vid,flows,ps):
+    patches = get_patches(vid,flows,ps)
+    mse = edict()
+    for k in patches:
+        mse[k] = 0
+        mse[k] += th.mean((patches[k][:,:,0] - patches[k][:,:,1])**2).item()
+        # mse[k] += th.mean((patches[k][:,:,0] - patches[k][:,:,2])**2)
+        # mse[k] /= 2.
     return mse
 
 # -- api --

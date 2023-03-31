@@ -64,8 +64,8 @@ def main():
            "batchsize":1,"nframes":3,"nftrs_per_head":9,
            "height":512,"width":512,"device":"cuda:0","dist_type":"l2"}
     cfg = edict(cfg)
-    search_names = ["nls","refine","approx_t","approx_s","approx_st"]
-    # search_names = ["nls","approx_s"]
+    # search_names = ["nls","refine","approx_t","approx_s","approx_st"]
+    search_names = ["nls","approx_s"]
     for search_name in search_names:
         cfg["search_name"] = search_name
         run_search(rec,cfg)
