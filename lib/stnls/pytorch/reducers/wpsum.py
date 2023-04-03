@@ -3,7 +3,7 @@
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 from ...utils.timer import ExpTimer
 
@@ -40,7 +40,7 @@ class WpSumFunction(th.autograd.Function):
         """
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         patches = allocate_patches(inds,ps,pt,vid.shape[1])
-        dnls_cuda.wpsum_forward(vid, patches, dists, inds,
+        stnls_cuda.wpsum_forward(vid, patches, dists, inds,
                                 h_off,w_off,dilation,adj,reflect_bounds)
         # print("dists._version: ",dists._version)
         # print("inds._version: ",inds._version)
@@ -78,12 +78,12 @@ class WpSumFunction(th.autograd.Function):
         # -- gradient for video --
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         if nbwd == 1:
-            dnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,dists,inds,
+            stnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,dists,inds,
                                          h_off,w_off,dilation,adj,reflect_bounds,exact)
         else:
             for _ in range(nbwd):
                 grad_vid_i = allocate_vid(vid_shape,grad_patches.device)
-                dnls_cuda.wpsum_backward_vid(grad_vid_i,grad_patches,dists,inds,
+                stnls_cuda.wpsum_backward_vid(grad_vid_i,grad_patches,dists,inds,
                                              h_off,w_off,dilation,adj,
                                              reflect_bounds,exact)
                 grad_vid += grad_vid_i
@@ -91,7 +91,7 @@ class WpSumFunction(th.autograd.Function):
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
-        dnls_cuda.wpsum_backward_dists(grad_dists,grad_patches,vid,inds,
+        stnls_cuda.wpsum_backward_dists(grad_dists,grad_patches,vid,inds,
                                        h_off,w_off,dilation,adj,reflect_bounds,exact)
 
         # -- stop timer --

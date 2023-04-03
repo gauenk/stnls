@@ -6,7 +6,7 @@ An example script for a non-local means.
 
 # -- imports --
 import torch as th
-import dnls
+import stnls
 from einops import rearrange,repeat
 from easydict import EasyDict as edict
 
@@ -23,21 +23,21 @@ def run_nlm(cfg):
     th.manual_seed(seed)
 
     # -- load video --
-    vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
+    vid = stnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
     clean = th.from_numpy(vid).to(device)
     noisy = clean + sigma * th.randn_like(clean)
     vshape = clean.shape
     t,c,h,w = clean.shape
 
     # -- init search, unfold and fold --
-    search = dnls.search.init("l2_with_index",None,None,k,ps,pt,ws,wt,chnls=chnls,
+    search = stnls.search.init("l2_with_index",None,None,k,ps,pt,ws,wt,chnls=chnls,
                               stride0=stride0,stride1=stride1,dilation=dilation)
-    unfoldk = dnls.UnfoldK(ps,pt,dilation=dilation,device=device)
-    foldk = dnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps,
+    unfoldk = stnls.UnfoldK(ps,pt,dilation=dilation,device=device)
+    foldk = stnls.FoldK(vid.shape,use_rand=use_rand,nreps=nreps,
                        exact=exact,device=device)
 
     # -- batching info --
-    nh,nw = dnls.utils.get_nums_hw(vid.shape,stride0,ps,dilation)
+    nh,nw = stnls.utils.get_nums_hw(vid.shape,stride0,ps,dilation)
     ntotal = t * nh * nw
     nbatches = (ntotal-1) // batch_size + 1
 
@@ -97,8 +97,8 @@ def run_nlm(cfg):
         print("[%d] PSNR: %2.3f" % (i,psnr))
 
     # -- save denoised --
-    dnls.testing.data.save_burst(noisy,"./output/","noisy")
-    dnls.testing.data.save_burst(deno,"./output/","deno")
+    stnls.testing.data.save_burst(noisy,"./output/","noisy")
+    stnls.testing.data.save_burst(deno,"./output/","deno")
 
 def get_config():
 

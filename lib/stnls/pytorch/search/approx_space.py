@@ -4,10 +4,10 @@ import numpy as np
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- package --
-import dnls
+import stnls
 
 # -- api --
 from .utils import extract_pairs
@@ -58,10 +58,10 @@ class ApproxSpaceSearchFunction(th.autograd.Function):
 
         # -- upsampling --
         T,_,H,W = vid0.shape[-4:]
-        inds = dnls.nn.interpolate_inds(filter_k(inds,kr,k),scale,stride0,T,H,W)
+        inds = stnls.nn.interpolate_inds(filter_k(inds,kr,k),scale,stride0,T,H,W)
 
         # -- jittering to get uniq --
-        inds = dnls.nn.jitter_unique_inds(inds,3,k,H,W)
+        inds = stnls.nn.jitter_unique_inds(inds,3,k,H,W)
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
         #
@@ -199,7 +199,7 @@ class ApproxSpaceSearch(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#       [Direct API] dnls.search.approx_space(...)
+#       [Direct API] stnls.search.approx_space(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -227,7 +227,7 @@ def _apply(vid0, vid1, fflow, bflow,
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#       [Python Dict API] dnls.search.init(pydict)
+#       [Python Dict API] stnls.search.init(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 

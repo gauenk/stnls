@@ -5,7 +5,7 @@ import numpy as np # help
 from functools import partial
 
 # -- base cpp --
-import dnls_cuda
+import stnls_cuda
 
 # -- linking --
 from ..link import xla_utils,primitive_utils
@@ -816,7 +816,7 @@ def _register():
 
     # -- unpack c++ --
     name = "search_prod_with_index_jax"
-    pair = dnls_cuda.search_prod_with_index_jax()
+    pair = stnls_cuda.search_prod_with_index_jax()
     fwd_cpp,bwd_cpp = pair['forward'],pair['backward']
 
     # -- register c++ --

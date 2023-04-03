@@ -8,10 +8,10 @@ from einops import rearrange
 import torch.nn.functional as nnf
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
-import dnls
+import stnls
 # from ..nn import topk
 # from .search_utils import *
 
@@ -89,7 +89,7 @@ class ProdRefineWithHeadsFunction(th.autograd.Function):
 
         # -- forward --
         th.cuda.set_device(device)
-        dnls_cuda.prod_refine_forward(vid0, vid1, dists_exh, inds_exh,
+        stnls_cuda.prod_refine_forward(vid0, vid1, dists_exh, inds_exh,
                                       self_dists, qinds,
                                       qstart, stride0, n_h0, n_w0,
                                       h0_off, w0_off, h1_off, w1_off,
@@ -120,8 +120,8 @@ class ProdRefineWithHeadsFunction(th.autograd.Function):
         if use_k:
 
             if anchor_self:
-                dnls.nn.anchor_self(dists,inds,qstart,stride0,H,W)
-            dists_k,inds_k = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+                stnls.nn.anchor_self(dists,inds,qstart,stride0,H,W)
+            dists_k,inds_k = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
                                           descending=True,unique=True)
             # # print("inds_exh.shape: ",inds_exh.shape)
             # K_exh = inds_exh.shape[1]
@@ -178,7 +178,7 @@ class ProdRefineWithHeadsFunction(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            dnls_cuda.prod_search_with_heads_backward(grad_vid0,grad_vid1,
+            stnls_cuda.prod_search_with_heads_backward(grad_vid0,grad_vid1,
                                                       vid0,vid1,
                                                       grad_dists,inds,
                                                       qstart,nheads,stride0,n_h0,n_w0,
@@ -189,7 +189,7 @@ class ProdRefineWithHeadsFunction(th.autograd.Function):
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.prod_search_with_heads_backward(grad_vid0_i,grad_vid1_i,
+                stnls_cuda.prod_search_with_heads_backward(grad_vid0_i,grad_vid1_i,
                                                           vid0,vid1,
                                                           grad_dists,inds,
                                                           qstart,nheads,stride0,

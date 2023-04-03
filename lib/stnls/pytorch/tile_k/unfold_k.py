@@ -3,7 +3,7 @@
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 
 def allocate_vid(vid_shape,device):
@@ -40,7 +40,7 @@ class unfold_k(th.autograd.Function):
         # print("inds.shape: ",inds.shape)
 
         # -- exec --
-        dnls_cuda.unfoldk_forward(vid, patches, inds, dilation, adj, reflect_bounds)
+        stnls_cuda.unfoldk_forward(vid, patches, inds, dilation, adj, reflect_bounds)
         # print("inds.shape: ",inds.shape)
 
         # -- save --
@@ -67,10 +67,10 @@ class unfold_k(th.autograd.Function):
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         grad_patches = grad_patches.contiguous()
         if btype in "default" or btype in "simple":
-            dnls_cuda.unfoldk_backward(grad_vid,grad_patches,inds,
+            stnls_cuda.unfoldk_backward(grad_vid,grad_patches,inds,
                                               dilation,exact,adj,reflect_bounds)
         elif btype in "efficient":
-            dnls_cuda.unfoldk_backward_eff(grad_vid,grad_patches,inds,
+            stnls_cuda.unfoldk_backward_eff(grad_vid,grad_patches,inds,
                                            dilation,exact,adj,reflect_bounds)
         else:
             raise ValueError(f"Uknown backward type for unfoldk [{btype}]")

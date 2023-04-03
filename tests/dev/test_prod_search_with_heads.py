@@ -15,11 +15,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- meshgrid --
 
@@ -79,14 +79,14 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_self = anchor_self
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -110,7 +110,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    search_te = stnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -120,7 +120,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt,
                                  h0_off, w0_off, h1_off, w1_off,
                                  chnls=-1,dilation=dil,
@@ -161,12 +161,12 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
     # diff = th.abs(dists_te - dists_gt).mean((0,1))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
@@ -215,7 +215,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_self = anchor_self
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid = vid[...,:32,:32]
@@ -223,7 +223,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -255,7 +255,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vid_gt1.requires_grad_(True)
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    search_te = stnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -265,7 +265,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt,
                                  h0_off, w0_off, h1_off, w1_off,
                                  chnls=-1,dilation=dil,
@@ -309,12 +309,12 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
     # diff = th.abs(dists_te - dists_gt).mean((0,1))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
@@ -358,9 +358,9 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # print(diff.max())
         # diff /= diff.max()
-        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
@@ -410,14 +410,14 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     if use_k is False: return # skip non topk examples
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -441,7 +441,7 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    search_te = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    search_te = stnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -451,7 +451,7 @@ def test_anchor_self(ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
                                  search_abs=search_abs,use_adj=use_adj,
                                  anchor_self=anchor_self,use_self=use_self,
                                  exact=exact)
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt,
                                  h0_off, w0_off, h1_off, w1_off,
                                  chnls=-1,dilation=dil,

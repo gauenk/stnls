@@ -9,13 +9,13 @@
 
 // CUDA forward declarations
 
-void dnls_cuda_unfold_forward(
+void stnls_cuda_unfold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int qStart, int qStride,
     int dilation);
 
-void dnls_cuda_unfold_backward(
+void stnls_cuda_unfold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int qStart, int qStride,
@@ -27,30 +27,30 @@ void dnls_cuda_unfold_backward(
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-void dnls_unfold_forward(
+void stnls_unfold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int qStart,
     int qStride, int dilation) {
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
-  dnls_cuda_unfold_forward(vid,patches,qStart,qStride,dilation);
+  stnls_cuda_unfold_forward(vid,patches,qStart,qStride,dilation);
 }
 
-void dnls_unfold_backward(
+void stnls_unfold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int qStart, int qStride,
     int dilation) {
   CHECK_INPUT(grad_vid);
   CHECK_INPUT(patches);
-  dnls_cuda_unfold_backward(grad_vid,patches,qStart,qStride,dilation);
+  stnls_cuda_unfold_backward(grad_vid,patches,qStart,qStride,dilation);
 }
 
 
 // python bindings
 void init_unfold(py::module &m){
-  m.def("unfold_forward", &dnls_unfold_forward, "DNLS Unfold Forward (CUDA)");
-  m.def("unfold_backward", &dnls_unfold_backward, "DNLS Unfold Backward (CUDA)");
+  m.def("unfold_forward", &stnls_unfold_forward, "DNLS Unfold Forward (CUDA)");
+  m.def("unfold_backward", &stnls_unfold_backward, "DNLS Unfold Backward (CUDA)");
 }
 

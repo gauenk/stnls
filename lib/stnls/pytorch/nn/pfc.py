@@ -8,7 +8,7 @@ from einops import rearrange,repeat
 import torch.nn.functional as nnf
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 class PatchFCFunction(th.autograd.Function):
 
@@ -68,7 +68,7 @@ class PatchFCFunction(th.autograd.Function):
         # -- forward --
         # th.cuda.set_device(device)
         # print("hi.")
-        dnls_cuda.pfc_forward(vid_out, vid, weights, bias,
+        stnls_cuda.pfc_forward(vid_out, vid, weights, bias,
                               qstart, nqueries, ps,
                               top, left, btm, right,
                               hw_start, stride, dilation,

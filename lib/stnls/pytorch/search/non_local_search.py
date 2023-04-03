@@ -5,10 +5,10 @@ import numpy as np
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- package --
-import dnls
+import stnls
 
 # -- api --
 from .utils import extract_pairs
@@ -69,7 +69,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
     # -- forward --
-    dnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
+    stnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
                                        dists, inds,
                                        wt, ps, k, dist_type_i, stride0,
                                        stride1, dilation, pt, qshift,
@@ -85,7 +85,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                              remove_self,qshift,stride0,H,W)
 
     # -- topk --
-    dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+    dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
                               descending=descending,unique=False)
 
     return dists,inds
@@ -250,7 +250,7 @@ class NonLocalSearch(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#            [Direct API]  dnls.search.nls(...)
+#            [Direct API]  stnls.search.nls(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -276,7 +276,7 @@ def _apply(vid0, vid1, fflow, bflow,
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#        [Python Dict API] dnls.search.init(pydict)
+#        [Python Dict API] stnls.search.init(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 

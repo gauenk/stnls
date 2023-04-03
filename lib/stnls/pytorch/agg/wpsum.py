@@ -1,7 +1,7 @@
 import torch as th
 import torch.nn as nn
 from einops import rearrange
-import dnls
+import stnls
 
 def init(cfg):
 
@@ -14,7 +14,7 @@ def init(cfg):
     adj = ps//2
 
     # -- init --
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=0, w_off=0,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=0, w_off=0,
                                                 dilation=dil,
                                                 reflect_bounds=reflect_bounds,
                                                 adj=adj, exact=exact)

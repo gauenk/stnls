@@ -5,7 +5,7 @@ Get temporal inds from spatial inds
 """
 
 import torch as th
-import dnls_cuda
+import stnls_cuda
 
 def run(inds,wt,fflow,bflow):
 
@@ -28,7 +28,7 @@ def run(inds,wt,fflow,bflow):
     # print("inds_t.shape: ",inds_t.shape)
 
     # -- run --
-    dnls_cuda.temporal_inds(inds,fflow,bflow,inds_t)
+    stnls_cuda.temporal_inds(inds,fflow,bflow,inds_t)
     th.cuda.synchronize()
 
     return inds_t

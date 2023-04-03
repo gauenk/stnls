@@ -13,11 +13,11 @@ from einops import rearrange,repeat
 # -- patchify --
 from torch.nn.functional import fold,unfold,pad
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/prod_search")
@@ -88,22 +88,22 @@ def test_fwd(K,seed):
     bflow = th.randn((B,T,2,H,W)).to("cuda:0")
 
     # -- run search --
-    dists,inds = dnls.search.nls(vid0,vid1,fflow,bflow,
+    dists,inds = stnls.search.nls(vid0,vid1,fflow,bflow,
                                  ws,wt,ps,K,stride0=stride0)
     inds_search = inds.clone()
 
     # -- upsampling --
-    inds = dnls.nn.interpolate_inds(inds,scale,stride0,T,H,W)
+    inds = stnls.nn.interpolate_inds(inds,scale,stride0,T,H,W)
     inds_interp = inds.clone()
 
     # -- ensure dups --
-    dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+    dups,any_dup = stnls.testing.find_duplicate_inds(inds)
     if not(any_dup):
         # print("No test: Want duplicates for test.")
         return
 
     # -- jittering --
-    inds = dnls.nn.jitter_unique_inds(inds,3,K,H,W)
+    inds = stnls.nn.jitter_unique_inds(inds,3,K,H,W)
 
     # -- check delta --
     # args = th.where(th.abs(inds_interp - inds)>0)
@@ -114,7 +114,7 @@ def test_fwd(K,seed):
 
 
     # -- ensure no dups --
-    dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+    dups,any_dup = stnls.testing.find_duplicate_inds(inds)
 
     # -- info --
     args = th.where(dups == True)

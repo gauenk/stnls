@@ -5,10 +5,10 @@ import numpy as np
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- package --
-import dnls
+import stnls
 
 # -- local --
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
@@ -37,7 +37,7 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
     qshift = 0 # no batching backward.
 
     # -- allow for repeated exec --
-    bwd_fxn = dnls_cuda.non_local_search_backward
+    bwd_fxn = stnls_cuda.non_local_search_backward
     if ctx.nbwd == 1:
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,
                 grad_dists,inds,qshift,ctx.stride0,nH0,nW0,

@@ -4,7 +4,7 @@ import torch as th
 import numpy as np
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 from .search_utils import *
@@ -41,7 +41,7 @@ class L2SearchFunction(th.autograd.Function):
         # print(tranges)
 
         # -- forward --
-        dnls_cuda.search_l2_forward(vid0, vid1, qinds, fflow, bflow,
+        stnls_cuda.search_l2_forward(vid0, vid1, qinds, fflow, bflow,
                                     dists_exh, inds_exh,
                                     h0_off, w0_off, h1_off, w1_off,
                                     ps, pt, ws_h, ws_w,
@@ -94,7 +94,7 @@ class L2SearchFunction(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            dnls_cuda.search_l2_backward(grad_vid0,grad_vid1,vid0,vid1,
+            stnls_cuda.search_l2_backward(grad_vid0,grad_vid1,vid0,vid1,
                                          grad_dists,inds,qinds,
                                          h0_off, w0_off, h1_off, w1_off,
                                          ps,pt,dil, use_adj,reflect_bounds,exact)
@@ -102,7 +102,7 @@ class L2SearchFunction(th.autograd.Function):
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.search_l2_backward(grad_vid0_i,grad_vid1_i,vid0,vid1,
+                stnls_cuda.search_l2_backward(grad_vid0_i,grad_vid1_i,vid0,vid1,
                                              grad_dists,inds,qinds,
                                              h0_off, w0_off, h1_off, w1_off,
                                              ps,pt,dil, use_adj,reflect_bounds,exact)

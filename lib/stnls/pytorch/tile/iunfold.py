@@ -9,7 +9,7 @@ A gather _without_ a race condition with k == 1
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 
 def allocate_vid(vid_shape,device):
@@ -41,7 +41,7 @@ class iunfold(th.autograd.Function):
         device = vid.device
 
         # -- forward --
-        dnls_cuda.iunfold_forward(vid, patches,
+        stnls_cuda.iunfold_forward(vid, patches,
                                   top,left,btm,right,
                                   start, stride, dilation,
                                   adj, only_full, use_reflect)
@@ -80,7 +80,7 @@ class iunfold(th.autograd.Function):
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
 
         # -- forward --
-        dnls_cuda.iunfold_backward(grad_vid,grad_patches,
+        stnls_cuda.iunfold_backward(grad_vid,grad_patches,
                                    top,left,btm,right,
                                    start,stride,dilation,
                                    adj,only_full,use_reflect)

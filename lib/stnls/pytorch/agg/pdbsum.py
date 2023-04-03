@@ -9,7 +9,7 @@ Code from N3Net
 import torch as th
 import torch.nn as nn
 from einops import rearrange
-import dnls
+import stnls
 
 # -- local --
 import .utils import indexed_matmul_2_efficient,vid_to_raster_inds
@@ -25,7 +25,7 @@ class PdbAgg(nn.Module):
         self.ps = ps
         self.pt = pt
         self.stride0 = stride0
-        self.unfold = dnls.iUnfold(ps,stride=stride0)
+        self.unfold = stnls.iUnfold(ps,stride=stride0)
         self.chunk_size = chunk_size
 
     def __call__(self,vid,dists,inds):

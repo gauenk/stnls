@@ -8,7 +8,7 @@ from einops import rearrange,repeat
 from ...utils.timer import ExpTimer
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 from .search_utils import *
@@ -120,7 +120,7 @@ class ProductSearchFunction(th.autograd.Function):
         tranges,n_tranges,min_tranges = create_frame_range(t,wt,wt,pt,device)
 
         # -- forward --
-        dnls_cuda.search_prod_forward(vid0, vid1, qinds, fflow, bflow,
+        stnls_cuda.search_prod_forward(vid0, vid1, qinds, fflow, bflow,
                                       dists_exh, inds_exh,
                                       ps, pt, ws_h, ws_w, wt, chnls, stride, dilation,
                                       search_abs, reflect_bounds, use_adj,
@@ -181,7 +181,7 @@ class ProductSearchFunction(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            dnls_cuda.search_prod_backward(vid0_grad,vid1_grad,vid0,vid1,
+            stnls_cuda.search_prod_backward(vid0_grad,vid1_grad,vid0,vid1,
                                            qinds,grad_dists,inds,
                                            oh0,ow0,oh1,ow1,
                                            ps,pt,lam,reflect_bounds,exact)
@@ -189,7 +189,7 @@ class ProductSearchFunction(th.autograd.Function):
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.search_prod_backward(vid0_grad_i,vid1_grad_i,vid0,vid1,
+                stnls_cuda.search_prod_backward(vid0_grad_i,vid1_grad_i,vid0,vid1,
                                                qinds,grad_dists,inds,
                                                oh0,ow0,oh1,ow1,
                                                ps,pt,lam,reflect_bounds,exact)

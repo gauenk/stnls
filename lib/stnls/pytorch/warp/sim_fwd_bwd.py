@@ -11,10 +11,10 @@ import numpy as np
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- package --
-import dnls
+import stnls
 
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -43,7 +43,7 @@ class SimFwdBwd(th.nn.Module):
         # -- search function --
         wt = 1
         nls_k = -1
-        nls = dnls.search.NonLocalSearch
+        nls = stnls.search.NonLocalSearch
         self.search = nls(ws, wt, ps, nls_k, nheads=1,
                           dist_type=dist_type, stride0=stride0, stride1=stride1,
                           dilation=dilation, pt=pt, reflect_bounds=reflect_bounds,
@@ -63,7 +63,7 @@ class SimFwdBwd(th.nn.Module):
 
         # -- top-K across time --
         descending = self.dist_type == "prod"
-        dists,inds = dnls.nn.topk_time(dists,inds,self.k,self.ws,dim=3,
+        dists,inds = stnls.nn.topk_time(dists,inds,self.k,self.ws,dim=3,
                                        descending=descending,anchor=False)
 
         # -- check --
@@ -149,7 +149,7 @@ def warp_video_inds(vid,inds,ps,stride0):
     # print(inds[0,0,-3:,0])
 
     # -- patches --
-    UnfoldK = dnls.UnfoldK(ps,adj=0)
+    UnfoldK = stnls.UnfoldK(ps,adj=0)
     patches = UnfoldK(vid,inds[:,0]) # nheads == 1
     K = patches.shape[2]
     # assert K == 1
@@ -158,7 +158,7 @@ def warp_video_inds(vid,inds,ps,stride0):
     # -- fold --
     B = vid.shape[0]
     vshape = [B*K,] + list(vid.shape[1:])
-    fold = dnls.iFoldz(vshape,None,stride=stride0)
+    fold = stnls.iFoldz(vshape,None,stride=stride0)
     fold(patches)
     warp = fold.vid / fold.zvid
 

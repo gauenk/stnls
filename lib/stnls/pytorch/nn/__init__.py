@@ -11,7 +11,7 @@ from . import jitter_unique_inds as jitter_unique_inds_f
 from . import compare_inds as compare_inds_f
 from . import flow_patches as flow_patches_f
 
-# -- [register] so we can run dnls.nn.NAME_HERE --
+# -- [register] so we can run stnls.nn.NAME_HERE --
 topk = topk_f.run
 topk_time = topk_time_f.run
 anchor_self = anchor_self_f.run

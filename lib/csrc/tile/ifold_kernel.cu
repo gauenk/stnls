@@ -37,7 +37,7 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
 
 
 template <typename scalar_t>
-__global__ void dnls_ifold_forward_kernel(
+__global__ void stnls_ifold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, 
@@ -177,7 +177,7 @@ __global__ void dnls_ifold_forward_kernel(
     } // for each pixel (with stride)
 }
 
-void dnls_cuda_ifold_forward(
+void stnls_cuda_ifold_forward(
     torch::Tensor vid, torch::Tensor patches,
     int top, int left, int btm, int right,
     int start, int stride, int dilation, int adj,
@@ -215,8 +215,8 @@ void dnls_cuda_ifold_forward(
   //         nthreads,nblocks_queries,bsize);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifold_forward_kernel", ([&] {
-    dnls_ifold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_ifold_forward_kernel", ([&] {
+    stnls_ifold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top,left,btm,right,start,stride,dilation,adj,only_full,use_reflect,num_kernels);
@@ -230,7 +230,7 @@ void dnls_cuda_ifold_forward(
 **************************************/
 
 template <typename scalar_t>
-__global__ void dnls_ifold_backward_kernel(
+__global__ void stnls_ifold_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid, // grad
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, int start, int stride,
@@ -362,7 +362,7 @@ __global__ void dnls_ifold_backward_kernel(
     }
 }
 
-void dnls_cuda_ifold_backward(
+void stnls_cuda_ifold_backward(
   torch::Tensor grad_vid,
   torch::Tensor patches,
   int top, int left, int btm, int right,
@@ -393,8 +393,8 @@ void dnls_cuda_ifold_backward(
   dim3 nthreads(kpb,ps,ps);
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifold_backward_kernel", ([&] {
-    dnls_ifold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_ifold_backward_kernel", ([&] {
+    stnls_ifold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top, left, btm, right, start, stride, dilation, adj,

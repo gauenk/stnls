@@ -20,11 +20,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- misc --
 import torch.nn.functional as nnf
@@ -103,7 +103,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     only_full = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
     vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:16] # want 32 channels
     vid = th.cat([vid,vid],1)
@@ -117,7 +117,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -128,7 +128,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
 
     # -- init --
     adj = 0
-    search = dnls.search.init("window",
+    search = stnls.search.init("window",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, nheads, dilation=dil,
                               stride0=stride0, stride1=stride1,
@@ -136,10 +136,10 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,exact=exact,
                               h0_off=0,w0_off=0,h1_off=0,w1_off=0)
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps,pt,dilation=dil,adj=adj,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps,pt,dilation=dil,adj=adj,
                                                 reflect_bounds=reflect_bounds,
                                                 exact=exact)
-    fold = dnls.iFoldz(vid.shape,None,stride=stride0,dilation=dil,
+    fold = stnls.iFoldz(vid.shape,None,stride=stride0,dilation=dil,
                        adj=adj,only_full=only_full,
                        use_reflect=reflect_bounds,device=device)
 
@@ -157,7 +157,7 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
     #
 
     # -- ground-truth --
-    vid_gt,dists_gt = dnls.simple.window_search.run(vid,ws,nheads)
+    vid_gt,dists_gt = stnls.simple.window_search.run(vid,ws,nheads)
     dists_gt = rearrange(dists_gt,'H (b d1) d2 -> H b d1 d2',d1=ws*ws)
 
     # -- vid ours --
@@ -180,16 +180,16 @@ def test_cu_vs_th_fwd(ps,stride0,stride1,nheads,dilation,reflect_bounds,exact):
 
     # -- viz --
     vid_gt_s = vid_gt / vid_gt.max()
-    dnls.testing.data.save_burst(vid_gt_s[:,-3:],SAVE_DIR,'vid_gt')
+    stnls.testing.data.save_burst(vid_gt_s[:,-3:],SAVE_DIR,'vid_gt')
     vid_te_s = vid_te / vid_te.max()
-    dnls.testing.data.save_burst(vid_te_s[:,-3:],SAVE_DIR,'vid_te')
+    stnls.testing.data.save_burst(vid_te_s[:,-3:],SAVE_DIR,'vid_te')
 
     # diff = th.abs(vid_gt - vid_te)
     # args = th.where(diff > 1e-3)
 
     # diff = th.abs(vid_gt - vid_te).mean(1,keepdim=True)
     # diff_s = diff / diff.max()
-    # dnls.testing.data.save_burst(diff_s,SAVE_DIR,'vid_diff')
+    # stnls.testing.data.save_burst(diff_s,SAVE_DIR,'vid_diff')
 
     # -- testing [dists] --
     diff = th.abs(dists_gt - dists_te)/(dists_gt.abs()+1e-5)
@@ -242,7 +242,7 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
     only_full = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
     vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:16] # want 32 channels
     vid = th.cat([vid,vid],1)
@@ -256,7 +256,7 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -267,7 +267,7 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
 
     # -- init --
     adj = 0
-    search = dnls.search.init("window",
+    search = stnls.search.init("window",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, nheads, dilation=dil,
                               stride0=stride0, stride1=stride1,
@@ -275,10 +275,10 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,exact=exact,
                               h0_off=0,w0_off=0,h1_off=0,w1_off=0)
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps,pt,dilation=dil,adj=adj,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps,pt,dilation=dil,adj=adj,
                                                 reflect_bounds=reflect_bounds,
                                                 exact=exact)
-    fold = dnls.iFoldz(vid.shape,None,stride=stride0,dilation=dil,
+    fold = stnls.iFoldz(vid.shape,None,stride=stride0,dilation=dil,
                        adj=adj,only_full=only_full,
                        use_reflect=reflect_bounds,device=device)
 
@@ -302,7 +302,7 @@ def test_cu_vs_th_bwd_dists(ps,stride0,stride1,nheads,dilation,reflect_bounds,ex
     #
 
     # -- ground-truth --
-    vid_gt,dists_gt = dnls.simple.window_search.run(in_vid_gt,ws,nheads)
+    vid_gt,dists_gt = stnls.simple.window_search.run(in_vid_gt,ws,nheads)
     dists_gt = rearrange(dists_gt,'H (b d1) d2 -> H b d1 d2',d1=ws*ws)
     dists_gt.retain_grad()
 
@@ -377,7 +377,7 @@ def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exac
     only_full = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
     vid = repeat(vid,'t c h w -> t (r c) h w',r=12)[:,:16] # want 32 channels
     vid = th.cat([vid,vid],1)
@@ -391,7 +391,7 @@ def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exac
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -402,7 +402,7 @@ def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exac
 
     # -- init --
     adj = 0
-    search = dnls.search.init("window",
+    search = stnls.search.init("window",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, nheads, dilation=dil,
                               stride0=stride0, stride1=stride1,
@@ -410,10 +410,10 @@ def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exac
                               reflect_bounds=reflect_bounds,
                               search_abs=search_abs,exact=exact,
                               h0_off=0,w0_off=0,h1_off=0,w1_off=0)
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps,pt,dilation=dil,adj=adj,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps,pt,dilation=dil,adj=adj,
                                                 reflect_bounds=reflect_bounds,
                                                 exact=exact)
-    fold = dnls.iFoldz(vid.shape,None,stride=stride0,dilation=dil,
+    fold = stnls.iFoldz(vid.shape,None,stride=stride0,dilation=dil,
                        adj=adj,only_full=only_full,
                        use_reflect=reflect_bounds,device=device)
 
@@ -437,7 +437,7 @@ def test_cu_vs_th_bwd_vid(ps,stride0,stride1,nheads,dilation,reflect_bounds,exac
     #
 
     # -- ground-truth --
-    vid_gt,dists_gt = dnls.simple.window_search.run(in_vid_gt,ws,nheads)
+    vid_gt,dists_gt = stnls.simple.window_search.run(in_vid_gt,ws,nheads)
     dists_gt.retain_grad()
     # dists_gt = rearrange(dists_gt,'H (b d1) d2 -> H b d1 d2',d1=ws*ws)
 

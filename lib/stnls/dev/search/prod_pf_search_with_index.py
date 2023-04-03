@@ -8,7 +8,7 @@ from einops import rearrange,repeat
 from ...utils.timer import ExpTimer
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 from .search_utils import *
@@ -81,7 +81,7 @@ class ProductPfSearchFunction_with_index(th.autograd.Function):
 
         # -- forward --
         th.cuda.set_device(device)
-        dnls_cuda.search_prod_pf_with_index_forward(
+        stnls_cuda.search_prod_pf_with_index_forward(
             vid0, vid1, fflow, bflow,
             dists_exh, inds_exh, self_dists,
             qstart, stride0, n_h0, n_w0,
@@ -227,7 +227,7 @@ class ProductPfSearchFunction_with_index(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            dnls_cuda.search_prod_with_index_backward(
+            stnls_cuda.search_prod_with_index_backward(
                 vid0_grad,vid1_grad,vid0,vid1,
                 grad_dists,inds,
                 qstart,stride0,n_h0,n_w0,
@@ -237,7 +237,7 @@ class ProductPfSearchFunction_with_index(th.autograd.Function):
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.search_prod_with_index_backward(
+                stnls_cuda.search_prod_with_index_backward(
                     vid0_grad,vid1_grad,vid0,vid1,
                     grad_dists,inds,
                     qstart,stride0,n_h0,n_w0,

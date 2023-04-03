@@ -343,7 +343,7 @@ void search_l2_forward_cuda(
    // fprintf(stdout,"reflect_bounds,search_abs: %d,%d\n",reflect_bounds,search_abs);
     
    // launch kernel
-   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_forward_kernel", ([&] {
+   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "stnls_search_forward_kernel", ([&] {
       search_l2_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
@@ -557,7 +557,7 @@ void search_l2_backward_cuda(
   torch::Tensor rand_nums = torch::rand({nqueries,1,1},options);
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "stnls_search_backward_kernel", ([&] {
     search_l2_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid0.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         grad_vid1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),

@@ -386,7 +386,7 @@ void l2_search_with_index_forward_cuda(
    // fprintf(stdout,"ws_h_iters,ws_w_iters: %d,%d\n",ws_h_iters,ws_w_iters);
     
    // launch kernel
-   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_forward_kernel", ([&] {
+   AT_DISPATCH_FLOATING_TYPES(vid0.type(), "stnls_search_forward_kernel", ([&] {
       l2_search_with_index_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid0.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
         vid1.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
@@ -629,7 +629,7 @@ void l2_search_with_index_backward_cuda(
   // }
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "stnls_search_backward_kernel", ([&] {
     l2_search_with_index_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),

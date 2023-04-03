@@ -2,7 +2,7 @@
 import torch as th
 from einops import rearrange,repeat
 import torch.nn.functional as nnf
-import dnls_cuda
+import stnls_cuda
 
 def init(scale,stride,T,H,W):
     def wrap(inds):
@@ -26,7 +26,7 @@ def run(inds,scale,stride,T,H,W,only_new=False):
     # print("inds.shape: ",inds.shape)
     # print("inds_full.shape: ",inds_full.shape)
     # print("stride,scale*stride,H,W: ",stride,scale*stride,H,W)
-    dnls_cuda.interpolate_inds(inds,inds_full,scale,stride,scale*stride,H,W)
+    stnls_cuda.interpolate_inds(inds,inds_full,scale,stride,scale*stride,H,W)
 
     # -- extract only new inds --
     if only_new:
@@ -58,7 +58,7 @@ def run(inds,scale,stride,T,H,W,only_new=False):
 #     # -- interpolate (K) neighbors --
 #     inds_k = inds[:,:,:,1:].contiguous()
 #     inds_full = th.zeros((_B,nH1,nW1,K,3),device=inds.device,dtype=inds.dtype)
-#     dnls_cuda.interpolate_inds(inds_k,inds_full,scale)
+#     stnls_cuda.interpolate_inds(inds_k,inds_full,scale)
 
 #     # -- interpolate grid (K==0) --
 #     inds = rearrange(inds[...,0,:],'b h w tr -> b tr h w')  # B H W tr

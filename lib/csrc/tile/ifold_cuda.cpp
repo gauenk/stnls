@@ -9,14 +9,14 @@
 
 // CUDA forward declarations
 
-void dnls_cuda_ifold_forward(
+void stnls_cuda_ifold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int top, int left, int btm, int right,
     int start, int stride, int dilation, int adj,
     bool only_full, bool use_reflect);
 
-void dnls_cuda_ifold_backward(
+void stnls_cuda_ifold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int top, int left, int btm, int right,
@@ -35,7 +35,7 @@ void dnls_cuda_ifold_backward(
 
 *********************************/
 
-void dnls_ifold_forward(
+void stnls_ifold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int top, int left, int btm, int right,
@@ -43,13 +43,13 @@ void dnls_ifold_forward(
     bool only_full, bool use_reflect) {
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
-  dnls_cuda_ifold_forward(vid,patches,
+  stnls_cuda_ifold_forward(vid,patches,
                           top,left,btm,right,
                           start,stride,dilation,adj,
                           only_full,use_reflect);
 }
 
-void dnls_ifold_backward(
+void stnls_ifold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int top, int left, int btm, int right,
@@ -57,7 +57,7 @@ void dnls_ifold_backward(
     bool only_full, bool use_reflect) {
   CHECK_INPUT(grad_vid);
   CHECK_INPUT(patches);
-  dnls_cuda_ifold_backward(grad_vid,patches,
+  stnls_cuda_ifold_backward(grad_vid,patches,
                            top,left,btm,right,
                            start,stride,dilation,adj,
                            only_full,use_reflect);
@@ -67,7 +67,7 @@ void dnls_ifold_backward(
 
 // python bindings
 void init_ifold(py::module &m){
-  m.def("ifold_forward", &dnls_ifold_forward, "DNLS Fold Forward (CUDA)");
-  m.def("ifold_backward", &dnls_ifold_backward, "DNLS Fold Backward (CUDA)");
+  m.def("ifold_forward", &stnls_ifold_forward, "DNLS Fold Forward (CUDA)");
+  m.def("ifold_backward", &stnls_ifold_backward, "DNLS Fold Backward (CUDA)");
 }
 

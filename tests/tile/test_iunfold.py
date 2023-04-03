@@ -15,8 +15,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- test func --
 import torch.nn.functional as nnf
@@ -65,7 +65,7 @@ def test_nn_with_fold(ps,stride,dilation):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
 
     # -- make vid bigger --
@@ -73,7 +73,7 @@ def test_nn_with_fold(ps,stride,dilation):
     vid = th.cat([vid,vid],-2)
 
     # -- compute optical flow --
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image info --
     device = vid.device
@@ -99,7 +99,7 @@ def test_nn_with_fold(ps,stride,dilation):
     vid = vid.contiguous()
 
     # -- exec iunfold fxns --
-    iunfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dil,
+    iunfold_nl = stnls.iUnfold(ps,coords,stride=stride,dilation=dil,
                               match_nn=True)
     # adj=True,only_full=True)
 
@@ -136,7 +136,7 @@ def test_nn_with_fold(ps,stride,dilation):
     diff = th.abs(grad_nn - grad_nl)
     dmax = diff.max()
     if dmax > 1e-3: diff /= dmax
-    # dnls.testing.data.save_burst(diff[0],SAVE_DIR,"diff")
+    # stnls.testing.data.save_burst(diff[0],SAVE_DIR,"diff")
 
     # -- check forward --
     # print("-"*20)
@@ -179,9 +179,9 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image info --
     device = vid.device
@@ -203,7 +203,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     vid = vid.contiguous()
 
     # -- exec iunfold fxns --
-    iunfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dil)
+    iunfold_nl = stnls.iUnfold(ps,coords,stride=stride,dilation=dil)
 
     #
     # -- test logic --
@@ -244,7 +244,7 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     # diff = th.abs(grad_nn - grad_nl)
     # dmax = diff.max()
     # if dmax > 1e-3: diff /= dmax
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     # -- test backward --
     error = th.sum((grad_nn - grad_nl)**2).item()
@@ -276,9 +276,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image info --
     device = vid.device
@@ -300,7 +300,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // qSize + 1
 
     # -- functions --
-    iunfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dil)
+    iunfold_nl = stnls.iUnfold(ps,coords,stride=stride,dilation=dil)
 
     # -- prepare videos --
     vid_nl = vid.clone()

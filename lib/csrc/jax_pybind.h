@@ -30,6 +30,6 @@ py::capsule EncapsulateFunction(T* fn) {
 // // -- searching --
 // void init_prod_with_index_search(pybind11::module &);
 
-// PYBIND11_MODULE(dnls_jax, m) {
+// PYBIND11_MODULE(stnls_jax, m) {
 //   init_prod_with_index_search(m);
 // }

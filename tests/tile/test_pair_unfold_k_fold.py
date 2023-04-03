@@ -14,8 +14,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- test func --
 import torch.nn.functional as nnf
@@ -41,10 +41,10 @@ def test_nn():
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -64,8 +64,8 @@ def test_nn():
     vid = th.randn_like(vid)
 
     # -- exec unfold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
     # -- prepare videos --
     psHalf = ps//2
@@ -91,9 +91,9 @@ def test_nn():
 
     # -- compute search --
     index = 0
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,stride,
                                                 t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+    nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
 
     # -- run forward --
@@ -128,7 +128,7 @@ def test_nn():
     diff = th.abs(grad_nn - grad_nl)
     dmax = diff.max()
     if dmax > 1e-3: diff /= dmax
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    stnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     error = th.sum((grad_nn - grad_nl)**2).item()/ps
     assert error < 1e-6
@@ -146,10 +146,10 @@ def test_batched():
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -169,8 +169,8 @@ def test_batched():
     vid = th.randn_like(vid)
 
     # -- exec unfold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
     # -- prepare videos --
     psHalf = ps//2
@@ -193,9 +193,9 @@ def test_batched():
         # -- compute search --
         qindex = min(index * qSize,qTotal)
         qSize = min(qSize,qTotal - qindex)
-        queryInds = dnls.utils.inds.get_query_batch(qindex,qSize,stride,
+        queryInds = stnls.utils.inds.get_query_batch(qindex,qSize,stride,
                                                     t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+        nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
 
         # -- run forward --
@@ -233,7 +233,7 @@ def test_batched():
     diff = th.abs(grad_nn - grad_nl)
     dmax = diff.max()
     if dmax > 1e-3: diff /= dmax
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    stnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     error = th.sum((grad_nn - grad_nl)**2).item()/ps
     assert error < 1e-6

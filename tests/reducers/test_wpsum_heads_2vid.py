@@ -32,11 +32,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.inds import get_nums_hw
-from dnls.utils.pads import same_padding,comp_pads
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.inds import get_nums_hw
+from stnls.utils.pads import same_padding,comp_pads
 
 # -- test func --
 from torch.nn.functional import fold,unfold,pad,softmax,log_softmax
@@ -71,7 +71,7 @@ def scores_to_heads(scores,nheads,seed=None):
     return score_heads
 
 def simple_run(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
-    unfold_k = dnls.UnfoldK(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
+    unfold_k = stnls.UnfoldK(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
     patches_i = unfold_k(vid,inds).type(th.float64)
     patches_i = rearrange(patches_i,'n k 1 c h w -> n k 1 (c h w)')
     wpatches_i = th.sum(score_heads[...,None] * patches_i,1).type(th.float32)
@@ -103,7 +103,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     adj = ps//2 if use_unfold else 0
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:t,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -117,7 +117,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -141,7 +141,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride0=stride0, stride1=stride1,
                               use_k=use_k,reflect_bounds=reflect_bounds,
@@ -153,15 +153,15 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    fold = dnls.iFold(vshape,coords,stride=stride0,dilation=dil,
+    fold = stnls.iFold(vshape,coords,stride=stride0,dilation=dil,
                       adj=ps//2,use_reflect=True,only_full=True)
-    wfold = dnls.iFold(vshape,coords,stride=stride0,dilation=dil,
+    wfold = stnls.iFold(vshape,coords,stride=stride0,dilation=dil,
                        adj=ps//2,use_reflect=True,only_full=True)
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off,w_off=w_off,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off,w_off=w_off,
                                                 dilation=dil,
                                                 reflect_bounds=reflect_bounds,
                                                 adj=adj, exact=exact)
-    wpsum2vid = dnls.reducers.WeightedPatchSumHeads2Vid(ps, pt,
+    wpsum2vid = stnls.reducers.WeightedPatchSumHeads2Vid(ps, pt,
                                                         h_off=h_off,w_off=w_off,
                                                         stride=stride0,dilation=dil,
                                                         reflect_bounds=reflect_bounds,
@@ -229,7 +229,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)/255.
     vid = th.from_numpy(vid).to(device)[[4],].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -244,7 +244,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -269,7 +269,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    prod_search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+    prod_search = stnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
                                ws, wt, oh0, ow0, oh1, ow1,
                                dilation=dil, stride=stride1,
                                reflect_bounds=reflect_bounds,
@@ -277,14 +277,14 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- query inds --
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+    iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
 
     # -- init our inner product --
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
                                                 dilation=dil,
                                                 reflect_bounds=reflect_bounds,
                                                 adj=adj, exact=exact)
@@ -373,7 +373,7 @@ def test_backward(ps,stride,dilation,top,btm,left,right,k):
         # diff /= diff.max()
         # diff /= Z
         # if idx ==0: diff = diff.clamp(0.,1.)
-        # dnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d_%d"%(use_unfold,idx))
+        # stnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d_%d"%(use_unfold,idx))
 
         # -- compare --
         error = th.abs((grad_te - grad_gt)).mean().item()

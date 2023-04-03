@@ -17,11 +17,11 @@ import jax.numpy as jnp
 import jax.random as jr
 from functools import partial
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/prod_search")
@@ -80,7 +80,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     use_adj = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -94,8 +94,8 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     vid /= vid.max()
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
-    flows_jax = dnls.flow.pth2jax(flows)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows_jax = stnls.flow.pth2jax(flows)
 
     # -- unpack image --
     device = vid.device
@@ -134,7 +134,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # -- exec fold fxns --
     # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
     # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -146,7 +146,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # search_abs=False, full_ws = False, nbwd=1, exact=False,
     # h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
     # anchor_self=False,rbwd=True):
-    search_te = dnls.jax.search.init("prod_with_index",
+    search_te = stnls.jax.search.init("prod_with_index",
                                      flows_jax.fflow, flows_jax.bflow,
                                      nframes, k, ps, pt, ws, wt,
                                      oh0, ow0, oh1, ow1,
@@ -251,7 +251,7 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     use_adj = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -265,8 +265,8 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     vid /= vid.max()
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
-    flows_jax = dnls.flow.pth2jax(flows)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows_jax = stnls.flow.pth2jax(flows)
 
     # -- unpack image --
     device = vid.device
@@ -310,7 +310,7 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     # -- exec fold fxns --
     # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
     # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -322,7 +322,7 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
     # search_abs=False, full_ws = False, nbwd=1, exact=False,
     # h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
     # anchor_self=False,rbwd=True):
-    search_te = dnls.jax.search.init("prod_with_index",
+    search_te = stnls.jax.search.init("prod_with_index",
                                      flows_jax.fflow, flows_jax.bflow,
                                      nframes, k, ps, pt, ws, wt,
                                      oh0, ow0, oh1, ow1,
@@ -467,7 +467,7 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
 #     use_adj = True
 
 #     # -- load data --
-#     vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+#     vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
 #     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
 #     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -481,8 +481,8 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
 #     vid /= vid.max()
 
 #     # -- compute flow --
-#     flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
-#     flows_jax = dnls.flow.pth2jax(flows)
+#     flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+#     flows_jax = stnls.flow.pth2jax(flows)
 
 #     # -- unpack image --
 #     device = vid.device
@@ -522,7 +522,7 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
 #     # -- exec fold fxns --
 #     # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
 #     # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
-#     search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+#     search_gt = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
 #                                  k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
 #                                  chnls=-1,dilation=dil,
 #                                  stride0=stride0, stride1=stride1,
@@ -534,7 +534,7 @@ def test_cu_vs_th_bwd(ps,stride,dilation,exact):
 #     # search_abs=False, full_ws = False, nbwd=1, exact=False,
 #     # h0_off=0,w0_off=0,h1_off=0,w1_off=0,remove_self=False,
 #     # anchor_self=False,rbwd=True):
-#     search_te = dnls.jax.search.init("prod_with_index",
+#     search_te = stnls.jax.search.init("prod_with_index",
 #                                      flows_jax.fflow, flows_jax.bflow,
 #                                      nframes, k, ps, pt, ws, wt,
 #                                      oh0, ow0, oh1, ow1,

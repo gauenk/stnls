@@ -43,7 +43,7 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
 
 
 template <typename scalar_t>
-__global__ void dnls_ifoldz_forward_kernel(
+__global__ void stnls_ifoldz_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> zvid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
@@ -184,7 +184,7 @@ __global__ void dnls_ifoldz_forward_kernel(
     } // for each pixel (with stride)
 }
 
-void dnls_cuda_ifoldz_forward(
+void stnls_cuda_ifoldz_forward(
     torch::Tensor vid, torch::Tensor zvid, torch::Tensor patches,
     int top, int left, int btm, int right,
     int start, int stride, int dilation, int adj,
@@ -221,8 +221,8 @@ void dnls_cuda_ifoldz_forward(
   // fprintf(stdout,"num_kernels0,num_kernels: %d,%d\n",num_kernels0,num_kernels);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifoldz_forward_kernel", ([&] {
-    dnls_ifoldz_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_ifoldz_forward_kernel", ([&] {
+    stnls_ifoldz_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         zvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
@@ -237,7 +237,7 @@ void dnls_cuda_ifoldz_forward(
 // **************************************/
 
 // template <typename scalar_t>
-// __global__ void dnls_ifoldz_backward_kernel(
+// __global__ void stnls_ifoldz_backward_kernel(
 //     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid, // grad
 //     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
 //     int top, int left, int btm, int right, int start, int stride,
@@ -366,7 +366,7 @@ void dnls_cuda_ifoldz_forward(
 //     }
 // }
 
-// void dnls_cuda_ifoldz_backward(
+// void stnls_cuda_ifoldz_backward(
 //   torch::Tensor grad_vid,
 //   torch::Tensor patches,
 //   int top, int left, int btm, int right,
@@ -390,8 +390,8 @@ void dnls_cuda_ifoldz_forward(
 //   dim3 nthreads(kpb,ps,ps);
 
 //   // -- launch kernel --
-//   AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_ifoldz_backward_kernel", ([&] {
-//     dnls_ifoldz_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+//   AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_ifoldz_backward_kernel", ([&] {
+//     stnls_ifoldz_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
 //         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
 //         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
 //         top, left, btm, right, start, stride, dilation, adj,

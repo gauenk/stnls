@@ -4,7 +4,7 @@ import torch as th
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- misc --
 from ...utils.timer import ExpTimer
@@ -71,7 +71,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         #     torch::Tensor dists, torch::Tensor inds,
         #     int h_off, int w_off, int dilation, int adj, bool reflect_bounds){
         # print(h_off,w_off,dilation,adj,reflect_bounds)
-        dnls_cuda.wpsum_heads_forward(vid, patches, dists, inds,
+        stnls_cuda.wpsum_heads_forward(vid, patches, dists, inds,
                                       h_off,w_off,dilation,adj,
                                       reflect_bounds)
         # print("dists._version: ",dists._version)
@@ -144,7 +144,7 @@ class WpSumHeadsFunction(th.autograd.Function):
             grad_vid = allocate_vid(vid_shape_og,grad_patches.device)
             for i in range(nbwd):
                 grad_vid_i = allocate_vid(vid_shape,grad_patches.device)
-                # dnls_cuda.wpsum_heads_backward_vid(grad_vid_i,grad_patches,
+                # stnls_cuda.wpsum_heads_backward_vid(grad_vid_i,grad_patches,
                 #                                    dists,inds,
                 #                                    h_off,w_off,dilation,adj,
                 #                                    reflect_bounds,rbwd,exact)
@@ -154,7 +154,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         else:
             grad_vid = allocate_vid(vid_shape,grad_patches.device)
             # print("grad_vid.shape: ",grad_vid.shape)
-            # dnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
+            # stnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
             #                                    dists,inds,
             #                                    h_off,w_off,dilation,adj,
             #                                    reflect_bounds,rbwd,exact)
@@ -166,7 +166,7 @@ class WpSumHeadsFunction(th.autograd.Function):
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
-        dnls_cuda.wpsum_heads_backward_dists(grad_dists,grad_patches,
+        stnls_cuda.wpsum_heads_backward_dists(grad_dists,grad_patches,
                                              vid,inds,
                                              h_off,w_off,dilation,adj,
                                              reflect_bounds,exact)

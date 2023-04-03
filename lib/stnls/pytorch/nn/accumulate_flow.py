@@ -5,7 +5,7 @@ from functools import partial
 from easydict import EasyDict as edict
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 def init():
     return run
@@ -37,7 +37,7 @@ def run_pair(fflow,bflow,stride0=1):
     pbflow = th.zeros((B,T-1,T,2,nH,nW),device=bflow.device,
                       dtype=th.int32)
     # -- run --
-    dnls_cuda.accumulate_flow(fflow,bflow,pfflow,pbflow,stride0)
+    stnls_cuda.accumulate_flow(fflow,bflow,pfflow,pbflow,stride0)
 
     # -- format --
     flows = edict()

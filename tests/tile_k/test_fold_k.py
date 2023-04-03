@@ -12,8 +12,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- test func --
 import torch.nn.functional as nnf
@@ -67,7 +67,7 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:7]
     vid = th.cat([vid,vid],-1)
     vid = th.cat([vid,vid],-2)
@@ -76,18 +76,18 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
     vid = vid.contiguous().clone()
     # print(vid.shape)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unfold/fold k decl --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dilation,
                             exact=True,device=device)
-    fold_k_simp = dnls.FoldK(vid.shape,dilation=dilation,
+    fold_k_simp = stnls.FoldK(vid.shape,dilation=dilation,
                              exact=exact,device=device)
-    fold_k_eff = dnls.FoldK(vid.shape,dilation=dilation,
+    fold_k_eff = stnls.FoldK(vid.shape,dilation=dilation,
                             rand=True,nreps=1,device=device)
 
     # -- timer --
-    timer = dnls.utils.timer.ExpTimer()
+    timer = stnls.utils.timer.ExpTimer()
 
     # -- batching info --
     device = noisy.device
@@ -106,9 +106,9 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
     for index in range(nbatches):
 
         # -- get [patches & inds] --
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+        queryInds = stnls.utils.inds.get_query_batch(index,qSize,stride,
                                                     t,h,w,device)
-        dists,inds = dnls.simple.search.run(vid,queryInds,
+        dists,inds = stnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
         patches = unfold_k(vid,inds)
         patches[...] = 1.
@@ -134,7 +134,7 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
 
         # -- testing forward --
         timer.start("simp")
-        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,dists,
+        vid_simp,wvid_simp = stnls.simple.fold_k.run(patches,dists,
                                                     inds,dilation=dilation,
                                                     shape=shape)
         # vid_simp,wvid_simp = fold_k_simp(patches,dists,inds)
@@ -170,8 +170,8 @@ def test_compare_efficient(k,ps,stride,dilation,ws,wt,pt,chnls,clear_each):
         # -- save --
         # vid_nl /= vid_nl.max()
         # vid_simp /= vid_simp.max()
-        # dnls.testing.data.save_burst(vid_nl[[0]],SAVE_DIR,"nl_%d" % index)
-        # dnls.testing.data.save_burst(vid_simp[[0]],SAVE_DIR,"simp_%d" % index)
+        # stnls.testing.data.save_burst(vid_nl[[0]],SAVE_DIR,"nl_%d" % index)
+        # stnls.testing.data.save_burst(vid_simp[[0]],SAVE_DIR,"simp_%d" % index)
 
         # -- compare times --
         # print(timer)
@@ -202,15 +202,15 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     else: exact = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- fold_k/unfold_k decl --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dilation,
                             exact=True,device=device)
-    fold_k = dnls.FoldK(vid.shape,dilation=dilation,
+    fold_k = stnls.FoldK(vid.shape,dilation=dilation,
                         exact=exact,device=device)
 
     # -- batching info --
@@ -229,9 +229,9 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
     for index in range(nbatches):
 
         # -- get [patches & inds] --
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+        queryInds = stnls.utils.inds.get_query_batch(index,qSize,stride,
                                                     t,h,w,device)
-        dists,inds = dnls.simple.search.run(vid,queryInds,
+        dists,inds = stnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches = unfold_k(vid,inds)
 
@@ -241,7 +241,7 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
 
         # -- testing forward --
         vid_nl,wvid_nl = fold_k(patches,dists,inds)
-        vid_simp,wvid_simp = dnls.simple.fold_k.run(patches,dists,
+        vid_simp,wvid_simp = stnls.simple.fold_k.run(patches,dists,
                                                     inds,dilation=dilation,
                                                     shape=shape)
         error = th.mean((vid_nl - vid_simp)**2).item()
@@ -250,8 +250,8 @@ def test_compare_simple(k,ps,stride,dilation,ws,wt,pt,chnls):
         # -- save --
         # vid_nl /= vid_nl.max()
         # vid_simp /= vid_simp.max()
-        # dnls.testing.data.save_burst(vid_nl[[0]],SAVE_DIR,"nl_%d" % index)
-        # dnls.testing.data.save_burst(vid_simp[[0]],SAVE_DIR,"simp_%d" % index)
+        # stnls.testing.data.save_burst(vid_nl[[0]],SAVE_DIR,"nl_%d" % index)
+        # stnls.testing.data.save_burst(vid_simp[[0]],SAVE_DIR,"simp_%d" % index)
 
     th.cuda.synchronize()
 
@@ -276,10 +276,10 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- batching info --
     shape = noisy.shape
@@ -292,16 +292,16 @@ def test_compare_fold(ps,stride,dilation,ws,wt,pt,chnls):
     vid = vid.contiguous()
 
     # -- exec fold_k fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dilation,
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dilation,
                             exact=True,device=device)
-    fold_k = dnls.FoldK((t,c,h,w),dilation=dilation,
+    fold_k = stnls.FoldK((t,c,h,w),dilation=dilation,
                                      exact=exact,device=device)
 
     # -- get [patches & inds] --
     index = 0
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,stride,
                                                 t,h,w,device)
-    dists,inds = dnls.simple.search.run(vid,queryInds,
+    dists,inds = stnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
     patches = unfold_k(vid,inds)
     dists = th.ones_like(dists)

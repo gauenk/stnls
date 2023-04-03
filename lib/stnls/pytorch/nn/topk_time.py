@@ -11,8 +11,8 @@ from einops import rearrange,repeat
 import torch.nn.functional as nnf
 
 # -- our package --
-import dnls_cuda
-import dnls
+import stnls_cuda
+import stnls
 
 # -- local --
 from .dim2_utils import dimN_dim2,dim2_dimN
@@ -141,7 +141,7 @@ def unique_topk(dists,inds,K,descending=False):
 def unique_select(dists,inds,K,descending):
     inds = inds.contiguous()
     dists_topk,inds_topk = allocate_topk(dists,inds,K,descending)
-    dnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)
+    stnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)
     return dists_topk,inds_topk
 
 def allocate_topk(dists,inds,K,descending):

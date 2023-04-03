@@ -9,7 +9,7 @@ import torch.nn.functional as nnf
 from torch.nn.functional import unfold,pad
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 from .search_utils import *
@@ -60,7 +60,7 @@ class ProdSearchPatchesWithHeadsFunction(th.autograd.Function):
         # -- forward --
         gpuid = th.cuda.current_device()
         th.cuda.set_device(device)
-        dnls_cuda.prod_search_patches_with_heads_forward(patches0, patches1,
+        stnls_cuda.prod_search_patches_with_heads_forward(patches0, patches1,
                                                          dists_exh, inds_exh,
                                                          access_inds,
                                                          chnls, dilation,
@@ -133,7 +133,7 @@ class ProdSearchPatchesWithHeadsFunction(th.autograd.Function):
         grad_patches1 = allocate_patches(patches_shape,grad_dists.device)
 
         # -- allow for repeated exec --
-        dnls_cuda.prod_search_with_heads_backward(grad_patches0,grad_patches1,
+        stnls_cuda.prod_search_with_heads_backward(grad_patches0,grad_patches1,
                                                   patches0,patches1,
                                                   grad_dists,inds,
                                                   nheads,stride1,n_h0,n_w0,

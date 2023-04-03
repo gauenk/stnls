@@ -10,7 +10,7 @@ def run_exp(cfg):
     nreps = cfg.nreps
     use_rand = cfg.use_rand
     exact = cfg.exact
-    fold = dnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps,
+    fold = stnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps,
                       exact=exact,device=device)
 
 

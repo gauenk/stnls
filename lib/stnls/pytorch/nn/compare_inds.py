@@ -5,8 +5,8 @@ Compute the minimum MSE of sorted patches distances from two sets of indices
 """
 
 import torch as th
-# import dnls
-import dnls_cuda
+# import stnls
+import stnls_cuda
 # from .topk_pwd import run as topk_pwd
 from ..simple import topk_pwd
 

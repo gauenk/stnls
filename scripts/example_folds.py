@@ -1,12 +1,12 @@
 
 # -- imports --
 import torch as th
-import dnls
+import stnls
 from einops import rearrange
 
 # -- load video --
 device = "cuda:0"
-vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
+vid = stnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
 vid = th.from_numpy(vid).to(device)
 
 # -- params --
@@ -24,8 +24,8 @@ sq_w = coords[3] - coords[1]
 sq_hw = sq_h * sq_w
 
 # -- init iunfold and ifold --
-fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dilation)
-unfold_nl = dnls.iUnfold(ps,coords,stride=stride,dilation=dilation)
+fold_nl = stnls.iFold(vshape,coords,stride=stride,dilation=dilation)
+unfold_nl = stnls.iUnfold(ps,coords,stride=stride,dilation=dilation)
 
 # -- compute number of batches --
 n_h = (sq_h-1)//stride+1
@@ -55,5 +55,5 @@ for batch in range(nbatches):
 # -- save modded video --
 vid = fold_nl.vid
 vid /= vid.max()
-dnls.testing.data.save_burst(vid,"./output/","example")
+stnls.testing.data.save_burst(vid,"./output/","example")
 

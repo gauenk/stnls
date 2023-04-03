@@ -4,10 +4,10 @@ import numpy as np
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- package --
-import dnls
+import stnls
 
 # -- api --
 from .utils import extract_pairs
@@ -69,7 +69,7 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
     # -- run --
-    dnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
+    stnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
                                  ws_h, ws_w, ps, k, dist_type_i,
                                  stride0, stride1, dilation, pt, qshift,
                                  reflect_bounds, full_ws, use_adj,
@@ -91,7 +91,7 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
 
     # -- topk --
     qinds = rearrange(qinds,'b hd q k tr -> (b hd q) k tr')
-    dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+    dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
                               descending=descending,unique=True,qinds=qinds)
     return dists,inds
 
@@ -239,7 +239,7 @@ class RefineSearch(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#        [Direct API]  dnls.search.refine(...)
+#        [Direct API]  stnls.search.refine(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -267,7 +267,7 @@ def _apply(vid0, vid1, qinds,
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#     [Python Dict API] dnls.search.init(pydict)
+#     [Python Dict API] stnls.search.init(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 

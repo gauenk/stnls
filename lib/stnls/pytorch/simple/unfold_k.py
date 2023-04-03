@@ -3,7 +3,7 @@
 from numba import cuda,jit
 
 # # -- [for testing] delete me. --
-# from dnls.utils import color
+# from stnls.utils import color
 
 # -- linalg --
 import torch as th

@@ -18,8 +18,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- meshgrid --
 
@@ -79,12 +79,12 @@ def test_nn(ps,stride,dilation):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device).contiguous()
     vid = th.ones_like(vid)
 
     # -- compute optical flow --
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device
@@ -108,8 +108,8 @@ def test_nn(ps,stride,dilation):
     #
     # -- test logic --
     #
-    unfold = dnls.iUnfold(ps,coords,stride=stride,dilation=dil,adj=adj)
-    fold = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
+    unfold = stnls.iUnfold(ps,coords,stride=stride,dilation=dil,adj=adj)
+    fold = stnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=adj)
 
     # -- run through --
     patches_nl = unfold(vid,0)

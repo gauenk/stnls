@@ -6,7 +6,7 @@ An example script for a video non-local bayes.
 
 # -- imports --
 import tqdm
-import dnls
+import stnls
 import numpy as np
 import torch as th
 from einops import rearrange,repeat
@@ -15,7 +15,7 @@ from einops import rearrange,repeat
 sigma = 50.
 device = "cuda:0"
 th.cuda.set_device(device)
-clean = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
+clean = stnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
 clean = th.from_numpy(clean).to(device)
 noisy = clean + sigma * th.randn_like(clean)
 
@@ -159,13 +159,13 @@ def run_denoiser(npatches,bpatches,dists,step):
 rgb2yuv(noisy)
 
 # -- init iunfold and ifold --
-search = dnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,chnls=chnls,
+search = stnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,chnls=chnls,
                           stride0=stride0,stride1=stride1,dilation=dilation)
-unfold = dnls.UnfoldK(ps_d,pt,dilation=dilation,device=device)
-fold = dnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps_1,device=device)
+unfold = stnls.UnfoldK(ps_d,pt,dilation=dilation,device=device)
+fold = stnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps_1,device=device)
 
 # -- batching info --
-nh,nw = dnls.utils.get_nums_hw(clean.shape,stride0,ps_s,dilation)
+nh,nw = stnls.utils.get_nums_hw(clean.shape,stride0,ps_s,dilation)
 ntotal = t * nh * nw
 nbatches = (ntotal-1) // batch_size + 1
 
@@ -201,7 +201,7 @@ basic[zargs] = noisy[zargs]
 
 # -- setup for 2nd step --
 k = 60
-fold = dnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps_2,device=device)
+fold = stnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps_2,device=device)
 search.k = k
 
 #
@@ -248,5 +248,5 @@ print("PSNR: %2.3f" % psnr)
 for i in range(3):
     psnr = -10 * th.log10(th.mean((deno[:,i]/255. - clean[:,i]/255.)**2)).item()
     print("[%d] PSNR: %2.3f" % (i,psnr))
-dnls.testing.data.save_burst(noisy/255.,"./output/","noisy")
-dnls.testing.data.save_burst(deno/255.,"./output/","deno")
+stnls.testing.data.save_burst(noisy/255.,"./output/","noisy")
+stnls.testing.data.save_burst(deno/255.,"./output/","deno")

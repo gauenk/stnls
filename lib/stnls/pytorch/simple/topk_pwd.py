@@ -5,7 +5,7 @@ Compute the top-k pwd using not using a specified cuda kernel
 """
 
 import torch as th
-from dnls.pytorch.tile_k import unfold_k
+from stnls.pytorch.tile_k import unfold_k
 from einops import rearrange
 
 def run(vid,inds0,inds1,ps,pt=1,dilation=1,

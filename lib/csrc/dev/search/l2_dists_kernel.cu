@@ -411,7 +411,7 @@ void l2_dists_backward_cuda(
   }
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_search_backward_kernel", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "stnls_search_backward_kernel", ([&] {
     l2_dists_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),

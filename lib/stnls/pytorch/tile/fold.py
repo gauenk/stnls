@@ -9,7 +9,7 @@ A gather _without_ a race condition with k == 1
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 
 def allocate_patches(nq,k,ps,pt,c,device):
@@ -27,7 +27,7 @@ class fold(th.autograd.Function):
     @staticmethod
     def forward(ctx, patches, vid, qstart, stride, dilation):
         patches = patches.contiguous()
-        dnls_cuda.fold_forward(vid, patches, qstart, stride, dilation)
+        stnls_cuda.fold_forward(vid, patches, qstart, stride, dilation)
         ctx.qstart = qstart
         ctx.stride = stride
         ctx.qNum = patches.shape[0]
@@ -55,7 +55,7 @@ class fold(th.autograd.Function):
         grad_patches = allocate_patches(qNum,1,ps,pt,colors,device)
 
         # -- backward --
-        dnls_cuda.fold_backward(grad_vid,grad_patches,qstart,stride,dilation)
+        stnls_cuda.fold_backward(grad_vid,grad_patches,qstart,stride,dilation)
 
         return grad_patches,None,None,None,None
 

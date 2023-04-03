@@ -9,7 +9,7 @@ Fold"z" but with an inset rectangle of any size
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 
 def allocate_patches(b,nq,k,ps,pt,c,device):
@@ -33,7 +33,7 @@ class ifoldz(th.autograd.Function):
         # print("only_full: ",only_full)
         # print("vid.shape: ",vid.shape)
         # print("patches.shape:" ,patches.shape,vid.shape)
-        dnls_cuda.ifoldz_forward(vid, zvid, patches, top, left, btm, right,
+        stnls_cuda.ifoldz_forward(vid, zvid, patches, top, left, btm, right,
                                  qstart, stride, dilation, adj, only_full, use_reflect)
         ctx.coords = coords
         ctx.qstart = qstart
@@ -70,7 +70,7 @@ class ifoldz(th.autograd.Function):
         grad_patches = allocate_patches(b,qNum,1,ps,pt,colors,device)
 
         # -- backward --
-        dnls_cuda.ifold_backward(grad_vid,grad_patches,
+        stnls_cuda.ifold_backward(grad_vid,grad_patches,
                                  top, left, btm, right,
                                  qstart,stride,dilation,adj,
                                  only_full, use_reflect)

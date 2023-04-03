@@ -4,7 +4,7 @@ import torch as th
 import numpy as np
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 from .search_utils import *
@@ -64,7 +64,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
         fflow = fflow.to(device)
         bflow = bflow.to(device)
         th.cuda.set_device(device)
-        dnls_cuda.l2_search_with_index_forward(vid0, vid1, fflow, bflow,
+        stnls_cuda.l2_search_with_index_forward(vid0, vid1, fflow, bflow,
                                                dists_exh, inds_exh,
                                                qstart, nqueries, stride0,
                                                n_h0, n_w0,
@@ -153,7 +153,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
             rands = get_rands(nqueries,device,rbwd)
             grad_vid0 = allocate_vid(vid_shape,grad_dists.device)
             grad_vid1 = allocate_vid(vid_shape,grad_dists.device)
-            dnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
+            stnls_cuda.l2_search_with_index_backward(grad_vid0,grad_vid1,
                                                     vid0,vid1,
                                                     grad_dists,inds,rands,
                                                     qstart,stride0,n_h0,n_w0,
@@ -169,7 +169,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                     rands = get_rands(nqueries,device,rbwd)
                     grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                     grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                    dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
+                    stnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
                                                             vid0,vid1,
                                                             grad_dists,inds,
                                                             qstart,stride0,n_h0,n_w0,
@@ -188,7 +188,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                 for _ in range(nbwd):
                     grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                     grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                    dnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
+                    stnls_cuda.l2_search_with_index_backward(grad_vid0_i,grad_vid1_i,
                                                             vid0,vid1,
                                                             grad_dists,inds,
                                                             qstart,stride0,n_h0,n_w0,

@@ -8,7 +8,7 @@ from einops import rearrange
 import torch.nn.functional as nnf
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 from .search_utils import *
@@ -92,7 +92,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- forward --
         th.cuda.set_device(device)
-        dnls_cuda.prod_search_with_heads_forward(vid0, vid1, fflow, bflow,
+        stnls_cuda.prod_search_with_heads_forward(vid0, vid1, fflow, bflow,
                                                  dists_exh, inds_exh, self_dists,
                                                  qstart, stride0, n_h0, n_w0,
                                                  h0_off, w0_off, h1_off, w1_off,
@@ -175,7 +175,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
         inds = inds.contiguous()
 
         # -- allow for repeated exec --
-        bwd_fxn = dnls_cuda.prod_search_with_heads_backward
+        bwd_fxn = stnls_cuda.prod_search_with_heads_backward
         if nbwd == 1:
             bwd_fxn(grad_vid0,grad_vid1,
                     vid0,vid1,

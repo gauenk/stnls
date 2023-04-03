@@ -3,7 +3,7 @@
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 from ...utils.timer import ExpTimer
 
@@ -41,7 +41,7 @@ class iWpSumFunction(th.autograd.Function):
         # if WpSumFunction.vid is None: WpSumFunction.vid = vid
         vid2fill = th.zeros_like(vid)
         # patches = allocate_patches(inds,ps,pt,vid.shape[1])
-        dnls_cuda.iwpsum_forward(vid, vid2fill, dists, inds,
+        stnls_cuda.iwpsum_forward(vid, vid2fill, dists, inds,
                                  h_off,w_off,dilation,adj,reflect_bounds)
         # print("dists._version: ",dists._version)
         # print("inds._version: ",inds._version)
@@ -79,12 +79,12 @@ class iWpSumFunction(th.autograd.Function):
         # -- gradient for video --
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
         if nbwd == 1:
-            dnls_cuda.iwpsum_backward_vid(grad_vid,grad_vid2fill,dists,inds,
+            stnls_cuda.iwpsum_backward_vid(grad_vid,grad_vid2fill,dists,inds,
                                           h_off,w_off,dilation,adj,reflect_bounds,exact)
         else:
             for _ in range(nbwd):
                 grad_vid_i = allocate_vid(vid_shape,grad_vid2fill.device)
-                dnls_cuda.iwpsum_backward_vid(grad_vid_i,grad_vid2fill,dists,inds,
+                stnls_cuda.iwpsum_backward_vid(grad_vid_i,grad_vid2fill,dists,inds,
                                               h_off,w_off,dilation,adj,
                                               reflect_bounds,exact)
                 grad_vid += grad_vid_i
@@ -92,7 +92,7 @@ class iWpSumFunction(th.autograd.Function):
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
-        dnls_cuda.wpsum_backward_dists(grad_dists,grad_patches,vid,inds,
+        stnls_cuda.wpsum_backward_dists(grad_dists,grad_patches,vid,inds,
                                        h_off,w_off,dilation,adj,reflect_bounds,exact)
 
         # -- stop timer --

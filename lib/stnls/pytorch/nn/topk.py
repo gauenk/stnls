@@ -5,8 +5,8 @@ from einops import rearrange,repeat
 import torch.nn.functional as nnf
 
 # -- our package --
-import dnls_cuda
-import dnls
+import stnls_cuda
+import stnls
 
 # -- local --
 # from .anchor_self import run as anchor_self
@@ -81,7 +81,7 @@ def anchored_topk(dists,inds,k,descending,unique,qinds):
         dists,inds = unique_select(dists,inds,k,descending)
 
     # -- check dups -
-    # dups,any_dup = dnls.testing.find_duplicate_inds(inds)
+    # dups,any_dup = stnls.testing.find_duplicate_inds(inds)
     # args = th.where(dups == True)
     # if len(args[0]) > 0:
     #     print(inds.shape,dups.shape)
@@ -123,7 +123,7 @@ def unique_topk(dists,inds,K,descending=False):
 def unique_select(dists,inds,K,descending):
     inds = inds.contiguous()
     dists_topk,inds_topk = allocate_topk(dists,inds,K,descending)
-    dnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)
+    stnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)
     return dists_topk,inds_topk
 
 def allocate_topk(dists,inds,K,descending):

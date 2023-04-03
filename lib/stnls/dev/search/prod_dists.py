@@ -8,7 +8,7 @@ from einops import rearrange
 import torch.nn.functional as nnf
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 from .search_utils import *
@@ -69,7 +69,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- forward --
         th.cuda.set_device(device)
-        dnls_cuda.prod_dists(vid0, vid1, dists_exh, inds_exh, self_dists,
+        stnls_cuda.prod_dists(vid0, vid1, dists_exh, inds_exh, self_dists,
                              qstart, stride0, n_h0, n_w0,
                              h0_off, w0_off, h1_off, w1_off,
                              ps, pt, chnls, dilation, stride1, use_adj,
@@ -146,7 +146,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            dnls_cuda.prod_search_with_heads_backward(grad_vid0,grad_vid1,
+            stnls_cuda.prod_search_with_heads_backward(grad_vid0,grad_vid1,
                                                       vid0,vid1,
                                                       grad_dists,inds,
                                                       qstart,nheads,stride0,n_h0,n_w0,
@@ -157,7 +157,7 @@ class ProdSearchWithHeadsFunction(th.autograd.Function):
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.prod_search_with_heads_backward(grad_vid0_i,grad_vid1_i,
+                stnls_cuda.prod_search_with_heads_backward(grad_vid0_i,grad_vid1_i,
                                                           vid0,vid1,
                                                           grad_dists,inds,
                                                           qstart,nheads,stride0,

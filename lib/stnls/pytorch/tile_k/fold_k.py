@@ -3,7 +3,7 @@
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 
 
@@ -31,12 +31,12 @@ class fold_k(th.autograd.Function):
                 dilation, rand, exact, nreps):
         assert nreps >= 0
         if nreps == 1:
-            dnls_cuda.foldk_forward_race(vid, wvid, patches, dists, inds,
+            stnls_cuda.foldk_forward_race(vid, wvid, patches, dists, inds,
                                           dilation, rand, exact)
         elif nreps > 1:
             for i in range(nreps):
                 _vid,_wvid = allocate_vid(vid.shape,vid.device)
-                dnls_cuda.foldk_forward_race(_vid, _wvid, patches, dists, inds,
+                stnls_cuda.foldk_forward_race(_vid, _wvid, patches, dists, inds,
                                               dilation, rand, exact)
                 vid,wvid = vid+_vid,wvid+_wvid
             vid,wvid = vid/nreps,wvid/nreps
@@ -53,7 +53,7 @@ class fold_k(th.autograd.Function):
         dilation = ctx.dilation
         ps,pt = ctx.ps,ctx.pt
         patches = allocate_patches(inds,ps,pt,grad_vid.shape[1])
-        dnls_cuda.foldk_backward(grad_vid,patches,dists,inds,dilation)
+        stnls_cuda.foldk_backward(grad_vid,patches,dists,inds,dilation)
         return patches,None,None,None,None,None,None,None,None,None,None
 
 class FoldK(th.nn.Module):

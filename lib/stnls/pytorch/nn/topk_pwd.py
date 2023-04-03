@@ -1,6 +1,6 @@
 
 import torch as th
-import dnls_cuda
+import stnls_cuda
 
 def run(vid,inds0,inds1,ps,pt=1,dilation=1,
         reflect_bounds=True,use_adj=False,
@@ -12,7 +12,7 @@ def run(vid,inds0,inds1,ps,pt=1,dilation=1,
     dists = th.zeros(shape,dtype=vid.dtype,device=vid.device)
 
     # -- run --
-    dnls_cuda.topk_pwd(vid,inds0,inds1,dists,ps,pt,dilation,
+    stnls_cuda.topk_pwd(vid,inds0,inds1,dists,ps,pt,dilation,
                        reflect_bounds,use_adj,
                        off_H0,off_W0,off_H1,off_W1)
     dists = th.sqrt(dists)

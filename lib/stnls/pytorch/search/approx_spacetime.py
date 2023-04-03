@@ -4,10 +4,10 @@ import numpy as np
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- package --
-import dnls
+import stnls
 
 # -- api --
 from .utils import extract_pairs
@@ -60,7 +60,7 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         if wt > 0:
-            inds_t = dnls.nn.temporal_inds(filter_k(inds,kr_t,k),wt,fflow,bflow)
+            inds_t = stnls.nn.temporal_inds(filter_k(inds,kr_t,k),wt,fflow,bflow)
             inds_t = rearrange(inds_t,'B HD Q ST K tr -> B HD Q (ST K) tr')
 
         # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -94,7 +94,7 @@ class ApproxSpaceTimeSearchFunction(th.autograd.Function):
 
         # -- topk --
         if wt > 0:
-            dists,inds = dnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+            dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
                                       descending=descending,unique=True)
 
         # -- setup ctx --
@@ -222,7 +222,7 @@ class ApproxSpaceTimeSearch(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#     [Direct API] dnls.search.approx_spacetime(...)
+#     [Direct API] stnls.search.approx_spacetime(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -250,7 +250,7 @@ def _apply(vid0, vid1, fflow, bflow,
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#       [Python Dict API] dnls.search.init(pydict)
+#       [Python Dict API] stnls.search.init(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 

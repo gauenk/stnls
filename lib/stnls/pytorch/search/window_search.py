@@ -8,7 +8,7 @@ from einops import rearrange
 import torch.nn.functional as nnf
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- local --
 # from .search_utils import *
@@ -63,7 +63,7 @@ class WindowSearchFunction(th.autograd.Function):
         # print("vid0.shape: ",vid0.shape)
 
         # -- forward --
-        dnls_cuda.window_search_forward(vid0, vid1, fflow, bflow,
+        stnls_cuda.window_search_forward(vid0, vid1, fflow, bflow,
                                         dists_exh, inds_exh,
                                         qstart, stride0, n_h0, n_w0,
                                         h0_off, w0_off, h1_off, w1_off,
@@ -141,7 +141,7 @@ class WindowSearchFunction(th.autograd.Function):
 
         # -- allow for repeated exec --
         if nbwd == 1:
-            dnls_cuda.window_search_backward(grad_vid0,grad_vid1,
+            stnls_cuda.window_search_backward(grad_vid0,grad_vid1,
                                              vid0,vid1,
                                              grad_dists,inds,
                                              qstart,stride0,n_h0,n_w0,
@@ -152,7 +152,7 @@ class WindowSearchFunction(th.autograd.Function):
             for _ in range(nbwd):
                 grad_vid0_i = allocate_vid(vid_shape,grad_dists.device)
                 grad_vid1_i = allocate_vid(vid_shape,grad_dists.device)
-                dnls_cuda.window_search_backward(grad_vid0_i,grad_vid1_i,
+                stnls_cuda.window_search_backward(grad_vid0_i,grad_vid1_i,
                                                  vid0,vid1,
                                                  grad_dists,inds,
                                                  qstart,stride0,n_h0,n_w0,

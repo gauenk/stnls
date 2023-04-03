@@ -5,10 +5,10 @@ import numpy as np
 from einops import rearrange
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 # -- package --
-import dnls
+import stnls
 
 # -- local --
 from .utils import *
@@ -64,7 +64,7 @@ class AccFlowsSearchFunction(th.autograd.Function):
         dists_exh,inds_exh = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
         # -- forward --
-        dnls_cuda.search_with_heads_forward(vid0, vid1, fflow, bflow,
+        stnls_cuda.search_with_heads_forward(vid0, vid1, fflow, bflow,
                                             dists_exh, inds_exh,
                                             qshift, stride0, nH0, nW0,
                                             h0_off, w0_off, h1_off, w1_off,
@@ -83,11 +83,11 @@ class AccFlowsSearchFunction(th.autograd.Function):
             dists_exh,inds_exh = run_remove_self_cuda(dists_exh,inds_exh,qshift,
                                                       stride0,nH0,nW0)
         if anchor_self:
-            dnls.nn.anchor_self(dists_exh,inds_exh,stride0,H,W)
+            stnls.nn.anchor_self(dists_exh,inds_exh,stride0,H,W)
 
         # -- topk --
         if k > 0:
-            dists,inds = dnls.nn.topk(dists_exh,inds_exh,k,dim=3,anchor=anchor_self,
+            dists,inds = stnls.nn.topk(dists_exh,inds_exh,k,dim=3,anchor=anchor_self,
                                       descending=descending,unique=False)
         else:
             dists,inds = dists_exh,inds_exh
@@ -126,7 +126,7 @@ class AccFlowsSearchFunction(th.autograd.Function):
         nW0 = (W-1)//ctx.stride0+1
 
         # -- allow for repeated exec --
-        bwd_fxn = dnls_cuda.search_with_heads_backward
+        bwd_fxn = stnls_cuda.search_with_heads_backward
         if ctx.nbwd == 1:
             bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,
                     grad_dists,inds,ctx.qshift,ctx.stride0,nH0,nW0,

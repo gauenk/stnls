@@ -14,10 +14,10 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
 
 # -- meshgrid --
 
@@ -80,7 +80,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -94,7 +94,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     vid /= vid.max()
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -125,7 +125,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     use_adj = True
     # oh0, ow0, oh1, ow1 = 0, 0, 0, 0
     # oh0, ow0, oh1, ow1 = -oh0, -ow0, -oh1, -ow1
-    search = dnls.search.init("prod",flows.fflow, flows.bflow,
+    search = stnls.search.init("prod",flows.fflow, flows.bflow,
                                k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                chnls=-1,dilation=dil, stride=stride1,
                                reflect_bounds=reflect_bounds,use_k=False,
@@ -133,7 +133,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
                                exact=exact)
     # -- query inds --
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+    iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
 
     # -- run search --
@@ -158,7 +158,7 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
 
     # -- run search --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid,ps,stride=stride0,mode=mode,
+    score_gt,_ = stnls.simple.prod_search_nn.run_nn(vid,ps,stride=stride0,mode=mode,
                                                    dilation=dil,vid1=vidr)
     # print(score_gt.shape)
     # print(score_te.shape)
@@ -176,12 +176,12 @@ def test_cu_vs_th_fwd(ps,stride,dilation,exact):
     # diff = th.abs(score_te - score_gt).mean((-1,-2))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
     # diff = th.abs(score_te - score_gt).mean((0,1))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     tol = 1e-5
@@ -224,7 +224,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[[4],].contiguous()/255.
     vid = vid + 25./255. * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -239,7 +239,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -271,14 +271,14 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- exec fold fxns --
-    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+    search = stnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,
                               chnls=chnls,dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,use_k=False,
                               exact=exact,search_abs=True)
     # -- query inds
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+    iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
     # -- binary image to remove float error --
     # vidr = None
@@ -324,7 +324,7 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,
+    score_gt,_ = stnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,
                                                    dilation=dil,vid1=vidr_gt,
                                                    mode=mode)
     # -- vis --
@@ -333,8 +333,8 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
     # for i in range(len(args)):
     #     print(i,th.unique(args[i]))
     # if diff.max() > 1e-10: diff /= diff.max()
-    # dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/prod_search/","diff")
-    # dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/prod_search/","diff_d00")
+    # stnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/prod_search/","diff")
+    # stnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/prod_search/","diff_d00")
 
     # -- compare fwd --
     max_error = th.abs(score_te - score_gt).max().item()
@@ -360,9 +360,9 @@ def test_cu_vs_th_vid_bwd(ps,stride,dilation,exact):
         # print(grads_gt[0,-1,-10:,-10:])
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # diff /= diff.max()
-        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
         # print(idx)
 
         # -- compare grads --
@@ -409,7 +409,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[[4],].contiguous()/255.
     vid = vid + 25./255. * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -424,7 +424,7 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -458,14 +458,14 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
     use_adj = True
     # use_adj = False
     # oh0, ow0, oh1, ow1 = 0,0,0,0
-    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+    search = stnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
                               chnls=-1,dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,
                               use_k=False,exact=exact,search_abs=True)
     # -- query inds
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+    iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
     # -- binary image to remove float error --
     # vidr = None
@@ -548,12 +548,12 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
 
     # -- run nn --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid0_gt,ps,stride=stride0,
+    score_gt,_ = stnls.simple.prod_search_nn.run_nn(vid0_gt,ps,stride=stride0,
                                                    dilation=dil,vid1=vid1_gt,mode=mode)
     # -- vis --
     diff = th.abs(score_te - score_gt)/(score_gt.abs()+1e-10)
     args = th.where(diff>1e-10)
-    save_burst = dnls.testing.data.save_burst
+    save_burst = stnls.testing.data.save_burst
     # for i in range(len(args)):
     #     print(i,th.unique(args[i]))
     # if diff.max() > 1e-10: diff /= diff.max()
@@ -588,9 +588,9 @@ def test_cu_vs_th_params_bwd(ps,stride,dilation,exact):
         # print(grads_gt[0,-1,-10:,-10:])
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # diff /= diff.max()
-        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
         # print(idx)
 
         # -- compare grads --
@@ -631,13 +631,13 @@ def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
     adj = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
     vid[...] = th.randn_like(vid)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -663,7 +663,7 @@ def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
 
     # -- query inds --
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+    iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
 
     # -- pads --
@@ -673,9 +673,9 @@ def test_simp_vs_nn_fwd(ps,stride,dilation,top,btm,left,right,exact):
     # n_w = (sq_w-1)//stride0+1
 
     # -- run search --
-    score_simp,_ = dnls.simple.prod_search_nn.run(vid,ps,stride=stride0,dilation=dil)
+    score_simp,_ = stnls.simple.prod_search_nn.run(vid,ps,stride=stride0,dilation=dil)
     # print("iqueries.shape: ",iqueries.shape)
-    score_te,inds_te = dnls.simple.prod_search.run(vid,iqueries,flows,k,
+    score_te,inds_te = stnls.simple.prod_search.run(vid,iqueries,flows,k,
                                                    ps,pt,ws,wt,chnls,
                                                    stride0=stride0,stride1=stride1,
                                                    dilation=dil,
@@ -718,12 +718,12 @@ def test_cu_vs_simp_fwd(k,ps,stride,dilation,top,btm,left,right,exact):
     adj = 0
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:2,].contiguous()/255.
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -752,23 +752,23 @@ def test_cu_vs_simp_fwd(k,ps,stride,dilation,top,btm,left,right,exact):
     oh1,ow1,hp,wp = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- exec fold fxns --
-    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+    search = stnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,
                               chnls=chnls,dilation=dil, stride=stride1,
                               use_k=use_k,search_abs=search_abs,
                               reflect_bounds=True,use_adj=True)
-    fold_nl = dnls.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
+    fold_nl = stnls.iFold(vshape,coords,stride=stride1,dilation=dil,adj=adj)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"start-exec")
 
     # -- query inds
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+    iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
 
     # -- run search --
     score_te,inds_te = search(vid,iqueries)
-    score_simp,inds_simp = dnls.simple.prod_search.run(vid,iqueries,flows,k,
+    score_simp,inds_simp = stnls.simple.prod_search.run(vid,iqueries,flows,k,
                                                        ps,pt,ws,wt,chnls,
                                                        stride0=stride0,stride1=stride1,
                                                        dilation=dil,use_k=use_k,
@@ -814,9 +814,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid)[:1].to(device).contiguous()
-    flows = dnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --
@@ -856,7 +856,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- exec fold fxns --
-    search = dnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
+    search = stnls.search.init("prod",flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,use_adj=use_adj,
                               chnls=-1,dilation=dil, stride=stride1,
                               reflect_bounds=reflect_bounds,
@@ -871,7 +871,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
         nbatch_i =  min(nbatch, ntotal - qindex)
 
         # -- get query inds --
-        iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch_i,stride,
+        iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch_i,stride,
                                                     coords,t,device)
 
         # -- run prod_search --
@@ -880,7 +880,7 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
 
     # -- forward reference --
     mode = "reflect" if reflect_bounds else "zero"
-    score_gt,_ = dnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,mode=mode,
+    score_gt,_ = stnls.simple.prod_search_nn.run_nn(vid_gt,ps,stride=stride0,mode=mode,
                                                dilation=dil,vid1=vidr_gt)
     score_gt = score_gt.view(h*w,-1).T
 
@@ -896,8 +896,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right,ws,wt):
     th.autograd.backward(vid_gt,vid_grad)
     th.autograd.backward(vid_te,vid_grad)
     # gpu_mem.print_gpu_stats(gpu_stats,"post-bkw")
-    # dnls.testing.data.save_burst(vid_gt,"./output/","vid_gt")
-    # dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
+    # stnls.testing.data.save_burst(vid_gt,"./output/","vid_gt")
+    # stnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
 
     # -- get grads --
     grad_gt = vid_gt.grad

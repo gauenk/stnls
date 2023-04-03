@@ -15,11 +15,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- meshgrid --
 
@@ -78,14 +78,14 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     use_self = anchor_self
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -106,7 +106,7 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
     h1_off,w1_off = 0,0
 
     # -- exec fold fxns --
-    search_nok = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    search_nok = stnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                   k, ps, pt, ws, wt, nheads,
                                   chnls=-1,dilation=dil,
                                   stride0=stride0, stride1=stride1,
@@ -116,7 +116,7 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
                                   search_abs=False,use_adj=use_adj,
                                   anchor_self=False,use_self=False,
                                   exact=exact)
-    search_k = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    search_k = stnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                 k, ps, pt, ws, wt, nheads,
                                 chnls=-1,dilation=dil,
                                 stride0=stride0, stride1=stride1,
@@ -133,8 +133,8 @@ def test_fwd(k_r,ws_r,ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exa
 
     # -- testing --
     if anchor_self:
-        dnls.nn.anchor_self(dists,inds,stride0,H,W)
-    dists_te,inds_te = dnls.nn.topk(dists,inds,k,dim=3,
+        stnls.nn.anchor_self(dists,inds,stride0,H,W)
+    dists_te,inds_te = stnls.nn.topk(dists,inds,k,dim=3,
                                     anchor=anchor_self,descending=True)
     # -- compare 1st --
     diff = th.sum(th.abs(dists_gt[...,:1] - dists_te[...,:1]))

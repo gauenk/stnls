@@ -4,7 +4,7 @@
 import torch as th
 
 # -- flow --
-import dnls
+import stnls
 from dev_basics import flow
 
 # -- timing --
@@ -24,7 +24,7 @@ def run(cfg):
     F = cfg.nftrs_per_head * cfg.nheads
     vid = th.randn((1,cfg.nframes,F,cfg.H,cfg.W),device=device,dtype=th.float32)
     flows = flow.orun(vid,False)
-    aflows = dnls.nn.ofa.run(flows,stride0=cfg.stride0)
+    aflows = stnls.nn.ofa.run(flows,stride0=cfg.stride0)
 
     # -- get the inds --
     nl_search = api.nl.init(cfg)

@@ -13,11 +13,11 @@ from einops import rearrange,repeat
 # -- patchify --
 from torch.nn.functional import fold,unfold,pad
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/prod_search")
@@ -79,7 +79,7 @@ def test(ps,stride0,dilation,exact):
     zflow = th.zeros((B,T,2,H,W),dtype=th.float32,device="cuda:0")
 
     # -- get inds --
-    search = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
+    search = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
                                         dist_type="l2",dilation=dilation,
                                         stride0=stride0, use_adj=use_adj,
                                         reflect_bounds=reflect_bounds)
@@ -88,9 +88,9 @@ def test(ps,stride0,dilation,exact):
 
 
     # -- run test --
-    pwd_te = dnls.nn.topk_pwd.run(vid,inds0,inds1,ps,
+    pwd_te = stnls.nn.topk_pwd.run(vid,inds0,inds1,ps,
                                   pt,dilation,reflect_bounds,use_adj)
-    pwd_gt = dnls.simple.topk_pwd.run(vid,inds0,inds1,ps,
+    pwd_gt = stnls.simple.topk_pwd.run(vid,inds0,inds1,ps,
                                       pt,dilation,reflect_bounds,use_adj)
 
     pwd_te = th.sort(pwd_te,-1)[0]

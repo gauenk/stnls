@@ -8,7 +8,7 @@ Directly accumulate in video
 import torch as th
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 from ...utils.timer import ExpTimer
 from ...utils.inds import get_nums_hw
@@ -49,7 +49,7 @@ class WpSumHeadsFunction2Vid(th.autograd.Function):
         t,c,h,w = vid.shape
         n_h,n_w = get_nums_hw(vid.shape,stride,ps,dilation,"pad_same")
         vid_fill = th.zeros((t,nheads,c,h,w),device=vid.device,dtype=vid.dtype)
-        dnls_cuda.wpsum_heads_2vid_forward(vid, vid_fill, dists, inds,
+        stnls_cuda.wpsum_heads_2vid_forward(vid, vid_fill, dists, inds,
                                            h_off,w_off,qstart,n_h,n_w,
                                            ps,pt,stride,dilation,adj,
                                            reflect_bounds,only_full)
@@ -92,7 +92,7 @@ class WpSumHeadsFunction2Vid(th.autograd.Function):
 
         # -- gradient for video --
         grad_vid = allocate_vid(vid_shape,grad_patches.device)
-        dnls_cuda.wpsum_heads_2vid_backward_vid(grad_vid,grad_vid_fill,
+        stnls_cuda.wpsum_heads_2vid_backward_vid(grad_vid,grad_vid_fill,
                                                 dists,inds,h_off,w_off,
                                                 qstart,n_h,n_w,
                                                 ps,pt,stride,dilation,adj,
@@ -100,7 +100,7 @@ class WpSumHeadsFunction2Vid(th.autograd.Function):
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
-        dnls_cuda.wpsum_heads_2vid_backward_dists(grad_dists,grad_patches,
+        stnls_cuda.wpsum_heads_2vid_backward_dists(grad_dists,grad_patches,
                                                   vid,inds,h_off,w_off,
                                                   qstart,n_h,n_w,
                                                   ps,pt,stride,dilation,adj,

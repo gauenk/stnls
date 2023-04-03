@@ -55,7 +55,7 @@ def compile_gpu_signature(
     # -- ffi --
     # ffi = FFI()
     # ffi.cdef("void _Z11simple_testPvS_();")
-    # fn = "/home/gauenk/Documents/packages/dnls/lib/dnls_cuda.cpython-38-x86_64-linux-gnu.so"
+    # fn = "/home/gauenk/Documents/packages/stnls/lib/stnls_cuda.cpython-38-x86_64-linux-gnu.so"
     # print(ffi.RTLD_GLOBAL,ffi.RTLD_LOCAL)
     # lib = ffi.dlopen(fn,flags=ffi.RTLD_GLOBAL | ffi.RTLD_LOCAL | ffi.RTLD_DEEPBIND)
     # print(lib)

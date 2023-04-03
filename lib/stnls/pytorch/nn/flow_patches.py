@@ -23,7 +23,7 @@ Get/Compare the patches from optical flow to assess their quality for nls
 """
 
 import torch as th
-import dnls
+import stnls
 from einops import rearrange
 from easydict import EasyDict as edict
 
@@ -31,7 +31,7 @@ from easydict import EasyDict as edict
 def get_patches(vid,flows,ps):
 
     patches = edict()
-    UnfoldK = dnls.UnfoldK(ps)
+    UnfoldK = stnls.UnfoldK(ps)
     for f in ["fflow","bflow"]:
 
         # -- non-local indices --
@@ -60,7 +60,7 @@ def tmp():
 
     # -- compute metrics --
     flows = edict({"fflow":fflow,"bflow":bflow})
-    UnfoldK = dnls.UnfoldK(1)
+    UnfoldK = stnls.UnfoldK(1)
     for f in ["fflow","bflow"]:
 
         # -- non-local indices --
@@ -87,7 +87,7 @@ def tmp():
     return warp
 
 def get_warp_2f(vid,fflow,bflow,ws=3,ps=5,stride0=1,warp_ps=4,k=4):
-    sim_fwd_bwd = dnls.warp.SimFwdBwd(warp_ps,ws,ps,k,stride0)
+    sim_fwd_bwd = stnls.warp.SimFwdBwd(warp_ps,ws,ps,k,stride0)
     fwd,bwd = sim_fwd_bwd(vid,fflow,bflow)
     return fwd,bwd
 
@@ -103,14 +103,14 @@ def tmp(vid,fflow,bflow,ws=2,ps=7,stride0=2):
     warp_ps = 4
 
     # -- search --
-    dists,inds = dnls.search.nls(vid,vid,fflow,bflow,
+    dists,inds = stnls.search.nls(vid,vid,fflow,bflow,
                                  ws,wt,ps,-1,dist_type="l2",
                                  stride0=stride0,
                                  anchor_self=False,use_adj=True)
 
     # -- top-K across time --
-    # dists,inds = dnls.nn.topk(dists,inds,8,dim=3,anchor=False)
-    dists,inds = dnls.nn.topk_time(dists,inds,4,ws,dim=3,anchor=False)
+    # dists,inds = stnls.nn.topk(dists,inds,8,dim=3,anchor=False)
+    dists,inds = stnls.nn.topk_time(dists,inds,4,ws,dim=3,anchor=False)
     # print("inds.shape: ",inds.shape)
     # inds_ref = inds[:,:,:,0]
     # inds0 = inds[:,:,:,1::2]
@@ -179,7 +179,7 @@ def warp_frame(vid,inds,ps,stride0):
     # -- patches --
     print(inds[0,0,:3,:])
     print(inds[0,0,-3:,:])
-    UnfoldK = dnls.UnfoldK(ps,adj=0)
+    UnfoldK = stnls.UnfoldK(ps,adj=0)
     patches = UnfoldK(vid,inds[:,0]) # nheads == 1
     print(patches.shape)
     K = patches.shape[2]
@@ -190,7 +190,7 @@ def warp_frame(vid,inds,ps,stride0):
     # -- fold --
     B = vid.shape[0]
     vshape = [B*K,] + list(vid.shape[1:])
-    fold = dnls.iFoldz(vshape,None,stride=stride0)
+    fold = stnls.iFoldz(vshape,None,stride=stride0)
     fold(patches)
     warp = fold.vid / fold.zvid
     print(warp.shape)

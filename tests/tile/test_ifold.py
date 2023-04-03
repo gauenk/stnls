@@ -14,9 +14,9 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
 
 # -- meshgrid --
 
@@ -76,13 +76,13 @@ def test_nn_with_unfold(ps,stride,dilation):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
 
     # -- compute optical flow --
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    # fvids = dnls.flow.flows2vids(flow)
-    # dnls.testing.data.save_burst(fvids.fflow,"./output/","ff_vid")
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    # fvids = stnls.flow.flows2vids(flow)
+    # stnls.testing.data.save_burst(fvids.fflow,"./output/","ff_vid")
 
     # -- image params --
     device = vid.device
@@ -126,14 +126,14 @@ def test_nn_with_unfold(ps,stride,dilation):
     vid_nn = th.stack(vid_nn)
 
     # -- our forward --
-    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,
+    fold_nl = stnls.iFold(vshape,coords,stride=stride,dilation=dil,
                          adj=ps//2,reflect_bounds=True,only_full=True)
     vid_nl = fold_nl(patches_nl,0)#[:,:,top:btm,left:right]
 
     vid_nn_s  = vid_nn /vid_nn.max()
     vid_nl_s = vid_nl / vid_nl.max()
-    # dnls.testing.data.save_burst(vid_nn_s,"./output/","vid_nn")
-    # dnls.testing.data.save_burst(vid_nl_s,"./output/","vid_nl")
+    # stnls.testing.data.save_burst(vid_nn_s,"./output/","vid_nn")
+    # stnls.testing.data.save_burst(vid_nl_s,"./output/","vid_nl")
 
     # -- run backward --
     vid_grad = th.randn_like(vid_nl)
@@ -157,7 +157,7 @@ def test_nn_with_unfold(ps,stride,dilation):
     # -- viz --
     diff = th.mean((grad_nn - grad_nl)**2,(-2,-1))
     diff /= diff.max()
-    dnls.testing.data.save_burst(diff[0],"./output/","grad")
+    stnls.testing.data.save_burst(diff[0],"./output/","grad")
 
     # -- check backward --
     error = th.sum((grad_nn - grad_nl)**2).item()
@@ -191,11 +191,11 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
 
     # -- compute optical flow --
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device
@@ -218,15 +218,15 @@ def test_nn(ps,stride,dilation,top,btm,left,right):
     nbatches = (qTotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0,
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.iFold(vshape,coords,stride=stride,dilation=dil,adj=0,
                          reflect_bounds=False)
 
     # -- patches for ifold --
     index = 0
-    queryInds = dnls.utils.inds.get_iquery_batch(index,nbatch,stride,
+    queryInds = stnls.utils.inds.get_iquery_batch(index,nbatch,stride,
                                                  coords,t,device)
-    nlDists,nlInds = dnls.simple.search.run_batch(vid,queryInds,flow,k,
+    nlDists,nlInds = stnls.simple.search.run_batch(vid,queryInds,flow,k,
                                                   ps,pt,ws,wt,chnls,
                                                   stride=stride,dilation=dil)
     assert th.sum(queryInds - nlInds[0,:,0]) < 1e-10
@@ -306,9 +306,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     rbounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --
@@ -331,8 +331,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil,
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.iFold(vshape,coords,stride=stride,dilation=dil,
                          reflect_bounds=rbounds,adj=0)
     patches_nl = []
     gpu_mem.print_gpu_stats(gpu_stats,"pre-loop")
@@ -344,9 +344,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
         nbatch_i =  min(nbatch, ntotal - qindex)
 
         # -- get patches --
-        qinds = dnls.utils.inds.get_iquery_batch(qindex,nbatch_i,stride,
+        qinds = stnls.utils.inds.get_iquery_batch(qindex,nbatch_i,stride,
                                                      coords,t,device)
-        dists,inds = dnls.simple.search.run_batch(vid,qinds,flow,k,
+        dists,inds = stnls.simple.search.run_batch(vid,qinds,flow,k,
                                                   ps,pt,ws,wt,chnls,
                                                   stride=stride,dilation=dil)
         patches_nl_i = unfold_k(vid,inds)[0]
@@ -365,9 +365,9 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
 
     # -- forward all at once --
     qindex,nbatch = 0,ntotal
-    qinds = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
+    qinds = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
                                              coords,t,device)
-    dists,inds = dnls.simple.search.run_batch(vid,qinds,flow,k,
+    dists,inds = stnls.simple.search.run_batch(vid,qinds,flow,k,
                                               ps,pt,ws,wt,chnls,
                                               stride=stride,dilation=dil)
     patches_nn = unfold_k(vid,inds)[0]
@@ -383,8 +383,8 @@ def test_batched(ps,stride,dilation,top,btm,left,right):
     th.autograd.backward(vid_nn,vid_grad)
     th.autograd.backward(vid_nl,vid_grad)
     gpu_mem.print_gpu_stats(gpu_stats,"post-bkw")
-    # dnls.testing.data.save_burst(vid_nn,"./output/","vid_nn")
-    # dnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
+    # stnls.testing.data.save_burst(vid_nn,"./output/","vid_nn")
+    # stnls.testing.data.save_burst(vid_nl,"./output/","vid_nl")
 
     # -- get grads --
     grad_nn = patches_nn.grad
@@ -434,9 +434,9 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- image params --
     device = vid.device
@@ -464,16 +464,16 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     nbatches = (ntotal-1) // qSize + 1
 
     # -- exec fold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
-    shift_fold_nl = dnls.iFold(shift_vshape,shift_coords,
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.iFold(vshape,coords,stride=stride,dilation=dil)
+    shift_fold_nl = stnls.iFold(shift_vshape,shift_coords,
                                      stride=stride,dilation=dil)
 
     # -- patches for ifold --
     index = 0
-    queryInds = dnls.utils.inds.get_iquery_batch(index,qSize,stride,
+    queryInds = stnls.utils.inds.get_iquery_batch(index,qSize,stride,
                                                  coords,t,device)
-    nlDists,nlInds = dnls.simple.search.run_batch(vid,queryInds,flow,k,
+    nlDists,nlInds = stnls.simple.search.run_batch(vid,queryInds,flow,k,
                                                   ps,pt,ws,wt,chnls,
                                                   stride=stride,dilation=dil)
     assert th.sum(queryInds - nlInds[0,:,0]) < 1e-10
@@ -489,11 +489,11 @@ def test_shifted(ps,stride,dilation,top,btm,left,right):
     # -- run forward --
     top,left,btm,right = coords
     vid_shift = shift_fold_nl(patches_nn,0)
-    dnls.testing.data.save_burst(vid_shift[0],"./output/tests/","vid_shift")
+    stnls.testing.data.save_burst(vid_shift[0],"./output/tests/","vid_shift")
     vid_shift = vid_shift[:,:,:,top+shift:btm+shift]
     vid_shift = vid_shift[:,:,:,:,left+shift:right+shift]
     vid_nl = fold_nl(patches_nl,0)
-    dnls.testing.data.save_burst(vid_nl[0],"./output/tests/","vid_nl")
+    stnls.testing.data.save_burst(vid_nl[0],"./output/tests/","vid_nl")
     vid_nl = vid_nl[:,:,top:btm,left:right]
 
     # -- run backward --
@@ -547,9 +547,9 @@ def test_single_fold():
     gpu_stats = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device).contiguous()
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- unpack image --
@@ -577,15 +577,15 @@ def test_single_fold():
     # vid_pad = pad(vid,[padf,]*4,mode="reflect")
 
     # -- get folds --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
-    wfold_nl = dnls.iFold(vshape,coords,stride=stride,dilation=dil)
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.iFold(vshape,coords,stride=stride,dilation=dil)
+    wfold_nl = stnls.iFold(vshape,coords,stride=stride,dilation=dil)
 
     # -- get patches with dilation --
     qindex,k,pt,chnls = 0,1,1,1
-    queryInds = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
+    queryInds = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride,
                                                  coords,t,device)
-    nlDists,nlInds = dnls.simple.search.run_batch(vid,queryInds,flow,
+    nlDists,nlInds = stnls.simple.search.run_batch(vid,queryInds,flow,
                                                   k,ps,pt,ws,wt,chnls,
                                                   stride=stride,dilation=dil)
     patches = unfold_k(vid,nlInds[:,:,[0]])
@@ -595,10 +595,10 @@ def test_single_fold():
     vid_f /= wvid_f
 
     # -- inspect --
-    # dnls.testing.data.save_burst(vid_f,"./output/tests/","vid_f")
+    # stnls.testing.data.save_burst(vid_f,"./output/tests/","vid_f")
     # diff = th.abs(vid-vid_f)
     # if diff.max() > 1e-3: diff /= diff.max()
-    # dnls.testing.data.save_burst(diff,"./output/tests/","diff_f")
+    # stnls.testing.data.save_burst(diff,"./output/tests/","diff_f")
 
     # -- misc --
     error = th.sum((vid_f - vid)**2).item()

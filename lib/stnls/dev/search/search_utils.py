@@ -12,7 +12,7 @@ from ...utils.pads import comp_pads
 # from .unique_topk import unique_topk
 
 # -- cpp cuda kernel --
-import dnls_cuda
+import stnls_cuda
 
 def get_topk(l2_vals,l2_inds,vals,inds):
 
@@ -131,7 +131,7 @@ def run_remove_self_cuda(dists,inds,qstart,stride,n_h,n_w):
     # print("dists.shape,inds.shape:" ,dists.shape,inds.shape,n_h,n_w)
     b,nq,k = dists.shape
     mask = th.zeros((b,nq,k),device=dists.device,dtype=th.bool)
-    dnls_cuda.remove_self_from_search(inds,mask,qstart,stride,n_h,n_w)
+    stnls_cuda.remove_self_from_search(inds,mask,qstart,stride,n_h,n_w)
     # th.cuda.synchronize()
     mask = th.logical_not(mask)
     # print(dists.shape)
