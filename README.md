@@ -1,4 +1,4 @@
-# dnls
+# stnls
 
 Differentiable Non-Local Space-Time Search with Optical Flow: A differentiable non-local search module that allowers users to (i) scale to standard resolution images and (ii) search over multiple frames with optical flow.
 
@@ -9,8 +9,8 @@ Would you like to use optical flow or [remove cropped effects](https://github.co
 ## Install
 
 ```bash
-git clone git@github.com:gauenk/dnls.git
-cd dnls
+git clone git@github.com:gauenk/stnls.git
+cd stnls
 python -m pip install -e .
 ```
 
@@ -20,7 +20,7 @@ python -m pip install -e .
 ```python
 
 import torch as th
-import dnls
+import stnls
 
 # -- init videos -- 
 B = 1 # batchsize
@@ -41,7 +41,7 @@ wt = 3 # time window (wt) in one direction; 2*wt+1 total frames
 ps = 7 # patch size
 k = 10 # number of neighbors
 nheads = 4 # number of heads (in attention). Splits channel dimension.
-search_layer = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads)
+search_layer = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads)
 
 # -- run search --
 dists,inds = search_layer(vid0,vid1,fflow,bflow)
@@ -56,7 +56,7 @@ dists,inds = search_layer(vid0,vid1,fflow,bflow)
 ```python
 
 import torch as th
-import dnls
+import stnls
 
 # -- init --
 B,T,C,H,W = 4,3,12,128,128
@@ -71,7 +71,7 @@ k = 10 # number of neighbors
 nheads = 4 # number of heads (in attention). Splits channel dimension.
 
 # -- run search --
-search_layer = dnls.search.nls(vid0, vid1, fflow, bflow, ws, wt, ps, k, nheads)
+search_layer = stnls.search.nls(vid0, vid1, fflow, bflow, ws, wt, ps, k, nheads)
 
 ```
 

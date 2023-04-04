@@ -22,10 +22,10 @@ from einops import rearrange,repeat
 # -- torch --
 import torch.nn as nn
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.pytorch.simple import pfc as pfc_gt
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.pytorch.simple import pfc as pfc_gt
 
 # -- meshgrid --
 
@@ -57,7 +57,7 @@ def test_fwd(ps,stride):
     ext = "jpg"
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     vid = vid.to(device).contiguous()
     vid = vid[...,:3,:,:]
     # vid[:,:,0,:,:] = vid[:,:,0,:,:]
@@ -77,10 +77,10 @@ def test_fwd(ps,stride):
     c_out = 8
 
     # -- compute optical flow --
-    flow = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flow = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- init fc layer --
-    pfc = dnls.nn.init("pfc",c_in,c_out,ps,stride)
+    pfc = stnls.nn.init("pfc",c_in,c_out,ps,stride)
     dim1 = ps*ps*c_out
     dim0 = ps*ps*c_in
     fc_layer = nn.Linear(dim0,dim1).to(device)

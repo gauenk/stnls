@@ -13,11 +13,11 @@ from einops import rearrange,repeat
 # -- patchify --
 from torch.nn.functional import fold,unfold,pad
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/prod_search")
@@ -61,7 +61,7 @@ def test(ps,stride,dilation,exact):
     # -- get args --
     fflow = th.randn((1,3,2,128,128)).to("cuda:0")
     bflow = th.randn((1,3,2,128,128)).to("cuda:0")
-    flow_acc = dnls.nn.accumulate_flow
+    flow_acc = stnls.nn.accumulate_flow
     pfflow,pbflow = flow_acc(fflow,bflow)
     print(pfflow.shape)
     print(pbflow.shape)

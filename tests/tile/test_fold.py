@@ -11,8 +11,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- test func --
 from torch.nn.functional import fold,unfold,pad
@@ -37,10 +37,10 @@ def test_nn_fold():
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -61,14 +61,14 @@ def test_nn_fold():
     vid = vid.contiguous()
 
     # -- exec fold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.Fold((t,c,h,w),stride=stride,dilation=dil)
 
     # -- get [patches & nlInds] --
     index = 0
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,stride,
                                                 t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+    nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
     patches = unfold_k(vid,nlInds)
     # patches_uf = run_unfold(vid,ps,stride=stride,dil=dil)
@@ -80,7 +80,7 @@ def test_nn_fold():
     start = h*w
     mask[queryInds[:,0],queryInds[:,1],queryInds[:,2]] = 1
     mask = repeat(mask,'t h w -> t c h w',c=3)
-    dnls.testing.data.save_burst(mask,SAVE_DIR,"mask")
+    stnls.testing.data.save_burst(mask,SAVE_DIR,"mask")
     assert th.sum(queryInds - nlInds[:,0]) < 1e-10
 
     #
@@ -107,11 +107,11 @@ def test_nn_fold():
     vid_nl_s = vid_nl / vid_nl.max()
     # print("vid_nl.max().item(): ",vid_nl.max().item())
     # print("vid_nn.max().item(): ",vid_nn.max().item())
-    dnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
-    dnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
+    stnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
+    stnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
     diff = th.abs(vid_nn_s - vid_nl_s)
     diff /= diff.max()
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    stnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     # -- vis --
     # print("\n")
@@ -169,10 +169,10 @@ def test_batched_fold():
     gpu_stats = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -200,8 +200,8 @@ def test_batched_fold():
         print("[pre-def] GPU Max: %2.4f" % (gpu_max))
 
     # -- exec fold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    fold_nl = dnls.Fold((t,c,h,w),stride=stride,dilation=dil)
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    fold_nl = stnls.Fold((t,c,h,w),stride=stride,dilation=dil)
     agg_patches = []
     # vid_nl = th.zeros((t,c,h,w),device=device)
 
@@ -215,9 +215,9 @@ def test_batched_fold():
         # -- get [patches & nlInds] --
         qindex = min(qSize * index,qTotal)
         qSize = min(qSize,qTotal - qindex)
-        queryInds = dnls.utils.inds.get_query_batch(qindex,qSize,stride,
+        queryInds = stnls.utils.inds.get_query_batch(qindex,qSize,stride,
                                                     t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+        nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         patches_nl = unfold_k(vid,nlInds)
         del queryInds,nlDists,nlInds
@@ -244,7 +244,7 @@ def test_batched_fold():
 
         # -- save --
         # vid_nl_p = vid_nl / (ps*ps)
-        # dnls.testing.data.save_burst(vid_nl_p,SAVE_DIR,"vid_nl_%d" % index)
+        # stnls.testing.data.save_burst(vid_nl_p,SAVE_DIR,"vid_nl_%d" % index)
 
         # -- agg for testing --
         agg_patches.append(patches_nl)
@@ -271,9 +271,9 @@ def test_batched_fold():
     nw = int((w-1) // stride) + 1
     qSize = t * (nh) * (nh)
     # qSize = t * (h//stride) * (w//stride)
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,stride,
                                                 t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+    nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
     # -- vis --
     del queryInds,nlDists
@@ -319,12 +319,12 @@ def test_batched_fold():
     # print("vid_nl.max(): ",vid_nl.max())
     vid_nn_s = vid_nn / vid_nn.max()
     vid_nl_s = vid_nl / vid_nl.max()
-    dnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
-    dnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
+    stnls.testing.data.save_burst(vid_nn_s,SAVE_DIR,"vid_nn")
+    stnls.testing.data.save_burst(vid_nl_s,SAVE_DIR,"vid_nl")
     psHalf = ps//2
     diff = th.abs(vid_nn_s - vid_nl_s)
     diff /= diff.max()
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    stnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     # -- vis --
     # print("\n")
@@ -367,7 +367,7 @@ def test_batched_fold():
     errors = th.mean((grad_nn - grad_nl)**2,dim=-1)
     # print("errors.shape: ",errors.shape)
     errors /= errors.max()
-    # dnls.testing.data.save_burst(errors,SAVE_DIR,"errors")
+    # stnls.testing.data.save_burst(errors,SAVE_DIR,"errors")
 
     # -- view errors --
     # args = th.where(errors > 0)

@@ -22,7 +22,7 @@ void prod_refine_forward_cuda(
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-        // dnls_cuda.prod_refine_forward(vid0, vid1, dists_exh, inds_exh,
+        // stnls_cuda.prod_refine_forward(vid0, vid1, dists_exh, inds_exh,
         //                               self_dists, qinds,
         //                               qstart, stride0, n_h0, n_w0,
         //                               h0_off, w0_off, h1_off, w1_off,

@@ -20,10 +20,10 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
 
 # -- meshgrid --
 
@@ -66,7 +66,7 @@ def run_xsearch(ps,stride,dilation,**kwargs):
     adj = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -81,7 +81,7 @@ def run_xsearch(ps,stride,dilation,**kwargs):
     vid /= vid.max()
 
     # -- compute flow --
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.testing.flow.get_flow(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -113,13 +113,13 @@ def run_xsearch(ps,stride,dilation,**kwargs):
     oh1,ow1,_,_ = comp_pads(vid.shape, ps, stride1, dil)
 
     # -- exec fold fxns --
-    xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
+    xsearch = stnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, k, ps, pt,
                                          ws, wt, oh0, ow0, oh1, ow1,
                                          chnls=chnls,dilation=dil, stride=stride1,
                                          use_bound=True,use_k=False,exact=True)
     # -- query inds
     qindex = 0
-    iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
+    iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch,stride0,
                                                 coords,t,device)
     # -- binary image to remove float error --
     # vidr = None
@@ -173,7 +173,7 @@ def run_xsearch(ps,stride,dilation,**kwargs):
     exit(0)
 
     # -- run nn --
-    nlDists_nn,nlInds_nn = dnls.simple.xsearch_nn.run_nn(vid_nn,ps,stride=stride0,
+    nlDists_nn,nlInds_nn = stnls.simple.xsearch_nn.run_nn(vid_nn,ps,stride=stride0,
                                                          dilation=dil,vid1=vidr_nn)
     sh = nlDists_nn.shape[-1]
 
@@ -183,8 +183,8 @@ def run_xsearch(ps,stride,dilation,**kwargs):
     for i in range(len(args)):
         print(i,th.unique(args[i]))
     if diff.max() > 1e-10: diff /= diff.max()
-    dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
-    dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
+    stnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/xsearch/","diff")
+    stnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/xsearch/","diff_d00")
 
     # -- compare fwd --
     max_error = th.abs(nlDists_cu - nlDists_nn).max().item()

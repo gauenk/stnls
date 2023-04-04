@@ -18,8 +18,8 @@ Examples of fixed regions include hard mining examples for training a network --
 ## Install & Usage
 
 ```bash
-git clone https://github.com/gauenk/dnls
-cd dnls
+git clone https://github.com/gauenk/stnls
+cd stnls
 python -m pip install -e ./lib --user
 ```
 
@@ -51,7 +51,7 @@ Transformers commonly use larger batch sizes such as 1024 or 2048.
 
 In this section, we distinguish this code-based from similar code:
 
-[NAT](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer): This paper proposes using a neighborhood window for the attention map, rather than the entire image. A core CUDA kernel, [linked here](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer/blob/main/natten/src/nattenqkrpb_cuda_kernel.cu), efficiently computes a neighborhood dot-product between Q and V. The `dnls` code base's `search`
+[NAT](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer): This paper proposes using a neighborhood window for the attention map, rather than the entire image. A core CUDA kernel, [linked here](https://github.com/SHI-Labs/Neighborhood-Attention-Transformer/blob/main/natten/src/nattenqkrpb_cuda_kernel.cu), efficiently computes a neighborhood dot-product between Q and V. The `stnls` code base's `search`
 function is similar, but we compute patch similarity (i) using an optional optical flow
 and (ii) using the L2-norm instead of the dot product.
  

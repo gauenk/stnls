@@ -1,5 +1,5 @@
-import dnls
-import dnls_cuda
+import stnls
+import stnls_cuda
 from functools import partial
 import jax.numpy as jnp
 from jax.lib import xla_client
@@ -11,7 +11,7 @@ import numpy as np
 # "search_prod_with_jax"
 # name = "prod_search_with_index"
 # xla_client.register_custom_call_target('prod_search_with_index_forward',
-#                                        dnls_cuda.search_prod_with_jax()['forward'],
+#                                        stnls_cuda.search_prod_with_jax()['forward'],
 #                                        "gpu")
 
 # # src/kepler_jax/kepler_jax.py
@@ -39,16 +39,16 @@ use_rand, exact = False, False
 args = [0,vid0,vid1,fflow,bflow]
 
 from jax._src import api
-import dnls
-print(dnls.jax.search.prod_search_with_index._register())
-fxn = dnls.jax.search.prod_search_with_index.run_fwd
-# print(dnls.jax.search.prod_search_with_index.forward())
+import stnls
+print(stnls.jax.search.prod_search_with_index._register())
+fxn = stnls.jax.search.prod_search_with_index.run_fwd
+# print(stnls.jax.search.prod_search_with_index.forward())
 # iargs = [nframes,nqueries,ws_h,ws_w,wt,
 #          k, ps, pt, chnls, stride0, stride1, dilation,
 #          use_search_abs, reflect_bounds, use_adj,
 #          oh0, ow0, oh1, ow1, remove_self, full_ws, nbwd,
 #          use_rand, exact]
-# fxn = dnls.jax.search.prod_search_with_index.init_fwd(*iargs)
+# fxn = stnls.jax.search.prod_search_with_index.init_fwd(*iargs)
 # fxn()
 
 # dists,inds = api.jit(fxn,static_argnums=(4,5,6,))(*args)

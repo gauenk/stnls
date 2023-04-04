@@ -40,7 +40,7 @@ __inline__ int cpu_bounds(int val, int lim ){
 ****************************/
 
 template <typename scalar_t>
-__global__ void dnls_unfoldk_forward_kernel(
+__global__ void stnls_unfoldk_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
@@ -126,7 +126,7 @@ __global__ void dnls_unfoldk_forward_kernel(
     }
 }
 
-void dnls_cuda_unfoldk_forward(
+void stnls_cuda_unfoldk_forward(
     torch::Tensor vid, torch::Tensor patches, torch::Tensor inds,
     int dilation, int adj, bool use_bounds) {
 
@@ -147,8 +147,8 @@ void dnls_cuda_unfoldk_forward(
   dim3 nthreads(kpb,ps,ps);
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_unfoldk_forward_kernel", ([&] {
-    dnls_unfoldk_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(vid.type(), "stnls_unfoldk_forward_kernel", ([&] {
+    stnls_unfoldk_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
@@ -165,7 +165,7 @@ void dnls_cuda_unfoldk_forward(
 
 
 template <typename scalar_t>
-__global__ void dnls_unfoldk_backward_kernel(
+__global__ void stnls_unfoldk_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_patches,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
@@ -251,7 +251,7 @@ __global__ void dnls_unfoldk_backward_kernel(
 }
 
 
-void dnls_cuda_unfoldk_backward(
+void stnls_cuda_unfoldk_backward(
     torch::Tensor vid, torch::Tensor grad_patches,
     torch::Tensor inds, int dilation, bool exact, int adj, bool use_bounds) {
 
@@ -303,8 +303,8 @@ void dnls_cuda_unfoldk_backward(
   torch::Tensor rand_nums = torch::rand({numQueries,1,1},options);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_unfoldk_backward_kernel", ([&] {
-    dnls_unfoldk_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(vid.type(), "stnls_unfoldk_backward_kernel", ([&] {
+    stnls_unfoldk_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
@@ -322,7 +322,7 @@ void dnls_cuda_unfoldk_backward(
 
 
 template <typename scalar_t>
-__global__ void dnls_unfoldk_backward_kernel_eff(
+__global__ void stnls_unfoldk_backward_kernel_eff(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_patches,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
@@ -382,7 +382,7 @@ __global__ void dnls_unfoldk_backward_kernel_eff(
 }
 
 
-void dnls_cuda_unfoldk_backward_eff(
+void stnls_cuda_unfoldk_backward_eff(
     torch::Tensor vid, torch::Tensor grad_patches,
     torch::Tensor inds, int dilation, bool exact, int adj, bool use_bounds) {
 
@@ -407,8 +407,8 @@ void dnls_cuda_unfoldk_backward_eff(
   dim3 nblocks(nblocks_queries,bsize);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(vid.type(), "dnls_unfoldk_backward_kernel_eff", ([&] {
-    dnls_unfoldk_backward_kernel_eff<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(vid.type(), "stnls_unfoldk_backward_kernel_eff", ([&] {
+    stnls_unfoldk_backward_kernel_eff<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),

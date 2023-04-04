@@ -15,8 +15,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- meshgrid --
 
@@ -34,7 +34,7 @@ def set_seed(seed):
     random.seed(seed)
 
 def get_data(dnames,ext,device="cuda:0"):
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
@@ -89,7 +89,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     vid = get_data(dnames,ext)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     # flows.fflow = 10*th.ones_like(flows.fflow)
     # flows.bflow = 10*th.ones_like(flows.bflow)
     flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
@@ -109,14 +109,14 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
 
 
     # -- exec fold fxns --
-    sch = dnls.search
+    sch = stnls.search
     search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,full_ws=False,
                                    anchor_self=anchor_self,remove_self=False,
                                    use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search_dev.init("%s_search_with_heads" % dist_type,
+    search_gt = stnls.search_dev.init("%s_search_with_heads" % dist_type,
                                      flows.fflow, flows.bflow,
                                      k, ps, pt, ws, wt, nheads,
                                      chnls=-1,dilation=dil,
@@ -127,7 +127,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
                                      exact=exact)
 
     # -- test api --
-    # print(dnls.search.nls(vid,vid,flows.fflow,flows.bflow,
+    # print(stnls.search.nls(vid,vid,flows.fflow,flows.bflow,
     #                                ws, wt, ps, k))
 
     # -- [testing] search --
@@ -164,12 +164,12 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
     # diff = th.abs(dists_te - dists_gt).mean((0,1))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
@@ -233,7 +233,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,
     vid = get_data(dnames,ext)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.zeros_like(flows.fflow)
     flows.bflow = 10*th.zeros_like(flows.bflow)
     # flows.fflow = 10*th.ones_like(flows.fflow)
@@ -257,14 +257,14 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,
     vid_gt1.requires_grad_(True)
 
     # -- exec fold fxns --
-    sch = dnls.search
+    sch = stnls.search
     search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,full_ws=False,
                                    anchor_self=anchor_self,remove_self=False,
                                    use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_gt = dnls.search_dev.init("%s_search_with_heads" % dist_type,
+    search_gt = stnls.search_dev.init("%s_search_with_heads" % dist_type,
                                      flows.fflow, flows.bflow,
                                      k, ps, pt, ws, wt, nheads,
                                      chnls=-1,dilation=dil,
@@ -298,12 +298,12 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,
     # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
 
     # diff = th.abs(dists_te - dists_gt).mean((0,1))
     # if diff.max() > 1e-5: diff /= diff.max()
     # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
@@ -352,9 +352,9 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # print(diff.max())
         # diff /= diff.max()
-        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)

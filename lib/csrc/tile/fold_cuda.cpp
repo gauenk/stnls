@@ -9,13 +9,13 @@
 
 // CUDA forward declarations
 
-void dnls_cuda_fold_forward(
+void stnls_cuda_fold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int start, int stride,
     int dilation);
 
-void dnls_cuda_fold_backward(
+void stnls_cuda_fold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int start, int stride,
@@ -33,30 +33,30 @@ void dnls_cuda_fold_backward(
 
 *********************************/
 
-void dnls_fold_forward(
+void stnls_fold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int start, int stride,
     int dilation) {
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
-  dnls_cuda_fold_forward(vid,patches,start,stride,dilation);
+  stnls_cuda_fold_forward(vid,patches,start,stride,dilation);
 }
 
-void dnls_fold_backward(
+void stnls_fold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int start, int stride,
     int dilation) {
   CHECK_INPUT(grad_vid);
   CHECK_INPUT(patches);
-  dnls_cuda_fold_backward(grad_vid,patches,start,stride,dilation);
+  stnls_cuda_fold_backward(grad_vid,patches,start,stride,dilation);
 }
 
 
 // python bindings
 void init_fold(py::module &m){
-  m.def("fold_forward", &dnls_fold_forward, "DNLS Fold Forward (CUDA)");
-  m.def("fold_backward", &dnls_fold_backward, "DNLS Fold Backward (CUDA)");
+  m.def("fold_forward", &stnls_fold_forward, "DNLS Fold Forward (CUDA)");
+  m.def("fold_backward", &stnls_fold_backward, "DNLS Fold Backward (CUDA)");
 }
 

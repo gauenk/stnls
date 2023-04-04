@@ -19,11 +19,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- check if reordered --
 SAVE_DIR = Path("./output/tests/l2_search_with_index")
@@ -88,7 +88,7 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     only_full = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -104,7 +104,7 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     vidr = th.rand_like(vid)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -122,7 +122,7 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     use_adj = True
     h0_off,w0_off,_,_ = comp_pads(vid[0].shape, ps, stride0, 1)
     h1_off,w1_off,_,_ = comp_pads(vid[0].shape, ps, stride1, 1)
-    search = dnls.search.init("l2_with_index",
+    search = stnls.search.init("l2_with_index",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, dilation=dil,
                               stride0=stride0, stride1=stride1,
@@ -131,7 +131,7 @@ def test_cu_vs_th_fwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
                               search_abs=search_abs,exact=exact,
                               h0_off=h0_off,w0_off=w0_off,
                               h1_off=h1_off,w1_off=w1_off)
-    l2_dists = dnls.search.init("l2_dists", ps, pt,
+    l2_dists = stnls.search.init("l2_dists", ps, pt,
                                 dilation=dil,stride0=stride0,
                                 use_adj=use_adj,
                                 reflect_bounds=reflect_bounds,
@@ -197,7 +197,7 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     only_full = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:1,].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
@@ -223,7 +223,7 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     vid1_gt.requires_grad_(True)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -241,7 +241,7 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
     use_adj = True
     h0_off,w0_off,_,_ = comp_pads(vid[0].shape, ps, stride0, 1)
     h1_off,w1_off,_,_ = comp_pads(vid[0].shape, ps, stride1, 1)
-    search = dnls.search.init("l2_with_index",
+    search = stnls.search.init("l2_with_index",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, dilation=dil,
                               stride0=stride0, stride1=stride1,
@@ -250,7 +250,7 @@ def test_cu_vs_th_bwd(k,ps,stride0,stride1,dilation,reflect_bounds,exact):
                               search_abs=search_abs,exact=exact,
                               h0_off=h0_off,w0_off=w0_off,
                               h1_off=h1_off,w1_off=w1_off)
-    l2_dists = dnls.search.init("l2_dists", ps, pt,
+    l2_dists = stnls.search.init("l2_dists", ps, pt,
                                 dilation=dil,stride0=stride0,
                                 use_adj=use_adj,
                                 reflect_bounds=reflect_bounds,

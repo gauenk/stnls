@@ -380,7 +380,7 @@ void search_prod_with_index_forward_cuda(
     // fprintf(stdout,"nblocks_queries,ws_h_threads,ws_w_threads,ws_h_iters,ws_w_iters,ws_h,ws_w: %d,%d,%d,%d,%d,%d,%d\n",nblocks_queries,ws_h_threads,ws_w_threads,ws_h_iters,ws_w_iters,ws_h,ws_w);
      
     // launch kernel
-    AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_forward_kernel", ([&] {
+    AT_DISPATCH_FLOATING_TYPES(vid0.type(), "stnls_xsearch_forward_kernel", ([&] {
        search_prod_with_index_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
          vid0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          vid1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
@@ -580,7 +580,7 @@ void search_prod_with_index_backward_cuda(
   }
   
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "dnls_xsearch_backward_kernel", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(vid0.type(), "stnls_xsearch_backward_kernel", ([&] {
     search_prod_with_index_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid0_grad.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         vid1_grad.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),

@@ -20,11 +20,11 @@ from einops import rearrange,repeat
 # -- patchify --
 from torch.nn.functional import fold,unfold,pad
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- paths --
 SAVE_DIR = Path("./output/tests/prod_search")
@@ -83,7 +83,7 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:3,].contiguous()
     # cfg = edict()
     # cfg.dname = "set8"
@@ -108,7 +108,7 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     # flow_type = "svnlb"
     # flow_type = "cv2"
     # flow_type = "cv2_tvl1"
@@ -119,7 +119,7 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
     # -- normalize --
     vid /= vid.max()
     # flows = flow.orun(vid,comp_flow,sigma=0.,ftype=flow_type)
-    pflows = dnls.nn.ofa.run(flows,stride0=stride0)
+    pflows = stnls.nn.ofa.run(flows,stride0=stride0)
     # for i in range(2):
     #     for key in ['fflow','bflow']:
     #         print(i,key,flows[key][:,:,i].max(),flows[key][:,:,i].min())
@@ -159,14 +159,14 @@ def test_fwd(ws,wt,k,ps,stride,dilation,exact):
 
     # -- exec fold fxns --
     use_adj = True
-    search = dnls.search.init("prod_pf_with_index",pflows.fflow, pflows.bflow,
+    search = stnls.search.init("prod_pf_with_index",pflows.fflow, pflows.bflow,
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               chnls=-1,dilation=dil,
                               stride0=stride0, stride1=stride1,
                               reflect_bounds=reflect_bounds,
                               use_k=use_k,search_abs=False,
                               use_adj=use_adj,exact=exact)
-    search_gt = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -261,7 +261,7 @@ def test_bwd(ps,stride,dilation,exact):
     reflect_bounds = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,[4],].contiguous()/255.
     vid = vid + 25./255. * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -276,7 +276,7 @@ def test_bwd(ps,stride,dilation,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -303,7 +303,7 @@ def test_bwd(ps,stride,dilation,exact):
     use_adj = False
 
     # -- exec fold fxns --
-    search = dnls.search.init("prod_with_index",
+    search = stnls.search.init("prod_with_index",
                               flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,
                               chnls=-1,dilation=dil,
@@ -360,7 +360,7 @@ def test_bwd(ps,stride,dilation,exact):
     B = vid_gt.shape[0]
     score_gt = []
     for b in range(B):
-        score_gt_b,_ = dnls.simple.prod_search_nn.run_nn(vid_gt[b],ps,stride=stride0,
+        score_gt_b,_ = stnls.simple.prod_search_nn.run_nn(vid_gt[b],ps,stride=stride0,
                                                          dilation=dil,vid1=vidr_gt[b],
                                                          mode=mode)
         score_gt.append(score_gt_b)
@@ -377,8 +377,8 @@ def test_bwd(ps,stride,dilation,exact):
     # for i in range(len(args)):
     #     print(i,th.unique(args[i]))
     # if diff.max() > 1e-10: diff /= diff.max()
-    # dnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/prod_search/","diff")
-    # dnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/prod_search/","diff_d00")
+    # stnls.testing.data.save_burst(diff[0,0][None,None],"./output/tests/prod_search/","diff")
+    # stnls.testing.data.save_burst(diff[:,:,0,0][None,None],"./output/tests/prod_search/","diff_d00")
 
     # -- compare fwd --
     max_error = th.abs(score_te - score_gt).max().item()
@@ -404,9 +404,9 @@ def test_bwd(ps,stride,dilation,exact):
         # print(grads_gt[0,-1,-10:,-10:])
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # diff /= diff.max()
-        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
         # print(idx)
 
         # -- compare grads --

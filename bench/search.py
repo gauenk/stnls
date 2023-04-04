@@ -1,16 +1,16 @@
 
 # -- misc --
 import torch as th
-import dnls
+import stnls
 
 # -- data mngment --
 from easydict import EasyDict as edict
 
 # -- benchmarking imports --
-from dnls.utils.timer import ExpTimer
-from dnls.utils.bench import RecordIt
-from dnls.utils.gpu_mem import GpuRecord
-from dnls.utils.inds import get_batching_info
+from stnls.utils.timer import ExpTimer
+from stnls.utils.bench import RecordIt
+from stnls.utils.gpu_mem import GpuRecord
+from stnls.utils.inds import get_batching_info
 
 def init_data(cfg):
     B = cfg.batchsize
@@ -33,12 +33,12 @@ def run_search(rec,cfg):
 
     # -- init search params --
     vid0,vid1,fflow,bflow = init_data(cfg)
-    esearch = dnls.search.non_local_search.init(cfg)
-    search = dnls.search.init(cfg)
+    esearch = stnls.search.non_local_search.init(cfg)
+    search = stnls.search.init(cfg)
 
     # -- exact search --
     dists_e,inds_e = esearch(vid0,vid1,fflow,bflow)
-    search = dnls.search.utils.search_wrap(cfg.search_name,search)
+    search = stnls.search.utils.search_wrap(cfg.search_name,search)
 
     # -- burn-in --
     dists,inds = search(vid0,vid1,fflow,bflow,inds_e,None,None)

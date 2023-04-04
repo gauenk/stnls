@@ -16,8 +16,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- testing --
 import torch.nn.functional as nnf
@@ -54,10 +54,10 @@ def test_simple_unfold_k():
     comp_flow = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -78,14 +78,14 @@ def test_simple_unfold_k():
     for index in range(nbatches):
 
         # -- get [patches & nlInds] --
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+        queryInds = stnls.utils.inds.get_query_batch(index,qSize,qStride,
                                                     t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+        nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
         # -- testing forward --
         # patches_nl_fwd = unfold_k(vid,nlInds)
-        patches_nl_fwd = dnls.simple.unfold_k.run(vid,nlInds,ps)
-        patches_simp_fwd = dnls.simple.unfold_k.run(vid,nlInds,ps)
+        patches_nl_fwd = stnls.simple.unfold_k.run(vid,nlInds,ps)
+        patches_simp_fwd = stnls.simple.unfold_k.run(vid,nlInds,ps)
         error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
         assert error < 1e-10
     th.cuda.synchronize()
@@ -107,10 +107,10 @@ def test_efficient_unfold_k():
     comp_flow = False
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -131,17 +131,17 @@ def test_efficient_unfold_k():
     for index in range(nbatches):
 
         # -- get [patches & nlInds] --
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+        queryInds = stnls.utils.inds.get_query_batch(index,qSize,qStride,
                                                     t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+        nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
 
         # -- exec unfold_k fxns --
-        unfold_k = dnls.UnfoldK(ps,pt,btype="eff")
+        unfold_k = stnls.UnfoldK(ps,pt,btype="eff")
 
         # -- testing forward --
         patches_nl_fwd = unfold_k(vid,nlInds)
-        patches_simp_fwd = dnls.simple.unfold_k.run(vid,nlInds,ps)
+        patches_simp_fwd = stnls.simple.unfold_k.run(vid,nlInds,ps)
         error = th.mean((patches_nl_fwd - patches_simp_fwd)**2).item()
         assert error < 1e-10
     th.cuda.synchronize()
@@ -164,10 +164,10 @@ def test_unfold_k_vs_simple(exact,ps,pt,k):
     dil = 1
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # seed = 345
     # th.manual_seed(seed)
@@ -190,13 +190,13 @@ def test_unfold_k_vs_simple(exact,ps,pt,k):
     vid = vid.contiguous()
 
     # -- exec unfold_k fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,exact=exact)
+    unfold_k = stnls.UnfoldK(ps,pt,exact=exact)
 
     # -- get [patches & inds] --
     index = 0
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,qStride,
                                                 t,h,w,device)
-    dists,inds = dnls.simple.search.run(vid,queryInds,
+    dists,inds = stnls.simple.search.run(vid,queryInds,
                                         flow,k,ps,pt,ws,wt,chnls)
 
 
@@ -211,13 +211,13 @@ def test_unfold_k_vs_simple(exact,ps,pt,k):
     vid_nl.requires_grad_(True)
 
     # -- run forward --
-    patches_simp = dnls.simple.unfold_k.run(vid_nn,inds,ps,pt,dil)
+    patches_simp = stnls.simple.unfold_k.run(vid_nn,inds,ps,pt,dil)
     patches_nl = unfold_k(vid_nl,inds)
 
     # -- run backward --
     patches_grad = th.randn_like(patches_simp)
     th.autograd.backward(patches_nl,patches_grad)
-    grad_simp = dnls.simple.unfold_k.run_bwd(patches_grad,inds,t,h,w)
+    grad_simp = stnls.simple.unfold_k.run_bwd(patches_grad,inds,t,h,w)
     grad_nl = vid_nl.grad
     # print(grad_simp[0,0,:3,:3])
     # print(grad_nl[0,0,:3,:3])
@@ -231,9 +231,9 @@ def test_unfold_k_vs_simple(exact,ps,pt,k):
     # -- vis --
     diff = th.abs(grad_simp - grad_nl)
     if diff.max() > 1e-8: diff /= diff.max()
-    # dnls.testing.data.save_burst(diff[:,:3],SAVE_DIR,'diff_0')
-    # dnls.testing.data.save_burst(diff[:,3:6],SAVE_DIR,'diff_1')
-    # dnls.testing.data.save_burst(diff[:,6:9],SAVE_DIR,'diff_2')
+    # stnls.testing.data.save_burst(diff[:,:3],SAVE_DIR,'diff_0')
+    # stnls.testing.data.save_burst(diff[:,3:6],SAVE_DIR,'diff_1')
+    # stnls.testing.data.save_burst(diff[:,6:9],SAVE_DIR,'diff_2')
 
     # -- test --
     if exact: tol = 1e-15
@@ -274,10 +274,10 @@ def test_unfold_k_vs_unfold(exact,ps,pt,k):
     dil = 1
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
     # noisy = th.randn((5,16,64,64)).to(vid.device)
     vid = noisy.clone()/255.
     th.cuda.synchronize()
@@ -296,13 +296,13 @@ def test_unfold_k_vs_unfold(exact,ps,pt,k):
     vid = vid.contiguous()
 
     # -- exec unfold_k fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,exact=exact)
+    unfold_k = stnls.UnfoldK(ps,pt,exact=exact)
 
     # -- get [patches & inds] --
     index = 0
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,qStride,
                                                 t,h,w,device)
-    dists,inds = dnls.simple.search.run(vid,queryInds,
+    dists,inds = stnls.simple.search.run(vid,queryInds,
                                         flow,k,ps,pt,ws,wt,chnls)
 
 
@@ -354,9 +354,9 @@ def test_unfold_k_vs_unfold(exact,ps,pt,k):
     if diff.max() > 1e-8: diff /= diff.max()
     for i in  range(10):
         if i >= diff.shape[1]: continue
-        dnls.testing.data.save_burst(diff[:,[i]],SAVE_DIR,'diff_%d' % i)
-    # dnls.testing.data.save_burst(diff[:,3:6],SAVE_DIR,'diff_1')
-    # dnls.testing.data.save_burst(diff[:,6:9],SAVE_DIR,'diff_2')
+        stnls.testing.data.save_burst(diff[:,[i]],SAVE_DIR,'diff_%d' % i)
+    # stnls.testing.data.save_burst(diff[:,3:6],SAVE_DIR,'diff_1')
+    # stnls.testing.data.save_burst(diff[:,6:9],SAVE_DIR,'diff_2')
 
     # -- test --
     if exact: tol = 1e-6

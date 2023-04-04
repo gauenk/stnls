@@ -43,7 +43,7 @@ float warpReduceSum(float val) {
 ************************************/
 
 template <typename scalar_t>
-__global__ void dnls_foldk_forward_kernel(
+__global__ void stnls_foldk_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
@@ -219,7 +219,7 @@ __global__ void dnls_foldk_forward_kernel(
 }
 
 
-void dnls_cuda_foldk_forward(
+void stnls_cuda_foldk_forward(
     torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
     torch::Tensor dists,torch::Tensor inds,
     int ws, int wt, int dilation) {
@@ -250,8 +250,8 @@ void dnls_cuda_foldk_forward(
   // fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_forward_kernel", ([&] {
-    dnls_foldk_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_foldk_forward_kernel", ([&] {
+    stnls_foldk_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         wvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
@@ -271,7 +271,7 @@ void dnls_cuda_foldk_forward(
 
 
 template <typename scalar_t>
-__global__ void dnls_foldk_forward_kernel_dist(
+__global__ void stnls_foldk_forward_kernel_dist(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
@@ -447,7 +447,7 @@ __global__ void dnls_foldk_forward_kernel_dist(
 }
 
 
-void dnls_cuda_foldk_forward_dist(
+void stnls_cuda_foldk_forward_dist(
     torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
     torch::Tensor dists,torch::Tensor inds,
     int ws, int wt, int dilation) {
@@ -479,8 +479,8 @@ void dnls_cuda_foldk_forward_dist(
   // fprintf(stdout,"nthreads,nblocks: %d,%d\n",nthreads,nblocks);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_forward_kernel", ([&] {
-    dnls_foldk_forward_kernel_dist<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_foldk_forward_kernel", ([&] {
+    stnls_foldk_forward_kernel_dist<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         wvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
@@ -498,7 +498,7 @@ void dnls_cuda_foldk_forward_dist(
 ************************************/
 
 template <typename scalar_t>
-__global__ void dnls_foldk_forward_kernel_race(
+__global__ void stnls_foldk_forward_kernel_race(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> wvid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
@@ -585,7 +585,7 @@ __global__ void dnls_foldk_forward_kernel_race(
   }
 }
 
-void dnls_cuda_foldk_forward_race(
+void stnls_cuda_foldk_forward_race(
     torch::Tensor vid,torch::Tensor wvid,torch::Tensor patches,
     torch::Tensor dists,torch::Tensor inds,
     int dilation, bool use_rand, bool exact) {
@@ -628,8 +628,8 @@ void dnls_cuda_foldk_forward_race(
   //         nthreads_blocks,nthreads_color,nblocks,use_rand);
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_forward_kernel_race", ([&] {
-    dnls_foldk_forward_kernel_race<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_foldk_forward_kernel_race", ([&] {
+    stnls_foldk_forward_kernel_race<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         wvid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
@@ -648,7 +648,7 @@ void dnls_cuda_foldk_forward_race(
 ****************************/
 
 template <typename scalar_t>
-__global__ void dnls_foldk_backward_kernel(
+__global__ void stnls_foldk_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
@@ -731,7 +731,7 @@ __global__ void dnls_foldk_backward_kernel(
     }
 }
 
-void dnls_cuda_foldk_backward(
+void stnls_cuda_foldk_backward(
   torch::Tensor grad_vid,torch::Tensor patches,torch::Tensor inds,
   int dilation) {
 
@@ -752,8 +752,8 @@ void dnls_cuda_foldk_backward(
   dim3 nthreads(kpb,ps,ps);
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_foldk_backward_kernel", ([&] {
-    dnls_foldk_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_foldk_backward_kernel", ([&] {
+    stnls_foldk_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),

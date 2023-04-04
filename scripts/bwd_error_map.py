@@ -31,10 +31,10 @@ import svnlb
 
 
 # -- testing fxns --
-import dnls
-from dnls.utils.misc import rslice,assert_nonan
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.timer import ExpTimer
+import stnls
+from stnls.utils.misc import rslice,assert_nonan
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.timer import ExpTimer
 import torch.nn.functional as F
 
 
@@ -61,7 +61,7 @@ def run_experiment(cfg):
 
     # -- compute flow --
     comp_flow,clean_flow = cfg.flow == "true",False
-    flows = dnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,noisy,0.)
+    flows = stnls.testing.flow.get_flow(comp_flow,clean_flow,noisy,noisy,0.)
 
     # -- mod channels --
     noisy = noisy[:,[0]].contiguous()
@@ -100,14 +100,14 @@ def run_experiment(cfg):
     for use_exact in [True,False]:
 
         # -- init search
-        xsearch = dnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, cfg.k,
+        xsearch = stnls.xsearch.CrossSearchNl(flows.fflow, flows.bflow, cfg.k,
                                              cfg.ps, pt, cfg.ws, cfg.wt,
                                              oh0, ow0, oh1, ow1, chnls=cfg.nchnls,
                                              dilation=dil, stride=stride1,
                                              exact=use_exact)
-        scatter = dnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=use_exact)
-        ifold = dnls.ifold.iFold(vshape,coords,stride=stride0,dilation=dil,adj=adj)
-        wfold = dnls.ifold.iFold(vshape,coords,stride=stride0,dilation=dil,adj=adj)
+        scatter = stnls.scatter.ScatterNl(ps,pt,dilation=dil,exact=use_exact)
+        ifold = stnls.ifold.iFold(vshape,coords,stride=stride0,dilation=dil,adj=adj)
+        wfold = stnls.ifold.iFold(vshape,coords,stride=stride0,dilation=dil,adj=adj)
         softmax_scale = 10.
 
         # -- forward --
@@ -121,7 +121,7 @@ def run_experiment(cfg):
         print(nbatch,nbatches)
 
         # -- metrics --
-        timer_agg = dnls.utils.timer.ExpTimer()
+        timer_agg = stnls.utils.timer.ExpTimer()
         timer_agg.start("forward")
         gpu_agg = gpu_mem.GpuRecord()
         gpu_agg.reset()
@@ -131,7 +131,7 @@ def run_experiment(cfg):
 
             # -- timer --
             # print("%d/%d" % (index+1,nbatches))
-            timer = dnls.utils.timer.ExpTimer()
+            timer = stnls.utils.timer.ExpTimer()
             # gpu_rec = gpu_mem.GpuRecord()
 
             # -- batch info --
@@ -139,7 +139,7 @@ def run_experiment(cfg):
             nbatch_i =  min(nbatch, ntotal - qindex)
 
             # -- get patches --
-            iqueries = dnls.utils.inds.get_iquery_batch(qindex,nbatch_i,stride0,
+            iqueries = stnls.utils.inds.get_iquery_batch(qindex,nbatch_i,stride0,
                                                         region,t,device=device)
             th.cuda.synchronize()
             # print("iqueries.shape: ",iqueries.shape)
@@ -268,7 +268,7 @@ def main():
     sigmas = [30.]
     isizes = ["128_128"]
     exact = ["false"]
-    ca_fwd_list = ["dnls_k"]
+    ca_fwd_list = ["stnls_k"]
     rep_ids = list(np.arange(3))
     seeds = list(np.arange(100))
     indices = list(np.linspace(0,30,6).astype(np.int32))

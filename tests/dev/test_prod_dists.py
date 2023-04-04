@@ -15,11 +15,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- meshgrid --
 
@@ -76,14 +76,14 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     use_self = anchor_self
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -107,14 +107,14 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    prod_dists = dnls.search.init("prod_dists", k, ps, pt, nheads,
+    prod_dists = stnls.search.init("prod_dists", k, ps, pt, nheads,
                                   chnls=-1,dilation=dil,
                                   stride0=stride0, stride1=stride1,
                                   reflect_bounds=reflect_bounds,use_k=use_k,
                                   search_abs=False,use_adj=use_adj,
                                   anchor_self=anchor_self,
                                   exact=exact)
-    search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -186,14 +186,14 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
 
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
@@ -225,13 +225,13 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- exec fold fxns --
-    prod_dists = dnls.search.init("prod_dists", k, ps, pt, nheads,
+    prod_dists = stnls.search.init("prod_dists", k, ps, pt, nheads,
                                   chnls=-1,dilation=dil,
                                   stride0=stride0, stride1=stride1,
                                   reflect_bounds=reflect_bounds,use_k=use_k,
                                   search_abs=False,use_adj=use_adj,
                                   anchor_self=anchor_self,exact=exact)
-    search_gt = dnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
+    search_gt = stnls.search.init("prod_with_heads",flows.fflow, flows.bflow,
                                  k, ps, pt, ws, wt, nheads,
                                  chnls=-1,dilation=dil,
                                  stride0=stride0, stride1=stride1,
@@ -292,9 +292,9 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,nheads,anchor_self,exact,seed):
         # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
         # print(diff.max())
         # diff /= diff.max()
-        # dnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # dnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)

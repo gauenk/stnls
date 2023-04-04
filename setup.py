@@ -1,13 +1,13 @@
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-setup(name='dnls',
+setup(name='stnls',
       package_dir={"": "lib"},
       packages=find_packages("."),
       package_data={'': ['*.so']},
       include_package_data=True,
       ext_modules=[
-          CUDAExtension('dnls_cuda', [
+          CUDAExtension('stnls_cuda', [
               'lib/csrc/nn/shared_nn_utils.cu',
               'lib/csrc/nn/topk_pwd.cpp',
               'lib/csrc/nn/topk_pwd_kernel.cu',

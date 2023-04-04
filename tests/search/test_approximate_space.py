@@ -15,11 +15,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 # -- meshgrid --
 
@@ -81,14 +81,14 @@ def test_fwd(kr,wr,scale,ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     nbwd = 1
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
     vid /= vid.max()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = (2*th.randn_like(flows.fflow)).clamp(-3,3)
     flows.bflow = (2*th.randn_like(flows.bflow)).clamp(-3,3)
 
@@ -99,12 +99,12 @@ def test_fwd(kr,wr,scale,ws,wt,k,ps,stride0,stride1,dilation,nheads,exact,seed):
     vshape = vid.shape
 
     # -- exec fold fxns --
-    search_gt = dnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
+    search_gt = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
                                  use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_te = dnls.search.ApproxSpaceSearch(ws, wt, ps, k, wr, kr, scale, nheads,
+    search_te = stnls.search.ApproxSpaceSearch(ws, wt, ps, k, wr, kr, scale, nheads,
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,

@@ -13,11 +13,11 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import comp_pads
-from dnls.utils.inds import get_batching_info
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import comp_pads
+from stnls.utils.inds import get_batching_info
 
 def main():
 
@@ -50,15 +50,15 @@ def main():
     only_full = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext=ext)
+    vid = stnls.testing.data.load_burst("./data/",dname,ext=ext)
     vid = th.from_numpy(vid).to(device)[None,:2].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- search --
-    search = dnls.search.NonLocalSearch(ws,wt,ps,k,nheads=1,
+    search = stnls.search.NonLocalSearch(ws,wt,ps,k,nheads=1,
                                         stride0=stride0,dist_type="l2")
 
     # -- profile --

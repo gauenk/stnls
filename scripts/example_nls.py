@@ -8,13 +8,13 @@ Thus, we don't aggregate non-local patches spatially.
 
 # -- imports --
 import torch as th
-import dnls
+import stnls
 from einops import rearrange
 
 # -- load video --
 sigma = 30.
 device = "cuda:0"
-vid = dnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
+vid = stnls.testing.data.load_burst("./data","davis_baseball_64x64",ext="jpg")
 vid = th.from_numpy(vid).to(device)
 noisy = vid + sigma * th.randn_like(vid)
 
@@ -41,9 +41,9 @@ sq_w = coords[3] - coords[1]
 sq_hw = sq_h * sq_w
 
 # -- init iunfold and ifold --
-fold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dilation)
-wfold_nl = dnls.ifold.iFold(vshape,coords,stride=stride,dilation=dilation)
-scatter_nl = dnls.scatter.ScatterNl(ps,pt,dilation=dilation)
+fold_nl = stnls.ifold.iFold(vshape,coords,stride=stride,dilation=dilation)
+wfold_nl = stnls.ifold.iFold(vshape,coords,stride=stride,dilation=dilation)
+scatter_nl = stnls.scatter.ScatterNl(ps,pt,dilation=dilation)
 
 # -- compute number of batches --
 n_h = (sq_h-1)//stride+1
@@ -75,9 +75,9 @@ for batch in range(nbatches):
     batch_size_i = min(batch_size,n_total-index)
 
     # -- get patches --
-    queries = dnls.utils.inds.get_iquery_batch(index,batch_size_i,
+    queries = stnls.utils.inds.get_iquery_batch(index,batch_size_i,
                                                stride,coords,t,device)
-    dists,inds = dnls.simple.search.run(noisy,queries,flow,k,
+    dists,inds = stnls.simple.search.run(noisy,queries,flow,k,
                                         ps,pt,ws,wt,chnls,
                                         stride=stride,dilation=dilation)
 
@@ -96,6 +96,6 @@ for batch in range(nbatches):
 deno = fold_nl.vid
 weights = wfold_nl.vid
 deno /= weights
-dnls.testing.data.save_burst(noisy,"./output/","noisy")
-dnls.testing.data.save_burst(deno,"./output/","deno")
+stnls.testing.data.save_burst(noisy,"./output/","noisy")
+stnls.testing.data.save_burst(deno,"./output/","deno")
 

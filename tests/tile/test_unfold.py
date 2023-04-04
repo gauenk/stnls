@@ -14,8 +14,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- test func --
 import torch.nn.functional as nnf
@@ -42,10 +42,10 @@ def test_nn_unfold():
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -67,8 +67,8 @@ def test_nn_unfold():
     vid = th.randn_like(vid)
 
     # -- exec unfold fxns --
-    unfold_k = dnls.UnfoldK(ps,pt,dilation=dil,exact=True)
-    unfold_nl = dnls.Unfold(ps,stride=stride,dilation=dil)
+    unfold_k = stnls.UnfoldK(ps,pt,dilation=dil,exact=True)
+    unfold_nl = stnls.Unfold(ps,stride=stride,dilation=dil)
 
     #
     # -- test logic --
@@ -116,7 +116,7 @@ def test_nn_unfold():
     diff = th.abs(grad_nn - grad_nl)
     dmax = diff.max()
     if dmax > 1e-3: diff /= dmax
-    dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    stnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     error = th.sum((grad_nn - grad_nl)**2).item()
     assert error < 1e-6
@@ -134,10 +134,10 @@ def test_batched_unfold():
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst("./data/",dname,ext="jpg")
+    vid = stnls.testing.data.load_burst("./data/",dname,ext="jpg")
     vid = th.from_numpy(vid).to(device)
     noisy = vid + sigma * th.randn_like(vid)
-    flow = dnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
+    flow = stnls.flow.get_flow(comp_flow,clean_flow,noisy,vid,sigma)
 
     # -- unpack params --
     k,ps,pt = args.k,args.ps,args.pt
@@ -170,7 +170,7 @@ def test_batched_unfold():
 
     # -- exec fold fxns --
     # vid_nl = vid.clone().requires_grad_(True)
-    unfold_nl = dnls.Unfold(ps,stride=stride,dilation=dil)
+    unfold_nl = stnls.Unfold(ps,stride=stride,dilation=dil)
     patches_nl = []
     for index in range(nbatches):
 
@@ -191,9 +191,9 @@ def test_batched_unfold():
 
     # -- run fold with entire image --
     # index,qSize = 0,npix
-    # queryInds = dnls.utils.inds.get_query_batch(index,qSize,stride,
+    # queryInds = stnls.utils.inds.get_query_batch(index,qSize,stride,
     #                                             t,h,w,device)
-    # nlDists,nlInds = dnls.simple.search.run(vid,queryInds,
+    # nlDists,nlInds = stnls.simple.search.run(vid,queryInds,
     #                                         flow,k,ps,pt,ws,wt,chnls)
     vid_nn = vid.clone().requires_grad_(True)
     patches_nn = run_unfold(vid_nn,ps,stride,dil)
@@ -208,12 +208,12 @@ def test_batched_unfold():
     # viz_nl,w_nl = run_fold(patches_nl,t,h,w,stride,dil)
     # viz_nn /= w_nn
     # viz_nl /= w_nn
-    # dnls.testing.data.save_burst(viz_nn,SAVE_DIR,"vid_nn")
-    # dnls.testing.data.save_burst(viz_nl,SAVE_DIR,"vid_nl")
+    # stnls.testing.data.save_burst(viz_nn,SAVE_DIR,"vid_nn")
+    # stnls.testing.data.save_burst(viz_nl,SAVE_DIR,"vid_nl")
     # psHalf = ps//2
     # diff = th.abs(vid_nn_s - vid_nl_s)
     # diff /= diff.max()
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"diff")
 
     # -- vis --
     # print("\n")

@@ -10,7 +10,7 @@
 // CUDA forward declarations
 
 
-void dnls_cuda_foldk_forward(
+void stnls_cuda_foldk_forward(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
@@ -18,7 +18,7 @@ void dnls_cuda_foldk_forward(
     torch::Tensor inds,
     int ws, int wt, int dilation);
 
-void dnls_cuda_foldk_forward_race(
+void stnls_cuda_foldk_forward_race(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
@@ -26,7 +26,7 @@ void dnls_cuda_foldk_forward_race(
     torch::Tensor inds,
     int dilation, bool use_rand, bool exact);
 
-void dnls_cuda_foldk_backward(
+void stnls_cuda_foldk_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     torch::Tensor inds,
@@ -38,7 +38,7 @@ void dnls_cuda_foldk_backward(
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-void dnls_foldk_forward(
+void stnls_foldk_forward(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
@@ -50,11 +50,11 @@ void dnls_foldk_forward(
   CHECK_INPUT(patches);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  dnls_cuda_foldk_forward(vid,wvid,patches,dists,inds,ws,wt,dilation);
+  stnls_cuda_foldk_forward(vid,wvid,patches,dists,inds,ws,wt,dilation);
 }
 
 
-void dnls_foldk_forward_race(
+void stnls_foldk_forward_race(
     torch::Tensor vid,
     torch::Tensor wvid,
     torch::Tensor patches,
@@ -66,11 +66,11 @@ void dnls_foldk_forward_race(
   CHECK_INPUT(patches);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  dnls_cuda_foldk_forward_race(vid,wvid,patches,dists,inds,
+  stnls_cuda_foldk_forward_race(vid,wvid,patches,dists,inds,
                                 dilation,use_rand,exact);
 }
 
-void dnls_foldk_backward(
+void stnls_foldk_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     torch::Tensor dists,
@@ -80,15 +80,15 @@ void dnls_foldk_backward(
   CHECK_INPUT(patches);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  dnls_cuda_foldk_backward(grad_vid,patches,inds,dilation);
+  stnls_cuda_foldk_backward(grad_vid,patches,inds,dilation);
 }
 
 
 // python bindings
 void init_foldk(py::module &m){
-  m.def("foldk_forward", &dnls_foldk_forward, "DNLS Foldk Forward (CUDA)");
-  m.def("foldk_forward_race", &dnls_foldk_forward_race,
+  m.def("foldk_forward", &stnls_foldk_forward, "DNLS Foldk Forward (CUDA)");
+  m.def("foldk_forward_race", &stnls_foldk_forward_race,
         "DNLS Foldk Forward with Race Condition (CUDA)");
-  m.def("foldk_backward", &dnls_foldk_backward, "DNLS Foldk Backward (CUDA)");
+  m.def("foldk_backward", &stnls_foldk_backward, "DNLS Foldk Backward (CUDA)");
 }
 

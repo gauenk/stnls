@@ -32,10 +32,10 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
-import dnls.utils.gpu_mem as gpu_mem
-from dnls.utils.pads import same_padding,comp_pads
+# -- stnls --
+import stnls
+import stnls.utils.gpu_mem as gpu_mem
+from stnls.utils.pads import same_padding,comp_pads
 
 # -- test func --
 from torch.nn.functional import fold,unfold,pad,softmax,log_softmax
@@ -90,7 +90,7 @@ def simple_run_batch(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
     return wpatches
 
 def simple_run(vid,score_heads,inds,ps,pt,reflect_bounds,exact):
-    unfold_k = dnls.UnfoldK(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
+    unfold_k = stnls.UnfoldK(ps,pt,exact=exact,reflect_bounds=reflect_bounds)
     patches_i = unfold_k(vid,inds).type(th.float64)[0]
     H = score_heads.shape[0]
     patches_i = rearrange(patches_i,'q k 1 (H c) h w -> q k H (c h w)',H=H)
@@ -128,7 +128,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     adj = ps//2 if use_unfold else 0
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     vid = vid.to(device)[:,:t,].contiguous()
     vid = vid[...,:32,:32].contiguous()
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -144,7 +144,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -169,7 +169,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    search = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                               k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride0=stride0, stride1=stride1,
                               use_k=use_k,
@@ -180,7 +180,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off,w_off=w_off,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off,w_off=w_off,
                                                 dilation=dil,
                                                 reflect_bounds=reflect_bounds,
                                                 adj=adj, exact=exact)
@@ -212,7 +212,7 @@ def test_forward(ps,stride,dilation,top,btm,left,right,k,exact):
     # diff = th.abs(wpatches_gt - wpatches_te).mean(-1)
     # diff = rearrange(diff,'(h w) -> 1 1 h w',h=32)
     # diff /= diff.max()
-    # dnls.testing.data.save_burst(diff,SAVE_DIR,"diff_%d" % use_unfold)
+    # stnls.testing.data.save_burst(diff,SAVE_DIR,"diff_%d" % use_unfold)
 
     # -- compare --
     tol = 1e-7
@@ -254,7 +254,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
 
     # -- load data --
     h,w = 32,32
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     vid = vid.to(device)[:,[0],:,:h,:w].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -270,7 +270,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -295,7 +295,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init search --
-    search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow, k, ps, pt,
+    search = stnls.search.init("prod_with_index",flows.fflow, flows.bflow, k, ps, pt,
                               ws, wt, oh0, ow0, oh1, ow1,
                               dilation=dil, stride0=stride0, stride1=stride1,
                               reflect_bounds=reflect_bounds,
@@ -305,7 +305,7 @@ def test_score_backward(ps,stride,dilation,top,btm,left,right,k):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
                                                 dilation=dil,
                                                 reflect_bounds=reflect_bounds,
                                                 adj=adj, exact=exact)
@@ -439,7 +439,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     exact = True
 
     # -- load data --
-    vid = dnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     vid = vid.to(device)[:,[0],:,:32,:32].contiguous()
     vid = vid + 25./255 * th.randn_like(vid)
     gpu_mem.print_gpu_stats(gpu_stats,"post-io")
@@ -454,7 +454,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     # print("vid.shape: ",vid.shape)
 
     # -- compute flow --
-    flows = dnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
     # -- unpack image --
     device = vid.device
@@ -479,7 +479,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     nbatches = (ntotal-1) // nbatch + 1
 
     # -- init xsearch --
-    prod_search = dnls.search.init("prod_with_index",flows.fflow, flows.bflow,
+    prod_search = stnls.search.init("prod_with_index",flows.fflow, flows.bflow,
                                    k, ps, pt, ws, wt, oh0, ow0, oh1, ow1,
                                    dilation=dil, stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
@@ -489,7 +489,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
     h_off,w_off = oh1,ow1
     if not(use_unfold): h_off,w_off = 0,0
     adj,h_off,w_off = 0,0,0
-    wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
+    wpsum = stnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=h_off, w_off=w_off,
                                                 dilation=dil,
                                                 reflect_bounds=reflect_bounds,
                                                 adj=adj, exact=exact)
@@ -581,7 +581,7 @@ def test_vid_backward(ps,stride,dilation,top,btm,left,right,k):
         # diff /= diff.max()
         # diff /= Z
         # if idx ==0: diff = diff.clamp(0.,1.)
-        # dnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d_%d"%(use_unfold,idx))
+        # stnls.testing.data.save_burst(diff,SAVE_DIR,"grad_diff_%d_%d"%(use_unfold,idx))
 
         # -- compare --
         error = th.abs((grad_te - grad_gt)).mean().item()

@@ -34,7 +34,7 @@ __inline__ __device__ int bounds(int val, int lim ){
 ****************************/
 
 template <typename scalar_t>
-__global__ void dnls_fold_forward_kernel(
+__global__ void stnls_fold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     int iStart, int start, int stride, int dilation, int num_kernels) {
@@ -140,7 +140,7 @@ __global__ void dnls_fold_forward_kernel(
     } // for each pixel (with stride)
 }
 
-void dnls_cuda_fold_forward(
+void stnls_cuda_fold_forward(
     torch::Tensor vid, torch::Tensor patches,
     int start, int stride, int dilation){
 
@@ -160,8 +160,8 @@ void dnls_cuda_fold_forward(
   int iStart = start; // some actual logic goes here; what is the "min" pixel (top-left)
 
   // launch kernel
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_fold_forward_kernel", ([&] {
-    dnls_fold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_fold_forward_kernel", ([&] {
+    stnls_fold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         iStart,start,stride,dilation,num_kernels);
@@ -176,7 +176,7 @@ void dnls_cuda_fold_forward(
 ****************************/
 
 template <typename scalar_t>
-__global__ void dnls_fold_backward_kernel(
+__global__ void stnls_fold_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid, // grad
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
     int start, int stride, int dilation, int qpt, int kpt) {
@@ -265,7 +265,7 @@ __global__ void dnls_fold_backward_kernel(
     }
 }
 
-void dnls_cuda_fold_backward(
+void stnls_cuda_fold_backward(
   torch::Tensor grad_vid,torch::Tensor patches,
   int start, int stride, int dilation) {
 
@@ -286,8 +286,8 @@ void dnls_cuda_fold_backward(
   dim3 nthreads(kpb,ps,ps);
 
   // -- launch kernel --
-  AT_DISPATCH_FLOATING_TYPES(patches.type(), "dnls_fold_backward_kernel", ([&] {
-    dnls_fold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+  AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_fold_backward_kernel", ([&] {
+    stnls_fold_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         grad_vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         start,stride,dilation,qpt,kpt);

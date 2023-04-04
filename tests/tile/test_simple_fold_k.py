@@ -14,8 +14,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 
-# -- dnls --
-import dnls
+# -- stnls --
+import stnls
 
 # -- testing --
 from torch.nn.functional import unfold,fold
@@ -41,11 +41,11 @@ def exec_folding_test(dname,sigma,flow_args,args):
 
     # -- load data --
     device = args.device
-    clean = dnls.testing.data.load_burst("./data",dname)[:10]
+    clean = stnls.testing.data.load_burst("./data",dname)[:10]
     clean = clean[:,:,:32,:32]
     clean = th.from_numpy(clean).to(device)
     noisy = clean + sigma * th.randn_like(clean)
-    flow = dnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
+    flow = stnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
                                       noisy,clean,sigma)
 
     # -- unpack params --
@@ -68,10 +68,10 @@ def exec_folding_test(dname,sigma,flow_args,args):
 
     # -- get patches with search --
     index = 0
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,qStride,t,h,w,device)
+    nlDists,nlInds = stnls.simple.search.run(clean,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
-    patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
+    patches = stnls.simple.unfold_k.run(clean,nlInds,ps,pt)
     patches = rearrange(patches[:,0,0],'(t q) c h w -> t (c h w) q',t=t)
 
     # -- get patches with unfold --
@@ -93,10 +93,10 @@ def exec_folding_test(dname,sigma,flow_args,args):
     # -- visualize --
     if VIZ:
         delta = th.abs(vid_ss - vid_uf)# / 255.
-        dnls.testing.data.save_burst(clean,SAVE_DIR,"clean")
-        dnls.testing.data.save_burst(vid_ss,SAVE_DIR,"vid_ss")
-        dnls.testing.data.save_burst(vid_uf,SAVE_DIR,"vid_uf")
-        dnls.testing.data.save_burst(delta,SAVE_DIR,"delta")
+        stnls.testing.data.save_burst(clean,SAVE_DIR,"clean")
+        stnls.testing.data.save_burst(vid_ss,SAVE_DIR,"vid_ss")
+        stnls.testing.data.save_burst(vid_uf,SAVE_DIR,"vid_uf")
+        stnls.testing.data.save_burst(delta,SAVE_DIR,"delta")
 
     # -- testing --
     error = th.mean((vid_ss - vid_uf)**2).item()
@@ -112,11 +112,11 @@ def exec_topk_inds_test(dname,sigma,flow_args,args):
 
     # -- load data --
     device = args.device
-    clean = dnls.testing.data.load_burst("./data",dname)[:10]
+    clean = stnls.testing.data.load_burst("./data",dname)[:10]
     clean = clean[:,:,:32,:32]
     clean = th.from_numpy(clean).to(device)
     noisy = clean + sigma * th.randn_like(clean)
-    flow = dnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
+    flow = stnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
                                       noisy,clean,sigma)
 
     # -- unpack params --
@@ -139,10 +139,10 @@ def exec_topk_inds_test(dname,sigma,flow_args,args):
 
     # -- get patches with search --
     index = 0
-    queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,t,h,w,device)
-    nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
+    queryInds = stnls.utils.inds.get_query_batch(index,qSize,qStride,t,h,w,device)
+    nlDists,nlInds = stnls.simple.search.run(clean,queryInds,
                                             flow,k,ps,pt,ws,wt,chnls)
-    patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
+    patches = stnls.simple.unfold_k.run(clean,nlInds,ps,pt)
 
     # -- test topk index --
     dinds = th.sum((nlInds[:,0] - queryInds)**2).item()
@@ -156,10 +156,10 @@ def exec_nonincreasing_test(dname,sigma,flow_args,args):
 
     # -- load data --
     device = args.device
-    clean = dnls.testing.data.load_burst("./data",dname)[:2]
+    clean = stnls.testing.data.load_burst("./data",dname)[:2]
     clean = th.from_numpy(clean).to(device)
     noisy = clean + sigma * th.randn_like(clean)
-    flow = dnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
+    flow = stnls.flow.get_flow(flow_args.comp_flow,flow_args.clean_flow,
                                       noisy,clean,sigma)
 
     # -- unpack params --
@@ -184,11 +184,11 @@ def exec_nonincreasing_test(dname,sigma,flow_args,args):
     for index in range(nbatches):
 
         # -- get [patches & nlInds] --
-        queryInds = dnls.utils.inds.get_query_batch(index,qSize,qStride,
+        queryInds = stnls.utils.inds.get_query_batch(index,qSize,qStride,
                                                     t,h,w,device)
-        nlDists,nlInds = dnls.simple.search.run(clean,queryInds,
+        nlDists,nlInds = stnls.simple.search.run(clean,queryInds,
                                                 flow,k,ps,pt,ws,wt,chnls)
-        patches = dnls.simple.unfold_k.run(clean,nlInds,ps,pt)
+        patches = stnls.simple.unfold_k.run(clean,nlInds,ps,pt)
 
         # -- torch mean --
         patches = rearrange(patches,'q k t c h w -> q k (t c h w)')
