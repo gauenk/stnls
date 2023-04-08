@@ -76,6 +76,8 @@ setup(name='stnls',
               'lib/csrc/reducers/wpsum_heads_kernel.cu',
               'lib/csrc/reducers/wpsum_heads_2vid_cuda.cpp',
               'lib/csrc/reducers/wpsum_heads_2vid_kernel.cu',
+              'lib/csrc/n3net_ops/mat_mult1.cpp',
+              'lib/csrc/n3net_ops/mat_mult1_kernel.cu',
               'lib/csrc/pybind.cpp',
           ],
           )

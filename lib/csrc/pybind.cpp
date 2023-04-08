@@ -44,6 +44,9 @@ void init_prod_search_with_heads(py::module &);
 void init_prod_dists(py::module &);
 void init_prod_refine(py::module &);
 
+// -- n3net_ops --
+void init_n3net_matmult1(py::module &);
+
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
@@ -92,6 +95,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_prod_with_index_search(m);
   init_prod_pf_with_index_search(m);
   init_prod_search_with_heads(m);
+
+  // -- n3net ops --
+  init_n3net_matmult1(m);
 
 }
 

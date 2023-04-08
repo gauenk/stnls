@@ -52,6 +52,16 @@ def nls_fwd(vid0, vid1, fflow, bflow,
         pat0 = vid2patches(vid0)
         pat1 = vid2patches(vid1)
 
+        b = y.shape[0]
+        m = y.shape[1]
+        n = x.shape[1]
+        o = I.shape[2]
+        e = x.shape[2]
+        out = torch.tensor(np.zeros(b*m*o), dtype=torch.float).reshape(b,m,o).cuda()
+        # matmul_cuda.matmul1(
+        stnls_cuda.n3net_mat_mult1(pat0,pat1,inds,
+                                   out,n,m,e,o,b)
+
         # -- allocate --
         dists,inds = [],[]
 
@@ -138,11 +148,23 @@ def patch_search_impl(vid0, vid1, fflow, bflow,
 class NonLocalSearchPdbFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, fflow, bflow, ps, pt, stride0=4, batchsize=64):
+    def forward(ctx, vid0, vid1, fflow, bflow,
+                ws, wt, ps, k, nheads=1,
+                dist_type="prod", stride0=4, stride1=1,
+                dilation=1, pt=1, reflect_bounds=True,
+                anchor_self=False, remove_self=False, save_inds=False):
+                # use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+                # rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
+                # neigh_per_thread=4, channel_groups=-1):
+
+        # -- create inds --
 
         # -- setup ctx --
-        ctx.save_for_backward(vid0, vid1)
-        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt}
+        saves = [vid0,vid1,]
+        if save_inds: saves += [fflow,bflow,]
+        else: saves += [inds,]
+        ctx.save_for_backward(*saves)
+        ctx_vars = {"stride0":stride0,"ps":ps,"pt":pt}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 
