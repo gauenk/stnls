@@ -22,7 +22,7 @@ class L2SearchFunction_with_index(th.autograd.Function):
                 nbwd=1,rbwd=True,nbwd_mode="median",exact=False,
                 ngroups=-1,npt=4,qpt=4):
         """
-        vid0 = [T,C,H,W]
+        vid0 = [B,T,C,H,W]
         qinds = [NumQueries,K,3]
         ws = search Window Spatial (ws)
         wt = search Window Time (wt)
@@ -30,12 +30,13 @@ class L2SearchFunction_with_index(th.autograd.Function):
 
         # -- unpack --
         device = vid0.device
+        # print(vid0.shape,vid0.dtype,vid1.shape,vid1.dtype)
         B,t,c,h,w = vid0.shape
         n_h0,n_w0 = get_num_img(vid0.shape[1:],stride0,ps,dilation)
         # print("n_h0,n_w0: ",n_h0,n_w0)
 
         # -- allocs --
-        nqueries = n_h0*n_w0 if nqueries <= 0 else nqueries
+        nqueries = t*n_h0*n_w0 if nqueries <= 0 else nqueries
         Q = nqueries
         dists_exh,inds_exh = allocate_exh(B*Q,wt,ws_h,ws_w,device)
         dists_exh = dists_exh.view(B,Q,-1,ws_h,ws_w)
@@ -62,7 +63,9 @@ class L2SearchFunction_with_index(th.autograd.Function):
         gpuid = th.cuda.current_device()
         # print(gpuid,device)
         fflow = fflow.to(device)
-        bflow = bflow.to(device)
+        # bflow = bflow.to(device)
+        # print(inds_exh.shape)
+        # print(inds_exh.dtype)
         th.cuda.set_device(device)
         stnls_cuda.l2_search_with_index_forward(vid0, vid1, fflow, bflow,
                                                dists_exh, inds_exh,
