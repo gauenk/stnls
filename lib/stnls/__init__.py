@@ -17,6 +17,8 @@ from . import dev
 # -- submodules --
 from .pytorch import nn
 from .pytorch import search
+from .pytorch import normz
+from .pytorch import agg
 from .pytorch import reducers
 from .pytorch import tile
 from .pytorch import tile_k

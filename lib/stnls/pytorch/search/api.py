@@ -26,13 +26,21 @@ import importlib
 from pathlib import Path
 from easydict import EasyDict as edict
 
+# # -- configs --
+# from dev_basics.configs import ExtractConfig
+# econfig = ExtractConfig(__file__) # init static variable
+# extract_config = econfig.extract_config # rename extraction
+
 MENU = edict({"exact":"non_local_search",
               "nls":"non_local_search",
               "nl":"non_local_search",
               "refine":"refinement",
-              "approx_t":"approx_time","nlat":"approx_time",
-              "approx_s":"approx_space","nlas":"approx_space",
-              "approx_st":"approx_spacetime","nlast":"approx_spacetime",
+              "approx_t":"approx_time",
+              "nlat":"approx_time",
+              "approx_s":"approx_space",
+              "nlas":"approx_space",
+              "approx_st":"approx_spacetime",
+              "nlast":"approx_spacetime",
               "rand_inds":"rand_inds"})
 
 def from_search_menu(name):

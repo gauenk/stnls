@@ -12,7 +12,7 @@ from einops import rearrange
 import stnls
 
 # -- local --
-import .utils import indexed_matmul_2_efficient,vid_to_raster_inds
+# import .utils import indexed_matmul_2_efficient,vid_to_raster_inds
 
 def init(cfg):
     return PdbAgg(cfg.k_a,cfg.ps,cfg.pt,cfg.stride0,cfg.pdbagg_chunk_size)
