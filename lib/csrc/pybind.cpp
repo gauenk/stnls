@@ -43,6 +43,7 @@ void init_window_search(py::module &);
 void init_prod_search_with_heads(py::module &);
 void init_prod_dists(py::module &);
 void init_prod_refine(py::module &);
+// void init_quadref(py::module &);
 
 // -- n3net_ops --
 void init_n3net_matmult1(py::module &);
@@ -82,7 +83,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_foldk(m);
   init_unfoldk(m);
 
-
   // -- dev/search --
   init_l2_search(m);
   init_l2_dists(m);
@@ -95,6 +95,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_prod_with_index_search(m);
   init_prod_pf_with_index_search(m);
   init_prod_search_with_heads(m);
+  // init_quadref(m);
 
   // -- n3net ops --
   init_n3net_matmult1(m);

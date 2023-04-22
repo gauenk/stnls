@@ -29,6 +29,11 @@ def nls_forward(batchsize,*args):
     vid_idx = 0
     ws_idx,wt_idx = 4,5
     stride0_idx = 9
+    # dists,inds = nls_forward(batchsize, vid0, vid1, fflow, bflow,
+    #                          ws, wt, ps, k, dist_type,
+    #                          stride0, stride1, dilation, pt,
+    #                          anchor_self, remove_self, reflect_bounds,
+    #                          full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
     ntotal,nbatches,batchsize = batching_info(args[vid_idx],args[stride0_idx],
                                               args[ws_idx],args[wt_idx],
                                               batchsize)
@@ -70,11 +75,11 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
 
     # -- forward --
     stnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
-                                       dists, inds,
-                                       wt, ps, k, dist_type_i, stride0,
-                                       stride1, dilation, pt, qshift,
-                                       reflect_bounds, full_ws, search_abs,
-                                       use_adj, off_H0, off_W0, off_H1, off_W1)
+                                        dists, inds,
+                                        wt, ps, k, dist_type_i, stride0,
+                                        stride1, dilation, pt, qshift,
+                                        reflect_bounds, full_ws, search_abs,
+                                        use_adj, off_H0, off_W0, off_H1, off_W1)
 
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
@@ -86,7 +91,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
 
     # -- topk --
     dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                              descending=descending,unique=False)
+                               descending=descending,unique=False)
 
     return dists,inds
 

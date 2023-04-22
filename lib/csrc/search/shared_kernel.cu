@@ -212,6 +212,88 @@ void compute_dist(scalar_t& dist,
 }
 
 
+// template<typename scalar_t, int DIST_TYPE>
+// __device__ __forceinline__ 
+// void compute_quad_dist(scalar_t& dist,
+//   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
+//   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
+//   // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> deno0,
+//   // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> deno1,
+//   int** patches,  int** locs, bool** valids,
+//   int ps, int pt, int dilation, bool reflect_bounds,
+//   int patch_offset, int* center_offsets, scalar_t invalid,
+//   int T, int C, int H, int W,
+//   scalar_t* pixels, scalar_t _dist){
+//   const int K = 4;
+//   bool valid;
+                  
+//   for (int pk = 0; pk < pt; pk++){
+
+//     // -- time --
+// #pragma unroll
+//       for (int k=0; k < K; k++){
+//         locs[k][0] = bounds(patches[k][0] + pk,T);
+//         locs[k][0] = bounds(locs[k][0] + pk,T);
+//       }
+    
+//       for (int pi = 0; pi < ps; pi++){
+
+//         // -- height --
+// #pragma unroll
+//         for (int k=0; k < K; k++){
+//           locs[k][1] = (patches[k][1]-center_offsets[0])+dilation*(pi - patch_offset);
+//           locs[k][1] = reflect_bounds ? bounds(locs[k][1],H) : locs[k][1];
+//           valids[k][1] = check_interval(locs[k][1],0,H);
+//         }
+
+//         for (int pj = 0; pj < ps; pj++){
+        
+//           // -- width --
+// #pragma unroll
+//           for (int k=0; k < K; k++){
+//             locs[k][2] = (patches[k][2]-center_offsets[1])+dilation*(pi - patch_offset);
+//             locs[k][2] = reflect_bounds ? bounds(locs[k][2],H) : locs[k][2];
+//             valids[k][2] = check_interval(locs[k][2],0,W);
+//           }
+
+//         // -- valid --
+//         valid = true;
+// #pragma unroll
+//         for (int k=0; k < K; k++){
+//           valids[k][3] = true;
+// #pragma unroll
+//           for (int bool_idx=0; bool_idx<3; bool_idx++){
+//             valids[k][3] = valids[k][3] && valids[k][bool_idx];
+//           }
+//           valid = valid & valids[k][3];
+//         }
+
+//         // -- fill each channel --
+//         for (int ci = 0; ci < C; ci++){
+
+//           // -- data --
+//           pixels[0] = valids[0][3]?vid0[locs[0][0]][ci][locs[0][1]][locs[0][2]]:(scalar_t)0.;
+// #pragma unroll
+//           for (int k=1; k < K; k++){
+//             pixels[k]=valids[k][3]?vid1[locs[k][0]][ci][locs[k][1]][locs[k][2]]:(scalar_t)0.;
+//           }
+
+//           // -- compute dist --
+//           if(DIST_TYPE == 0){ // product
+//             dist += pixels[0] * pixels[1] - pixels[2] * pixels[3];
+//           }else if(DIST_TYPE == 1){ // l2
+//             _dist = (pixels[0] - pixels[1] + pixels[2] - pixels[3]);
+//             dist += _dist*_dist;
+//           }else{ // error
+//             dist = invalid;
+//           }
+
+//         }
+//       }
+//     }
+//   }
+// }
+
 template<typename scalar_t, int DIST_TYPE>
 __device__ __forceinline__ 
 void update_bwd_patch(
@@ -296,3 +378,106 @@ void update_bwd_patch(
       }
     }
 }
+
+// template<typename scalar_t, int DIST_TYPE>
+// __device__ __forceinline__ 
+// void update_bwd_quad_patch(
+//                            // grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
+//                            // vid0[ibatch][ihead],vid1[ibatch][ihead],
+//                            // // deno0[ibatch][ihead],deno1[ibatch][ihead],
+//                            // weight,patches,pixels_i,pixels_v,
+//                            // ps,pt,dilation,reflect_bounds,
+//                            // center_offsets,patch_offset,
+//                            // c0,c0_start,c0_end,c0_offset,c0_dist,
+//                            // locs,valids,valid,
+//                            // T,C,H,W,pix);
+//     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid0,
+//     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid1,
+//     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
+//     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
+//     scalar_t weight, int** patches, int** pixels_i, scalar_t* pixels_v,
+//     bool** valids, bool valid,
+//     int ps, int pt, int dilation, bool reflect_bounds,
+//     int* center_offsets, int patch_offset,
+//     int c0, int c0_start, int c0_end, int c0_offset, int c0_dist,
+//     int T, int C, int H, int W, scalar_t pix){
+//     const int K = 4;
+
+//     for (int pk = 0; pk < pt; pk++){
+
+//       // -- patches --
+// #pragma unroll
+//       for (int _k=0; _k < K; _k++){
+//         pixels_i[k][0] = bounds(patches[k][0]+pk,T);
+//         valid_ref[k][0] = check_interval(pixels_i[k][0],0,T);
+//       }
+
+//       for (int pi = 0; pi < ps; pi++){
+
+//         // -- patches --
+// #pragma unroll
+//         for (int _k=0; _k < K; _k++){
+//           pixels_i[k][1] = (patches[k][1]-center_offsets[0])+dilation*(pi - patch_offset);
+//           pixels_i[k][1] = reflect_bounds ? bounds(pixels_i[k][1],H) : pixels_i[k][1];
+//           valids[k][1] = check_interval(pixels_i[k][1],0,H);
+//         }
+
+//         for (int pj = 0; pj < ps; pj++){
+          
+//           // -- patches --
+// #pragma unroll
+//           for (int _k=0; _k < K; _k++){
+//             pixels_i[k][2] = (patches[k][2]-center_offsets[1])+dilation*(pi - patch_offset);
+//             pixels_i[k][2] = reflect_bounds ? bounds(pixels_i[k][2],H) : pixels_i[k][2];
+//             valids[k][2] = check_interval(pixels_i[k][2],0,W);
+//           }
+
+
+
+//           // -- ensure valid location --
+//           valid = true;
+// #pragma unroll
+//           for (int _k=0; _k < K; _k++){
+//             valids[k][3] = true;
+// #pragma unroll
+//             for (int bool_idx=0; bool_idx<3; bool_idx++){
+//               valids[k][3] = valids[k][3] && valids[k][bool_idx];
+//             }
+            
+//             valid = valid && valids[k][3];
+//           }
+
+
+//           // -- fill each channel --
+//           for (int _c0 = c0_start; _c0 < c0_end; _c0++){
+
+//             c0 = (_c0 + c0_offset) % c0_dist + c0_start;
+//             if (DIST_TYPE == 0){ // prod
+//               if(valid){
+//                 pixels_v[0] = weight*vid0[pixels_i[0][0]][c0][pixels_i[0][1]][pixels_i[0][2]];
+// #pragma unroll
+//                 for (int _k=1; _k < K; _k++){
+//                   pixels_v[k] = weight*vid0[pixels_i[k][0]][c0][pixels_i[0][1]][pixels_i[0][2]];
+//                   grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix1;
+//                   grad_vid1[prop[0]][c0][prop[1]][prop[2]] += pix0;
+
+//                 }
+//               }
+//             }else if(DIST_TYPE == 1){ // l2 norm
+//               pixels_v[0] = weight*vid0[pixels_i[0][0]][c0][pixels_i[0][1]][pixels_i[0][2]];
+// #pragma unroll
+//               for (int _k=1; _k < K; _k++){
+//                 pixels_v[k] = weight*vid0[pixels_i[k][0]][c0][pixels_i[0][1]][pixels_i[0][2]];
+//               }
+//               pix = 2 * weight * (pixels_v[0] - pixels_v[1] + pixels_v[2] -pixels_v[3]);
+//               if (valid){
+//                 grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix;
+//               }
+
+//             }
+//           }
+//         }
+//       }
+//     }
+// }
+

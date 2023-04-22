@@ -1,5 +1,4 @@
 
-
 import torch as th
 
 def run_batched(run_fxn,batchsize,vid_idx,stride0_idx,ws_idx,wt_idx,*args):

@@ -21,19 +21,20 @@ __global__ void anchor_self_kernel(
   int loc[3];
   int i_tmp[3];
   scalar_t d_tmp;
-  int qi,i_mod;
+  int qi,i_mod,qindex;
 
   // -- for each location --
   for (int qi_ix = 0; qi_ix < q_per_thread; qi_ix++){
 
     // -- current query --
-    qi = qi_thread + qi_ix + qstart;
+    qi = qi_thread + qi_ix;
     if (qi >= Q){ continue; }
+    qindex = qi + qstart;
 
     // -- unpack pixel locs --
     // get_pixel_loc(loc,  qi, tmp,  stride0, nW, nHW, H,W);
-    int tmp = qi;
-    loc[0] = qi / nHW;
+    int tmp = qindex;
+    loc[0] = qindex / nHW;
     tmp = (tmp - loc[0]*nHW); 
     int nH_index = tmp / nW;
     loc[1] = (nH_index*stride0) % H;

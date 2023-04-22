@@ -11,6 +11,7 @@ from . import jitter_unique_inds as jitter_unique_inds_f
 from . import compare_inds as compare_inds_f
 from . import flow_patches as flow_patches_f
 from . import non_local_attn as non_local_attn_f
+from . import remove_same_frame as remove_same_frame_f
 
 # -- [register] so we can run stnls.nn.NAME_HERE --
 topk = topk_f.run
@@ -24,6 +25,7 @@ compare_inds = compare_inds_f.run
 flow_patches = flow_patches_f.get_patches
 flow_patches_mse = flow_patches_f.get_mse
 NonLocalAttention = non_local_attn_f.NonLocalAttention
+remove_same_frame = remove_same_frame_f.run
 
 # -- api v2 --
 def init(version,*args,**kwargs):
