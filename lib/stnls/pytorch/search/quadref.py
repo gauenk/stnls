@@ -18,7 +18,7 @@ from .utils import shape_vids,dist_type_select
 from .utils import allocate_pair,allocate_vid
 from .shared import manage_self
 from .batching_utils import run_batched,batching_info
-from .nls_bwd_impl import nls_backward
+from .nls_bwd_impl import nls_quad_backward
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -26,7 +26,7 @@ from .nls_bwd_impl import nls_backward
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def refine_forward(batchsize,*args):
+def quadref_forward(batchsize,*args):
     vid_idx = 0
     ws_idx,wt_idx = 3,4
     stride0_idx = 8
@@ -35,12 +35,12 @@ def refine_forward(batchsize,*args):
                                               batchsize)
     if nbatches == 1: # shortcut
         qshift,nqueries = 0,-1
-        return refine_fwd_main(qshift,nqueries,*args)
+        return quadref_fwd_main(qshift,nqueries,*args)
     else:
-        return run_batched(refine_fwd_main,batchsize,vid_idx,
+        return run_batched(quadref_fwd_main,batchsize,vid_idx,
                            stride0_idx,ws_idx,wt_idx,*args)
 
-def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
+def quadref_fwd_main(qshift, Q, vid0, vid1, deno0, deno1, qinds,
                     ws, wr, ps, k, dist_type,
                     stride0, stride1, dilation, pt,
                     anchor_self, remove_self, reflect_bounds,
@@ -69,11 +69,11 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
     # -- run --
-    stnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
-                                  ws_h, ws_w, ps, k, dist_type_i,
-                                  stride0, stride1, dilation, pt, qshift,
-                                  reflect_bounds, full_ws, use_adj,
-                                  off_H0, off_W0, off_H1, off_W1)
+    stnls_cuda.quadref_forward(vid0, vid1, deno0, deno1, qinds, dists, inds,
+                               ws_h, ws_w, ps, k, dist_type_i,
+                               stride0, stride1, dilation, pt, qshift,
+                               reflect_bounds, full_ws, use_adj,
+                               off_H0, off_W0, off_H1, off_W1)
     # print("dists [max,min]: ",th.max(dists).item(),th.min(dists).item())
 
     # -- no negative --
@@ -84,7 +84,6 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
     inds=inds.view(B,HD,Q,-1,3)
-    # print(dists[0,0,0])
 
     # -- manage self dists --
     H,W = vid0.shape[-2:]
@@ -93,13 +92,8 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
 
     # -- topk --
     qinds = rearrange(qinds,'b hd q k tr -> (b hd q) k tr')
-    k = min(qinds.shape[1],k)
-    # print(dists[0,0,0],inds[0,0,0],len(dists[0,0,0]),k)
     dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
                               descending=descending,unique=True,qinds=qinds)
-    # print(dists[0,0,0])
-    # print("^"*30)
-
     return dists,inds
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -108,19 +102,19 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-class RefineSearchFunction(th.autograd.Function):
+class QuadrefSearchFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, qinds,
+    def forward(ctx, vid0, vid1, deno0, deno1, qinds,
                 ws, ps, k, wr, kr, nheads=1, batchsize=-1,
-                dist_type="prod", stride0=4, stride1=1,
+                dist_type="l2", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=True, remove_self=False,
                 use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
                 rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
                 neigh_per_thread=4, channel_groups=-1):
         """
-        Run the refinement search
+        Run the quadrefment search
 
         vid0 = [B,T,C,H,W] or [B,HD,T,C,H,W]
         ws = search Window Spatial (ws)
@@ -131,7 +125,7 @@ class RefineSearchFunction(th.autograd.Function):
         # -- reshape with heads --
         dtype = vid0.dtype
         device = vid0.device
-        vid0,vid1 = shape_vids(nheads,[vid0,vid1])
+        vid0,vid1,deno0,deno1 = shape_vids(nheads,[vid0,vid1,deno0,deno1])
         B,HD,T,F,H,W = vid0.shape
         assert qinds.shape[1] == HD
 
@@ -140,7 +134,7 @@ class RefineSearchFunction(th.autograd.Function):
         qinds = qinds.contiguous()
 
         # -- run fwd pass --
-        dists,inds = refine_forward(batchsize, vid0, vid1, qinds,
+        dists,inds = quadref_forward(batchsize, vid0, vid1, deno0, deno1, qinds,
                                     ws, wr, ps, k, dist_type,
                                     stride0, stride1, dilation, pt,
                                     anchor_self,remove_self, reflect_bounds,
@@ -148,7 +142,7 @@ class RefineSearchFunction(th.autograd.Function):
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
-        ctx.save_for_backward(inds,vid0,vid1)
+        ctx.save_for_backward(inds,vid0,vid1,deno0,deno1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
         ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
@@ -167,13 +161,13 @@ class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
-        # print("refinement: ",grad_dists.shape,grad_inds_is_none)
+        # print("quadrefment: ",grad_dists.shape,grad_inds_is_none)
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
 
-class RefineSearch(th.nn.Module):
+class QuadrefSearch(th.nn.Module):
 
     def __init__(self, ws, ps, k, wr, kr, nheads=1,
                  dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
@@ -221,8 +215,8 @@ class RefineSearch(th.nn.Module):
         self.channel_groups = channel_groups
 
 
-    def forward(self,vid0,vid1,qinds,batchsize=-1):
-        return RefineSearchFunction.apply(vid0,vid1,qinds,
+    def forward(self,vid0,vid1,deno0,deno1,qinds,batchsize=-1):
+        return QuadrefSearchFunction.apply(vid0,vid1,deno0,deno1,qinds,
                                           self.ws,self.ps,self.k,
                                           self.wr,self.kr,self.nheads,batchsize,
                                           self.dist_type,self.stride0,self.stride1,
@@ -246,11 +240,11 @@ class RefineSearch(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#        [Direct API]  stnls.search.refine(...)
+#        [Direct API]  stnls.search.quadref(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def _apply(vid0, vid1, qinds,
+def _apply(vid0, vid1, deno0, deno1, qinds,
            ws, ps, k, wr, kr=-1, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True, full_ws=False,
@@ -261,8 +255,8 @@ def _apply(vid0, vid1, qinds,
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
-    fxn = RefineSearchFunction.apply
-    return fxn(vid0, vid1, qinds,
+    fxn = QuadrefSearchFunction.apply
+    return fxn(vid0, vid1, deno0, deno1, qinds,
                ws, ps, k, wr, kr, nheads, batchsize,
                dist_type, stride0, stride1,
                dilation, pt, reflect_bounds,
@@ -290,7 +284,7 @@ def extract_config(cfg):
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
-    search = RefineSearch(cfg.ws, cfg.ps, cfg.k, cfg.wr, cfg.kr,
+    search = QuadrefSearch(cfg.ws, cfg.ps, cfg.k, cfg.wr, cfg.kr,
                           nheads=cfg.nheads, dist_type=cfg.dist_type,
                           stride0=cfg.stride0, stride1=cfg.stride1,
                           dilation=cfg.dilation, pt=cfg.pt,
