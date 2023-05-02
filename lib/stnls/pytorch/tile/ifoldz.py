@@ -83,7 +83,7 @@ class ifoldz(th.autograd.Function):
 class iFoldz(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
 
-    def __init__(self,vid_shape,coords,stride=1,dilation=1,adj=0,
+    def __init__(self,vid_shape,coords=None,stride=1,dilation=1,adj=0,
                  only_full=False,use_reflect=True,device="cuda"):
         super(iFoldz, self).__init__()
         self.vshape = vid_shape

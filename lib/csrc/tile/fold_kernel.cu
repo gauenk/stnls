@@ -37,7 +37,7 @@ template <typename scalar_t>
 __global__ void stnls_fold_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> patches,
-    int iStart, int start, int stride, int dilation, int num_kernels) {
+    int iStart, int start, int stride, int dilation, int adj, int num_kernels) {
 
     // -- unpack --
     int nframes = vid.size(0);
@@ -81,8 +81,8 @@ __global__ void stnls_fold_forward_kernel(
             for (int pj = 0; pj < ps; pj++){
 
               // -- offsets for ni --
-              int _wi = w_im + dilation*(pi - psHalf);
-              int _hi = h_im + dilation*(pj - psHalf);
+              int _wi = w_im + dilation*(pi - psHalf + adj);
+              int _hi = h_im + dilation*(pj - psHalf + adj);
               int ti = t_im + pk;
 
               // -- check bounds -- // todo; change to "pad"
@@ -142,7 +142,7 @@ __global__ void stnls_fold_forward_kernel(
 
 void stnls_cuda_fold_forward(
     torch::Tensor vid, torch::Tensor patches,
-    int start, int stride, int dilation){
+    int start, int stride, int adj, int dilation){
 
   // batching entire image always
   int nframes = vid.size(0);
@@ -164,7 +164,7 @@ void stnls_cuda_fold_forward(
     stnls_fold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        iStart,start,stride,dilation,num_kernels);
+        iStart,start,stride,adj,dilation,num_kernels);
       }));
 }
 

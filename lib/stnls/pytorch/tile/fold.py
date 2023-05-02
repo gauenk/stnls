@@ -25,9 +25,10 @@ class fold(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, patches, vid, qstart, stride, dilation):
+    def forward(ctx, patches, vid, qstart, stride, adj, dilation):
         patches = patches.contiguous()
-        stnls_cuda.fold_forward(vid, patches, qstart, stride, dilation)
+        print(vid.shape,patches.shape)
+        stnls_cuda.fold_forward(vid, patches, qstart, stride, adj, dilation)
         ctx.qstart = qstart
         ctx.stride = stride
         ctx.qNum = patches.shape[0]
@@ -62,11 +63,12 @@ class fold(th.autograd.Function):
 class Fold(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
 
-    def __init__(self, vid_shape, stride=1, dilation=1, device="cuda:0"):
+    def __init__(self, vid_shape, stride=1, adj=0, dilation=1, device="cuda:0"):
         super(Fold, self).__init__()
         self.device = device
         self.vid_shape = vid_shape
         self.vid = self.allocate_vid(vid_shape,device)
+        self.adj = adj
         self.stride = stride
         self.dilation = dilation
 
@@ -78,7 +80,7 @@ class Fold(th.nn.Module):
         bpatches,qstart = patches,qstart
         vid = self.allocate_vid(self.vid_shape,self.device)
         vid = fold.apply(bpatches, vid, qstart,
-                         self.stride,self.dilation)
+                         self.stride,self.dilation,self.adj)
         self.vid = self.vid + vid
         return self.vid
 

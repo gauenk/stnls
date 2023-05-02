@@ -13,13 +13,13 @@ void stnls_cuda_fold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int start, int stride,
-    int dilation);
+    int adj, int dilation);
 
 void stnls_cuda_fold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int start, int stride,
-    int dilation);
+    int adj, int dilation);
 
 // C++ interface
 
@@ -37,20 +37,20 @@ void stnls_fold_forward(
     torch::Tensor vid,
     torch::Tensor patches,
     int start, int stride,
-    int dilation) {
+    int adj, int dilation) {
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
-  stnls_cuda_fold_forward(vid,patches,start,stride,dilation);
+  stnls_cuda_fold_forward(vid,patches,start,stride,adj,dilation);
 }
 
 void stnls_fold_backward(
     torch::Tensor grad_vid,
     torch::Tensor patches,
     int start, int stride,
-    int dilation) {
+    int adj, int dilation) {
   CHECK_INPUT(grad_vid);
   CHECK_INPUT(patches);
-  stnls_cuda_fold_backward(grad_vid,patches,start,stride,dilation);
+  stnls_cuda_fold_backward(grad_vid,patches,start,stride,adj,dilation);
 }
 
 

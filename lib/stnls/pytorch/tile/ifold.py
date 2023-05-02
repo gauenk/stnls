@@ -76,7 +76,7 @@ class ifold(th.autograd.Function):
 class iFold(th.nn.Module):
     # [patches -> video] @ nlInds [with k == 1]
 
-    def __init__(self,vid_shape,coords,stride=1,dilation=1,adj=0,
+    def __init__(self,vid_shape,coords=None,stride=1,dilation=1,adj=0,
                  only_full=False,reflect_bounds=True,device="cuda"):
         super(iFold, self).__init__()
         self.vshape = vid_shape
@@ -96,7 +96,7 @@ class iFold(th.nn.Module):
         vid = th.zeros(vid_shape,device=device,dtype=th.float32)
         return vid
 
-    def forward(self, patches, qStart):
+    def forward(self, patches, qStart=0):
         ps = patches.shape[-1]
         bpatches,qStart = patches,qStart
         vid = self.allocate_vid(self.vid_shape,patches.device)
