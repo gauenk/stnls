@@ -28,8 +28,9 @@ const int N_THREADS_E = 1024 / N_THREADS_N;
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 __global__
-void matmul1_fwd_kernel(float *mat_x, float *mat_y, long *mat_i, float *mat_o, int m, int n, int e, int o, int batch_size)
-{
+void matmul1_fwd_kernel(float *mat_x, float *mat_y, long *mat_i,
+                        float *mat_o, int m, int n, int e, int o, int batch_size){
+
 	int row = blockIdx.y * blockDim.y + threadIdx.y;
 	int col = blockIdx.x * blockDim.x + threadIdx.x;
 	int batch = blockIdx.z *blockDim.z + threadIdx.z;
@@ -55,7 +56,8 @@ void matmul1_fwd_kernel(float *mat_x, float *mat_y, long *mat_i, float *mat_o, i
 	mat_o[pos] = sum;	 
 }
 
-void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i, at::Tensor out, int n, int m, int e, int o, int b) {
+void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i,
+                      at::Tensor out, int n, int m, int e, int o, int b) {
 		// Set array and CUDA block/grid sizes
 
 
@@ -63,7 +65,10 @@ void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i, at::
 		dim3 grid((int)ceil(((float)o)/N_THREADS_O), (int)ceil(((float)m)/N_THREADS_M), b);
 		
 		// Call kernel
-    	matmul1_fwd_kernel<<<grid, block>>>(mat_x.data<float>(), mat_y.data<float>(), mat_i.data<long>(), out.data<float>(), m, n, e, o, b);
+    	matmul1_fwd_kernel<<<grid, block>>>(mat_x.data<float>(),
+                                            mat_y.data<float>(),
+                                            mat_i.data<long>(),
+                                            out.data<float>(), m, n, e, o, b);
 
 		return;
 }
@@ -108,7 +113,8 @@ void matmul1_xgrad(float *grad, float *mat_y, long *mat_i, float *mat_ox, int m,
 }
 
 __device__
-void matmul1_ygrad(float *grad, float *mat_x, long *mat_i, float *mat_o, int m, int n, int e, int o, int batch_size){
+void matmul1_ygrad(float *grad, float *mat_x, long *mat_i, float *mat_o,
+                   int m, int n, int e, int o, int batch_size){
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int batch = blockIdx.z *blockDim.z + threadIdx.z;
