@@ -8,6 +8,7 @@ void init_refinement(py::module &);
 void init_pfc(py::module &);
 void init_accumulate_flow(py::module &);
 void init_temporal_inds(py::module &);
+void init_non_local_inds(py::module &);
 void init_unique_topk(py::module &);
 void init_interpolate_inds(py::module &);
 void init_anchor_self(py::module &);
@@ -59,6 +60,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_pfc(m);
   init_accumulate_flow(m);
   init_temporal_inds(m);
+  init_non_local_inds(m);
   init_unique_topk(m);
   init_interpolate_inds(m);
   init_anchor_self(m);

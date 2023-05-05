@@ -14,10 +14,12 @@ import stnls
 from .utils import extract_pairs
 
 # -- local --
-from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
+from .utils import shape_vids,allocate_inds,dist_type_select,allocate_vid
 from .shared import manage_self
-from .nls_bwd_impl import nls_backward
-from .batching_utils import run_batched,batching_info
+# from .nls_bwd_impl import nls_backward
+# from .batching_utils import run_batched,batching_info
+# from .n3mm_utils import IndexedMatmul1Efficient
+from .n3mm_utils import matmult_fwd,matmult_bwd,vid_index_neighbours
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -40,30 +42,33 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     nW0 = (W-1)//stride0+1
     Q = T*nH0*nW0
 
-    # # -- settings from distance type --
+    # -- settings from distance type --
     # dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
     # -- allocate results --
     st = min(2*wt+1,T)
     base_shape = (B,HD,Q,st,ws,ws)
-    dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
+    inds = allocate_inds(base_shape,device)
 
     # -- compute indices --
     stnls_cuda.n3mm_fill_inds(inds,fflow,bflow,ws,wt)
+    
+    vid_index_neighbours(b,t,n1,n2,m1,m2,s,dev,exclude_self=True)
 
     # -- compute database --
     pat0 = create_patch_database(vid0,stride0,ps,reflect_bounds)
     pat1 = create_patch_database(vid1,stride1,ps,reflect_bounds)
 
     # -- forward --
-    # stnls_cuda.n3mm_iprod(pat0, pat1, dists, inds,
-    #                       dist_type_i, dilation, use_adj,
-    #                       off_H0, off_W0, off_H1, off_W1)
-    # # if dist_type == "l2":
-    stnls_cuda.n3mm_forward(pat0, pat1, dists, inds,
-                            dist_type_i, dilation, use_adj,
-                            off_H0, off_W0, off_H1, off_W1)
-
+    prods = matmult_fwd(pat0,pat1,inds)
+    if dist_type == "prod":
+        dists = prods
+    else:
+        dists = -2*prods
+        pat1_norm = (xe**2).sum(dim=-1, keepdim=True)
+        pat1_norm = pat1_norm.gather(dim=1, index=If[:,:,0:1]).view(b,m,o,1)
+        pat0_norm = pat0_norm.sum(-1)
+        dists += pat0_norm + pat1_norm
 
     return dists,inds
 
@@ -73,7 +78,7 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-class N3MMSearchFunction(th.autograd.Function):
+class N3MatMultSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, fflow, bflow,
@@ -122,7 +127,8 @@ class N3MMSearchFunction(th.autograd.Function):
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
+        ctx_vars = {"batchsize":batchsize,"ps":ps,"pt":pt,
+                    "stride0":stride0,"stride1":stride1,                    
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
@@ -134,7 +140,20 @@ class N3MMSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
-        grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
+
+        # -- unpacking --
+        inds,vid0,vid1 = ctx.saved_tensors
+        ps,pt = ctx.ps,ctx.pt
+        stride0,stride1 = ctx.stride0,ctx.stride1
+        dil,reflect_bounds = ctx.dil,ctx.reflect_bounds
+
+        # -- compute database --
+        pat0 = create_patch_database(vid0,stride0,ps,reflect_bounds)
+        pat1 = create_patch_database(vid1,stride1,ps,reflect_bounds)
+
+        # -- backward step --
+        grad0,grad1 = matmult_bwd(pat0,pat1,inds,grad_dists)
+    
         return grad0,grad1,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None
@@ -146,7 +165,7 @@ class N3MMSearchFunction(th.autograd.Function):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
-class N3MMSearch(th.nn.Module):
+class N3MatMultSearch(th.nn.Module):
 
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
@@ -184,7 +203,7 @@ class N3MMSearch(th.nn.Module):
 
 
     def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
-        return N3MMSearchFunction.apply(vid0,vid1,fflow,bflow,
+        return N3MatMultSearchFunction.apply(vid0,vid1,fflow,bflow,
                                         self.ws,self.wt,self.ps,self.k,
                                         self.nheads,batchsize,
                                         self.dist_type,self.stride0,
@@ -233,7 +252,7 @@ def _apply(vid0, vid1, fflow, bflow,
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
-    fxn = N3MMSearchFunction.apply
+    fxn = N3MatMultSearchFunction.apply
     return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
@@ -257,7 +276,7 @@ def extract_config(cfg):
 
 def init(cfg):
     cfg = extract_config(cfg)
-    search = N3MMSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
+    search = N3MatMultSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
                         dist_type=cfg.dist_type, stride0=cfg.stride0,
                         stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
                         reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,

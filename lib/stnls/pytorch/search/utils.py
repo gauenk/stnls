@@ -17,6 +17,11 @@ def allocate_pair(base_shape,device,dtype,idist_val):
     inds[...] = -1
     return dists,inds
 
+def allocate_inds(base_shape,device):
+    inds = th.zeros(base_shape+(3,),device=device,dtype=th.int32)
+    inds[...] = -1
+    return inds
+
 def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid

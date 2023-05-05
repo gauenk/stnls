@@ -12,8 +12,15 @@
 #include <vector>
 
 using namespace std;
-void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i, at::Tensor out, int n, int m, int e, int o, int b);
-void matmul1_bwd_cuda(at::Tensor gradients, at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i, at::Tensor out_x, at::Tensor out_y, int m, int n, int e, int o, int b);
+
+void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y,
+		      at::Tensor mat_i, at::Tensor out,
+		      int n, int m, int e, int o, int b);
+
+void matmul1_bwd_cuda(at::Tensor gradients, at::Tensor mat_x,
+		      at::Tensor mat_y, at::Tensor mat_i,
+		      at::Tensor out_x, at::Tensor out_y,
+		      int m, int n, int e, int o, int b);
 
 // python bindings
 void init_n3net_matmult1(py::module &m){

@@ -5,6 +5,7 @@ from . import topk as topk_f
 from . import topk_time as topk_time_f
 from . import anchor_self as anchor_self_f
 from . import temporal_inds as temporal_inds_f
+from . import non_local_inds as non_local_inds_f
 from . import accumulate_flow as accumulate_flow_f
 from . import interpolate_inds as interpolate_inds_f
 from . import jitter_unique_inds as jitter_unique_inds_f
@@ -18,6 +19,7 @@ topk = topk_f.run
 topk_time = topk_time_f.run
 anchor_self = anchor_self_f.run
 temporal_inds = temporal_inds_f.run
+non_local_inds = non_local_inds_f.run
 accumulate_flow = accumulate_flow_f.run
 interpolate_inds = interpolate_inds_f.run
 jitter_unique_inds = jitter_unique_inds_f.run

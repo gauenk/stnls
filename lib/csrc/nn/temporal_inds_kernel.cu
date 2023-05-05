@@ -62,8 +62,8 @@ __global__ void temporal_inds_kernel(
       // -- accumulate --
       hj_tmp = hj;
       wj_tmp = wj;
-      // hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
-      // wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
+      hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
+      wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
       hj = max(0,min(H-1,hj));
       wj = max(0,min(W-1,wj));
 
@@ -89,8 +89,8 @@ __global__ void temporal_inds_kernel(
       // -- accumulate --
       hj_tmp = hj;
       wj_tmp = wj;
-      // hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
-      // wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
+      hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
+      wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
       hj = max(0,min(H-1,hj));
       wj = max(0,min(W-1,wj));
 

@@ -9,6 +9,7 @@ from . import approx_spacetime as approx_spacetime_f
 from . import window_search as window_search_f
 from . import nls_accumulated_flows as nls_accumulated_flows_f
 from . import quadref as quadref_f
+from . import n3mm_search as n3mm_search_f
 from .utils import empty_flow,search_wrap
 
 # -- api to programatically access search functions --
@@ -24,6 +25,7 @@ approx_space = approx_space_f._apply
 approx_spacetime = approx_spacetime_f._apply
 window = window_search_f._apply
 nls_af = nls_accumulated_flows_f._apply
+n3mm = n3mm_search_f._apply
 
 # -- class api --
 NonLocalSearch = non_local_search_f.NonLocalSearch
@@ -34,3 +36,4 @@ ApproxSpaceSearch = approx_space_f.ApproxSpaceSearch
 ApproxSpaceTimeSearch = approx_spacetime_f.ApproxSpaceTimeSearch
 WindowSearch = window_search_f.WindowSearch
 AccFlowsSearch = nls_accumulated_flows_f.AccFlowsSearch
+N3MatMultSearch = n3mm_search_f.N3MatMultSearch
