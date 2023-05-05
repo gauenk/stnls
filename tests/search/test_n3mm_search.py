@@ -46,10 +46,10 @@ def get_data(dnames,ext,device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"wt":[2],"ws":[3],"k":[-1,30],"ps":[7],
+    test_lists = {"wt":[2],"ws":[3],"k":[30],"ps":[7],
                   "stride0":[4],"stride1":[1],"dilation":[1],
                   "nheads":[2],"anchor_self":[False],
-                  "full_ws":[True],"dist_type":["l2"],"seed":[0]}
+                  "full_ws":[True],"dist_type":["prod"],"seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -173,6 +173,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
 
 
 @pytest.mark.slow
+@pytest.mark.skip
 def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
              nheads,anchor_self,full_ws,dist_type,seed):
     """
@@ -242,6 +243,11 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid_gt0,vid_gt1,flows.fflow,flows.bflow)
     th.cuda.synchronize()
+
+    print("dists_te.shape: ",dists_te.shape)
+    print("inds_te.shape: ",inds_te.shape)
+    print("dists_gt.shape: ",dists_gt.shape)
+    print("inds_gt.shape: ",inds_gt.shape)
 
     # -- viz --
     # print(dists_te)

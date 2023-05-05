@@ -2,7 +2,7 @@
 # -- python --
 import torch as th
 import numpy as np
-from einops import rearrange
+from einops import rearrange,repeat
 
 # -- cpp cuda kernel --
 import stnls_cuda
@@ -15,11 +15,12 @@ from .utils import extract_pairs
 
 # -- local --
 from .utils import shape_vids,allocate_inds,dist_type_select,allocate_vid
+from .utils import descending_menu
 from .shared import manage_self
 # from .nls_bwd_impl import nls_backward
 # from .batching_utils import run_batched,batching_info
 # from .n3mm_utils import IndexedMatmul1Efficient
-from .n3mm_utils import matmult_fwd,matmult_bwd,vid_index_neighbours
+from .n3mm_utils import matmult_fwd,matmult_bwd,raster_indices,vid2patches
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -28,14 +29,14 @@ from .n3mm_utils import matmult_fwd,matmult_bwd,vid_index_neighbours
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def n3mm_fwd_main(vid0, vid1, fflow, bflow,
-                  ws, wt, ps, dist_type,
+                  nheads, ws, wt, ps, dist_type,
                   stride0, stride1, dilation, pt,
-                  reflect_bounds, use_adj,
+                  reflect_bounds, use_adj, full_ws,
                   off_H0, off_W0, off_H1, off_W1):
 
     # -- unpack --
     device = vid0.device
-    B,HD,T,C,H,W = vid0.shape
+    B,T,C,H,W = vid0.shape
 
     # -- derived shapes --
     nH0 = (H-1)//stride0+1
@@ -45,30 +46,40 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # -- settings from distance type --
     # dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
-    # -- allocate results --
-    st = min(2*wt+1,T)
-    base_shape = (B,HD,Q,st,ws,ws)
-    inds = allocate_inds(base_shape,device)
-
     # -- compute indices --
-    stnls_cuda.n3mm_fill_inds(inds,fflow,bflow,ws,wt)
-    
-    vid_index_neighbours(b,t,n1,n2,m1,m2,s,dev,exclude_self=True)
+    inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,
+                                   stride0,stride1,full_ws)
+    print(inds[0][1])
+    print("inds.min(),inds.max(): ",inds.min(),inds.max(),full_ws)
+    assert inds.shape[1] == Q
+    inds = inds.view(B,Q,-1,3)
+    inds = repeat(inds,'b q l tr -> (b HD) q l tr',HD=nheads)
 
     # -- compute database --
-    pat0 = create_patch_database(vid0,stride0,ps,reflect_bounds)
-    pat1 = create_patch_database(vid1,stride1,ps,reflect_bounds)
+    pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
+    pat1 = vid2patches(vid1,nheads,stride1,ps,pt,dilation,reflect_bounds)
 
     # -- forward --
-    prods = matmult_fwd(pat0,pat1,inds)
+    inds_r = raster_indices(inds,H,W,stride1)
+    print("inds_r.min(),inds_r.max(): ",inds_r.min(),inds_r.max())
+    prods = matmult_fwd(pat1,pat0,inds_r)
     if dist_type == "prod":
         dists = prods
     else:
+        b,n,e = pat1.shape
+        b,m,o = inds_r.shape
         dists = -2*prods
-        pat1_norm = (xe**2).sum(dim=-1, keepdim=True)
-        pat1_norm = pat1_norm.gather(dim=1, index=If[:,:,0:1]).view(b,m,o,1)
-        pat0_norm = pat0_norm.sum(-1)
-        dists += pat0_norm + pat1_norm
+        dists = dists.unsqueeze(3)
+        If = inds_r.view(b, m*o,1).expand(b,m*o,e)
+        pat1_norm = (pat1**2).sum(dim=-1, keepdim=True)
+        # pat1_norm = pat1_norm.gather(dim=1, index=If[:,:,0:1]).view(b,m,o,1)
+        pat0 = pat0.unsqueeze(3)
+        pat0_norm = (pat0**2).sum(-2,keepdim=True)
+        dists += pat0_norm# + pat1_norm
+
+    # -- reshape with heads --
+    dists = dists.view(B,nheads,Q,-1)
+    inds = inds.view(B,nheads,Q,-1,3)
 
     return dists,inds
 
@@ -99,26 +110,30 @@ class N3MatMultSearchFunction(th.autograd.Function):
         # -- reshape with heads --
         dtype = vid0.dtype
         device = vid0.device
-        vid0,vid1 = shape_vids(nheads,[vid0,vid1])
-        B,HD,T,F,H,W = vid0.shape
+        # vid0,vid1 = shape_vids(nheads,[vid0,vid1])
+        B,T,F,H,W = vid0.shape
+        HD = nheads
 
         # -- run, optionally batched, forward function --
         dists,inds = n3mm_fwd_main(vid0, vid1, fflow, bflow,
-                                   ws, wt, ps, dist_type,
+                                   nheads, ws, wt, ps, dist_type,
                                    stride0, stride1, dilation, pt,
-                                   reflect_bounds, use_adj,
+                                   reflect_bounds, use_adj, full_ws,
                                    off_H0, off_W0, off_H1, off_W1)
 
 
         # -- compress search region --
+        B,HD,Q,*_ = dists.shape
         dists=dists.view(B,HD,Q,-1)
         inds=inds.view(B,HD,Q,-1,3)
 
         # -- manage self dists --
+        qshift = 0
         dists,inds = manage_self(dists,inds,anchor_self,
                                  remove_self,qshift,stride0,H,W)
 
         # -- topk --
+        descending = descending_menu(dist_type)
         dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
                                    descending=descending,unique=False)
 
@@ -145,11 +160,11 @@ class N3MatMultSearchFunction(th.autograd.Function):
         inds,vid0,vid1 = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
         stride0,stride1 = ctx.stride0,ctx.stride1
-        dil,reflect_bounds = ctx.dil,ctx.reflect_bounds
+        dilation,reflect_bounds = ctx.dil,ctx.reflect_bounds
 
         # -- compute database --
-        pat0 = create_patch_database(vid0,stride0,ps,reflect_bounds)
-        pat1 = create_patch_database(vid1,stride1,ps,reflect_bounds)
+        pat0 = vid2patches(vid0,stride0,ps,pt,dilation,reflect_bounds)
+        pat1 = vid2patches(vid1,stride1,ps,pt,dilation,reflect_bounds)
 
         # -- backward step --
         grad0,grad1 = matmult_bwd(pat0,pat1,inds,grad_dists)

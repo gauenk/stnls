@@ -61,16 +61,16 @@ void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i,
 		// Set array and CUDA block/grid sizes
 
 
-		dim3 block(N_THREADS_O, N_THREADS_M, 1);
-		dim3 grid((int)ceil(((float)o)/N_THREADS_O), (int)ceil(((float)m)/N_THREADS_M), b);
+  dim3 block(N_THREADS_O, N_THREADS_M, 1);
+  dim3 grid((int)ceil(((float)o)/N_THREADS_O), (int)ceil(((float)m)/N_THREADS_M), b);
+  fprintf(stdout,"m,n,e,o,b: %d,%d,%d,%d,%d\n",m,n,e,o,b);
 		
-		// Call kernel
-    	matmul1_fwd_kernel<<<grid, block>>>(mat_x.data<float>(),
-                                            mat_y.data<float>(),
-                                            mat_i.data<long>(),
-                                            out.data<float>(), m, n, e, o, b);
-
-		return;
+  // Call kernel
+  matmul1_fwd_kernel<<<grid, block>>>(mat_x.data<float>(),
+				      mat_y.data<float>(),
+				      mat_i.data<long>(),
+				      out.data<float>(), m, n, e, o, b);
+  return;
 }
 
 
@@ -127,13 +127,13 @@ void matmul1_ygrad(float *grad, float *mat_x, long *mat_i, float *mat_o,
 
     for (int i = 0; i < o; i++) {
     	int pos_i = (batch * m * o) + (row * o) + i;
-			int xind = mat_i[pos_i];
-			int pos_x = (batch * n * e) + (xind * e) + col;
+	int xind = mat_i[pos_i];
+	int pos_x = (batch * n * e) + (xind * e) + col;
 
-			int pos_g = (batch * m * o) + (row * o) + i;
-			float g = grad[pos_g];
+	int pos_g = (batch * m * o) + (row * o) + i;
+	float g = grad[pos_g];
 
-			sum = sum + (mat_x[pos_x] * g);
+	sum = sum + (mat_x[pos_x] * g);
     }
     int pos_o = (batch * m * e) + (row * e) + col;
     mat_o[pos_o] = sum;
