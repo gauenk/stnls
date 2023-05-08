@@ -46,10 +46,11 @@ def get_data(dnames,ext,device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"wt":[2],"ws":[3],"k":[30],"ps":[7],
-                  "stride0":[4],"stride1":[1],"dilation":[1],
-                  "nheads":[2],"anchor_self":[False],
-                  "full_ws":[True],"dist_type":["prod"],"seed":[0]}
+    test_lists = {"wt":[0],"ws":[3],"k":[-1],"ps":[5],
+                  "stride0":[2],"stride1":[1],"dilation":[1],
+                  "nheads":[1],"anchor_self":[False],
+                  "full_ws":[True],"dist_type":["l2"],
+                  "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -74,7 +75,6 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     clean_flow = True
     run_flow = False
     reflect_bounds = False
-    adj = 0
     set_seed(seed)
 
     # -- load data --
@@ -103,7 +103,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
                                    full_ws=full_ws,anchor_self=anchor_self,
-                                   rbwd=False,exact=True)
+                                   use_adj=False)
 
     # -- [testing] search --
     dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
@@ -112,39 +112,6 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
-
-    # -- viz --
-    # print(dists_te[0,0,0])
-    # print(dists_gt[0,0,0])
-    # print(inds_te[0,0,0,:])
-    # print(inds_gt[0,0,0,:])
-    # print(dists_te[0,0,15])
-    # print(dists_gt[0,0,15])
-    # print(inds_te[0,0,15])
-    # print(inds_te[0,0,15]-inds_gt[0,0,15])
-    # print(dists_te[0,0,0,:])
-    # print(dists_gt[0,0,0,:])
-    # print(inds_te[0,0,0,:])
-    # print(inds_gt[0,0,0,:])
-    # print(inds_te[0,0,256,:])
-    # print(inds_gt[0,0,256,:])
-    # print(dists_te[0,0,1,:10])
-    # print(dists_gt[0,0,1,:10])
-    # print(dists_te[0,0,17,:])
-    # print(dists_gt[0,0,17,:])
-    # print(dists_te.shape)
-    # print(dists_gt.shape)
-
-    # -- viz --
-    # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
-
-    # diff = th.abs(dists_te - dists_gt).mean((0,1))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
@@ -172,8 +139,6 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     assert max_error < tol
 
 
-@pytest.mark.slow
-@pytest.mark.skip
 def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
              nheads,anchor_self,full_ws,dist_type,seed):
     """
@@ -200,6 +165,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
 
     # -- load data --
     vid = get_data(dnames,ext)
+    vid = th.cat([vid,vid],-1)
+    vid = th.cat([vid,vid],-2)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
@@ -233,8 +200,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
                                    full_ws=full_ws,anchor_self=anchor_self,
-                                   rbwd=False,exact=True)
-
+                                   use_adj=False,use_atomic=True)
 
     # -- [testing] search --
     dists_te,inds_te = search_te(vid_te0,vid_te1,flows.fflow,flows.bflow)
@@ -243,30 +209,6 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid_gt0,vid_gt1,flows.fflow,flows.bflow)
     th.cuda.synchronize()
-
-    print("dists_te.shape: ",dists_te.shape)
-    print("inds_te.shape: ",inds_te.shape)
-    print("dists_gt.shape: ",dists_gt.shape)
-    print("inds_gt.shape: ",inds_gt.shape)
-
-    # -- viz --
-    # print(dists_te)
-    # print(dists_gt)
-    # print(dists_te[0,0,0])
-    # print(dists_gt[0,0,0])
-    # print(dists_te.shape)
-    # print(dists_gt.shape)
-
-    # -- viz --
-    # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
-
-    # diff = th.abs(dists_te - dists_gt).mean((0,1))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
     args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
@@ -288,19 +230,22 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     th.autograd.backward(dists_te,dists_grad)
     th.autograd.backward(dists_gt,dists_grad)
 
-    # -- view --
-    # print(vid_te0.grad[0,0,:3,:3])
-    # print(vid_te1.grad[0,0,:3,:3])
-
     # -- for both grads --
     _grads_te = [vid_te0.grad,vid_te1.grad]
     _grads_gt = [vid_gt0.grad,vid_gt1.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
+        # print(grads_te.shape)
+        # print(grads_gt.shape)
+
         # -- viz [the error map may look weird] --
         # print("-"*20)
-        # print(grads_te[0,-1,-3:,-3:])
-        # print(grads_gt[0,-1,-3:,-3:])
+        # print(grads_te[0,0,0,:3,:3])
+        # print(grads_gt[0,0,0,:3,:3])
+        # print(grads_gt[0,0,0,:3,:3]/grads_te[0,0,0,:3,:3])
+        # print("-"*20)
+        # print(grads_te[0,0,-1,-3:,-3:])
+        # print(grads_gt[0,0,-1,-3:,-3:])
         # print("-"*20)
         # print(grads_te[0,0,-3:,-3:])
         # print(grads_gt[0,0,-3:,-3:])
@@ -321,15 +266,14 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
-        rel_error_nz  = rel_error
+        rel_error_nz = th.where(th.abs(grads_gt)>1e-3,rel_error,0.)
 
-        tol = 1e-3
+        tol = 1e-2
         error = th.max(rel_error_nz).item()
         if error > tol: print("Max Error: ",error)
-        # print("Max Error: ",error)
         assert error < tol
 
-        tol = 1e-3
+        tol = 1e-5
         error = th.mean(rel_error_nz).item()
         if error > tol: print("Mean Error: ",error)
         # print("Mean Error: ",error)

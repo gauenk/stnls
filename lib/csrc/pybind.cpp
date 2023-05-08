@@ -18,8 +18,8 @@ void init_topk_pwd(py::module &);
 // -- reducing --
 void init_wpsum(py::module &);
 void init_iwpsum(py::module &);
-void init_wpsum_heads(py::module &);
-void init_wpsum_heads_2vid(py::module &);
+// void init_wpsum_heads(py::module &);
+// void init_wpsum_heads_2vid(py::module &);
 
 // -- tile --
 void init_fold(py::module &);
@@ -68,11 +68,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_topk_pwd(m);
 
 
-  // -- reducers --
+  // -- reducer --
   init_wpsum(m);
   init_iwpsum(m);
-  init_wpsum_heads(m);
-  init_wpsum_heads_2vid(m);
 
   // -- tile --
   init_fold(m);

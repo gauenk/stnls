@@ -3,6 +3,16 @@
 #include <cuda_runtime.h>
 #include <vector>
 #include <cstddef>
+
+#include <math.h>
+// #include "stdio.h"
+// #include "iostream"
+// #include <cuda.h>
+// #include <cuda_runtime.h>
+// #include <vector>
+// #include <chrono>
+#include <ATen/ATen.h>
+
 using namespace at;
 
 //#define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)    \
@@ -294,7 +304,7 @@ void compute_dist(scalar_t& dist,
 //   }
 // }
 
-template<typename scalar_t, int DIST_TYPE>
+template<typename scalar_t, int DIST_TYPE, bool USE_ATOMIC>
 __device__ __forceinline__ 
 void update_bwd_patch(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid0,
@@ -359,18 +369,35 @@ void update_bwd_patch(
               if(valid){
                 pix0 = weight*vid0[ref[0]][c0][ref[1]][ref[2]];
                 pix1 = weight*vid1[prop[0]][c0][prop[1]][prop[2]];
-                grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix1;
-                grad_vid1[prop[0]][c0][prop[1]][prop[2]] += pix0;
+		if (USE_ATOMIC){
+		  // atomicAdd(&grad_vid0[ref[0]][c0][ref[1]][ref[2]],pix1);
+		  // atomicAdd(&grad_vid1[prop[0]][c0][prop[1]][prop[2]],pix0);
+		  atomicAdd_system(&(grad_vid0[ref[0]][c0][ref[1]][ref[2]]),pix1);
+		  atomicAdd_system(&(grad_vid1[prop[0]][c0][prop[1]][prop[2]]),pix0);
+		}else{
+		  grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix1;
+		  grad_vid1[prop[0]][c0][prop[1]][prop[2]] += pix0;
+		}
               }
             }else if(DIST_TYPE == 1){ // l2 norm
               pix0 = valid_ref[3] ? vid0[ref[0]][c0][ref[1]][ref[2]] : (scalar_t)0.;
               pix1 = valid_prop[3] ? vid1[prop[0]][c0][prop[1]][prop[2]] : (scalar_t)0.;
               pix = 2 * weight * (pix0 - pix1);
               if (valid_ref[3]){
-                grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix;
+		if (USE_ATOMIC){
+		  atomicAdd(&grad_vid0[ref[0]][c0][ref[1]][ref[2]],pix);
+		  // grad_vid0[ref[0]][c0][ref[1]][ref[2]] = 100;
+		}else{
+		  grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix;
+		}
               }
               if (valid_prop[3]){
-                grad_vid1[prop[0]][c0][prop[1]][prop[2]] -= pix;
+		if (USE_ATOMIC){
+		  atomicAdd(&grad_vid1[prop[0]][c0][prop[1]][prop[2]],-pix);
+		  // grad_vid1[prop[0]][c0][prop[1]][prop[2]] = 100;
+		}else{
+		  grad_vid1[prop[0]][c0][prop[1]][prop[2]] -= pix;
+		}
               }
             }
           }

@@ -10,8 +10,9 @@ void non_local_search_forward_cuda(
     torch::Tensor dists, torch::Tensor inds,
     int wt, int ps, int k, int dist_type,
     int stride0, int stride1, int dilation, int pt, int qshift,
-    bool reflect_bounds, bool full_ws, bool search_abs,
-    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1);
+    bool reflect_bounds, bool full_ws, bool full_ws_time,
+    bool search_abs, bool use_adj,
+    int off_H0, int off_W0, int off_H1, int off_W1);
 
 void non_local_search_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
@@ -20,7 +21,7 @@ void non_local_search_backward_cuda(
     int q_shift, int stride0, int nH0, int nW0,
     int ps, int pt, int dilation, bool reflect_bounds,
     bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
-    bool use_rand, bool exact, int dist_type,
+    bool use_rand, bool exact, int dist_type, bool use_atomic,
     int queries_per_thread, int neigh_per_thread, int channel_groups);
 
 // void non_local_search_backward_cuda(
@@ -45,7 +46,8 @@ void non_local_search_forward(
     torch::Tensor dists, torch::Tensor inds,
     int wt, int ps, int k, int dist_type,
     int stride0, int stride1, int dilation, int pt, int qshift,
-    bool reflect_bounds, bool full_ws, bool search_abs, bool use_adj,
+    bool reflect_bounds, bool full_ws, bool full_ws_time,
+    bool search_abs, bool use_adj,
     int off_H0, int off_W0, int off_H1, int off_W1){
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
@@ -56,8 +58,8 @@ void non_local_search_forward(
   non_local_search_forward_cuda(vid0, vid1, fflow, bflow, dists, inds,
                                 wt, ps, k, dist_type,
                                 stride0, stride1, dilation, pt, qshift,
-                                reflect_bounds, full_ws, search_abs,
-                                use_adj, off_H0, off_W0, off_H1, off_W1);
+                                reflect_bounds, full_ws, full_ws_time,
+				search_abs, use_adj, off_H0, off_W0, off_H1, off_W1);
 }
 
 void non_local_search_backward(
@@ -67,7 +69,7 @@ void non_local_search_backward(
     int q_shift, int stride0, int nH0, int nW0,
     int ps, int pt, int dilation, bool reflect_bounds,
     bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
-    bool use_rand, bool exact, int dist_type,
+    bool use_rand, bool exact, int dist_type, bool use_atomic,
     int queries_per_thread, int neigh_per_thread, int channel_groups) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
@@ -79,7 +81,7 @@ void non_local_search_backward(
                                  grad_dists, inds, q_shift, stride0, nH0, nW0,
                                  ps, pt, dilation, reflect_bounds,
                                  use_adj, off_H0, off_W0, off_H1, off_W1,
-                                 use_rand, exact, dist_type,
+                                 use_rand, exact, dist_type, use_atomic,
                                  queries_per_thread, neigh_per_thread, channel_groups);
 }
 

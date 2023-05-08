@@ -16,7 +16,7 @@ void stnls_cuda_unfoldk_backward(
     torch::Tensor grad_patches,
     torch::Tensor nlInds,
     int dilation, bool exact,
-    int adj, bool use_bounds);
+    int adj, bool use_bounds, bool use_atomic);
 
 void stnls_cuda_unfoldk_backward_eff(
     torch::Tensor vid,
@@ -48,12 +48,13 @@ void stnls_unfoldk_backward(
     torch::Tensor grad_patches,
     torch::Tensor nlInds,
     int dilation,  bool exact,
-    int adj, bool use_bounds) {
+    int adj, bool use_bounds, bool use_atomic) {
   CHECK_INPUT(vid);
   CHECK_INPUT(grad_patches);
   CHECK_INPUT(nlInds);
   stnls_cuda_unfoldk_backward(vid,grad_patches,nlInds,
-                                    dilation,exact,adj,use_bounds);
+			      dilation,exact,adj,
+			      use_bounds,use_atomic);
 }
 
 void stnls_unfoldk_backward_eff(

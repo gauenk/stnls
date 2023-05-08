@@ -48,9 +48,9 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
 
     # -- compute indices --
     inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,
-                                   stride0,stride1,full_ws)
-    print(inds[0][1])
-    print("inds.min(),inds.max(): ",inds.min(),inds.max(),full_ws)
+                                   stride0,stride1,True,True)
+    # print(inds[0][1])
+    # print("inds.min(),inds.max(): ",inds.min(),inds.max(),full_ws)
     assert inds.shape[1] == Q
     inds = inds.view(B,Q,-1,3)
     inds = repeat(inds,'b q l tr -> (b HD) q l tr',HD=nheads)
@@ -61,7 +61,6 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
 
     # -- forward --
     inds_r = raster_indices(inds,H,W,stride1)
-    print("inds_r.min(),inds_r.max(): ",inds_r.min(),inds_r.max())
     prods = matmult_fwd(pat1,pat0,inds_r)
     if dist_type == "prod":
         dists = prods
@@ -141,9 +140,8 @@ class N3MatMultSearchFunction(th.autograd.Function):
         dist_type_i = dist_type_select(dist_type)[0]
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
-        ctx.vid_shape = vid0.shape
         ctx_vars = {"batchsize":batchsize,"ps":ps,"pt":pt,
-                    "stride0":stride0,"stride1":stride1,                    
+                    "nheads":nheads,"stride0":stride0,"stride1":stride1,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
@@ -159,16 +157,41 @@ class N3MatMultSearchFunction(th.autograd.Function):
         # -- unpacking --
         inds,vid0,vid1 = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
+        nheads = ctx.nheads
         stride0,stride1 = ctx.stride0,ctx.stride1
         dilation,reflect_bounds = ctx.dil,ctx.reflect_bounds
 
         # -- compute database --
-        pat0 = vid2patches(vid0,stride0,ps,pt,dilation,reflect_bounds)
-        pat1 = vid2patches(vid1,stride1,ps,pt,dilation,reflect_bounds)
+        pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
+        pat1 = vid2patches(vid1,nheads,stride1,ps,pt,dilation,reflect_bounds)
 
         # -- backward step --
-        grad0,grad1 = matmult_bwd(pat0,pat1,inds,grad_dists)
+        H,W = vid0.shape[-2:]
+        inds = rearrange(inds,'b hd q l tr -> (b hd) q l tr')
+        inds_r = raster_indices(inds,H,W,stride1)
+        pgrad1,pgrad0 = matmult_bwd(pat1,pat0,inds_r,grad_dists)
+        print(pgrad0.shape,pgrad1.shape)
     
+        # -- reshape --
+        B = vid0.shape[0]
+        shape_str = '(b hd) q (pt c ph pw) -> b q 1 pt (hd c) ph pw'
+        pgrad0 = rearrange(pgrad0,shape_str,b=B,pt=pt,ph=ps,pw=ps)
+        pgrad1 = rearrange(pgrad1,shape_str,b=B,pt=pt,ph=ps,pw=ps)
+        # print("pgrad0.shape,pgrad1.shape: ",pgrad0.shape,pgrad1.shape)
+
+        # -- fold patch grads --
+        fold0 = stnls.iFoldz(vid0.shape,stride=stride0,dilation=dilation,
+                             use_adj=False,reflect_bounds=reflect_bounds,
+                             device=vid0.device)
+        grad0,grad0z = fold0(pgrad0)
+        grad0 = grad0# / grad0z
+
+        fold1 = stnls.iFoldz(vid1.shape,stride=stride1,dilation=dilation,
+                             use_adj=False,reflect_bounds=reflect_bounds,
+                             device=vid1.device)
+        grad1,grad1z = fold1(pgrad1)
+        grad1 = grad1# / grad1z
+
         return grad0,grad1,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None

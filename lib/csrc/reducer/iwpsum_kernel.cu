@@ -124,7 +124,7 @@ __global__ void iwpsum_forward_kernel(
     }
 }
 
-void cuda_iwpsum_forward(
+void iwpsum_forward_cuda(
     torch::Tensor vid, torch::Tensor vid2fill,
     torch::Tensor dists, torch::Tensor inds,
     int ps, int pt,
@@ -235,7 +235,7 @@ __global__ void iwpsum_backward_vid_kernel(
   }
 }
 
-void cuda_iwpsum_backward_vid(
+void iwpsum_backward_vid_cuda(
     torch::Tensor vid_grad, torch::Tensor vid2fill_grad, 
     torch::Tensor dists, torch::Tensor inds,
     int ps, int pt,
@@ -355,7 +355,7 @@ __global__ void iwpsum_backward_dists_kernel(
 
 }
 
-void cuda_iwpsum_backward_dists(
+void iwpsum_backward_dists_cuda(
     torch::Tensor dists_grad, torch::Tensor vid2fill_grad,
     torch::Tensor vid, torch::Tensor inds,
     int ps, int pt, int h_off, int w_off, int dilation, int adj,

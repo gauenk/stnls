@@ -38,8 +38,8 @@ void matmul1_fwd_kernel(float *mat_x, float *mat_y, long *mat_i,
 	float sum = 0;
 
 	if (batch >= batch_size || row >= m || col >= o){
-		   return;
-		}
+	  return;
+	}
 
 	// Fetch x indices
 	int pos_i = (batch * m * o) + (row * o) + col;
@@ -66,10 +66,10 @@ void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i,
   fprintf(stdout,"m,n,e,o,b: %d,%d,%d,%d,%d\n",m,n,e,o,b);
 		
   // Call kernel
-  matmul1_fwd_kernel<<<grid, block>>>(mat_x.data<float>(),
-				      mat_y.data<float>(),
-				      mat_i.data<long>(),
-				      out.data<float>(), m, n, e, o, b);
+  matmul1_fwd_kernel<<<grid, block>>>(mat_x.data_ptr<float>(),
+				      mat_y.data_ptr<float>(),
+				      mat_i.data_ptr<long>(),
+				      out.data_ptr<float>(), m, n, e, o, b);
   return;
 }
 
@@ -158,14 +158,14 @@ void matmul1_bwd_cuda(at::Tensor gradients, at::Tensor mat_x, at::Tensor mat_y, 
 	dim3 grid((int)ceil(((float)e)/N_THREADS_E), (int)ceil(((float)std::max(n, m))/N_THREADS_N), b);
 
 	// Call kernel
-	matmul1_bwd_kernel_ygrad<<<grid, block>>>(gradients.data<float>(), mat_x.data<float>(), mat_y.data<float>(), mat_i.data<long>(), out_y.data<float>(), m, n, e, o, b);
+	matmul1_bwd_kernel_ygrad<<<grid, block>>>(gradients.data_ptr<float>(), mat_x.data_ptr<float>(), mat_y.data_ptr<float>(), mat_i.data_ptr<long>(), out_y.data_ptr<float>(), m, n, e, o, b);
 
 
 	dim3 block_xgrad(N_THREADS_E, N_THREADS_N, 1);
 	dim3 grid_xgrad((int)ceil(((float)e)/N_THREADS_E), (int)ceil(((float)std::max(n, m))/N_THREADS_N), b);
 
 	// Call kernel
-	matmul1_bwd_kernel_xgrad<<<grid_xgrad, block_xgrad>>>(gradients.data<float>(), mat_x.data<float>(), mat_y.data<float>(), mat_i.data<long>(), out_x.data<float>(), m, n, e, o, b);
+	matmul1_bwd_kernel_xgrad<<<grid_xgrad, block_xgrad>>>(gradients.data_ptr<float>(), mat_x.data_ptr<float>(), mat_y.data_ptr<float>(), mat_i.data_ptr<long>(), out_x.data_ptr<float>(), m, n, e, o, b);
 
 	return;
 }

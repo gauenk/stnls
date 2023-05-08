@@ -18,7 +18,7 @@ __global__ void non_local_inds_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
     int ws, int nH, int nW, int nHW,
-    int stride0, int stride1, bool full_ws,
+    int stride0, int stride1, bool full_ws, bool full_ws_time,
     int q_per_thread, int ws_h_per_thread, int ws_w_per_thread){
 
   // -- unpack --
@@ -74,14 +74,14 @@ __global__ void non_local_inds_kernel(
     int t_left = max(ref[0] - wt - t_shift,0);
     int t_right = min(T-1,ref[0] + wt - t_shift);
 
-    // -- search region offsets --
-    set_search_offsets(wsOff_h,wsOff_w, ref[1], ref[2], stride1,
-                       wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws);
-
     // ---------------------------------------
     //   spatial radius centered @ offset
     // ---------------------------------------
   
+    // -- search region offsets --
+    set_search_offsets(wsOff_h,wsOff_w, ref[1], ref[2], stride1,
+                       wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws);
+
     // -- search across space --
     hj = ref[1];
     wj = ref[2];
@@ -121,6 +121,10 @@ __global__ void non_local_inds_kernel(
       //   spatial radius centered @ offset
       // ---------------------------------------
   
+      // -- search region offsets --
+      set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
+			 wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws_time);
+
       // -- search across space --
       for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
 	ws_i = threadIdx.x + blockDim.x*_xi;
@@ -167,6 +171,10 @@ __global__ void non_local_inds_kernel(
       //   spatial radius centered @ offset
       // ---------------------------------------
   
+      // -- search region offsets --
+      set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
+			 wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws_time);
+
       // -- search across space --
       for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
 	ws_i = threadIdx.x + blockDim.x*_xi;
@@ -199,7 +207,8 @@ void non_local_inds_cuda(
      torch::Tensor inds,
      const torch::Tensor fflow,
      const torch::Tensor bflow,
-     int ws, int stride0, int stride1, bool full_ws){
+     int ws, int stride0, int stride1,
+     bool full_ws, bool full_ws_time){
   
   // -- unpack --
   int B = inds.size(0);
@@ -236,7 +245,7 @@ void non_local_inds_cuda(
        inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
        fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
        bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-       ws, nH, nW, nHW, stride0, stride1, full_ws,
+       ws, nH, nW, nHW, stride0, stride1, full_ws, full_ws_time,
        q_per_thread, ws_h_per_thread, ws_w_per_thread);
       }));
 

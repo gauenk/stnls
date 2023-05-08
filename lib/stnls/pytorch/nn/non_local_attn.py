@@ -173,9 +173,9 @@ class NonLocalAttention(nn.Module):
 
         # -- init folding --
         B,ps = vshape[0],self.search_cfg.ps
-        fold = stnls.iFoldz(vshape,None,stride=self.stride0,
+        fold = stnls.iFoldz(vshape,stride=self.stride0,
                             dilation=self.dilation,adj=0,only_full=False,
-                            use_reflect=True,device=patches.device)
+                            reflect_bounds=True,device=patches.device)
 
         # -- reshape for folding --
         shape_str = '(b q ph pw) c -> b q 1 1 c ph pw'

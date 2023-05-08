@@ -48,7 +48,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                  ws, wt, ps, k, dist_type,
                  stride0, stride1, dilation, pt,
                  anchor_self, remove_self, reflect_bounds,
-                 full_ws, use_adj, off_H0, off_W0, off_H1, off_W1):
+                 full_ws, full_ws_time, use_adj, off_H0, off_W0, off_H1, off_W1):
 
     # -- unpack --
     device = vid0.device
@@ -78,8 +78,10 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                                         dists, inds,
                                         wt, ps, k, dist_type_i, stride0,
                                         stride1, dilation, pt, qshift,
-                                        reflect_bounds, full_ws, search_abs,
-                                        use_adj, off_H0, off_W0, off_H1, off_W1)
+                                        reflect_bounds,
+                                        full_ws, full_ws_time,
+                                        search_abs, use_adj,
+                                        off_H0, off_W0, off_H1, off_W1)
 
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
@@ -107,11 +109,12 @@ class NonLocalSearchFunction(th.autograd.Function):
     def forward(ctx, vid0, vid1, fflow, bflow,
                 ws, wt, ps, k, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
-                dilation=1, pt=1, reflect_bounds=True, full_ws=False,
+                dilation=1, pt=1, reflect_bounds=True,
+                full_ws=False, full_ws_time=False,
                 anchor_self=False, remove_self=False,
                 use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
-                neigh_per_thread=4, channel_groups=-1):
+                rbwd=True, nbwd=1, exact=False, use_atomic=True,
+                queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
 
         """
         Run the non-local search
@@ -132,7 +135,8 @@ class NonLocalSearchFunction(th.autograd.Function):
                                  ws, wt, ps, k, dist_type,
                                  stride0, stride1, dilation, pt,
                                  anchor_self, remove_self, reflect_bounds,
-                                 full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
+                                 full_ws, full_ws_time, use_adj,
+                                 off_H0, off_W0, off_H1, off_W1)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -143,7 +147,8 @@ class NonLocalSearchFunction(th.autograd.Function):
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
-                    "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i,
+                    "off_H1":off_H1,"off_W1":off_W1,
+                    "dist_type_i":dist_type_i,"use_atomic":use_atomic,
                     "queries_per_thread":queries_per_thread,
                     "neigh_per_thread":neigh_per_thread,
                     "channel_groups":channel_groups}
@@ -157,8 +162,8 @@ class NonLocalSearchFunction(th.autograd.Function):
     def backward(ctx, grad_dists, grad_inds_is_none):
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -172,10 +177,11 @@ class NonLocalSearch(th.nn.Module):
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
-                 full_ws=True, anchor_self=False, remove_self=False,
+                 full_ws=True, full_ws_time=True,
+                 anchor_self=False, remove_self=False,
                  use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
-                 neigh_per_thread=4, channel_groups=-1):
+                 rbwd=True, nbwd=1, exact=False, use_atomic=False,
+                 queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
         super().__init__()
 
         # -- core search params --
@@ -193,6 +199,7 @@ class NonLocalSearch(th.nn.Module):
         # -- manage patch and search boundaries --
         self.reflect_bounds = reflect_bounds
         self.full_ws = full_ws
+        self.full_ws_time = full_ws_time
 
         # -- special mods to "self" search --
         self.anchor_self = anchor_self
@@ -208,6 +215,7 @@ class NonLocalSearch(th.nn.Module):
         # -- backprop params --
         self.nbwd = nbwd
         self.exact = exact
+        self.use_atomic = use_atomic
         self.rbwd = rbwd
         self.queries_per_thread = queries_per_thread
         self.neigh_per_thread = neigh_per_thread
@@ -220,11 +228,13 @@ class NonLocalSearch(th.nn.Module):
                                             self.nheads,batchsize,
                                             self.dist_type,self.stride0,
                                             self.stride1,self.dilation,self.pt,
-                                            self.reflect_bounds,self.full_ws,
+                                            self.reflect_bounds,
+                                            self.full_ws,self.full_ws_time,
                                             self.anchor_self,self.remove_self,
                                             self.use_adj,self.off_H0,self.off_W0,
                                             self.off_H1,self.off_W1,
-                                            self.rbwd,self.nbwd,self.exact,
+                                            self.rbwd,self.nbwd,
+                                            self.exact,self.use_atomic,
                                             self.queries_per_thread,
                                             self.neigh_per_thread,
                                             self.channel_groups)
@@ -262,11 +272,12 @@ class NonLocalSearch(th.nn.Module):
 def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
-           dilation=1, pt=1, reflect_bounds=True, full_ws=True,
+           dilation=1, pt=1, reflect_bounds=True,
+           full_ws=True, full_ws_time=True,
            anchor_self=True, remove_self=False,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           rbwd=True, nbwd=1, exact=False, queries_per_thread=4,
-           neigh_per_thread=4, channel_groups=-1):
+           rbwd=True, nbwd=1, exact=False, use_atomic=False,
+           queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -274,9 +285,9 @@ def _apply(vid0, vid1, fflow, bflow,
     return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
-               full_ws,anchor_self,remove_self,
+               full_ws,full_ws_time,anchor_self,remove_self,
                use_adj,off_H0,off_W0,off_H1,off_W1,
-               rbwd,nbwd,exact,
+               rbwd,nbwd,exact,use_atomic,
                queries_per_thread,neigh_per_thread,channel_groups)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -289,10 +300,10 @@ def extract_config(cfg):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
-             "reflect_bounds":True, "full_ws":True,
+             "reflect_bounds":True, "full_ws":True, "full_ws_time":True,
              "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "rbwd":True, "nbwd":1, "exact":False,
+             "rbwd":True, "nbwd":1, "exact":False, "use_atomic": False,
              "queries_per_thread":4,"neigh_per_thread":4,"channel_groups":-1}
     return extract_pairs(pairs,cfg)
 
@@ -301,11 +312,13 @@ def init(cfg):
     search = NonLocalSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
                             dist_type=cfg.dist_type, stride0=cfg.stride0,
                             stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
-                            reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
+                            reflect_bounds=cfg.reflect_bounds,
+                            full_ws=cfg.full_ws, full_ws_time=cfg.full_ws_time,
                             anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
                             use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
                             off_H1=cfg.off_H1,off_W1=cfg.off_W1,
-                            rbwd=cfg.rbwd, nbwd=cfg.nbwd, exact=cfg.exact,
+                            rbwd=cfg.rbwd, nbwd=cfg.nbwd,
+                            exact=cfg.exact, use_atomic=cfg.use_atomic,
                             queries_per_thread=cfg.queries_per_thread,
                             neigh_per_thread=cfg.neigh_per_thread,
                             channel_groups=cfg.channel_groups)

@@ -1,6 +1,6 @@
 
 # -- python-only kernel --
-from numba import cuda,jit
+from numba import cuda,jit,prange
 
 # -- linalg --
 import torch as th
@@ -93,7 +93,7 @@ def numba_search_bwd(grad_vid0,grad_vid1,grad_dists,vid0,vid1,inds,
         vval = val
         if val < 0: vval = -val
         if val >= lim: vval = 2*(lim-1) - val
-        return int(vval)
+        return vval#int(vval)
 
     # -- shapes --
     t,c,h,w = vid0.shape
@@ -103,56 +103,57 @@ def numba_search_bwd(grad_vid0,grad_vid1,grad_dists,vid0,vid1,inds,
     rbounds = reflect_bounds
     nqueries,nneighs = inds.shape[:2]
 
-    # -- over queries and neighbors --
-    for qi in range(nqueries):
-        # -- [refecence] center index --
-        _ti = qi//(nh*nw)
-        q_mod = qi % (nh*nw)
-        _hi = stride0*(q_mod // nw)
-        _wi = stride0*(q_mod % nw)
-
-        for ki in range(nneighs):
-
-            # -- access weight --
-            weight = grad_dists[qi,ki]
-
-            # -- [search] center index --
-            _tj = inds[qi,ki,0]
-            _hj = inds[qi,ki,1]
-            _wj = inds[qi,ki,2]
-
-            # -- fill across cuda threads --
-            for pk in range(pt):
-                for pi in range(ps):
-                    for pj in range(ps):
-
-                        # -- [reference] --
-                        ti = bounds(_ti + pk,t)
-                        hi = _hi+dilation*(pi - psHalf)
-                        wi = _wi+dilation*(pj - psHalf)
-                        hi = bounds(hi,h) if rbounds else hi
-                        wi = bounds(wi,w) if rbounds else wi
-
-                        # -- [search] --
-                        tj = bounds(_tj + pk,t)
-                        hj = _hj+dilation*(pi - psHalf)
-                        wj = _wj+dilation*(pj - psHalf)
-                        hj = bounds(hj,h) if rbounds else hj
-                        wj = bounds(wj,w) if rbounds else wj
-
-                        # -- check valid --
-                        valid_tj = (tj >= 0) and (tj < t)
-                        valid_hj = (hj >= 0) and (hj < h)
-                        valid_wj = (wj >= 0) and (wj < w)
-                        valid_j = valid_tj and valid_hj and valid_wj
-
-                        valid_ti = (ti >= 0) and (ti < t)
-                        valid_hi = (hi >= 0) and (hi < h)
-                        valid_wi = (wi >= 0) and (wi < w)
-                        valid_i = valid_ti and valid_hi and valid_wi
-
-                        # -- aggregate from patches --
-                        for c0 in range(c):
+    # -- independent channels --
+    for c0 in prange(c):
+        # -- over queries and neighbors --
+        for qi in range(nqueries):
+            # -- [refecence] center index --
+            _ti = qi//(nh*nw)
+            q_mod = qi % (nh*nw)
+            _hi = stride0*(q_mod // nw)
+            _wi = stride0*(q_mod % nw)
+    
+            for ki in range(nneighs):
+    
+                # -- access weight --
+                weight = grad_dists[qi,ki]
+    
+                # -- [search] center index --
+                _tj = inds[qi,ki,0]
+                _hj = inds[qi,ki,1]
+                _wj = inds[qi,ki,2]
+    
+                # -- fill across cuda threads --
+                for pk in range(pt):
+                    for pi in range(ps):
+                        for pj in range(ps):
+    
+                            # -- [reference] --
+                            ti = bounds(_ti + pk,t)
+                            hi = _hi+dilation*(pi - psHalf)
+                            wi = _wi+dilation*(pj - psHalf)
+                            hi = bounds(hi,h) if rbounds else hi
+                            wi = bounds(wi,w) if rbounds else wi
+    
+                            # -- [search] --
+                            tj = bounds(_tj + pk,t)
+                            hj = _hj+dilation*(pi - psHalf)
+                            wj = _wj+dilation*(pj - psHalf)
+                            hj = bounds(hj,h) if rbounds else hj
+                            wj = bounds(wj,w) if rbounds else wj
+    
+                            # -- check valid --
+                            valid_tj = (tj >= 0) and (tj < t)
+                            valid_hj = (hj >= 0) and (hj < h)
+                            valid_wj = (wj >= 0) and (wj < w)
+                            valid_j = valid_tj and valid_hj and valid_wj
+    
+                            valid_ti = (ti >= 0) and (ti < t)
+                            valid_hi = (hi >= 0) and (hi < h)
+                            valid_wi = (wi >= 0) and (wi < w)
+                            valid_i = valid_ti and valid_hi and valid_wi
+    
+                            # -- aggregate from patches --
                             pix0 = vid0[ti,c0,hi,wi] if valid_i else 0.
                             pix1 = vid1[tj,c0,hj,wj] if valid_j else 0.
                             pix = 2 * weight * (pix0 - pix1)

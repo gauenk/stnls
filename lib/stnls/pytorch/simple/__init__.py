@@ -6,6 +6,7 @@ from . import prod_search
 from . import prod_search_nn
 from . import window_search
 from . import pfc
+from . import wpsum
 
 from . import fold_k_1d
 from . import fold_k

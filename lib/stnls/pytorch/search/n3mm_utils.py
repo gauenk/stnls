@@ -32,9 +32,9 @@ def raster_indices(inds,iH,iW,stride):
     # print("nH,nW: ",nH,nW)
 
     # -- rasterized --
-    tI = inds[...,0]
-    hI = th.div(inds[...,1],stride,rounding_mode="floor")
-    wI = th.div(inds[...,2],stride,rounding_mode="floor")
+    tI = inds[...,0].type(th.int64)
+    hI = th.div(inds[...,1],stride,rounding_mode="floor").type(th.int64)
+    wI = th.div(inds[...,2],stride,rounding_mode="floor").type(th.int64)
     rI = tI * nH * nW + hI * nW + wI
 
     # -- reshape --

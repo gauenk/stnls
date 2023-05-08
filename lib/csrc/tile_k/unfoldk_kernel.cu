@@ -164,7 +164,7 @@ void stnls_cuda_unfoldk_forward(
 ****************************/
 
 
-template <typename scalar_t>
+template <typename scalar_t, bool USE_ATOMIC>
 __global__ void stnls_unfoldk_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_patches,
@@ -236,9 +236,13 @@ __global__ void stnls_unfoldk_backward_kernel(
 
               for (int _c0 = c0_start; _c0 < c0_end; _c0++){
                 c0 = (_c0 + c0_offset) % c0_dist + c0_start;
-                pix = grad_patches[bi][qi][ki][pk][c0][pi][pj];
+                pix = grad_patches[bi][qi][ki][pk][c0][pi][pj];		
                 if (valid){
-                  vid[bi][ti][c0][hi][wi] += pix;
+		  if (USE_ATOMIC){
+		    atomicAdd(&vid[bi][ti][c0][hi][wi],pix);
+		  }else{
+		    vid[bi][ti][c0][hi][wi] += pix;
+		  }
                 }
               }
             }
@@ -253,7 +257,8 @@ __global__ void stnls_unfoldk_backward_kernel(
 
 void stnls_cuda_unfoldk_backward(
     torch::Tensor vid, torch::Tensor grad_patches,
-    torch::Tensor inds, int dilation, bool exact, int adj, bool use_bounds) {
+    torch::Tensor inds, int dilation, bool exact, int adj,
+    bool use_bounds, bool use_atomic) {
 
   // unpack params
   int bsize = inds.size(0);
@@ -303,14 +308,26 @@ void stnls_cuda_unfoldk_backward(
   torch::Tensor rand_nums = torch::rand({numQueries,1,1},options);
 
   // launch kernel
+  if (use_atomic){
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "stnls_unfoldk_backward_kernel", ([&] {
-    stnls_unfoldk_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+	stnls_unfoldk_backward_kernel<scalar_t,true><<<nblocks, nthreads>>>(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
         rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
         dilation, adj, use_bounds, bpb, cpt);
   }));
+  }else{
+  AT_DISPATCH_FLOATING_TYPES(vid.type(), "stnls_unfoldk_backward_kernel", ([&] {
+	stnls_unfoldk_backward_kernel<scalar_t,false><<<nblocks, nthreads>>>(
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
+        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        dilation, adj, use_bounds, bpb, cpt);
+  }));
+
+  }
 
 }
 

@@ -18,7 +18,7 @@ def allocate_patches(b,nq,nhead,pt,c,ps,device):
     patches = th.zeros((b,nq,nhead,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
-class WpSumHeadsFunction(th.autograd.Function):
+class InplaceWeightedPatchSumFunction(th.autograd.Function):
     # [video -> patches] @ inds
 
     # -- static video since it is the same --
@@ -27,7 +27,8 @@ class WpSumHeadsFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid, dists, inds, ps, pt=1,
                 h_off=0,w_off=0,dilation=1,adj=0,
-                reflect_bounds=True,rbwd=False,nbwd=1,exact=False):
+                reflect_bounds=True,rbwd=False,nbwd=1,
+                exact=False,use_atomic=False):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
         dists = [BatchSize,nHeads,NumQueries,K]
@@ -85,6 +86,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         ctx.w_off = w_off
         ctx.adj = adj
         ctx.reflect_bounds = reflect_bounds
+        ctx.use_atomic = use_atomic
         ctx.exact = exact
         ctx.rbwd = rbwd
         ctx.nbwd = nbwd
@@ -101,6 +103,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         # vid = WpSumFunction.vid
         ps,pt = ctx.ps,ctx.pt
         vid_shape = ctx.vid_shape
+        use_atomic = ctx.use_atomic
 
         h_off = ctx.h_off
         w_off = ctx.w_off
@@ -111,7 +114,7 @@ class WpSumHeadsFunction(th.autograd.Function):
         rbwd = ctx.rbwd
         nbwd = ctx.nbwd
         # print("wpsum_heads: bwd.")
-        grad_patches = grad_patches.contiguous()
+        grad_vid = grad_vid.contiguous()
 
         # -- viz --
         # print("bwd.")
@@ -141,10 +144,10 @@ class WpSumHeadsFunction(th.autograd.Function):
 
         # -- ave multiple evals --
         if nbwd > 1:
-            grad_vid = allocate_vid(vid_shape_og,grad_patches.device)
+            grad_vid = allocate_vid(vid_shape_og,grad_vid.device)
             for i in range(nbwd):
-                grad_vid_i = allocate_vid(vid_shape,grad_patches.device)
-                # stnls_cuda.wpsum_heads_backward_vid(grad_vid_i,grad_patches,
+                grad_vid_i = allocate_vid(vid_shape,grad_vid.device)
+                # stnls_cuda.wpsum_heads_backward_vid(grad_vid_i,grad_vid,
                 #                                    dists,inds,
                 #                                    h_off,w_off,dilation,adj,
                 #                                    reflect_bounds,rbwd,exact)
@@ -152,12 +155,13 @@ class WpSumHeadsFunction(th.autograd.Function):
                     grad_vid_i = grad_vid_i.sum(1,keepdim=True)
                 grad_vid += grad_vid_i/nbwd
         else:
-            grad_vid = allocate_vid(vid_shape,grad_patches.device)
+            grad_vid = allocate_vid(vid_shape,grad_vid.device)
             # print("grad_vid.shape: ",grad_vid.shape)
-            # stnls_cuda.wpsum_heads_backward_vid(grad_vid,grad_patches,
-            #                                    dists,inds,
-            #                                    h_off,w_off,dilation,adj,
-            #                                    reflect_bounds,rbwd,exact)
+            stnls_cuda.iwpsum_heads_backward_vid(grad_vid,grad_vid,
+                                                dists,inds,
+                                                h_off,w_off,dilation,adj,
+                                                reflect_bounds,rbwd,
+                                                exact,use_atomic)
             # print("grad_vid.shape: ",grad_vid.shape)
             if modded_h:
                 grad_vid = grad_vid.sum(1,keepdim=True)
@@ -166,12 +170,10 @@ class WpSumHeadsFunction(th.autograd.Function):
 
         # -- gradient for dists --
         grad_dists = th.zeros_like(dists)
-        stnls_cuda.wpsum_heads_backward_dists(grad_dists,grad_patches,
-                                             vid,inds,
-                                             h_off,w_off,dilation,adj,
-                                             reflect_bounds,exact)
-        # th.cuda.synchronize()
-        # print("2.")
+        stnls_cuda.iwpsum_heads_backward_dists(grad_dists,grad_vid,
+                                              vid,inds,
+                                              h_off,w_off,dilation,adj,
+                                              reflect_bounds,exact,use_atomic)
 
         # -- final shaping --
         vid_in_dim = ctx.vid_in_dim
@@ -184,37 +186,38 @@ class WpSumHeadsFunction(th.autograd.Function):
         # print(timer)
 
         return grad_vid,grad_dists,None,None,None,\
-            None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None
 
-class WeightedPatchSumHeads(th.nn.Module):
+class InplaceWeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds
 
-    def __init__(self, ps, pt=1, h_off=0, w_off=0, dilation=1,
-                 adj=0, reflect_bounds = True, rbwd=False, nbwd=1, exact=False):
-        super(WeightedPatchSumHeads, self).__init__()
+    def __init__(self, ps, batchsize=-1, pt=1, dilation=1, 
+                 reflect_bounds=True, use_adj=True, off_H=0, off_W=0,
+                 rbwd=False, nbwd=1, exact=False, use_atomic=True):
+        super().__init__()
+
         self.ps = ps
+        self.batchsize = batchsize
         self.pt = pt
-
-        self.h_off = h_off
-        self.w_off = w_off
-
         self.dilation = int(dilation)
-        self.adj = int(adj)
+        self.use_adj = use_adj
         self.reflect_bounds = reflect_bounds
+        self.off_H = off_H
+        self.off_W = off_W
         self.rbwd = rbwd
         self.nbwd = nbwd
         self.exact = exact
+        self.use_atomic = use_atomic
 
     def forward(self, vid, dists, inds):
-        patches = WpSumHeadsFunction.apply(vid,dists,inds,self.ps,self.pt,
-                                           self.h_off,self.w_off,
-                                           self.dilation,self.adj,
-                                           self.reflect_bounds,
-                                           self.rbwd,self.nbwd,self.exact)
-        nheads = dists.shape[1]
-        b,nheads,nq,_,c,ph,pw = patches.shape
-        patches = patches.view(b,nheads,nq,c,ph,pw)
-        return patches
+        fxn = InplaceWeightedPatchSumFunction
+        vidz = fxn.apply(vid,dists,inds,self.ps,
+                            self.batchsize,self.pt,
+                            self.dilation,self.reflect_bounds,
+                            self.use_adj,self.off_H,self.off_W,
+                            self.rbwd,self.nbwd,
+                            self.exact,self.use_atomic)
+        return vidz
 
     def flops(self, nrefs, chnls_per_head, nheads, k):
 
@@ -231,3 +234,49 @@ class WeightedPatchSumHeads(th.nn.Module):
         flops = flops_per_ref * nrefs * nheads# do for each reference
 
         return flops
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#   [Direct API]  stnls.reducer.iwpsum(...)
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def _apply(vid, dists, inds, ps, batchsize=-1,
+           pt=1, dilation=1,reflect_bounds=True,
+           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=True, nbwd=1, exact=False, use_atomic=False):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
+    fxn = InplaceWeightedPatchSumFunction.apply
+    return fxn(vid,dists,inds,ps,batchsize,
+               pt,dilation,reflect_bounds,use_adj,
+               off_H0,off_W0,off_H1,off_W1,
+               rbwd,nbwd,exact,use_atomic)
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#   [Python Dict API] stnls.reducer.iwpsum(pydict)
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def extract_config(cfg):
+    pairs = {"ps":7,"batchsize":-1,"pt":1,"dilation":1,
+             "reflect_bounds":True, "use_adj":True,
+             "off_H0":0,"off_W0":0,"rbwd":True, "nbwd":1,
+             "exact":False, "use_atomic": False}
+    return extract_pairs(pairs,cfg)
+
+def init(cfg):
+    cfg = extract_config(cfg)
+    reducer = InplaceWeightedPatchSum(
+        cfg.ps, batchsize=cfg.batchsize,
+        pt=cfg.pt, dilation=cfg.dilation,
+        reflect_bounds=cfg.reflect_bounds,
+        adj=cfg.use_adj,off_H=cfg.off_H0,off_W=cfg.off_W0,
+        rbwd=cfg.rbwd, nbwd=cfg.nbwd,
+        exact=cfg.exact, use_atomic=cfg.use_atomic)
+    return reducer
+
+
+
