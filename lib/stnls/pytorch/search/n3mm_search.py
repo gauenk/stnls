@@ -170,8 +170,8 @@ class N3MatMultSearchFunction(th.autograd.Function):
         inds = rearrange(inds,'b hd q l tr -> (b hd) q l tr')
         inds_r = raster_indices(inds,H,W,stride1)
         pgrad1,pgrad0 = matmult_bwd(pat1,pat0,inds_r,grad_dists)
-        print(pgrad0.shape,pgrad1.shape)
-    
+        # print(pgrad0.shape,pgrad1.shape)
+
         # -- reshape --
         B = vid0.shape[0]
         shape_str = '(b hd) q (pt c ph pw) -> b q 1 pt (hd c) ph pw'

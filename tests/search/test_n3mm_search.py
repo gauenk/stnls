@@ -49,7 +49,7 @@ def pytest_generate_tests(metafunc):
     test_lists = {"wt":[0],"ws":[3],"k":[-1],"ps":[5],
                   "stride0":[2],"stride1":[1],"dilation":[1],
                   "nheads":[1],"anchor_self":[False],
-                  "full_ws":[True],"dist_type":["l2"],
+                  "full_ws":[True],"dist_type":["prod"],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:

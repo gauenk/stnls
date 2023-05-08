@@ -63,7 +63,7 @@ void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i,
 
   dim3 block(N_THREADS_O, N_THREADS_M, 1);
   dim3 grid((int)ceil(((float)o)/N_THREADS_O), (int)ceil(((float)m)/N_THREADS_M), b);
-  fprintf(stdout,"m,n,e,o,b: %d,%d,%d,%d,%d\n",m,n,e,o,b);
+  // fprintf(stdout,"m,n,e,o,b: %d,%d,%d,%d,%d\n",m,n,e,o,b);
 		
   // Call kernel
   matmul1_fwd_kernel<<<grid, block>>>(mat_x.data_ptr<float>(),
