@@ -35,7 +35,7 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
     nH0 = (H-1)//ctx.stride0+1
     nW0 = (W-1)//ctx.stride0+1
     qshift = 0 # no batching backward.
-    print("ctx.use_atomic: ",ctx.use_atomic)
+    # print("ctx.use_atomic: ",ctx.use_atomic)
 
     # -- allow for repeated exec --
     bwd_fxn = stnls_cuda.non_local_search_backward
