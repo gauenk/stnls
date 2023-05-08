@@ -48,13 +48,20 @@ def set_seed(seed):
     th.manual_seed(seed)
     np.random.seed(seed)
 
+def get_data(dnames,ext,device="cuda:0"):
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid /= vid.max()
+    return vid
+
 def pytest_generate_tests(metafunc):
     seed = 123
     set_seed(seed)
     # test_lists = {"ps":[3],"stride":[1],"dilation":[1,2],
     test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[3],"k":[5],
                   "ws":[10],"top":[0],"btm":[-1],"left":[0],"right":[-1],
-                  "exact":[True],"nheads":[1],"batchsize":[10]}
+                  "exact":[True],"nheads":[2],"batchsize":[10]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -85,8 +92,7 @@ def test_forward(ps,stride,dilation,nheads,k,exact,batchsize):
     use_adj = True
 
     # -- load data --
-    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
-    vid = vid.to(device)
+    vid = get_data(dnames,ext)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
@@ -164,8 +170,7 @@ def test_score_backward(ps,stride,dilation,nheads,k,batchsize):
     use_atomic = True
 
     # -- load data --
-    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
-    vid = vid.to(device)
+    vid = get_data(dnames,ext)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
@@ -274,8 +279,7 @@ def test_vid_backward(ps,stride,dilation,nheads,k,batchsize):
     use_atomic = True
 
     # -- load data --
-    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
-    vid = vid.to(device)
+    vid = get_data(dnames,ext)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)

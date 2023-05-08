@@ -146,6 +146,83 @@ def test_forward(ps,stride,dilation,nheads,k,exact):
     if error > tol: print(error)
     assert error < tol
 
+def test_identity(ps,stride,dilation,nheads,k,exact):
+
+    # -- get args --
+    dil = dilation
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    ext = "jpg"
+    chnls,pt = 1,1
+    stride0 = stride
+    stride1 = 1
+    ws = -1 if k == -1 else 10
+    wt = 0 if k == -1 else 5
+
+    # -- init vars --
+    use_atomic = False
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    gpu_stats = False
+    reflect_bounds = True
+    use_k = k != -1
+    use_unfold = k == -1
+    t = 1 if use_unfold else 3
+    # adj = ps//2 if use_unfold else 0
+    use_adj = True
+
+    # -- load data --
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
+    vid = vid.to(device)
+
+    # -- compute flow --
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+
+    # -- unpack image --
+    device = vid.device
+    shape = vid.shape
+    b,t,color,h,w = shape
+    vshape = vid.shape
+
+    # -- init xsearch --
+    dist_type = "l2"
+    sch = stnls.search
+    search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
+                                dist_type=dist_type,dilation=dil,
+                                stride0=stride0, stride1=stride1,
+                                reflect_bounds=reflect_bounds,anchor_self=True,
+                                use_adj=use_adj)
+
+    # -- init our inner product --
+    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dil, use_adj=False,
+                                           reflect_bounds=reflect_bounds,
+                                           exact=exact, use_atomic=use_atomic)
+    fold = stnls.iFoldz(vid.shape,stride=stride0,dilation=dilation,
+                        use_adj=False,reflect_bounds=reflect_bounds,
+                        device=vid.device)
+
+    # -- run search & wpsum --
+    scores,inds = search(vid,vid,flows.fflow,flows.bflow)
+    scores_s = softmax(-scores*10,dim=-1)
+    scores_s[...,0] = 1
+    scores_s[...,1:] = 0
+    wpatches = wpsum(vid,scores_s,inds)#.view(scores_s.shape[0],-1)
+    wpatches = rearrange(wpatches,'b H q pt c h w -> b q 1 pt (H c) h w')
+    avid,vidz = fold(wpatches)
+    avid = avid / vidz
+
+    # -- compare --
+    tol = 1e-5 if use_unfold else 1e-7
+    error = th.abs(avid - vid).mean().item()
+    if error > tol: print(error)
+    assert error < tol
+
+    tol = 1e-4 if use_unfold else 1e-6
+    error = th.abs(avid - vid).max().item()
+    if error > tol: print(error)
+    assert error < tol
+
+
 
 def test_score_backward(ps,stride,dilation,nheads,k):
 

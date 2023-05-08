@@ -36,7 +36,7 @@ class WeightedPatchSumFunction(th.autograd.Function):
     def forward(ctx, vid, dists, inds, ps, pt=1,
                 dilation=1,reflect_bounds=True,use_adj=True,
                 off_H=0,off_W=0,rbwd=False,nbwd=1,
-                exact=False,use_atomic=False):
+                exact=False,use_atomic=True):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
         dists = [BatchSize,nHeads,NumQueries,K]
@@ -152,7 +152,7 @@ class WeightedPatchSumFunction(th.autograd.Function):
 class WeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds
 
-    def __init__(self, ps, pt=1, dilation=1, 
+    def __init__(self, ps, pt=1, dilation=1,
                  reflect_bounds=True, use_adj=True,
                  off_H=0, off_W=0,
                  rbwd=False, nbwd=1, exact=False, use_atomic=True):
@@ -209,7 +209,7 @@ class WeightedPatchSum(th.nn.Module):
 def _apply(vid, dists, inds, ps, pt=1,
            dilation=1,reflect_bounds=True,
            use_adj=True, off_H0=0, off_W0=0,
-           rbwd=True, nbwd=1, exact=False, use_atomic=False):
+           rbwd=True, nbwd=1, exact=False, use_atomic=True):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -228,7 +228,7 @@ def extract_config(cfg):
     pairs = {"ps":7,"pt":1,"dilation":1,
              "reflect_bounds":True, "use_adj":True,
              "off_H0":0,"off_W0":0,
-             "rbwd":True, "nbwd":1, "exact":False, "use_atomic": False}
+             "rbwd":True, "nbwd":1, "exact":False, "use_atomic": True}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
