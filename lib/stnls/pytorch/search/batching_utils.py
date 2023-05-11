@@ -41,6 +41,7 @@ def get_max_batchsize(batchsize,nrefs,ws,wt):
     nmax = 2**22
     max_nrefs = int(nmax / (nsearch*3))
     # print(batchsize,max_nrefs,nrefs,ws,wt,nsearch)
+    # print(batchsize,max_nrefs,nrefs)
     if batchsize <= 0:
         batchsize = min(max_nrefs,nrefs)
     batchsize = min(batchsize,min(max_nrefs,nrefs))

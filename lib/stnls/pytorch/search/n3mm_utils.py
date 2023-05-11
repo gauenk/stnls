@@ -72,30 +72,3 @@ def matmult_bwd(x,y,I,grad):
     stnls_cuda.n3net_matmul1_bwd(grad,x,y,I,grad_x,grad_y, m, n, e, o, b)
     return grad_x, grad_y
     
-# class IndexedMatmul1Efficient(th.autograd.Function):
-#     """
-
-#     Exec N3Net Matmult.
-    
-#     """
-
-#     @staticmethod
-#     def forward(ctx, x, y, I):
-#         ctx.save_for_backward(x, y, I)
-#         return out
-
-#     @staticmethod
-#     def backward(ctx, grad):
-#         x, y, I = ctx.saved_tensors
-#         b = y.shape[0]
-#         m = y.shape[1]
-#         n = x.shape[1]
-#         o = I.shape[2]
-#         e = x.shape[2]
-#         grad_x = th.tensor(np.zeros(x.numel()), dtype=th.float).\
-#             reshape(x.shape[0],x.shape[1],x.shape[2]).cuda()
-#         grad_y = th.tensor(np.zeros(y.numel()), dtype=th.float).\
-#             reshape(y.shape[0],y.shape[1],y.shape[2]).cuda()
-#         stnls_cuda.n3net_matmul1_bwd(grad,x,y,I,grad_x,grad_y, m, n, e, o, b)
-#         return grad_x, grad_y, I
-

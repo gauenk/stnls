@@ -49,6 +49,11 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # -- compute indices --
     inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,
                                    stride0,stride1,True,True)
+    # th.cuda.synchronize()
+    # assert not(th.any(inds == -1).item()),"No invalid indices."
+    # print("inds.min(),inds_r.max(): ",inds.min(),inds.max())
+    
+
     # print(inds[0][1])
     # print("inds.min(),inds.max(): ",inds.min(),inds.max(),full_ws)
     assert inds.shape[1] == Q
@@ -58,23 +63,31 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # -- compute database --
     pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
     pat1 = vid2patches(vid1,nheads,stride1,ps,pt,dilation,reflect_bounds)
+    # print("pat0.shape,pat1.shape: ",pat0.shape,pat1.shape,stride0,stride1)
+    # th.cuda.synchronize()
 
     # -- forward --
+    # print("inds.min(),inds_r.max(): ",inds.min(),inds.max())
     inds_r = raster_indices(inds,H,W,stride1)
+    # print("inds_r.min(),inds_r.max(): ",inds_r.min(),inds_r.max(),inds_r.shape)
     prods = matmult_fwd(pat1,pat0,inds_r)
+    # th.cuda.synchronize()
     if dist_type == "prod":
         dists = prods
     else:
         b,n,e = pat1.shape
         b,m,o = inds_r.shape
-        dists = -2*prods
-        dists = dists.unsqueeze(3)
         If = inds_r.view(b, m*o,1).expand(b,m*o,e)
         pat1_norm = (pat1**2).sum(dim=-1, keepdim=True)
-        # pat1_norm = pat1_norm.gather(dim=1, index=If[:,:,0:1]).view(b,m,o,1)
-        pat0 = pat0.unsqueeze(3)
-        pat0_norm = (pat0**2).sum(-2,keepdim=True)
-        dists += pat0_norm# + pat1_norm
+        pat1_norm = pat1_norm.gather(dim=1, index=If[:,:,0:1]).view(b,m,o,1)
+        pat0_norm = (pat0**2).sum(-1,keepdim=True)[...,None]
+        dists = pat0_norm + pat1_norm- 2*prods.unsqueeze(3)
+
+        # xe_sqs = (xe**2).sum(dim=-1, keepdim=True)
+        # xe_sqs_ind = xe_sqs.gather(dim=1, index=If[:,:,0:1]).view(b,m,o,1)
+        # D += xe_sqs_ind
+        # D += (ye**2).sum(dim=-2, keepdim=True)
+
 
     # -- reshape with heads --
     dists = dists.view(B,nheads,Q,-1)
@@ -141,7 +154,8 @@ class N3MatMultSearchFunction(th.autograd.Function):
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx_vars = {"batchsize":batchsize,"ps":ps,"pt":pt,
-                    "nheads":nheads,"stride0":stride0,"stride1":stride1,
+                    "dist_type":dist_type,"nheads":nheads,
+                    "stride0":stride0,"stride1":stride1,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
@@ -160,6 +174,8 @@ class N3MatMultSearchFunction(th.autograd.Function):
         nheads = ctx.nheads
         stride0,stride1 = ctx.stride0,ctx.stride1
         dilation,reflect_bounds = ctx.dil,ctx.reflect_bounds
+        # print("grad_dists.shape: ",grad_dists.shape)
+        # print("inds.shape: ",inds.shape)
 
         # -- compute database --
         pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
@@ -285,7 +301,7 @@ def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True, full_ws=True,
-           anchor_self=True, remove_self=False,
+           anchor_self=False, remove_self=False,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
@@ -308,7 +324,7 @@ def extract_config(cfg):
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True,
-             "anchor_self":True, "remove_self":False,
+             "anchor_self":False, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0}
     return extract_pairs(pairs,cfg)
 

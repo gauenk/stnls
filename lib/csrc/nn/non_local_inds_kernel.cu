@@ -14,16 +14,16 @@ Get indices of a non-local search
 
 template <typename scalar_t>
 __global__ void non_local_inds_kernel(
-    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> inds,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    torch::PackedTensorAccessor64<int,6,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> bflow,
     int ws, int nH, int nW, int nHW,
     int stride0, int stride1, bool full_ws, bool full_ws_time,
     int q_per_thread, int ws_h_per_thread, int ws_w_per_thread){
 
   // -- unpack --
-  int ibatch = blockIdx.x;
-  int raster_index = q_per_thread*blockIdx.y;
+  int ibatch = blockIdx.y;
+  int raster_index = q_per_thread*blockIdx.x;
   int T = fflow.size(1);
   int H = fflow.size(3);
   int W = fflow.size(4);
@@ -234,17 +234,21 @@ void non_local_inds_cuda(
   dim3 nthreads(ws_h_threads,ws_w_threads);
 
   // -- chunking the blocks --
-  int q_per_thread = 1;
+  int q_per_thread = 2;
   int _nblocks = (Q-1)/(q_per_thread)+1;
-  dim3 nblocks(B,_nblocks);
+  dim3 nblocks(_nblocks,B);
+
+  // -- viz --
   // fprintf(stdout,"nblocks,nthreads: %d,%d\n",_nblocks,_nthreads);
+  // fprintf(stdout,"B,Q,_nblocks,nH,nW,stride0: %d,%d,%d,%d,%d,%d\n",
+  // 	  B,Q,_nblocks,nH,nW,stride0);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(fflow.type(), "non_local_inds_kernel", ([&] {
      non_local_inds_kernel<scalar_t><<<nblocks, nthreads>>>(
-       inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
-       fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-       bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+       inds.packed_accessor64<int,6,torch::RestrictPtrTraits>(),
+       fflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
+       bflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
        ws, nH, nW, nHW, stride0, stride1, full_ws, full_ws_time,
        q_per_thread, ws_h_per_thread, ws_w_per_thread);
       }));

@@ -20,7 +20,7 @@ from einops import rearrange,repeat
 # int bpt, int npt, int cpt) {
 
 def run_batch(grad_dists,vid0,vid1,inds,qstart,stride0,
-              ps,pt,dilation,use_adj,reflect_bounds):
+              ps,pt,dilation,use_adj,reflect_bounds,dist_type="l2"):
     B = grad_dists.shape[0]
     grad_vid0,grad_vid1 = [],[]
     for b in range(B):
@@ -28,7 +28,7 @@ def run_batch(grad_dists,vid0,vid1,inds,qstart,stride0,
         grad_dists_b,inds_b = grad_dists[b],inds[b]
         grad_vid0_b,grad_vid1_b = run(grad_dists_b,vid0_b,vid1_b,inds_b,
                                       qstart,stride0,ps,pt,dilation,
-                                      use_adj,reflect_bounds)
+                                      use_adj,reflect_bounds,dist_type)
         grad_vid0.append(grad_vid0_b)
         grad_vid1.append(grad_vid1_b)
     grad_vid0 = th.stack(grad_vid0)
@@ -36,7 +36,7 @@ def run_batch(grad_dists,vid0,vid1,inds,qstart,stride0,
     return grad_vid0,grad_vid1
 
 def run(grad_dists,vid0,vid1,inds,qstart,stride0,
-        ps,pt,dilation,use_adj,reflect_bounds):
+        ps,pt,dilation,use_adj,reflect_bounds,dist_type="l2"):
 
     # -- device --
     device = grad_dists.device
@@ -53,7 +53,7 @@ def run(grad_dists,vid0,vid1,inds,qstart,stride0,
     # -- exec scatter --
     numba_launcher(grad_vid0,grad_vid1,grad_dists,vid0,vid1,
                    inds,qstart,stride0,nh0,nw0,
-                   ps,pt,dilation,use_adj,reflect_bounds)
+                   ps,pt,dilation,use_adj,reflect_bounds,dist_type)
     assert th.any(th.isnan(grad_vid0)).item() is False
     assert th.any(th.isnan(grad_vid1)).item() is False
 
@@ -61,7 +61,7 @@ def run(grad_dists,vid0,vid1,inds,qstart,stride0,
 
 def numba_launcher(grad_vid0,grad_vid1,grad_dists,vid0,vid1,
                    inds,qstart,stride0,nh0,nw0,
-                   ps,pt,dilation,use_adj,reflect_bounds):
+                   ps,pt,dilation,use_adj,reflect_bounds,dist_type):
 
     # -- numbify all params --
     device = grad_vid0.device
@@ -72,10 +72,13 @@ def numba_launcher(grad_vid0,grad_vid1,grad_dists,vid0,vid1,
     vid1 = vid1.cpu().numpy()
     inds = inds.cpu().numpy()
 
+    # -- check --
+    assert dist_type in ["prod","l2"],"Must be either [prod] or [l2]."
+
     # -- exec kernel --
     numba_search_bwd(grad_vid0_nba,grad_vid1_nba,grad_dists,
                      vid0,vid1,inds,ps,pt,stride0,dilation,
-                     use_adj,reflect_bounds)
+                     use_adj,reflect_bounds,dist_type)
 
     # -- copy vids --
     grad_vid0_nba = th.from_numpy(grad_vid0_nba).to(device)
@@ -86,7 +89,8 @@ def numba_launcher(grad_vid0,grad_vid1,grad_dists,vid0,vid1,
 # -- reflect padding --
 @jit(nopython=True,debug=False)
 def numba_search_bwd(grad_vid0,grad_vid1,grad_dists,vid0,vid1,inds,
-                     ps,pt,stride0,dilation,use_adj,reflect_bounds):
+                     ps,pt,stride0,dilation,use_adj,reflect_bounds,
+                     dist_type):
 
     # -- "inline" function --
     def bounds(val,lim):
@@ -154,11 +158,22 @@ def numba_search_bwd(grad_vid0,grad_vid1,grad_dists,vid0,vid1,inds,
                             valid_i = valid_ti and valid_hi and valid_wi
     
                             # -- aggregate from patches --
-                            pix0 = vid0[ti,c0,hi,wi] if valid_i else 0.
-                            pix1 = vid1[tj,c0,hj,wj] if valid_j else 0.
-                            pix = 2 * weight * (pix0 - pix1)
-                            if valid_i:
-                                grad_vid0[ti,c0,hi,wi] += pix
-                            if valid_j:
-                                grad_vid1[tj,c0,hj,wj] -= pix
+                            if dist_type == "l2":
+                                pix0 = vid0[ti,c0,hi,wi] if valid_i else 0.
+                                pix1 = vid1[tj,c0,hj,wj] if valid_j else 0.
+                                pix = 2 * weight * (pix0 - pix1)
+                                if valid_i:
+                                    grad_vid0[ti,c0,hi,wi] += pix
+                                if valid_j:
+                                    grad_vid1[tj,c0,hj,wj] -= pix
+                            elif dist_type == "prod":
+                                # pix0 = weight*vid0[ref[0]][c0][ref[1]][ref[2]];
+                                # pix1 = weight*vid1[prop[0]][c0][prop[1]][prop[2]];
+		                #   grad_vid0[ref[0]][c0][ref[1]][ref[2]] += pix1;
+		                #   grad_vid1[prop[0]][c0][prop[1]][prop[2]] += pix0;
+                                if (valid_i and valid_j):
+                                    pix0 = weight*vid0[ti,c0,hi,wi]
+                                    pix1 = weight*vid1[tj,c0,hj,wj]
+                                    grad_vid0[ti,c0,hi,wi] += pix1
+                                    grad_vid1[tj,c0,hj,wj] += pix0
 

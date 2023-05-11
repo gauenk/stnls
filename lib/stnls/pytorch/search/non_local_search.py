@@ -114,7 +114,7 @@ class NonLocalSearchFunction(th.autograd.Function):
                 anchor_self=False, remove_self=False,
                 use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
                 rbwd=True, nbwd=1, exact=False, use_atomic=True,
-                queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
+                queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
 
         """
         Run the non-local search
@@ -181,7 +181,7 @@ class NonLocalSearch(th.nn.Module):
                  anchor_self=False, remove_self=False,
                  use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
                  rbwd=True, nbwd=1, exact=False, use_atomic=True,
-                 queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
+                 queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
         super().__init__()
 
         # -- core search params --
@@ -277,7 +277,7 @@ def _apply(vid0, vid1, fflow, bflow,
            anchor_self=True, remove_self=False,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
            rbwd=True, nbwd=1, exact=False, use_atomic=False,
-           queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
+           queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -304,7 +304,7 @@ def extract_config(cfg):
              "anchor_self":True, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "rbwd":True, "nbwd":1, "exact":False, "use_atomic": True,
-             "queries_per_thread":4,"neigh_per_thread":4,"channel_groups":-1}
+             "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):

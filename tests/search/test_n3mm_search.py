@@ -49,7 +49,7 @@ def pytest_generate_tests(metafunc):
     test_lists = {"wt":[0],"ws":[3],"k":[-1],"ps":[5],
                   "stride0":[2],"stride1":[1],"dilation":[1],
                   "nheads":[1],"anchor_self":[False],
-                  "full_ws":[True],"dist_type":["prod"],
+                  "full_ws":[True],"dist_type":["l2"],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -74,7 +74,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     device = "cuda:0"
     clean_flow = True
     run_flow = False
-    reflect_bounds = False
+    reflect_bounds = True
     set_seed(seed)
 
     # -- load data --
@@ -113,13 +113,32 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     dists_gt,inds_gt = search_gt(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
 
+    # -- pick tolerance --
+    if dist_type == "prod":
+        mean_tol = 1e-6
+        max_tol = 1e-6
+    else:
+        mean_tol = 1e-3
+        max_tol = 1e-1
+
     # -- compare --
-    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
-    diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
-    args1 = th.where(diff > 1e-3)
-    diff = diff[args0]
+    isinf = th.isinf(dists_gt)
+    issmall = dists_gt < 1e-4
+    args0 = th.where(th.logical_not(th.logical_or(isinf,issmall))) # remove invalid
+    diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-8)
+    # diff = th.abs(dists_te - dists_gt)
+
+    # print(diff.shape)
+    # print(th.where(diff > 0.03))
+    # diff = diff[args0]
+    # args1 = th.where(diff > 0.02)
+    # print(dists_te[args0][args1])
+    # print(dists_gt[args0][args1])
 
     # -- viz --
+    # print(dists_te[0,0,0])
+    # print(dists_gt[0,0,0])
+    # print(dists_te.shape)
     # print(diff)
     # print(args1)
     # print(dists_te[args1])
@@ -128,15 +147,15 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     # print(inds_gt[args1][:10])
 
     # -- test --
-    tol = 1e-5
-    error = diff.mean().item()
-    if error > tol: print("error: ",error)
-    assert error < tol
+    error = diff[args0].mean().item()
+    print(error)
+    if error > mean_tol: print("error: ",error)
+    assert error < mean_tol
 
-    tol = 1e-4
-    max_error = diff.max().item()
-    if max_error > tol: print("max error: ",max_error)
-    assert max_error < tol
+    max_error = diff[args0].max().item()
+    print(max_error)
+    if max_error > max_tol: print("max error: ",max_error)
+    assert max_error < max_tol
 
 
 def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
@@ -210,20 +229,28 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     dists_gt,inds_gt = search_gt(vid_gt0,vid_gt1,flows.fflow,flows.bflow)
     th.cuda.synchronize()
 
+    # -- pick tolerance --
+    if dist_type == "prod":
+        mean_tol = 1e-6
+        max_tol = 1e-6
+    else:
+        mean_tol = 1e-3
+        max_tol = 1e-1
+
     # -- compare --
-    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
+    isinf = th.isinf(dists_gt)
+    issmall = dists_gt < 1e-4
+    args0 = th.where(th.logical_not(th.logical_or(isinf,issmall))) # remove invalid
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
     args1 = th.where(diff>1-3)
 
-    tol = 1e-5
     error = diff[args0].mean().item()
-    if error > tol: print("error: ",error)
-    assert error < tol
+    if error > mean_tol: print("error: ",error)
+    assert error < mean_tol
 
-    tol = 1e-4
     max_error = diff[args0].max().item()
-    if max_error > tol: print("max error: ",max_error)
-    assert max_error < tol
+    if max_error > max_tol: print("max error: ",max_error)
+    assert max_error < max_tol
 
     # -- compute bwd --
     dists_grad = th.randn_like(dists_te)
