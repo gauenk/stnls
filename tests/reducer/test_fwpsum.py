@@ -89,7 +89,8 @@ def test_forward(ps,stride,dilation,nheads,k,exact,batchsize):
     use_unfold = k == -1
     t = 1 if use_unfold else 3
     # adj = ps//2 if use_unfold else 0
-    use_adj = True
+    # use_adj = True
+    use_adj = False
 
     # -- load data --
     vid = get_data(dnames,ext)
@@ -114,11 +115,11 @@ def test_forward(ps,stride,dilation,nheads,k,exact,batchsize):
 
     # -- init our inner product --
     wpsum_gt = stnls.reducer.FoldedWeightedPatchSum(ps, stride0, -1,
-                                                    pt, dilation=dil, use_adj=False,
+                                                    pt, dilation=dil, use_adj=use_adj,
                                                     reflect_bounds=reflect_bounds,
                                                     exact=exact, use_atomic=use_atomic)
     wpsum_te = stnls.reducer.FoldedWeightedPatchSum(ps, stride0, batchsize,
-                                                    pt, dilation=dil, use_adj=False,
+                                                    pt, dilation=dil, use_adj=use_adj,
                                                     reflect_bounds=reflect_bounds,
                                                     exact=exact, use_atomic=use_atomic)
 

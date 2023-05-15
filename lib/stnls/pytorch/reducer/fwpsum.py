@@ -63,7 +63,7 @@ class FoldedWeightedPatchSum(th.nn.Module):
         # -- init --
         wpsum = self.wpsum
         fold = stnls.iFoldz(vid.shape,stride=self.stride0,dilation=self.dilation,
-                            use_adj=False,reflect_bounds=self.reflect_bounds,
+                            use_adj=self.use_adj,reflect_bounds=self.reflect_bounds,
                             device=vid.device)
 
         # -- batching info --

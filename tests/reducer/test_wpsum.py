@@ -168,8 +168,7 @@ def test_identity(ps,stride,dilation,nheads,k,exact):
     use_k = k != -1
     use_unfold = k == -1
     t = 1 if use_unfold else 3
-    # adj = ps//2 if use_unfold else 0
-    use_adj = True
+    use_adj = False # both pass
 
     # -- load data --
     vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
@@ -194,11 +193,11 @@ def test_identity(ps,stride,dilation,nheads,k,exact):
                                 use_adj=use_adj)
 
     # -- init our inner product --
-    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dil, use_adj=False,
+    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dil, use_adj=use_adj,
                                            reflect_bounds=reflect_bounds,
                                            exact=exact, use_atomic=use_atomic)
     fold = stnls.iFoldz(vid.shape,stride=stride0,dilation=dilation,
-                        use_adj=False,reflect_bounds=reflect_bounds,
+                        use_adj=use_adj,reflect_bounds=reflect_bounds,
                         device=vid.device)
 
     # -- run search & wpsum --

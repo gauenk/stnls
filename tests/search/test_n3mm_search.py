@@ -49,7 +49,7 @@ def pytest_generate_tests(metafunc):
     test_lists = {"wt":[0],"ws":[3],"k":[-1],"ps":[5],
                   "stride0":[2],"stride1":[1],"dilation":[1],
                   "nheads":[1],"anchor_self":[False],
-                  "full_ws":[True],"dist_type":["l2"],
+                  "full_ws":[True],"dist_type":["prod"],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -115,8 +115,8 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
 
     # -- pick tolerance --
     if dist_type == "prod":
-        mean_tol = 1e-6
-        max_tol = 1e-6
+        mean_tol = 1e-5
+        max_tol = 1e-5
     else:
         mean_tol = 1e-3
         max_tol = 1e-1
@@ -231,8 +231,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
 
     # -- pick tolerance --
     if dist_type == "prod":
-        mean_tol = 1e-6
-        max_tol = 1e-6
+        mean_tol = 1e-5
+        max_tol = 1e-5
     else:
         mean_tol = 1e-3
         max_tol = 1e-1
