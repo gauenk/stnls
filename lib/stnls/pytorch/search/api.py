@@ -22,9 +22,9 @@ from . import rand_inds
 from . import n3mm_search
 from .utils import extract_pairs
 
-
 # -- easy access --
-import importlib
+import importlib,copy
+dcopy = copy.deepcopy
 from pathlib import Path
 from easydict import EasyDict as edict
 
@@ -55,7 +55,8 @@ def from_search_menu(name):
     else:
         return name
 
-def extract_config(_cfg):
+def extract_config(_cfg,restrict=True):
+    _cfg = dcopy(_cfg)
     pairs = {"search_name":"nls"}
     search_name = extract_pairs(pairs,_cfg)["search_name"]
     pkg_name = from_search_menu(search_name)

@@ -10,7 +10,7 @@ import stnls_cuda
 import stnls
 
 # -- api --
-from .utils import extract_pairs
+from stnls.utils import extract_pairs
 
 # -- local --
 from .utils import filter_k
@@ -280,7 +280,7 @@ def _apply(vid0, vid1, qinds,
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def extract_config(cfg):
+def extract_config(cfg,restrict=True):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr":1,"kr":-1,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
@@ -289,7 +289,7 @@ def extract_config(cfg):
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "rbwd":True, "nbwd":1, "exact":False, "use_atomic": True,
              "queries_per_thread":4,"neigh_per_thread":4,"channel_groups":-1}
-    return extract_pairs(pairs,cfg)
+    return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     search = RefineSearch(cfg.ws, cfg.ps, cfg.k, cfg.wr, cfg.kr,

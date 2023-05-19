@@ -24,10 +24,10 @@ import warnings
 from torch.nn.init import _calculate_fan_in_and_fan_out
 
 # -- rescale flow --
-from dev_basics import flow
+import torch.nn.functional as tnnf
 
 # -- benchmarking --
-from dev_basics.utils.timer import ExpTimer,ExpTimerList
+from stnls.utils.timer import ExpTimer,ExpTimerList
 
 class NonLocalAttention(nn.Module):
 
@@ -91,7 +91,7 @@ class NonLocalAttention(nn.Module):
 
         # -- update flow --
         B,T,C,H,W = vid.shape
-        if self.use_flow: flows = flow.rescale_flows(flows,H,W)
+        if self.use_flow: flows = rescale_flows(flows,H,W)
 
         # -- extract --
         vid = self.norm_layer(vid)
@@ -277,6 +277,32 @@ class NonLocalAttention(nn.Module):
 #       Feature Transforms
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def rescale_flows(flows_og,H,W):
+
+    # -- corner case --
+    if flows_og is None: return None
+
+    # -- check --
+    B,T,_,_H,_W = flows_og.fflow.shape
+    if _H == H:
+        return flows_og
+
+    # -- alloc --
+    fflow = flows_og.fflow.view(B*T,2,_H,_W)
+    bflow = flows_og.bflow.view(B*T,2,_H,_W)
+    shape = (H,W)
+
+    # -- create new flows --
+    flows = edict()
+    flows.fflow = tnnf.interpolate(fflow,size=shape,mode="bilinear")
+    flows.bflow = tnnf.interpolate(bflow,size=shape,mode="bilinear")
+
+    # -- reshape --
+    flows.fflow = flows.fflow.view(B,T,2,H,W)
+    flows.bflow = flows.bflow.view(B,T,2,H,W)
+
+    return flows
 
 class ConvQKV(nn.Module):
     def __init__(self, input_dim, heads = 8, dim_head = 64, qk_frac=1.,

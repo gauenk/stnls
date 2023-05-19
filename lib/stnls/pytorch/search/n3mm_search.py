@@ -319,14 +319,15 @@ def _apply(vid0, vid1, fflow, bflow,
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def extract_config(cfg):
+
+def extract_config(cfg,restrict=True):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True,
              "anchor_self":False, "remove_self":False,
              "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0}
-    return extract_pairs(pairs,cfg)
+    return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     cfg = extract_config(cfg)
