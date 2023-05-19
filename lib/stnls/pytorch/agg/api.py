@@ -10,9 +10,7 @@ from . import wpsum
 from . import pdbsum
 
 # -- configs --
-from dev_basics.configs import ExtractConfig
-econfig = ExtractConfig(__file__) # init static variable
-extract_config = econfig.extract_config # rename extraction
+from stnls.utils import config
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -20,14 +18,14 @@ extract_config = econfig.extract_config # rename extraction
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-@econfig.set_init
+def extract_config(cfg,restrict=True):
+    cfg = config.extract_pairs(cfg,default_pairs(),restrict=restrict)
+    return cfg
+
 def init_agg(cfg):
 
     # -- unpack --
-    econfig.init(cfg)
-    cfgs = econfig({"agg":agg_pairs()})
-    if econfig.is_init == True: return
-    cfg = cfgs.agg
+    cfg = extract_config(cfg)
 
     # -- menu --
     modules = {"wpsum":wpsum,"pdbsum":pdbsum}
@@ -42,7 +40,7 @@ def init_agg(cfg):
 def init(cfg):
     return init_agg(cfg)
 
-def agg_pairs():
+def default_pairs():
     pairs = {"ps":7,"pt":1,"dilation":1,
              "exact":False,"reflect_bounds":False,
              "k_a":-1,"agg_name":"wpsum",

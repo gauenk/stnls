@@ -34,7 +34,7 @@ class WeightedPatchSumFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid, dists, inds, ps, pt=1,
-                dilation=1,reflect_bounds=True,use_adj=True,
+                dilation=1,reflect_bounds=True,use_adj=False,
                 off_H=0,off_W=0,rbwd=False,nbwd=1,
                 exact=False,use_atomic=True):
         """
@@ -155,7 +155,7 @@ class WeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds
 
     def __init__(self, ps, pt=1, dilation=1,
-                 reflect_bounds=True, use_adj=True,
+                 reflect_bounds=True, use_adj=False,
                  off_H=0, off_W=0,
                  rbwd=False, nbwd=1, exact=False, use_atomic=True):
         super().__init__()
@@ -210,7 +210,7 @@ class WeightedPatchSum(th.nn.Module):
 
 def _apply(vid, dists, inds, ps, pt=1,
            dilation=1,reflect_bounds=True,
-           use_adj=True, off_H0=0, off_W0=0,
+           use_adj=False, off_H0=0, off_W0=0,
            rbwd=True, nbwd=1, exact=False, use_atomic=True):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
@@ -228,9 +228,9 @@ def _apply(vid, dists, inds, ps, pt=1,
 
 def extract_config(cfg):
     pairs = {"ps":7,"pt":1,"dilation":1,
-             "reflect_bounds":True, "use_adj":True,
-             "off_H0":0,"off_W0":0,
-             "rbwd":True, "nbwd":1, "exact":False, "use_atomic": True}
+             "reflect_bounds":True, "use_adj":False,
+             "off_H0":0,"off_W0":0, "rbwd":False, 
+             "nbwd":1, "exact":False, "use_atomic": True}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):

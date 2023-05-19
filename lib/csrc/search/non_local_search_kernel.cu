@@ -179,6 +179,9 @@ __global__ void non_local_search_forward_kernel(
                          T,C,H,W,pix0,pix1,_dist);
           }
 
+	  // -- DELETE ME! -- HEADHEADHEADHEAD >>>>>>>>>>>>><<<<<<<<<<<<<<<
+	  // valid = valid && (ref_patch[0] =! prop_patch[0]);
+
           // -- assignent --
           if (!valid){ dist = invalid; }
           dists[ibatch][ihead][qi][st_i][ws_i][ws_j] = dist;

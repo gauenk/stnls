@@ -9,9 +9,7 @@
 from . import softmax
 
 # -- configs --
-from dev_basics.configs import ExtractConfig
-econfig = ExtractConfig(__file__) # init static variable
-extract_config = econfig.extract_config # rename extraction
+from stnls.utils import config
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -19,14 +17,14 @@ extract_config = econfig.extract_config # rename extraction
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-@econfig.set_init
+def extract_config(cfg,restrict=True):
+    cfg = config.extract_pairs(cfg,default_pairs(),restrict=restrict)
+    return cfg
+
 def init_normz(cfg):
 
     # -- unpack --
-    econfig.init(cfg)
-    cfgs = econfig({"normz":normz_pairs()})
-    if econfig.is_init == True: return
-    cfg = cfgs.normz
+    cfg = extract_config(cfg)
 
     # -- menu --
     modules = {"softmax":softmax}
@@ -41,7 +39,7 @@ def init_normz(cfg):
 def init(cfg):
     return init_normz(cfg)
 
-def normz_pairs():
+def default_pairs():
     pairs = {"normz_scale":10,
              "normz_name":"softmax",
              "k_n":-1,
