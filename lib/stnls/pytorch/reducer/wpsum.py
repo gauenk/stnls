@@ -64,6 +64,8 @@ class WeightedPatchSumFunction(th.autograd.Function):
 
         # -- forward --
         vid = vid.contiguous()
+        dists = dists.contiguous()
+        inds = inds.contiguous()
         stnls_cuda.wpsum_forward(vid, patches, dists, inds,
                                  off_H,off_W,dilation,use_adj,
                                  reflect_bounds)

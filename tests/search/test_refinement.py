@@ -35,9 +35,9 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ps":[7],"stride0":[4],"stride1":[4],
-                  "dilation":[1],"wt":[0],"ws":[9], "wr":[1],"kr":[-1],
-                  "k":[-1],"exact":[True],"nheads":[1],
+    test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
+                  "dilation":[1],"wt":[2],"ws":[9], "wr":[1],"kr":[-1],
+                  "k":[5],"exact":[True],"nheads":[1],
                   "seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -92,42 +92,27 @@ def test_fwd(ws,wt,k,wr,kr,ps,stride0,stride1,dilation,nheads,exact,seed):
     flows.fflow = 10*th.randn_like(flows.fflow)
     flows.bflow = 10*th.randn_like(flows.bflow)
 
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    b,t,color,h,w = shape
-    vshape = vid.shape
-
-    # -- pads --
-    _,_,n0,n1 = get_batching_info(vid[0].shape,stride0,stride1,ps,dil)
-    n_h0,n_w0 = n0[0],n0[1]
-    n_h1,n_w1 = n1[0],n1[1]
-    h0_off, w0_off, h1_off, w1_off = 0, 0, 0, 0
-
-    # -- batching info --
-    npix = t * h * w
-    ntotal = t * n_h0 * n_w0
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
-
     # -- exec fold fxns --
-    search_gt = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
+    search_gt = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,dist_type="l2",
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
                                  use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-    search_te = stnls.search.RefineSearch(ws, ps, k, wr, kr, nheads,
+    search_te = stnls.search.RefineSearch(ws, ps, k, wr, kr, nheads,dist_type="l2",
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
                                  anchor_self=anchor_self,remove_self=False,
                                  use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
-
+    print(ws,ps,k,wr,kr,use_adj)
 
     # -- test api --
     dists_gt,inds_gt = search_gt(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
     dists_te,inds_te = search_te(vid,vid,inds_gt)
     th.cuda.synchronize()
+    print(dists_gt.shape,dists_te.shape)
+    print(dists_gt)
+    print(dists_te)
 
     # -- viz --
     # print(dists_te[0,0,0,:])

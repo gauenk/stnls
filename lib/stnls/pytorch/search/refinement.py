@@ -69,6 +69,7 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
     # -- run --
+    print(vid0.shape,qinds.shape)
     stnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
                                   ws_h, ws_w, ps, k, dist_type_i,
                                   stride0, stride1, dilation, pt, qshift,
@@ -116,8 +117,8 @@ class RefineSearchFunction(th.autograd.Function):
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=True, remove_self=False,
-                use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                rbwd=True, nbwd=1, exact=False, use_atomic=True,
+                use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+                rbwd=False, nbwd=1, exact=False, use_atomic=True,
                 queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
         """
         Run the refinement search
@@ -179,7 +180,7 @@ class RefineSearch(th.nn.Module):
                  dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
                  reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
-                 use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
+                 use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
                  rbwd=True, nbwd=1, exact=False, use_atomic=True,
                  queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
         super().__init__()
@@ -254,11 +255,11 @@ class RefineSearch(th.nn.Module):
 
 def _apply(vid0, vid1, qinds,
            ws, ps, k, wr, kr=-1, nheads=1, batchsize=-1,
-           dist_type="prod", stride0=4, stride1=1,
+           dist_type="l2", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-           anchor_self=False, remove_self=False,
-           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           rbwd=True, nbwd=1, exact=False, use_atomic=True,
+           anchor_self=True, remove_self=False,
+           use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
+           rbwd=False, nbwd=1, exact=False, use_atomic=True,
            queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17

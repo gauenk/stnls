@@ -52,6 +52,7 @@ class NonLocalAttention(nn.Module):
         self.search_cfg = search_cfg
         self.normz_cfg = normz_cfg
         self.agg_cfg = agg_cfg
+        search_cfg.use_adj = False
 
         # -- init attn fxns --
         self.search = stnls.search.init(search_cfg)
@@ -174,7 +175,7 @@ class NonLocalAttention(nn.Module):
         # -- init folding --
         B,ps = vshape[0],self.search_cfg.ps
         fold = stnls.iFoldz(vshape,stride=self.stride0,
-                            dilation=self.dilation,adj=0,only_full=False,
+                            dilation=self.dilation,use_adj=False,only_full=False,
                             reflect_bounds=True,device=patches.device)
 
         # -- reshape for folding --
