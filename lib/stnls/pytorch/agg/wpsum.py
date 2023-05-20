@@ -30,7 +30,6 @@ class WpSumAgg(nn.Module):
     def __call__(self,vid,dists,inds):
 
         # -- limiting --
-        print("wpsum: ",self.k)
         if self.k > 0:
             dists = dists[...,:self.k]
             inds = inds[...,:self.k,:]

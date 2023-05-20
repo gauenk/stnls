@@ -69,7 +69,7 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
     # -- run --
-    print(vid0.shape,qinds.shape)
+    # print(vid0.shape,qinds.shape)
     stnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
                                   ws_h, ws_w, ps, k, dist_type_i,
                                   stride0, stride1, dilation, pt, qshift,
@@ -133,6 +133,7 @@ class RefineSearchFunction(th.autograd.Function):
         dtype = vid0.dtype
         device = vid0.device
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
+        # print("vid0.shape: ",vid0.shape,qinds.shape,nheads)
         B,HD,T,F,H,W = vid0.shape
         assert qinds.shape[1] == HD
 
@@ -177,7 +178,7 @@ class RefineSearchFunction(th.autograd.Function):
 class RefineSearch(th.nn.Module):
 
     def __init__(self, ws, ps, k, wr, kr, nheads=1,
-                 dist_type="prod", stride0=4, stride1=1, dilation=1, pt=1,
+                 dist_type="l2", stride0=4, stride1=1, dilation=1, pt=1,
                  reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
                  use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
@@ -283,13 +284,13 @@ def _apply(vid0, vid1, qinds,
 
 def extract_config(cfg,restrict=True):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr":1,"kr":-1,
-             "nheads":1,"dist_type":"prod",
+             "nheads":1,"dist_type":"l2",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":False,
              "anchor_self":True, "remove_self":False,
-             "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "rbwd":True, "nbwd":1, "exact":False, "use_atomic": True,
-             "queries_per_thread":4,"neigh_per_thread":4,"channel_groups":-1}
+             "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
+             "rbwd":False, "nbwd":1, "exact":False, "use_atomic": True,
+             "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):

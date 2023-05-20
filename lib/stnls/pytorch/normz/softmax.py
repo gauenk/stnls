@@ -24,7 +24,6 @@ class SoftmaxNormalize(nn.Module):
             dists = -dists
 
         # -- limiting --
-        print("softmax: ",self.k)
         if self.k > 0:
             dists = dists[...,:self.k].contiguous()
 

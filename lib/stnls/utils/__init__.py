@@ -12,3 +12,4 @@ from . import config
 
 # -- specific funcs --
 from .inds import get_nums_hw
+from .config import extract_pairs

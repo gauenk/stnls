@@ -12,10 +12,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.functional import unfold
 from einops import rearrange,repeat
+from easydict import EasyDict as edict
 
 # -- config --
 import copy
 dcopy = copy.deepcopy
+from stnls.utils import config
 
 # -- from timm.models.layers import trunc_normal_ --
 import torch
@@ -28,6 +30,19 @@ import torch.nn.functional as tnnf
 
 # -- benchmarking --
 from stnls.utils.timer import ExpTimer,ExpTimerList
+
+
+def default_pairs():
+    pairs = {"qk_frac":1.,"qkv_bias":True,
+             "token_mlp":'leff',"attn_mode":"default",
+             "token_projection":'linear',
+             "drop_rate_proj":0.,"attn_timer":False,
+             "use_flow":True}
+    return pairs
+
+def extract_config(cfg,restrict=True):
+    cfg = config.extract_pairs(cfg,default_pairs(),restrict=restrict)
+    return cfg
 
 class NonLocalAttention(nn.Module):
 
@@ -62,7 +77,7 @@ class NonLocalAttention(nn.Module):
         # -- init vars of interest --
         self.use_norm_layer = attn_cfg.use_norm_layer
         self.use_flow = attn_cfg.use_flow
-        self.use_state_update = attn_cfg.use_state_update
+        self.use_state_update = search_cfg.use_state_update
         self.ps = search_cfg.ps
         self.search_name = search_cfg.search_name
         self.stride0 = search_cfg.stride0
@@ -175,7 +190,7 @@ class NonLocalAttention(nn.Module):
         # -- init folding --
         B,ps = vshape[0],self.search_cfg.ps
         fold = stnls.iFoldz(vshape,stride=self.stride0,
-                            dilation=self.dilation,use_adj=False,only_full=False,
+                            dilation=self.dilation,use_adj=False,
                             reflect_bounds=True,device=patches.device)
 
         # -- reshape for folding --

@@ -271,12 +271,12 @@ class NonLocalSearch(th.nn.Module):
 
 def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, nheads=1, batchsize=-1,
-           dist_type="prod", stride0=4, stride1=1,
+           dist_type="l2", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True,
            full_ws=True, full_ws_time=True,
            anchor_self=True, remove_self=False,
            use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           rbwd=True, nbwd=1, exact=False, use_atomic=False,
+           rbwd=False, nbwd=1, exact=False, use_atomic=True,
            queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
