@@ -146,7 +146,7 @@ class InplaceWeightedPatchSumFunction(th.autograd.Function):
         if vid_in_dim == 5:
             grad_out = rearrange(grad_out,'b H t c h w -> b t (H c) h w')
             grad_out = grad_out.contiguous()
-            print("grad_out.shape: ",grad_out.shape)
+            # print("grad_out.shape: ",grad_out.shape)
 
         return grad_out,grad_dists,None,None,None,\
             None,None,None,None,None,None,None,None,None
