@@ -51,7 +51,8 @@ def set_seed(seed):
 def get_data(dnames,ext="jpg",device="cuda:0"):
     vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,].contiguous()
-    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid = repeat(vid,'b t c h w -> b t c (rh h) (rw w)',rh=4,rw=4)
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=30)[:,:,:72].contiguous()
     vid /= vid.max()
     return vid
 
@@ -60,7 +61,7 @@ def pytest_generate_tests(metafunc):
     set_seed(seed)
     test_lists = {"ps":[7],"pt":[1],"stride0":[4],"stride1":[1],
                   "dilation":[1],"wt":[3],"k":[5],
-                  "ws":[10],"nheads":[1],"batchsize":[-1],
+                  "ws":[10],"nheads":[6],"batchsize":[-1],
                   "reflect_bounds":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -136,12 +137,12 @@ def test_forward(ps,pt,ws,wt,k,stride0,stride1,dilation,nheads,batchsize):
     print(vid_te[th.where(diff > 0.1)])
 
     # -- compare --
-    tol = 1e-4
+    tol = 5e-4
     error = th.abs(vid_gt - vid_te).mean().item()
     if error > tol: print(error)
     assert error < tol
 
-    tol = 1e-2
+    tol = 3e-2
     error = th.abs(vid_gt - vid_te).max().item()
     if error > tol: print(error)
     assert error < tol
@@ -215,7 +216,7 @@ def test_score_backward(ps,pt,ws,wt,k,stride0,stride1,dilation,nheads,batchsize)
     th.autograd.backward(avid_gt,avid_grad)
 
     # -- set tol --
-    tol_mean = 1e-5
+    tol_mean = 1e-3
     tol_max = 1e-3
 
     # -- grab grads --

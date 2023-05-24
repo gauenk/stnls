@@ -28,7 +28,7 @@ def from_reducer_menu(name):
         return name
 
 def extract_config(_cfg):
-    pairs = {"reducer_name":"wpsum"}
+    pairs = {"reducer_name":"iwpsum"}
     reducer_name = extract_pairs(_cfg,pairs)["reducer_name"]
     pkg_name = from_reducer_menu(reducer_name)
     base_name = ".".join(__name__.split(".")[:-1])

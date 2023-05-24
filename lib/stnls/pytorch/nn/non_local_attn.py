@@ -10,7 +10,6 @@ import stnls
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.functional import unfold
 from einops import rearrange,repeat
 from easydict import EasyDict as edict
 
@@ -34,10 +33,10 @@ from stnls.utils.timer import ExpTimer,ExpTimerList
 
 def default_pairs():
     pairs = {"qk_frac":1.,"qkv_bias":True,
-             "token_mlp":'leff',"attn_mode":"default",
-             "token_projection":'linear',
-             "drop_rate_proj":0.,"attn_timer":False,
-             "use_flow":True}
+             "use_attn_projection":True,
+             "drop_rate_proj":0.,
+             "attn_timer":False,"use_attn_flow":True,
+             "use_norm_layer":False}
     return pairs
 
 def extract_config(cfg,restrict=True):
@@ -50,11 +49,11 @@ class NonLocalAttention(nn.Module):
         super().__init__()
 
         # -- attn_cfg defaults --
-        attn_cfg = dcopy(attn_cfg)
-        pairs = {"use_norm_layer":False}
-        for k,v in pairs.items():
-            if not(k in attn_cfg):
-                attn_cfg[k] = v
+        # attn_cfg = dcopy(attn_cfg)
+        # pairs = {"use_norm_layer":False}
+        # for k,v in pairs.items():
+        #     if not(k in attn_cfg):
+        #         attn_cfg[k] = v
 
         # -- unpack --
         embed_dim = attn_cfg.embed_dim
@@ -67,16 +66,15 @@ class NonLocalAttention(nn.Module):
         self.search_cfg = search_cfg
         self.normz_cfg = normz_cfg
         self.agg_cfg = agg_cfg
-        search_cfg.use_adj = False
 
         # -- init attn fxns --
         self.search = stnls.search.init(search_cfg)
         self.normz = stnls.normz.init(normz_cfg)
-        self.agg = stnls.agg.init(agg_cfg)
+        self.agg = stnls.reducer.init(agg_cfg)
 
         # -- init vars of interest --
         self.use_norm_layer = attn_cfg.use_norm_layer
-        self.use_flow = attn_cfg.use_flow
+        self.use_flow = attn_cfg.use_attn_flow
         self.use_state_update = search_cfg.use_state_update
         self.ps = search_cfg.ps
         self.search_name = search_cfg.search_name
@@ -84,13 +82,20 @@ class NonLocalAttention(nn.Module):
         self.dilation = search_cfg.dilation
         self.k_agg = search_cfg.k_agg
 
-        # -- attn init --
-        self.token_projection = attn_cfg.token_projection
+        # -- qkv attn --
         self.qkv = ConvQKV(dim,nheads,embed_dim,
                            attn_cfg.qk_frac,bias=attn_cfg.qkv_bias)
-        # self.proj = nn.Conv2d(dim,dim,(1,1),stride=1,
-        #                       padding="same",groups=1)
-        # self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
+
+        # -- projection layer --
+        if attn_cfg.use_attn_projection:
+            self.proj = nn.Conv2d(dim,dim,(1,1),stride=1,
+                                  padding="same",groups=1)
+            self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
+        else:
+            self.proj = nn.Identity()
+            self.proj_drop = nn.Identity()
+
+        # -- normzliation --
         self.norm_layer = LayerNorm2D(dim) if self.use_norm_layer else nn.Identity()
 
         # -- timers --
@@ -109,22 +114,21 @@ class NonLocalAttention(nn.Module):
         if self.use_flow: flows = rescale_flows(flows,H,W)
 
         # -- extract --
+        in_vid = vid
         vid = self.norm_layer(vid)
         q_vid,k_vid,v_vid = self.get_qkv(vid)
 
         # -- search --
         dists,inds = self.run_search(q_vid,k_vid,flows,state)
 
-        # -- restrict --
-        if self.k_agg > 0:
-            dists = dists[...,:self.k_agg].contiguous()
-            inds = inds[...,:self.k_agg,:].contiguous()
-
         # -- normalize --
-        dists = self.run_normalize(dists)
+        weights,inds = self.run_normalize(dists,inds)
 
         # -- aggregate --
-        vid = self.run_aggregation(v_vid,dists,inds,vid.shape)
+        vid = self.run_aggregation(v_vid,weights,inds,vid.shape)
+
+        # -- projection --
+        vid = self.run_projection(vid)
 
         # -- timing --
         self.timer.sync_stop("attn")
@@ -160,28 +164,22 @@ class NonLocalAttention(nn.Module):
         self.timer.sync_stop("search")
         return dists,inds
 
-    def run_normalize(self,dists):
+    def run_normalize(self,dists,inds):
         self.timer.sync_start("normz")
-        dists = self.normz(dists)
+        dists,inds = self.normz(dists,inds)
         self.timer.sync_stop("normz")
-        return dists
+        return dists,inds
 
     def run_aggregation(self,v_vid,dists,inds,vshape):
 
         # -- aggregate patches --
         self.timer.sync_start("agg")
-        patches = self.agg(v_vid,dists,inds)
+        vid = self.agg(v_vid,dists,inds)
         self.timer.sync_stop("agg")
-
-        # -- fold --
-        vid = self.run_fold(patches,vshape)
-
-        # # -- transform --
-        # vid = self.run_transform(vid)
 
         return vid
 
-    def run_transform(self,vid):
+    def run_projection(self,vid):
         self.timer.sync_start("trans")
         B = vid.shape[0]
         vid = rearrange(vid,'b t c h w -> (b t) c h w')
@@ -189,44 +187,6 @@ class NonLocalAttention(nn.Module):
         vid = self.proj_drop(vid)
         vid = rearrange(vid,'(b t) c h w -> b t c h w',b=B)
         self.timer.sync_stop("trans")
-        return vid
-
-    def run_fold(self,patches,vshape):
-
-        # -- timing --
-        self.timer.sync_start("fold")
-
-        # -- init folding --
-        B,ps = vshape[0],self.search_cfg.ps
-        fold = stnls.iFoldz(vshape,stride=self.stride0,
-                            dilation=self.dilation,use_adj=False,
-                            reflect_bounds=True,device=patches.device)
-
-        # -- reshape for folding --
-        shape_str = '(b q ph pw) c -> b q 1 1 c ph pw'
-        patches = rearrange(patches,shape_str,b=B,ph=ps,pw=ps)
-        patches = patches.contiguous()
-
-        # -- fold --
-        fold(patches)
-
-        # -- unpack --
-        vid = fold.vid / fold.zvid
-
-        # -- debug --
-        any_nan = th.any(th.isnan(vid)).item()
-        if any_nan:
-            any_fold_nan = th.any(th.isnan(fold.vid)).item()
-            any_patch_nan = th.any(th.isnan(fold.vid)).item()
-            any_zero = th.any(th.abs(fold.zvid)<1e-10).item()
-            print("[%s] found a nan!: " % __file__,any_nan,any_zero,
-                  any_fold_nan,any_patch_nan)
-            print(self.search_name)
-            exit(0)
-
-        # -- timing --
-        self.timer.sync_stop("fold")
-
         return vid
 
     def update_state(self,state,dists,inds,vshape):
@@ -249,15 +209,10 @@ class NonLocalAttention(nn.Module):
         inds = rearrange(inds,rshape)
         return inds
 
-    def get_patches(self,vid):
-        vid = rearrange(vid,'B T C H W -> (B T) C H W')
-        patches = unfold(vid,(self.ps,self.ps))
-        patches = rearrange(patches,'b (p2 d) n -> (b n p2) 1 d',d=self.dim)
-        return patches
-
     def extra_repr(self) -> str:
         str_repr = "Attention: \n" + str(self.attn_cfg) + "\n"*2
         str_repr += "Search: \n" + str(self.search_cfg) + "\n"*2
+        str_repr += "Reduce: \n" + str(self.agg_cfg) + "\n"*2
         return str_repr
 
     def flops(self, H, W):
@@ -285,11 +240,6 @@ class NonLocalAttention(nn.Module):
 
         # -- projection --
         flops += nrefs * self.dim * self.dim
-
-        # -- fold --
-        ps = self.search_cfg.ps
-        flops += nrefs * ps * ps
-        # print(flops)
 
         return flops
 

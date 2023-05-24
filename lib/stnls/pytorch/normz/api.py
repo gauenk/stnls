@@ -43,6 +43,7 @@ def default_pairs():
     pairs = {"normz_scale":10,
              "normz_name":"softmax",
              "normz_drop_rate":0.,
-             "dist_type":"l2"}
+             "dist_type":"l2",
+             "k_agg":-1}
     return pairs
 

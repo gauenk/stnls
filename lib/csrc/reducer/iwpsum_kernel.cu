@@ -273,9 +273,9 @@ __global__ void iwpsum_backward_vid_kernel(
           wi = reflect_bounds ? bounds(wi,width) : wi;
           valid_w = (wi >= 0) && (wi < width);
     
-          ref_wi = (ref_w-h_off) + dilation*(pj + psOffset);
-          ref_wi = reflect_bounds ? bounds(ref_wi,height) : ref_wi;
-          valid_ref_w = (ref_wi >= 0) && (ref_wi < height);
+          ref_wi = (ref_w-w_off) + dilation*(pj + psOffset);
+          ref_wi = reflect_bounds ? bounds(ref_wi,width) : ref_wi;
+          valid_ref_w = (ref_wi >= 0) && (ref_wi < width);
     
           valid = valid_h && valid_w;
           valid_ref = valid_ref_h && valid_ref_w;
@@ -343,18 +343,18 @@ __global__ void iwpsum_backward_dists_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     int ps, int pt, int dilation, int h_off, int w_off,
-    bool reflect_bounds, bool use_adj, int fpt){
+    bool reflect_bounds, int psOffset, int fpt){
 
   // -- shapes --
   int nbatch = dists_grad.size(0);
   int nq = dists_grad.size(2);
   int k = dists_grad.size(3);
-  int nfeatures = in_grad.size(4);
+  int nfeatures = in_grad.size(3);
   int height = vid.size(4);
   int width = vid.size(5);
-  int psHalf = ps/2;
-  int adj = use_adj ? psHalf : 0;
-  int psOffset = adj - psHalf;
+  // int psHalf = ps/2;
+  // int adj = use_adj ? psHalf : 0;
+  // int psOffset = adj - psHalf;
 
   // -- init registers --
   int ti,hi,wi;
@@ -405,9 +405,9 @@ __global__ void iwpsum_backward_dists_kernel(
           wi = reflect_bounds ? bounds(wi,width) : wi;
           valid_w = (wi >= 0) && (wi < width);
 
-          ref_wi = (ref_w-h_off) + dilation*(pj + psOffset);
-          ref_wi = reflect_bounds ? bounds(ref_wi,height) : ref_wi;
-          valid_ref_w = (ref_wi >= 0) && (ref_wi < height);
+          ref_wi = (ref_w-w_off) + dilation*(pj + psOffset);
+          ref_wi = reflect_bounds ? bounds(ref_wi,width) : ref_wi;
+          valid_ref_w = (ref_wi >= 0) && (ref_wi < width);
 
           valid = valid_h && valid_w;
           valid_ref = valid_ref_h && valid_ref_w;
@@ -446,6 +446,12 @@ void iwpsum_backward_dists_cuda(
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
   int fpt = (nftrs-1)/ftr_threads+1;
 
+  // -- shared --
+  int psHalf = ps/2;
+  int adj = use_adj ? psHalf : 0;
+  int psOffset = adj - psHalf;
+
+
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "iwpsum_backward_dists_kernel", ([&] {
     iwpsum_backward_dists_kernel<scalar_t><<<blocksPerGrid, threadsPerBlock>>>(
@@ -453,7 +459,7 @@ void iwpsum_backward_dists_cuda(
         in_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        ps, pt, dilation, h_off, w_off, reflect_bounds, use_adj, fpt);
+        ps, pt, dilation, h_off, w_off, reflect_bounds, psOffset, fpt);
   }));
     
 }
