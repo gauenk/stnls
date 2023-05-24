@@ -42,9 +42,9 @@ class iunfold(th.autograd.Function):
 
         # -- forward --
         stnls_cuda.iunfold_forward(vid, patches,
-                                  top,left,btm,right,
-                                  start, stride, dilation,
-                                  adj, only_full, use_reflect)
+                                   top,left,btm,right,
+                                   start, stride, dilation,
+                                   adj, only_full, use_reflect)
 
         # -- store --
         ctx.start = start
@@ -143,7 +143,9 @@ class iUnfold(th.nn.Module):
         start,num = self._get_start_num(start,num,coords,vid.shape)
         b = vid.shape[0]
         colors = vid.shape[-3]
+        th.cuda.synchronize()
         patches = allocate_patches(b,num,1,self.ps,self.pt,colors,vid.device)
+        th.cuda.synchronize()
         patches = iunfold.apply(patches,vid,start,coords,self.stride,
                                 self.dilation,self.adj,self.only_full,
                                 self.use_reflect)

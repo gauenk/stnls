@@ -306,8 +306,8 @@ void iwpsum_backward_vid_cuda(
   int nq = dists.size(2);
   int k = dists.size(3);
   int nftrs = in_grad.size(3);
-  int ftr_threads = min(8,nftrs);
-  dim3 threadsPerBlock(8,8,ftr_threads);
+  int ftr_threads = min(16,nftrs);
+  dim3 threadsPerBlock(16,4,ftr_threads);
   dim3 blocksPerGrid(1, 1, nheads*nbatch);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
@@ -439,8 +439,8 @@ void iwpsum_backward_dists_cuda(
   int nq = dists_grad.size(2);
   int k = dists_grad.size(3);
   int nftrs = vid.size(3);
-  int ftr_threads = min(8,nftrs);
-  dim3 threadsPerBlock(8,8,ftr_threads);
+  int ftr_threads = min(16,nftrs);
+  dim3 threadsPerBlock(16,4,ftr_threads);
   dim3 blocksPerGrid(1, 1, nheads*nbatch);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
@@ -450,7 +450,6 @@ void iwpsum_backward_dists_cuda(
   int psHalf = ps/2;
   int adj = use_adj ? psHalf : 0;
   int psOffset = adj - psHalf;
-
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "iwpsum_backward_dists_kernel", ([&] {

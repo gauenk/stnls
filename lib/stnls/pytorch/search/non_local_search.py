@@ -147,11 +147,7 @@ class NonLocalSearchFunction(th.autograd.Function):
                     "dil":dilation,"reflect_bounds":reflect_bounds,
                     "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
-                    "off_H1":off_H1,"off_W1":off_W1,
-                    "dist_type_i":dist_type_i,"use_atomic":use_atomic,
-                    "queries_per_thread":queries_per_thread,
-                    "neigh_per_thread":neigh_per_thread,
-                    "channel_groups":channel_groups}
+                    "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 

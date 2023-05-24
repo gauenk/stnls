@@ -56,7 +56,8 @@ class L2SearchWithHeadsFunction(th.autograd.Function):
 
         # -- allocs --
         BHQ = B*nqueries*nheads
-        dists_exh,inds_exh = allocate_exh_l2(BHQ,wt,ws_h,ws_w,device)
+        st = min(2*wt+1,t)
+        dists_exh,inds_exh = allocate_exh_l2(BHQ,st,ws_h,ws_w,device)
         # dists_exh = dists_exh.view(nheads,nqueries,-1,ws_h,ws_w)
         # inds_exh = inds_exh.view(nheads,nqueries,-1,ws_h,ws_w,3)
         dists_exh = dists_exh.view(B,H,Q,-1,ws_h,ws_w)

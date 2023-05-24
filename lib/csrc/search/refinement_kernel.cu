@@ -81,7 +81,7 @@ __global__ void refinement_forward_kernel(
 
   // -- cleaner code --
   int center_offsets[4] = {off_H0,off_W0,off_H1,off_W1};
-  int patch_offset = psHalf + adj;
+  int patch_offset = adj - psHalf;
 
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){

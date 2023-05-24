@@ -194,13 +194,13 @@ def allocate_exh_prod(nq,st,ws_h,ws_w,device,dtype=th.float32):
     inds[...] = -1
     return dists,inds
 
-def allocate_exh_l2(nq,wt,ws_h,ws_w,device):
-    return allocate_exh(nq,wt,ws_h,ws_w,device)
+def allocate_exh_l2(nq,st,ws_h,ws_w,device):
+    return allocate_exh(nq,st,ws_h,ws_w,device)
 
-def allocate_exh(nq,wt,ws_h,ws_w,device,dtype=th.float32):
-    dists = th.zeros((nq,2*wt+1,ws_h,ws_w),device=device,dtype=dtype)
+def allocate_exh(nq,st,ws_h,ws_w,device,dtype=th.float32):
+    dists = th.zeros((nq,st,ws_h,ws_w),device=device,dtype=dtype)
     dists[...] = float("inf")
-    inds = th.zeros((nq,2*wt+1,ws_h,ws_w,3),device=device,dtype=th.int32)
+    inds = th.zeros((nq,st,ws_h,ws_w,3),device=device,dtype=th.int32)
     inds[...] = -1
     return dists,inds
 

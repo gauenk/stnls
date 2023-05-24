@@ -37,10 +37,10 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
 
 template <typename scalar_t>
 __global__ void stnls_iunfold_forward_kernel(
-    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor64<scalar_t,7,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right,
-    int start, int stride, int dilation, int adj,
+    int start, int stride, int dilation, int patch_offset,
     bool only_full, bool use_reflect, int qpt, int kpt) {
 
     // -- shapes --
@@ -52,9 +52,8 @@ __global__ void stnls_iunfold_forward_kernel(
     int k = patches.size(2);
     int pt = patches.size(3);
     int ps = patches.size(6);
-    int psHalf = (int)ps/2;
     int height_width = height*width;
-    int fill_pad = dilation * psHalf;
+    int fill_pad = dilation * (ps/2);
     int dil = dilation;
 
     // -- cuda threads --
@@ -101,19 +100,6 @@ __global__ void stnls_iunfold_forward_kernel(
         ki = k_start + _ki;
         if (ki >= k){ continue; }
 
-        // -- fill --
-        // qIndex = qi*stride;
-        // wi = qIndex % width;
-        // hi = (qIndex/width) % height;
-        // ti = (qIndex/heigh_width) % nframes;
-
-        // -- ind with stride --
-        // qIndex = stride2*(qi + start);
-        // ti = (qIndex/height_width) % nframes;
-        // _qIndex = qIndex % height_width;
-        // hi = (stride)*(_qIndex / (stride*width)) % height;
-        // wi = (_qIndex/stride) % width;
-
         // -- new inds --
         qIndex = qi + start;
         ti = qIndex / (n_hw);
@@ -122,26 +108,15 @@ __global__ void stnls_iunfold_forward_kernel(
         wi = (qi_mod % n_w) * stride + left;
 
         // -- valid ind --
-        // valid_hw = (hi >= -fill_pad) && (hi < (height+fill_pad));
-        // valid_hw = valid_hw && (wi >= -fill_pad) && (wi < (width+fill_pad));
         valid_hw = (hi >= (top-fill_pad)) && (hi < (btm+fill_pad));
         valid_hw = valid_hw && (wi >= (left-fill_pad)) && (wi < (right+fill_pad));
         valid_hw = valid_hw && (ti   >= 0) && (ti < nframes);
 
         // -- fill across cuda threads --
-        // vi_h = hi+dilation*(pi - psHalf);
-        // vi_w = wi+dilation*(pj - psHalf);
-        if (use_reflect){
-          // vi_h = bounds(hi+dilation*(pi - psHalf + adj),0.,height);
-          // vi_w = bounds(wi+dilation*(pj - psHalf + adj),0.,width);
-          vi_h = bounds(hi+dilation*(pi - psHalf + adj),top,btm);
-          vi_w = bounds(wi+dilation*(pj - psHalf + adj),left,right);
-        }else{
-          vi_h = hi+dilation*(pi - psHalf + adj);
-          vi_w = wi+dilation*(pj - psHalf + adj);
-        }
-        // vi_h = bounds(hi+dilation*(pi - psHalf),top,btm);
-        // vi_w = bounds(wi+dilation*(pj - psHalf),left,right);
+        vi_h = hi+dilation*(pi + patch_offset);
+        vi_w = wi+dilation*(pj + patch_offset);
+        vi_h = use_reflect ? bounds(vi_h,top,btm) : vi_h;
+        vi_w = use_reflect ? bounds(vi_w,left,right) : vi_w;
 
         // -- spatially valid --
         valid_hw = valid_hw && (vi_h >= 0) && (vi_h < height);
@@ -182,7 +157,7 @@ void stnls_cuda_iunfold_forward(
   int batchsize = patches.size(0);
   int numQueries = patches.size(1);
   int k = 1;
-  int qpt = 4;
+  int qpt = 2;
   int nblocks_queries = (numQueries-1)/qpt+1;
   dim3 nblocks(nblocks_queries,batchsize);
   int pt = patches.size(3);
@@ -190,20 +165,23 @@ void stnls_cuda_iunfold_forward(
 
   // -- kernel threads --
   int ps = patches.size(6);
-  int MAX_THREADS = 1024;
+  int MAX_THREADS = 960;
   int dim = ps*ps;
   int kpb = MAX_THREADS/dim; // num of "k" managed per block
   int kpt = ((k - 1)/kpb) + 1; // num of "k" per thread
   dim3 nthreads(kpb,ps,ps);
   // fprintf(stdout,"top,left,btm,right: %d,%d,%d,%d\n",top,left,btm,right);
 
+  // -- shared --
+  int patch_offset = adj - ps/2;
+
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_iunfold_forward_kernel", ([&] {
     stnls_iunfold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
-        patches.packed_accessor64<scalar_t,7,torch::RestrictPtrTraits>(),
+        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top, left, btm, right, start, stride, dilation,
-        adj, only_full, use_reflect, qpt, kpt);
+        patch_offset, only_full, use_reflect, qpt, kpt);
       }));
 }
 
@@ -216,8 +194,8 @@ void stnls_cuda_iunfold_forward(
 
 template <typename scalar_t>
 __global__ void stnls_iunfold_backward_kernel(
-    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor64<scalar_t,7,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right, int start, int stride, int dilation,
     int adj, bool only_full, bool use_reflect, int num_kernels) {
 
@@ -408,8 +386,8 @@ void stnls_cuda_iunfold_backward(
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_iunfold_backward_kernel", ([&] {
     stnls_iunfold_backward_kernel<scalar_t>
       <<<nblocks, nthreads>>>(
-        grad_vid.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
-        patches.packed_accessor64<scalar_t,7,torch::RestrictPtrTraits>(),
+        grad_vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         top, left, btm, right, start, stride, dilation,
         adj, only_full, use_reflect, num_kernels);
   }));

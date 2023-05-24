@@ -20,24 +20,15 @@ void non_local_search_backward_cuda(
     torch::Tensor grad_dists, torch::Tensor inds,
     int q_shift, int stride0, int nH0, int nW0,
     int ps, int pt, int dilation, bool reflect_bounds,
-    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
-    bool use_rand, bool exact, int dist_type, bool use_atomic,
-    int queries_per_thread, int neigh_per_thread, int channel_groups);
-
-// void non_local_search_backward_cuda(
-//     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
-//     torch::Tensor vid0, torch::Tensor vid1,
-//     torch::Tensor dists, torch::Tensor inds,
-//     int qshift, int stride0, int n_h0, int n_w0,
-//     int off_H0, int off_W0, int off_H1, int off_W1,
-//     int ps, int pt, int dilation, bool use_adj,
-//     bool reflect_bounds, bool use_rand, bool exact, int dist_type);
+    bool use_adj, int off_H0, int off_W0,
+    int off_H1, int off_W1, int dist_type);
 
 // C++ interface
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
+
 
 
 void non_local_search_forward(
@@ -59,7 +50,7 @@ void non_local_search_forward(
                                 wt, ps, k, dist_type,
                                 stride0, stride1, dilation, pt, qshift,
                                 reflect_bounds, full_ws, full_ws_time,
-				search_abs, use_adj, off_H0, off_W0, off_H1, off_W1);
+                                search_abs, use_adj, off_H0, off_W0, off_H1, off_W1);
 }
 
 void non_local_search_backward(
@@ -68,9 +59,8 @@ void non_local_search_backward(
     torch::Tensor grad_dists, torch::Tensor inds,
     int q_shift, int stride0, int nH0, int nW0,
     int ps, int pt, int dilation, bool reflect_bounds,
-    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
-    bool use_rand, bool exact, int dist_type, bool use_atomic,
-    int queries_per_thread, int neigh_per_thread, int channel_groups) {
+    bool use_adj, int off_H0, int off_W0,
+    int off_H1, int off_W1, int dist_type) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
   CHECK_INPUT(vid0);
@@ -80,9 +70,8 @@ void non_local_search_backward(
   non_local_search_backward_cuda(grad_vid0, grad_vid1, vid0, vid1,
                                  grad_dists, inds, q_shift, stride0, nH0, nW0,
                                  ps, pt, dilation, reflect_bounds,
-                                 use_adj, off_H0, off_W0, off_H1, off_W1,
-                                 use_rand, exact, dist_type, use_atomic,
-                                 queries_per_thread, neigh_per_thread, channel_groups);
+                                 use_adj, off_H0, off_W0,
+                                 off_H1, off_W1, dist_type);
 }
 
 

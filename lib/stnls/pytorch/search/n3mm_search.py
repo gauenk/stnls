@@ -62,8 +62,6 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # -- compute database --
     pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
     pat1 = vid2patches(vid1,nheads,stride1,ps,pt,dilation,reflect_bounds)
-    # print("pat0.shape,pat1.shape: ",pat0.shape,pat1.shape,stride0,stride1)
-    # th.cuda.synchronize()
 
     # -- forward --
     # print("inds.min(),inds_r.max(): ",inds.min(),inds.max())
@@ -108,7 +106,7 @@ class N3MatMultSearchFunction(th.autograd.Function):
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=False, remove_self=False,
-                use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0):
+                use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0):
 
         """
         Run the non-local search
@@ -223,7 +221,7 @@ class N3MatMultSearch(th.nn.Module):
                  dist_type="prod", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
                  full_ws=True, anchor_self=False, remove_self=False,
-                 use_adj=True,off_H0=0,off_W0=0,off_H1=0,off_W1=0):
+                 use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0):
         super().__init__()
 
         # -- core search params --
@@ -300,7 +298,7 @@ def _apply(vid0, vid1, fflow, bflow,
            dist_type="prod", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True, full_ws=True,
            anchor_self=False, remove_self=False,
-           use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0):
+           use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -324,7 +322,7 @@ def extract_config(cfg,restrict=True):
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True,
              "anchor_self":False, "remove_self":False,
-             "use_adj":True,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0}
+             "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
