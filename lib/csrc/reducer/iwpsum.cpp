@@ -5,22 +5,23 @@
 // CUDA forward declarations
 
 void iwpsum_forward_cuda(
-  torch::Tensor vid, torch::Tensor vid2fill,
+  torch::Tensor vid,
+  torch::Tensor out_vid, torch::Tensor out_vidz,
   torch::Tensor dists, torch::Tensor inds,
-    int ps, int pt, int h_off, int w_off,
-  int dilation, int adj, bool reflect_bounds);
+  int ps, int pt, int dilation, int h_off, int w_off,
+  bool reflect_bounds, bool use_adj);
 
 void iwpsum_backward_vid_cuda(
     torch::Tensor vid_grad, torch::Tensor vid2fill_grad,
     torch::Tensor dists, torch::Tensor inds,
-    int ps, int pt, int h_off, int w_off,
-    int dilation, int adj, bool reflect_bounds, bool exact);
+    int ps, int pt, int dilation, int h_off, int w_off,
+    bool reflect_bounds, bool use_adj);
 
 void iwpsum_backward_dists_cuda(
-    torch::Tensor dists_grad, torch::Tensor vid2fill_grad,
+    torch::Tensor dists_grad, torch::Tensor in_grad,
     torch::Tensor vid, torch::Tensor inds,
-    int ps, int pt, int h_off, int w_off,
-    int dilation, int adj, bool reflect_bounds, bool exact);
+    int ps, int pt, int dilation, int h_off, int w_off,
+    bool reflect_bounds, bool use_adj);
 
 // C++ interface
 
@@ -29,45 +30,47 @@ void iwpsum_backward_dists_cuda(
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 void iwpsum_forward(
-  torch::Tensor vid, torch::Tensor vid2fill,
+  torch::Tensor in_vid,
+  torch::Tensor out_vid, torch::Tensor out_vidz,
   torch::Tensor dists, torch::Tensor inds,
-  int ps, int pt, int h_off, int w_off,
-  int dilation, int adj, bool reflect_bounds){
-  CHECK_INPUT(vid);
-  CHECK_INPUT(vid2fill);
+  int ps, int pt, int dilation, int h_off, int w_off,
+  bool reflect_bounds, bool use_adj){
+  CHECK_INPUT(in_vid);
+  CHECK_INPUT(out_vid);
+  CHECK_INPUT(out_vidz);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  iwpsum_forward_cuda(vid,vid2fill,dists,inds,
-                      ps,pt,h_off,w_off,dilation,
-                      adj,reflect_bounds);
+  iwpsum_forward_cuda(in_vid,out_vid,out_vidz,dists,inds,
+                      ps,pt,dilation,h_off,w_off,
+                      reflect_bounds,use_adj);
 }
 
 void iwpsum_backward_vid(
-  torch::Tensor vid_grad, torch::Tensor vid2fill_grad,
+  torch::Tensor out_grad, torch::Tensor in_grad,
   torch::Tensor dists, torch::Tensor inds,
-  int ps, int pt, int h_off, int w_off,
-  int dilation, int adj, bool reflect_bounds, bool exact){
-  CHECK_INPUT(vid_grad);
-  CHECK_INPUT(vid2fill_grad);
+  int ps, int pt, int dilation, int h_off, int w_off,
+  bool reflect_bounds, bool use_adj){
+  CHECK_INPUT(out_grad);
+  CHECK_INPUT(in_grad);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  iwpsum_backward_vid_cuda(vid_grad,vid2fill_grad,dists,inds,
-                           ps,pt,h_off,w_off,dilation,adj,
-                           reflect_bounds,exact);
+  iwpsum_backward_vid_cuda(out_grad,in_grad,dists,inds,
+                           ps,pt,dilation,h_off,w_off,
+                           reflect_bounds,use_adj);
 }
 
 void iwpsum_backward_dists(
-  torch::Tensor dists_grad, torch::Tensor vid2fill_grad,
+  torch::Tensor dists_grad, torch::Tensor in_grad,
   torch::Tensor vid, torch::Tensor inds,
   int ps, int pt, int h_off, int w_off,
-  int dilation, int adj, bool reflect_bounds, bool exact){
+  int dilation, bool reflect_bounds, bool use_adj){
   CHECK_INPUT(dists_grad);
-  CHECK_INPUT(vid2fill_grad);
+  CHECK_INPUT(in_grad);
   CHECK_INPUT(vid);
   CHECK_INPUT(inds);
-  iwpsum_backward_dists_cuda(dists_grad,vid2fill_grad,vid,inds,
-                             ps,pt,h_off,w_off,dilation,adj,
-                             reflect_bounds,exact);
+  iwpsum_backward_dists_cuda(dists_grad,in_grad,vid,inds,
+                             ps,pt,h_off,w_off,dilation,
+                             reflect_bounds,use_adj);
 }
 
 

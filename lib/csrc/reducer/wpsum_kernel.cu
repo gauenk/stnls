@@ -43,7 +43,7 @@ __global__ void wpsum_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
-    int h_off, int w_off, int dilation, bool use_adj, bool reflect_bounds,
+    int dilation, int h_off, int w_off, bool reflect_bounds, bool use_adj,
     int qpt, int cpt){
 
     // -- shapes --
@@ -92,19 +92,17 @@ __global__ void wpsum_forward_kernel(
 
       for(int ki = 0; ki < k; ki++){
 
-        // -- reference center --
+        // -- non-local patch center --
         center_ti = inds[bi][inds_head][qi][ki][0];
         center_hi = inds[bi][inds_head][qi][ki][1];
         center_wi = inds[bi][inds_head][qi][ki][2];
         dist = dists[bi][head_index][qi][ki];
 
-        // -- reference patch location --
+        // -- non-local pixel index --
         hi = (center_hi-h_off)+dilation*(pi - psHalf + adj);
         wi = (center_wi-w_off)+dilation*(pj - psHalf + adj);
-        if (reflect_bounds){
-          hi = bounds(hi,height);
-          wi = bounds(wi,width);
-        }
+        hi = reflect_bounds ? bounds(hi,height) : hi;
+        wi = reflect_bounds ? bounds(wi,width) : wi;
 
         // -- spatially valid --
         valid_hw = (hi >= 0) && (hi < height);
@@ -139,7 +137,8 @@ __global__ void wpsum_forward_kernel(
 void wpsum_forward_cuda(
     torch::Tensor vid, torch::Tensor patches,
     torch::Tensor dists, torch::Tensor inds,
-    int h_off, int w_off, int dilation, bool use_adj, bool reflect_bounds){
+    int dilation, int h_off, int w_off,
+    bool reflect_bounds, bool use_adj){
 
   // -- unpack --
   int bsize = dists.size(0);
@@ -172,7 +171,7 @@ void wpsum_forward_cuda(
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        h_off, w_off, dilation, use_adj, reflect_bounds, qpt, cpt);
+        dilation, h_off, w_off, reflect_bounds, use_adj, qpt, cpt);
     }));
 }
 
@@ -189,8 +188,7 @@ __global__ void wpsum_backward_vid_kernel(
     const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches_grad,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
-    const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
-    int h_off, int w_off, int dilation, bool use_adj, bool reflect_bounds,
+    int dilation, int h_off, int w_off, bool reflect_bounds, int adj, 
     int qpt, int hpb, int cpt){
 
   // shape
@@ -206,10 +204,9 @@ __global__ void wpsum_backward_vid_kernel(
   int height = vid_grad.size(4);
   int width = vid_grad.size(5);
   int psHalf = ps/2;
-  int adj = use_adj ? psHalf : 0;
+  int psOffset = adj - psHalf;
   bool valid_h,valid_w,valid;
   int center_ti,center_hi,center_wi;
-  float rand_num;
 
   // color indices
   int c0_start = threadIdx.y*cpt;
@@ -237,7 +234,6 @@ __global__ void wpsum_backward_vid_kernel(
   for (int _qi = 0; _qi < qpt; _qi++){
     qi = q_start + _qi;
     if (qi < nq){
-      // c0_offset = __float2int_rd(c0_dist * rand_nums[qi][0][0]);
       // iterate
       for (int ki = 0; ki < k; ki++){
         // c0_offset = (c0_offset + 1) % c0_dist;
@@ -252,9 +248,9 @@ __global__ void wpsum_backward_vid_kernel(
           for (int pk = 0; pk < pt; pk++){
             for (int pi = 0; pi < ps; pi++){
               for (int pj = 0; pj < ps; pj++){
-		ti = bounds(center_ti + pk,nframes);
-                hi = (center_hi-h_off) + dilation*(pi - psHalf + adj);
-                wi = (center_wi-w_off) + dilation*(pj - psHalf + adj);
+                ti = bounds(center_ti + pk,nframes);
+                hi = (center_hi-h_off) + dilation*(pi + psOffset);
+                wi = (center_wi-w_off) + dilation*(pj + psOffset);
                 hi = reflect_bounds ? bounds(hi,height) : hi;
                 wi = reflect_bounds ? bounds(wi,width) : wi;
                 valid_h = (hi >= 0) && (hi < height);
@@ -283,8 +279,8 @@ __global__ void wpsum_backward_vid_kernel(
 void wpsum_backward_vid_cuda(
     torch::Tensor vid_grad, torch::Tensor patches_grad, 
     torch::Tensor dists, torch::Tensor inds,
-    int h_off, int w_off, int dilation, bool use_adj,
-    bool reflect_bounds, bool use_rand, bool exact, bool use_atomic){
+    int dilation, int h_off, int w_off,
+    bool reflect_bounds, bool use_adj, bool use_atomic){
 
   // unpack params
   int bsize = dists.size(0);
@@ -302,7 +298,6 @@ void wpsum_backward_vid_cuda(
   int color_threads = colors;
   int block_threads = max_nthreads/color_threads;
   int cpt = (colors-1)/color_threads+1;
-  block_threads = exact ? 1 : block_threads;
   dim3 nthreads(block_threads,color_threads);
 
   // -- head blocks --
@@ -324,14 +319,6 @@ void wpsum_backward_vid_cuda(
   int total_pb = (numQueries - 1) / query_nblocks + 1;
   int bpb = (total_pb-1) / block_threads + 1;
 
-  // exact gradient
-  if (exact){
-    cpt = 1;
-    query_nblocks = 1;
-    block_threads = 1;
-    bpb = numQueries;
-  }
-
   // -- decl blocks --
   dim3 nblocks(query_nblocks,head_nblocks,bsize);
 
@@ -339,17 +326,6 @@ void wpsum_backward_vid_cuda(
   // fprintf(stdout,"nblocks,block_threads,color_threads: %d,%d,%d\n",nblocks,block_threads,color_threads);
   // fprintf(stdout,"bpb,cpt: %d,%d\n",bpb,cpt);
   // fprintf(stdout,"ps: %d\n",ps);
-
-  // -- allocate random memory --
-  auto cu_index = vid_grad.device().index();
-  auto options = torch::TensorOptions().device(torch::kCUDA,
-                                               cu_index).dtype(torch::kFloat32);
-  torch::Tensor rand_nums;
-  if (use_rand){
-    rand_nums = torch::rand({numQueries,1,1},options);
-  }else{
-    rand_nums = torch::zeros({numQueries,1,1},options);
-  }
 
   // launch kernel
   if (use_atomic){
@@ -359,8 +335,7 @@ void wpsum_backward_vid_cuda(
         patches_grad.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
-        h_off,w_off,dilation, adj, reflect_bounds, bpb, hpb, cpt);
+        dilation, h_off, w_off, reflect_bounds, adj, bpb, hpb, cpt);
   }));
   }else{
   AT_DISPATCH_FLOATING_TYPES(vid_grad.type(), "wpsum_backward_vid_kernel", ([&] {
@@ -369,8 +344,7 @@ void wpsum_backward_vid_cuda(
         patches_grad.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
-        h_off,w_off,dilation, adj, reflect_bounds, bpb, hpb, cpt);
+        dilation, h_off, w_off, reflect_bounds, adj, bpb, hpb, cpt);
   }));
   }
 }
@@ -389,7 +363,7 @@ __global__ void wpsum_backward_dists_kernel(
     const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches_grad,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
-    int h_off, int w_off, int dilation, bool use_adj, bool reflect_bounds){
+    int dilation, int h_off, int w_off, bool reflect_bounds, bool use_adj){
 
   // -- shapes --
   int bsize = dists_grad.size(0);
@@ -438,12 +412,12 @@ __global__ void wpsum_backward_dists_kernel(
           for (int c0 = 0; c0 < colors; c0++){
               pix_n = patches_grad[bi][head_index][qi][pk][c0][pi][pj];
               pix_m = valid ? vid[bi][vid_head][ti][c0][hi][wi] : 0;
-	      pix = valid ? pix_n * pix_m : 0.;
-	      if (USE_ATOMIC){
-		atomicAdd(&dists_grad[bi][head_index][qi][ki],pix);
-	      }else{
-		dists_grad[bi][head_index][qi][ki] += pix;
-	      }
+              pix = pix_n * pix_m;
+              if (USE_ATOMIC){
+                atomicAdd(&dists_grad[bi][head_index][qi][ki],pix);
+              }else{
+                dists_grad[bi][head_index][qi][ki] += pix;
+              }
           }
         }
       }
@@ -455,10 +429,10 @@ __global__ void wpsum_backward_dists_kernel(
 void wpsum_backward_dists_cuda(
     torch::Tensor dists_grad, torch::Tensor patches_grad,
     torch::Tensor vid, torch::Tensor inds,
-    int h_off, int w_off, int dilation, bool use_adj,
-    bool reflect_bounds, bool exact, bool use_atomic){
+    int dilation, int h_off, int w_off,
+    bool reflect_bounds, bool use_adj, bool use_atomic){
 
-  // const int NQ,NK = 4,4;
+  // -- launch parameters --
   int bsize = dists_grad.size(0);
   int nheads = dists_grad.size(1);
   int nq = dists_grad.size(2);
@@ -478,7 +452,7 @@ void wpsum_backward_dists_cuda(
         patches_grad.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        h_off,w_off,dilation, use_adj, reflect_bounds);
+        dilation, h_off, w_off, reflect_bounds, use_adj);
   }));
   }else{
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "wpsum_backward_dists_kernel", ([&] {
@@ -487,7 +461,7 @@ void wpsum_backward_dists_cuda(
         patches_grad.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        h_off,w_off,dilation, use_adj, reflect_bounds);
+        dilation, h_off, w_off, reflect_bounds, use_adj);
   }));
   }
 }    

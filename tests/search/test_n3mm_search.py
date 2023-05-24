@@ -46,9 +46,9 @@ def get_data(dnames,ext,device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"wt":[0],"ws":[3],"k":[-1],"ps":[5],
+    test_lists = {"wt":[0],"ws":[7],"k":[-1,10],"ps":[5],
                   "stride0":[2],"stride1":[1],"dilation":[1],
-                  "nheads":[1],"anchor_self":[False],
+                  "nheads":[1],"anchor_self":[True],
                   "full_ws":[True],"dist_type":["prod"],
                   "seed":[0]}
     for key,val in test_lists.items():
@@ -168,7 +168,6 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
 
     """
 
-
     # -- get args --
     dil = dilation
     ext = "jpg"
@@ -261,35 +260,6 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     _grads_te = [vid_te0.grad,vid_te1.grad]
     _grads_gt = [vid_gt0.grad,vid_gt1.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
-
-        # print(grads_te.shape)
-        # print(grads_gt.shape)
-
-        # -- viz [the error map may look weird] --
-        # print("-"*20)
-        # print(grads_te[0,0,0,:3,:3])
-        # print(grads_gt[0,0,0,:3,:3])
-        # print(grads_gt[0,0,0,:3,:3]/grads_te[0,0,0,:3,:3])
-        # print("-"*20)
-        # print(grads_te[0,0,-1,-3:,-3:])
-        # print(grads_gt[0,0,-1,-3:,-3:])
-        # print("-"*20)
-        # print(grads_te[0,0,-3:,-3:])
-        # print(grads_gt[0,0,-3:,-3:])
-        # print("-"*20)
-        # print(grads_te[0,0,10:13,10:13])
-        # print(grads_gt[0,0,10:13,10:13])
-        # print("-"*20)
-        # print(grads_te[0,0,:3,:3])
-        # print(grads_gt[0,0,:3,:3])
-        # print("-"*20)
-
-        # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
-        # print(diff.max())
-        # diff /= diff.max()
-        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)

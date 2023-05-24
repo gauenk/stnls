@@ -82,16 +82,15 @@ class NonLocalAttention(nn.Module):
         self.search_name = search_cfg.search_name
         self.stride0 = search_cfg.stride0
         self.dilation = search_cfg.dilation
-        self.k_s = search_cfg.k
-        self.k_n = normz_cfg.k_n
-        self.k_a = agg_cfg.k_a
+        self.k_agg = search_cfg.k_agg
 
         # -- attn init --
         self.token_projection = attn_cfg.token_projection
         self.qkv = ConvQKV(dim,nheads,embed_dim,
                            attn_cfg.qk_frac,bias=attn_cfg.qkv_bias)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
+        # self.proj = nn.Conv2d(dim,dim,(1,1),stride=1,
+        #                       padding="same",groups=1)
+        # self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
         self.norm_layer = LayerNorm2D(dim) if self.use_norm_layer else nn.Identity()
 
         # -- timers --
@@ -115,19 +114,17 @@ class NonLocalAttention(nn.Module):
 
         # -- search --
         dists,inds = self.run_search(q_vid,k_vid,flows,state)
-        # th.cuda.synchronize()
+
+        # -- restrict --
+        if self.k_agg > 0:
+            dists = dists[...,:self.k_agg].contiguous()
+            inds = inds[...,:self.k_agg,:].contiguous()
 
         # -- normalize --
         dists = self.run_normalize(dists)
 
         # -- aggregate --
-        patches = self.run_aggregation(v_vid,dists,inds)
-
-        # -- transform --
-        patches = self.run_transform(patches)
-
-        # -- fold --
-        vid = self.run_fold(patches,vid.shape)
+        vid = self.run_aggregation(v_vid,dists,inds,vid.shape)
 
         # -- timing --
         self.timer.sync_stop("attn")
@@ -169,18 +166,30 @@ class NonLocalAttention(nn.Module):
         self.timer.sync_stop("normz")
         return dists
 
-    def run_aggregation(self,v_vid,dists,inds):
+    def run_aggregation(self,v_vid,dists,inds,vshape):
+
+        # -- aggregate patches --
         self.timer.sync_start("agg")
         patches = self.agg(v_vid,dists,inds)
         self.timer.sync_stop("agg")
-        return patches
 
-    def run_transform(self,patches):
+        # -- fold --
+        vid = self.run_fold(patches,vshape)
+
+        # # -- transform --
+        # vid = self.run_transform(vid)
+
+        return vid
+
+    def run_transform(self,vid):
         self.timer.sync_start("trans")
-        patches = self.proj(patches)
-        patches = self.proj_drop(patches)
+        B = vid.shape[0]
+        vid = rearrange(vid,'b t c h w -> (b t) c h w')
+        vid = self.proj(vid)
+        vid = self.proj_drop(vid)
+        vid = rearrange(vid,'(b t) c h w -> b t c h w',b=B)
         self.timer.sync_stop("trans")
-        return patches
+        return vid
 
     def run_fold(self,patches,vshape):
 

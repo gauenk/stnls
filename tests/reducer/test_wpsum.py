@@ -47,28 +47,25 @@ def set_seed(seed):
     th.manual_seed(seed)
     np.random.seed(seed)
 
+def get_data(dnames,ext="jpg",device="cuda:0"):
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid /= vid.max()
+    return vid
+
 def pytest_generate_tests(metafunc):
     seed = 123
     set_seed(seed)
-    # test_lists = {"ps":[3],"stride":[1],"dilation":[1,2],
-    test_lists = {"ps":[7],"stride":[4],"dilation":[1],"wt":[3],"k":[5],
-                  "ws":[10],"top":[0],"btm":[-1],"left":[0],"right":[-1],
-                  "exact":[True],"nheads":[1]}
+    test_lists = {"ps":[7],"pt":[1],"ws":[10],"wt":[3],
+                  "stride0":[4],"stride1":[1],
+                  "dilation":[1],"k":[5],
+                  "nheads":[1],"batchsize":[-1]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def test_forward(ps,stride,dilation,nheads,k,exact):
-
-    # -- get args --
-    dil = dilation
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    ext = "jpg"
-    chnls,pt = 1,1
-    stride0 = stride
-    stride1 = 1
-    ws = -1 if k == -1 else 10
-    wt = 0 if k == -1 else 5
+def test_forward(ps,pt,ws,wt,stride0,stride1,dilation,nheads,k,batchsize):
 
     # -- init vars --
     use_atomic = False
@@ -77,125 +74,98 @@ def test_forward(ps,stride,dilation,nheads,k,exact):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    use_k = k != -1
-    use_unfold = k == -1
-    t = 1 if use_unfold else 3
-    # adj = ps//2 if use_unfold else 0
-    use_adj = True
+    use_adj = False
 
     # -- load data --
-    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
-    vid = vid.to(device)
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    vid = get_data(dnames)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    b,t,color,h,w = shape
-    vshape = vid.shape
 
     # -- init xsearch --
     dist_type = "l2"
     sch = stnls.search
     search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                dist_type=dist_type,dilation=dil,
+                                dist_type=dist_type,dilation=dilation,
                                 stride0=stride0, stride1=stride1,
                                 reflect_bounds=reflect_bounds,anchor_self=True,
                                 use_adj=use_adj)
 
-    # -- init our inner product --
-    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dil, use_adj=False,
+    # -- ground-truth --
+    wpsum_gt = stnls.reducer.FoldedWeightedPatchSum(ps, stride0, -1,
+                                                    pt, dilation=dilation,
+                                                    use_adj=use_adj,
+                                                    reflect_bounds=reflect_bounds,
+                                                    use_atomic=use_atomic)
+
+
+    # -- testing --
+    wpsum_te = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dilation,
+                                           use_adj=use_adj,
                                            reflect_bounds=reflect_bounds,
-                                           exact=exact, use_atomic=use_atomic)
+                                           use_atomic=use_atomic)
+    fold = stnls.iFoldz(vid.shape,stride=stride0,dilation=dilation,
+                        use_adj=use_adj,reflect_bounds=reflect_bounds,
+                        device=vid.device)
+
 
     # -- run search & wpsum --
     scores,inds = search(vid,vid,flows.fflow,flows.bflow)
     scores_s = softmax(-scores*10,dim=-1)
-    wpatches_te = wpsum(vid,scores_s,inds)#.view(scores_s.shape[0],-1)
+
+    # -- groundtruth --
+    wpatches = wpsum_te(vid,scores_s,inds)#.view(scores_s.shape[0],-1)
+    wpatches = rearrange(wpatches,'b H q pt c h w -> b q 1 pt (H c) h w')
+    vid_te,vidz = fold(wpatches)
+    vid_te = vid_te / vidz
 
     # -- ground-truth --
-    wpatches_gt = stnls.simple.wpsum.run_patches(vid,scores_s,inds,ps,stride0,
-                                                 use_adj=False,pt=pt,dilation=dilation,
-                                                 reflect_bounds=reflect_bounds)
-
-    # -- vis [scores] --
-    # scores = scores.view(n_h,n_w,h,w)
-    # scores = rearrange(scores,'nh nw h w -> h w nh nw')
-    # scores_gt = scores_gt#.view(n_h,n_w,h,w)
-    # print(scores[0,0,:3,:3])
-    # print(scores_gt[0,0,:3,:3])
-
-    # -- vis --
-    # print(wpatches_te[:3,:3])
-    # print(wpatches_gt[:3,:3])
-    # diff = th.abs(wpatches_gt - wpatches_te).mean(-1)
-    # diff = rearrange(diff,'(h w) -> 1 1 h w',h=32)
-    # diff /= diff.max()
-    # stnls.testing.data.save_burst(diff,SAVE_DIR,"diff_%d" % use_unfold)
+    vid_gt = wpsum_gt(vid,scores_s,inds)
 
     # -- compare --
-    tol = 1e-5 if use_unfold else 1e-7
-    error = th.abs(wpatches_gt - wpatches_te).mean().item()
+    tol = 1e-5
+    error = th.abs(vid_gt - vid_te).mean().item()
     if error > tol: print(error)
     assert error < tol
 
-    tol = 1e-4 if use_unfold else 1e-6
-    error = th.abs(wpatches_gt - wpatches_te).max().item()
+    tol = 1e-6
+    error = th.abs(vid_gt - vid_te).max().item()
     if error > tol: print(error)
     assert error < tol
 
-def test_identity(ps,stride,dilation,nheads,k,exact):
 
-    # -- get args --
-    dil = dilation
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    ext = "jpg"
-    chnls,pt = 1,1
-    stride0 = stride
-    stride1 = 1
-    ws = -1 if k == -1 else 10
-    wt = 0 if k == -1 else 5
+def test_identity(ps,pt,ws,wt,stride0,stride1,dilation,nheads,k):
 
     # -- init vars --
-    use_atomic = False
+    use_atomic = True
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
     gpu_stats = False
     reflect_bounds = True
-    use_k = k != -1
-    use_unfold = k == -1
-    t = 1 if use_unfold else 3
     use_adj = False # both pass
 
     # -- load data --
-    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
-    vid = vid.to(device)
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    vid = get_data(dnames)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    b,t,color,h,w = shape
-    vshape = vid.shape
 
     # -- init xsearch --
     dist_type = "l2"
     sch = stnls.search
     search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                dist_type=dist_type,dilation=dil,
+                                dist_type=dist_type,dilation=dilation,
                                 stride0=stride0, stride1=stride1,
                                 reflect_bounds=reflect_bounds,anchor_self=True,
                                 use_adj=use_adj)
 
     # -- init our inner product --
-    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dil, use_adj=use_adj,
+    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dilation, use_adj=use_adj,
                                            reflect_bounds=reflect_bounds,
-                                           exact=exact, use_atomic=use_atomic)
+                                           use_atomic=use_atomic)
     fold = stnls.iFoldz(vid.shape,stride=stride0,dilation=dilation,
                         use_adj=use_adj,reflect_bounds=reflect_bounds,
                         device=vid.device)
@@ -211,28 +181,19 @@ def test_identity(ps,stride,dilation,nheads,k,exact):
     avid = avid / vidz
 
     # -- compare --
-    tol = 1e-5 if use_unfold else 1e-7
+    tol = 1e-5
     error = th.abs(avid - vid).mean().item()
     if error > tol: print(error)
     assert error < tol
 
-    tol = 1e-4 if use_unfold else 1e-6
+    tol = 1e-6
     error = th.abs(avid - vid).max().item()
     if error > tol: print(error)
     assert error < tol
 
 
 
-def test_score_backward(ps,stride,dilation,nheads,k):
-
-    # -- get args --
-    pt,dil = 1,dilation
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    ext = "jpg"
-    stride0 = stride
-    stride1 = 1
-    ws = -1 if k == -1 else 10
-    wt = 0 if k == -1 else 5
+def test_score_backward(ps,pt,ws,wt,stride0,stride1,dilation,nheads,k):
 
     # -- init vars --
     device = "cuda:0"
@@ -240,40 +201,29 @@ def test_score_backward(ps,stride,dilation,nheads,k):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    search_abs = ws == -1
-    use_k = k != -1
-    use_unfold = k == -1
-    t = 1 if use_unfold else 3
     use_adj = True
-    exact = True
     use_atomic = True
 
     # -- load data --
-    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
-    vid = vid.to(device)
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    vid = get_data(dnames)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    b,t,color,h,w = shape
-    vshape = vid.shape
 
     # -- init xsearch --
     dist_type = "l2"
     sch = stnls.search
     search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                dist_type=dist_type,dilation=dil,
+                                dist_type=dist_type,dilation=dilation,
                                 stride0=stride0, stride1=stride1,
                                 reflect_bounds=reflect_bounds,anchor_self=True,
                                 use_adj=use_adj)
 
     # -- init our inner product --
-    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dil, use_adj=False,
+    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dilation, use_adj=use_adj,
                                            reflect_bounds=reflect_bounds,
-                                           exact=exact, use_atomic=use_atomic)
+                                           use_atomic=use_atomic)
 
     # -- run search --
     scores,inds = search(vid,vid,flows.fflow,flows.bflow)
@@ -288,11 +238,11 @@ def test_score_backward(ps,stride,dilation,nheads,k):
     scores_gt = scores_s.clone()
     scores_gt.requires_grad_(True)
     wpatches_gt = stnls.simple.wpsum.run_patches(vid,scores_gt,inds,ps,stride0,
-                                                 use_adj=False,pt=pt,dilation=dilation,
+                                                 use_adj=use_adj,pt=pt,dilation=dilation,
                                                  reflect_bounds=reflect_bounds)
 
     # -- confirm fwd --
-    tol = 1e-5 if use_unfold else 1e-7
+    tol = 1e-5
     error = th.abs(wpatches_te - wpatches_gt).mean().item()
     if error > tol: print(error)
     assert error < tol
@@ -322,26 +272,15 @@ def test_score_backward(ps,stride,dilation,nheads,k):
 
         # -- compare --
         error = diff.mean().item()
-        if exact:
-            if error > tol_mean: print("mean error: ",error)
-            assert error < tol_mean
+        if error > tol_mean: print("mean error: ",error)
+        assert error < tol_mean
 
         error = diff[args].max().item()
-        if exact:
-            if error > tol_max: print("max error: ",error)
-            assert error < tol_max
+        if error > tol_max: print("max error: ",error)
+        assert error < tol_max
 
 # @pytest.mark.slow
-def test_vid_backward(ps,stride,dilation,nheads,k):
-
-    # -- get args --
-    pt,dil = 1,dilation
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    ext = "jpg"
-    stride0 = stride
-    stride1 = 1
-    ws = -1 if k == -1 else 10
-    wt = 0 if k == -1 else 5
+def test_vid_backward(ps,pt,ws,wt,stride0,stride1,dilation,nheads,k):
 
     # -- init vars --
     device = "cuda:0"
@@ -349,40 +288,31 @@ def test_vid_backward(ps,stride,dilation,nheads,k):
     comp_flow = False
     gpu_stats = False
     reflect_bounds = False
-    search_abs = ws == -1
-    use_k = k != -1
-    use_unfold = k == -1
-    t = 1 if use_unfold else 3
     use_adj = True
-    exact = True
     use_atomic = True
 
     # -- load data --
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    ext = "jpg"
     vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)/255.
     vid = vid.to(device)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
 
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    b,t,color,h,w = shape
-    vshape = vid.shape
-
     # -- init xsearch --
     dist_type = "l2"
     sch = stnls.search
     search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                dist_type=dist_type,dilation=dil,
+                                dist_type=dist_type,dilation=dilation,
                                 stride0=stride0, stride1=stride1,
                                 reflect_bounds=reflect_bounds,anchor_self=True,
                                 use_adj=use_adj)
 
     # -- init our inner product --
-    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dil, use_adj=False,
+    wpsum = stnls.reducer.WeightedPatchSum(ps, pt, dilation=dilation, use_adj=use_adj,
                                            reflect_bounds=reflect_bounds,
-                                           exact=False, use_atomic=use_atomic)
+                                           use_atomic=use_atomic)
 
     # -- run search --
     scores,inds = search(vid,vid,flows.fflow,flows.bflow)
@@ -405,11 +335,11 @@ def test_vid_backward(ps,stride,dilation,nheads,k):
 
     # -- ground-truth --
     wpatches_gt = stnls.simple.wpsum.run_patches(vid_gt,scores_s,inds,ps,stride0,
-                                                 use_adj=False,pt=pt,dilation=dilation,
+                                                 use_adj=use_adj,pt=pt,dilation=dilation,
                                                  reflect_bounds=reflect_bounds)
 
     # -- confirm fwd --
-    tol = 1e-5 if use_unfold else 1e-7
+    tol = 1e-5
     error = th.abs(wpatches_te - wpatches_gt).mean().item()
     if error > tol: print(error)
     assert error < tol
@@ -451,11 +381,9 @@ def test_vid_backward(ps,stride,dilation,nheads,k):
 
         # -- compare --
         error = diff.mean().item()
-        if exact:
-            if error > tol_mean: print("mean error: ",error)
-            assert error < tol_mean
+        if error > tol_mean: print("mean error: ",error)
+        assert error < tol_mean
 
         error = diff[args].max().item()
-        if exact:
-            if error > tol_max: print("max error: ",error)
-            assert error < tol_max
+        if error > tol_max: print("max error: ",error)
+        assert error < tol_max

@@ -52,7 +52,6 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # th.cuda.synchronize()
     # assert not(th.any(inds == -1).item()),"No invalid indices."
     # print("inds.min(),inds_r.max(): ",inds.min(),inds.max())
-    
 
     # print(inds[0][1])
     # print("inds.min(),inds.max(): ",inds.min(),inds.max(),full_ws)
@@ -143,7 +142,6 @@ class N3MatMultSearchFunction(th.autograd.Function):
         qshift = 0
         dists,inds = manage_self(dists,inds,anchor_self,
                                  remove_self,qshift,stride0,H,W)
-
         # -- topk --
         descending = descending_menu(dist_type)
         dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,

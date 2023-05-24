@@ -118,7 +118,7 @@ class RefineSearchFunction(th.autograd.Function):
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
                 anchor_self=True, remove_self=False,
                 use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                rbwd=False, nbwd=1, exact=False, use_atomic=True,
+                k_agg=-1,rbwd=False, nbwd=1, exact=False, use_atomic=True,
                 queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
         """
         Run the refinement search
@@ -154,7 +154,7 @@ class RefineSearchFunction(th.autograd.Function):
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
         ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
-                    "dil":dilation,"reflect_bounds":reflect_bounds,
+                    "dil":dilation,"reflect_bounds":reflect_bounds,"k_agg":k_agg,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,"use_atomic":use_atomic,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i,
@@ -172,7 +172,7 @@ class RefineSearchFunction(th.autograd.Function):
         # print("refinement: ",grad_dists.shape,grad_inds_is_none)
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None
 
 class RefineSearch(th.nn.Module):
@@ -182,7 +182,7 @@ class RefineSearch(th.nn.Module):
                  reflect_bounds=True, full_ws=False,
                  anchor_self=False, remove_self=False,
                  use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 rbwd=True, nbwd=1, exact=False, use_atomic=True,
+                 k_agg=-1,rbwd=True, nbwd=1, exact=False, use_atomic=True,
                  queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
         super().__init__()
 
@@ -215,6 +215,7 @@ class RefineSearch(th.nn.Module):
         self.off_W1 = off_W1
 
         # -- backprop params --
+        self.k_agg = k_agg
         self.nbwd = nbwd
         self.exact = exact
         self.use_atomic = use_atomic
@@ -234,12 +235,11 @@ class RefineSearch(th.nn.Module):
                                           self.anchor_self,self.remove_self,
                                           self.use_adj,self.off_H0,self.off_W0,
                                           self.off_H1,self.off_W1,
-                                          self.rbwd,self.nbwd,
+                                          self.k_agg,self.rbwd,self.nbwd,
                                           self.exact,self.use_atomic,
                                           self.queries_per_thread,
                                           self.neigh_per_thread,
                                           self.channel_groups)
-
 
     def flops(self,T,F,H,W):
         return 0
@@ -260,7 +260,7 @@ def _apply(vid0, vid1, qinds,
            dilation=1, pt=1, reflect_bounds=True, full_ws=False,
            anchor_self=True, remove_self=False,
            use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           rbwd=False, nbwd=1, exact=False, use_atomic=True,
+           k_agg=-1,rbwd=False, nbwd=1, exact=False, use_atomic=True,
            queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
@@ -272,7 +272,7 @@ def _apply(vid0, vid1, qinds,
                dilation, pt, reflect_bounds,
                full_ws, anchor_self, remove_self,
                use_adj, off_H0, off_W0, off_H1, off_W1,
-               rbwd, nbwd, exact, use_atomic,
+               k_agg, rbwd, nbwd, exact, use_atomic,
                queries_per_thread, neigh_per_thread, channel_groups)
 
 
@@ -289,7 +289,7 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":False,
              "anchor_self":True, "remove_self":False,
              "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "rbwd":False, "nbwd":1, "exact":False, "use_atomic": True,
+             "k_agg":-1,"rbwd":False, "nbwd":1, "exact":False, "use_atomic": True,
              "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
@@ -302,7 +302,7 @@ def init(cfg):
                           anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
                           use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
                           off_H1=cfg.off_H1,off_W1=cfg.off_W1,
-                          rbwd=cfg.rbwd, nbwd=cfg.nbwd,
+                          k_agg=cfg.k_agg, rbwd=cfg.rbwd, nbwd=cfg.nbwd,
                           exact=cfg.exact, use_atomic=cfg.use_atomic,
                           queries_per_thread=cfg.neigh_per_thread,
                           neigh_per_thread=cfg.neigh_per_thread,

@@ -1,5 +1,6 @@
 import copy
 dcopy = copy.deepcopy
+from easydict import EasyDict as edict
 
 def extract_pairs(_cfg,defaults,restrict=True):
     if restrict: cfg = dcopy(_cfg)
@@ -9,5 +10,5 @@ def extract_pairs(_cfg,defaults,restrict=True):
             cfg[key] = _cfg[key]
         elif not(key in cfg):
             cfg[key] = defaults[key]
-    return cfg
+    return edict(cfg)
 

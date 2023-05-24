@@ -15,7 +15,8 @@ from einops import rearrange
 import stnls_cuda
 
 # -- misc --
-from ...utils.timer import ExpTimer
+from stnls.utils.timer import ExpTimer
+from stnls.utils import extract_pairs
 
 
 def allocate_vid(vid_shape,device):
@@ -35,8 +36,7 @@ class WeightedPatchSumFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid, dists, inds, ps, pt=1,
                 dilation=1,reflect_bounds=True,use_adj=False,
-                off_H=0,off_W=0,rbwd=False,nbwd=1,
-                exact=False,use_atomic=True):
+                off_H=0,off_W=0,use_atomic=True):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
         dists = [BatchSize,nHeads,NumQueries,K]
@@ -67,8 +67,8 @@ class WeightedPatchSumFunction(th.autograd.Function):
         dists = dists.contiguous()
         inds = inds.contiguous()
         stnls_cuda.wpsum_forward(vid, patches, dists, inds,
-                                 off_H,off_W,dilation,use_adj,
-                                 reflect_bounds)
+                                 dilation,off_H,off_W,
+                                 reflect_bounds,use_adj)
 
         # -- ctx save --
         ctx.save_for_backward(dists,inds,vid)
@@ -81,9 +81,6 @@ class WeightedPatchSumFunction(th.autograd.Function):
         ctx.use_adj = use_adj
         ctx.reflect_bounds = reflect_bounds
         ctx.use_atomic = use_atomic
-        ctx.exact = exact
-        ctx.rbwd = rbwd
-        ctx.nbwd = nbwd
 
         return patches
 
@@ -100,49 +97,24 @@ class WeightedPatchSumFunction(th.autograd.Function):
         dilation = ctx.dilation
         use_adj = ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
-        exact = ctx.exact
-        rbwd = ctx.rbwd
-        nbwd = ctx.nbwd
         grad_patches = grad_patches.contiguous()
 
         # -- reshaping --
-        _,nheads,_,_ = dists.shape
-        _b,_H,_t,_c,_h,_w = vid_shape
-        modded_h = False
-        vid_shape_og = list(vid_shape)
-        vid_shape = list(vid_shape)
-        if _H == 1 and _H != nheads:
-            vid_shape[1] = nheads
-            modded_h = True
+        # _,nheads,_,_ = dists.shape
+        # _b,_H,_t,_c,_h,_w = vid_shape
 
         # -- video backward --
-        if nbwd > 1:
-            grad_vid = allocate_vid(vid_shape_og,grad_patches.device)
-            for i in range(nbwd):
-                grad_vid_i = allocate_vid(vid_shape,grad_patches.device)
-                stnls_cuda.wpsum_backward_vid(grad_vid_i,grad_patches,
-                                              dists,inds,
-                                              off_H,off_W,dilation,use_adj,
-                                              reflect_bounds,rbwd,exact,
-                                              use_atomic)
-                if modded_h:
-                    grad_vid_i = grad_vid_i.sum(1,keepdim=True)
-                grad_vid += grad_vid_i/nbwd
-        else:
-            grad_vid = allocate_vid(vid_shape,grad_patches.device)
-            stnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,
-                                          dists,inds,
-                                          off_H,off_W,dilation,use_adj,
-                                          reflect_bounds,rbwd,exact,use_atomic)
-            if modded_h:
-                grad_vid = grad_vid.sum(1,keepdim=True)
+        grad_vid = allocate_vid(vid_shape,grad_patches.device)
+        stnls_cuda.wpsum_backward_vid(grad_vid,grad_patches,
+                                      dists,inds,dilation,off_H,off_W,
+                                      reflect_bounds,use_adj,use_atomic)
 
         # -- distances backward --
         grad_dists = th.zeros_like(dists)
         stnls_cuda.wpsum_backward_dists(grad_dists,grad_patches,
-                                              vid,inds,
-                                              off_H,off_W,dilation,use_adj,
-                                              reflect_bounds,exact,use_atomic)
+                                        vid,inds,dilation,off_H,off_W,
+                                        reflect_bounds,use_adj,use_atomic)
+
         # -- final shaping --
         vid_in_dim = ctx.vid_in_dim
         if vid_in_dim == 5:
@@ -156,8 +128,7 @@ class WeightedPatchSum(th.nn.Module):
 
     def __init__(self, ps, pt=1, dilation=1,
                  reflect_bounds=True, use_adj=False,
-                 off_H=0, off_W=0,
-                 rbwd=False, nbwd=1, exact=False, use_atomic=True):
+                 off_H=0, off_W=0, use_atomic=True):
         super().__init__()
 
         self.ps = ps
@@ -169,9 +140,6 @@ class WeightedPatchSum(th.nn.Module):
         self.dilation = int(dilation)
         self.use_adj = use_adj
         self.reflect_bounds = reflect_bounds
-        self.rbwd = rbwd
-        self.nbwd = nbwd
-        self.exact = exact
         self.use_atomic = use_atomic
 
     def forward(self, vid, dists, inds):
@@ -179,8 +147,7 @@ class WeightedPatchSum(th.nn.Module):
         patches = fxn.apply(vid,dists,inds,self.ps,self.pt,
                             self.dilation,self.reflect_bounds,
                             self.use_adj,self.off_H,self.off_W,
-                            self.rbwd,self.nbwd,
-                            self.exact,self.use_atomic)
+                            self.use_atomic)
         # b,nheads,nq,_,c,ph,pw = patches.shape
         # patches = patches.view(b,nheads,nq,c,ph,pw)
         return patches
@@ -211,14 +178,14 @@ class WeightedPatchSum(th.nn.Module):
 def _apply(vid, dists, inds, ps, pt=1,
            dilation=1,reflect_bounds=True,
            use_adj=False, off_H0=0, off_W0=0,
-           rbwd=True, nbwd=1, exact=False, use_atomic=True):
+           use_atomic=True):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
     fxn = WeightedPatchSumFunction.apply
     return fxn(vid,dists,inds,ps,pt,dilation,
                reflect_bounds,use_adj,off_H0,off_W0,
-               rbwd,nbwd,exact,use_atomic)
+               use_atomic)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -229,17 +196,15 @@ def _apply(vid, dists, inds, ps, pt=1,
 def extract_config(cfg):
     pairs = {"ps":7,"pt":1,"dilation":1,
              "reflect_bounds":True, "use_adj":False,
-             "off_H0":0,"off_W0":0, "rbwd":False, 
-             "nbwd":1, "exact":False, "use_atomic": True}
+             "off_H0":0,"off_W0":0,"use_atomic": True}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
     cfg = extract_config(cfg)
     reducer = WeightedPatchSum(cfg.ps,pt=cfg.pt, dilation=cfg.dilation,
-                               adj=cfg.use_adj,reflect_bounds=cfg.reflect_bounds,
+                               reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,
                                off_H=cfg.off_H0,off_W=cfg.off_W0,
-                               rbwd=cfg.rbwd, nbwd=cfg.nbwd,
-                               exact=cfg.exact, use_atomic=cfg.use_atomic)
+                               use_atomic=cfg.use_atomic)
     return reducer
 
 

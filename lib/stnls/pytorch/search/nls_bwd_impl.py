@@ -26,6 +26,11 @@ def nls_backward(ctx, grad_dists, grad_inds_is_none):
     grad_vid0 = allocate_vid(ctx.vid_shape,grad_dists.device)
     grad_vid1 = allocate_vid(ctx.vid_shape,grad_dists.device)
 
+    # -- restrict to k_agg --
+    if ctx.k_agg > 0:
+        grad_dists = grad_dists[...,:ctx.k_agg]
+        inds = inds[...,:ctx.k_agg,:]
+
     # -- ensure contiguous --
     grad_dists = grad_dists.contiguous()
     inds = inds.contiguous()

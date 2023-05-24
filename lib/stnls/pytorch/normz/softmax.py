@@ -4,13 +4,12 @@ from einops import rearrange
 
 
 def init(cfg):
-    return SoftmaxNormalize(cfg.k_n,cfg.normz_scale,cfg.normz_drop_rate,cfg.dist_type)
+    return SoftmaxNormalize(cfg.normz_scale,cfg.normz_drop_rate,cfg.dist_type)
 
 class SoftmaxNormalize(nn.Module):
 
-    def __init__(self,k,scale,drop_rate=0.,dist_type="l2"):
+    def __init__(self,scale,drop_rate=0.,dist_type="l2"):
         super().__init__()
-        self.k = k
         self.scale = scale
         self.drop_rate = drop_rate
         self.norm = nn.Softmax(dim=-1)
@@ -22,10 +21,6 @@ class SoftmaxNormalize(nn.Module):
         # -- handle dist type --
         if self.dist_type == "l2":
             dists = -dists
-
-        # -- limiting --
-        if self.k > 0:
-            dists = dists[...,:self.k].contiguous()
 
         # -- scale --
         dists = self.scale * dists

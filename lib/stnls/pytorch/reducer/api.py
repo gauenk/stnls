@@ -15,7 +15,7 @@ reducer_name: Choose which reducer function
 import importlib
 from pathlib import Path
 from easydict import EasyDict as edict
-from .utils import extract_pairs
+from stnls.utils import extract_pairs
 
 MENU = edict({"wpsum":"wpsum",
               "iwpsum":"iwpsum",
@@ -29,7 +29,7 @@ def from_reducer_menu(name):
 
 def extract_config(_cfg):
     pairs = {"reducer_name":"wpsum"}
-    reducer_name = extract_pairs(pairs,_cfg)["reduer_name"]
+    reducer_name = extract_pairs(_cfg,pairs)["reducer_name"]
     pkg_name = from_reducer_menu(reducer_name)
     base_name = ".".join(__name__.split(".")[:-1])
     mname = "%s.%s" % (base_name,pkg_name)
@@ -41,5 +41,5 @@ def extract_config(_cfg):
 def init(cfg):
     cfg = extract_config(cfg)
     pkg_name = from_reducer_menu(cfg.reducer_name)
-    init_s = importlib.import_module("stnls.pytorch.reducers.%s" % pkg_name).init
+    init_s = importlib.import_module("stnls.pytorch.reducer.%s" % pkg_name).init
     return init_s(cfg)

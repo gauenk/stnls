@@ -18,21 +18,15 @@ def init(cfg):
                                            reflect_bounds=reflect_bounds,
                                            use_adj=use_adj,use_atomic=True)
 
-    return WpSumAgg(cfg.k_a,wpsum)
+    return WpSumAgg(wpsum)
 
 class WpSumAgg(nn.Module):
 
-    def __init__(self,k,wpsum):
+    def __init__(self,wpsum):
         super().__init__()
-        self.k = k
         self.wpsum = wpsum
 
     def __call__(self,vid,dists,inds):
-
-        # -- limiting --
-        if self.k > 0:
-            dists = dists[...,:self.k]
-            inds = inds[...,:self.k,:]
 
         # -- contiguous --
         dists = dists.contiguous()

@@ -15,13 +15,12 @@ import stnls
 from .utils import indexed_matmul_2_efficient,vid_to_raster_inds
 
 def init(cfg):
-    return PdbAgg(cfg.k_a,cfg.ps,cfg.pt,cfg.stride0,cfg.pdbagg_chunk_size)
+    return PdbAgg(cfg.ps,cfg.pt,cfg.stride0,cfg.pdbagg_chunk_size)
 
 class PdbAgg(nn.Module):
 
-    def __init__(self,k,ps,pt,stride0,chunk_size):
+    def __init__(self,ps,pt,stride0,chunk_size):
         super().__init__()
-        self.k = k
         self.ps = ps
         self.pt = pt
         self.stride0 = stride0
@@ -37,11 +36,6 @@ class PdbAgg(nn.Module):
         ps,pt = self.ps,self.pt
         nheads = dists.shape[1]
         Q = dists.shape[2]
-
-        # -- limiting --
-        if self.k > 0:
-            dists = dists[...,:self.k].contiguous()
-            inds = inds[...,:self.k,:].contiguous()
 
         # -- shape for index_matmul... --
         dists = rearrange(dists,"B HD Q K -> (B HD) Q K 1")

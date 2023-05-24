@@ -7,22 +7,20 @@
 void wpsum_forward_cuda(
   torch::Tensor vid, torch::Tensor patches,
   torch::Tensor dists, torch::Tensor inds,
-  int h_off, int w_off,
-  int dilation, bool use_adj, bool reflect_bounds);
+  int dilation, int h_off, int w_off,
+  bool reflect_bounds, bool use_adj);
 
 void wpsum_backward_vid_cuda(
     torch::Tensor vid_grad, torch::Tensor patches_grad,
     torch::Tensor dists, torch::Tensor inds,
-    int h_off, int w_off,
-    int dilation, bool use_adj, bool reflect_bounds,
-    bool use_rand, bool exact, bool use_atomic);
+    int dilation, int h_off, int w_off,
+    bool reflect_bounds, bool use_adj, bool use_atomic);
 
 void wpsum_backward_dists_cuda(
     torch::Tensor dists_grad, torch::Tensor patches_grad,
     torch::Tensor vid, torch::Tensor inds,
-    int h_off, int w_off,
-    int dilation, bool use_adj, bool reflect_bounds,
-    bool exact, bool use_atomic);
+    int dilation, int h_off, int w_off,
+    bool reflect_bounds, bool use_adj, bool use_atomic);
 
 // C++ interface
 
@@ -33,43 +31,42 @@ void wpsum_backward_dists_cuda(
 void wpsum_forward(
   torch::Tensor vid, torch::Tensor patches,
   torch::Tensor dists, torch::Tensor inds,
-  int h_off, int w_off,
-  int dilation, bool use_adj, bool reflect_bounds){
+  int dilation, int h_off, int w_off,
+  bool reflect_bounds, bool use_adj){
   CHECK_INPUT(vid);
   CHECK_INPUT(patches);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   wpsum_forward_cuda(vid,patches,dists,inds,
-		     h_off,w_off,dilation,use_adj,reflect_bounds);
+                     dilation,h_off,w_off,reflect_bounds,use_adj);
 }
 
 void wpsum_backward_vid(
   torch::Tensor vid_grad, torch::Tensor patches_grad,
   torch::Tensor dists, torch::Tensor inds,
-  int h_off, int w_off, int dilation,
-  bool use_adj, bool reflect_bounds, bool use_rand,
-  bool exact, bool use_atomic){
+  int dilation, int h_off, int w_off,
+  bool reflect_bounds, bool use_adj, bool use_atomic){
   CHECK_INPUT(vid_grad);
   CHECK_INPUT(patches_grad);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   wpsum_backward_vid_cuda(vid_grad,patches_grad,dists,inds,
-			  h_off,w_off,dilation,use_adj,reflect_bounds,
-			  use_rand,exact,use_atomic);
+                          dilation,h_off,w_off,
+                          reflect_bounds,use_adj,use_atomic);
 }
 
 void wpsum_backward_dists(
   torch::Tensor dists_grad, torch::Tensor patches_grad,
   torch::Tensor vid, torch::Tensor inds,
-  int h_off, int w_off, int dilation,
-  bool use_adj, bool reflect_bounds, bool exact, bool use_atomic){
+  int dilation, int h_off, int w_off,
+  bool reflect_bounds, bool use_adj, bool use_atomic){
   CHECK_INPUT(dists_grad);
   CHECK_INPUT(patches_grad);
   CHECK_INPUT(vid);
   CHECK_INPUT(inds);
   wpsum_backward_dists_cuda(dists_grad,patches_grad,vid,inds,
-			    h_off,w_off,dilation,use_adj,reflect_bounds,
-			    exact, use_atomic);
+                            dilation,h_off,w_off,
+                            reflect_bounds,use_adj,use_atomic);
 }
 
 

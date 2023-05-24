@@ -20,7 +20,8 @@ from .wpsum import WeightedPatchSum
 import stnls_cuda
 
 # -- misc --
-from ...utils.timer import ExpTimer
+from stnls.utils.timer import ExpTimer
+from stnls.utils import extract_pairs
 
 def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
@@ -35,14 +36,14 @@ class FoldedWeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds
 
     def __init__(self, ps, stride0, batchsize=-1, pt=1, dilation=1,
-                 reflect_bounds=True, use_adj=True, off_H=0, off_W=0,
+                 reflect_bounds=True, use_adj=False, off_H=0, off_W=0,
                  rbwd=False, nbwd=1, exact=False, use_atomic=True):
         super().__init__()
 
         self.ps = ps
-        self.pt = pt
         self.stride0 = stride0
         self.batchsize = batchsize
+        self.pt = pt
         self.dilation = int(dilation)
         self.use_adj = use_adj
         self.reflect_bounds = reflect_bounds
@@ -123,7 +124,7 @@ class FoldedWeightedPatchSum(th.nn.Module):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def _apply(vid, dists, inds, ps, batchsize=-1,
+def _apply(vid, dists, inds, ps, stride0, batchsize=-1,
            pt=1, dilation=1,reflect_bounds=True,
            use_adj=True, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
            rbwd=True, nbwd=1, exact=False, use_atomic=True):
@@ -131,7 +132,7 @@ def _apply(vid, dists, inds, ps, batchsize=-1,
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
     fxn = FoldedWeightedPatchSumFunction.apply
-    return fxn(vid,dists,inds,ps,batchsize,
+    return fxn(vid,dists,inds,ps,stride0,batchsize,
                pt,dilation,reflect_bounds,use_adj,
                off_H0,off_W0,off_H1,off_W1,
                rbwd,nbwd,exact,use_atomic)
@@ -143,7 +144,7 @@ def _apply(vid, dists, inds, ps, batchsize=-1,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg):
-    pairs = {"ps":7,"batchsize":-1,"pt":1,"dilation":1,
+    pairs = {"ps":7,"stride0":4,"batchsize":-1,"pt":1,"dilation":1,
              "reflect_bounds":True, "use_adj":True,
              "off_H0":0,"off_W0":0,"rbwd":True, "nbwd":1,
              "exact":False, "use_atomic": True}
@@ -152,10 +153,10 @@ def extract_config(cfg):
 def init(cfg):
     cfg = extract_config(cfg)
     reducer = FoldedWeightedPatchSum(
-        cfg.ps, batchsize=cfg.batchsize,
+        cfg.ps, cfg.stride0, batchsize=cfg.batchsize,
         pt=cfg.pt, dilation=cfg.dilation,
-        reflect_bounds=cfg.reflect_bounds,
-        adj=cfg.use_adj,off_H=cfg.off_H0,off_W=cfg.off_W0,
+        reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,
+        off_H=cfg.off_H0,off_W=cfg.off_W0,
         rbwd=cfg.rbwd, nbwd=cfg.nbwd,
         exact=cfg.exact, use_atomic=cfg.use_atomic)
     return reducer
