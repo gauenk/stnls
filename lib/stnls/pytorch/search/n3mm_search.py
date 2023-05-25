@@ -170,8 +170,6 @@ class N3MatMultSearchFunction(th.autograd.Function):
         nheads = ctx.nheads
         stride0,stride1 = ctx.stride0,ctx.stride1
         dilation,reflect_bounds = ctx.dil,ctx.reflect_bounds
-        # print("grad_dists.shape: ",grad_dists.shape)
-        # print("inds.shape: ",inds.shape)
 
         # -- compute database --
         pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
@@ -180,16 +178,15 @@ class N3MatMultSearchFunction(th.autograd.Function):
         # -- backward step --
         H,W = vid0.shape[-2:]
         inds = rearrange(inds,'b hd q l tr -> (b hd) q l tr')
-        inds_r = raster_indices(inds,H,W,stride1)
+        grad_dists = rearrange(grad_dists,'b hd q l -> (b hd) q l')
+        inds_r = raster_indices(inds,H,W,stride1).contiguous()
         pgrad1,pgrad0 = matmult_bwd(pat1,pat0,inds_r,grad_dists)
-        # print(pgrad0.shape,pgrad1.shape)
 
         # -- reshape --
         B = vid0.shape[0]
         shape_str = '(b hd) q (pt c ph pw) -> b q 1 pt (hd c) ph pw'
         pgrad0 = rearrange(pgrad0,shape_str,b=B,pt=pt,ph=ps,pw=ps)
         pgrad1 = rearrange(pgrad1,shape_str,b=B,pt=pt,ph=ps,pw=ps)
-        # print("pgrad0.shape,pgrad1.shape: ",pgrad0.shape,pgrad1.shape)
 
         # -- fold patch grads --
         fold0 = stnls.iFoldz(vid0.shape,stride=stride0,dilation=dilation,

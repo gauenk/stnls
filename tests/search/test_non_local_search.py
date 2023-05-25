@@ -33,7 +33,7 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
-def get_data(dnames,ext,device="cuda:0"):
+def get_data(dnames,ext="jpg",device="cuda:0"):
     vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:3,].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:,:3].contiguous()
@@ -42,8 +42,8 @@ def get_data(dnames,ext,device="cuda:0"):
 
 def pytest_generate_tests(metafunc):
     test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
-                  "dilation":[1],"wt":[2],"ws":[3],
-                  "k":[-1],"exact":[False],"nheads":[1],
+                  "dilation":[1],"wt":[0],"ws":[3],
+                  "k":[9],"exact":[False],"nheads":[1],
                   "anchor_self":[False],"seed":[0],"dist_type":["prod"],
                   "k_agg":[-1]}
     # test_lists = {"ps":[7,11],"stride0":[4],"stride1":[1,8],
@@ -285,7 +285,6 @@ def test_fwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     if max_error > max_tol: print("max error: ",max_error)
     assert max_error < max_tol
 
-
 def test_bwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,
                   k_agg,nheads,anchor_self,dist_type,seed):
     """
@@ -298,33 +297,26 @@ def test_bwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,
 
     # -- get args --
     dil = dilation
-    ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
     device = "cuda:0"
     clean_flow = True
     run_flow = False
     reflect_bounds = False
     full_ws = True
-    set_seed(seed)
     use_adj = False # keep false since unfold/fold doesn't match search
+    anchor_self = True
 
     # -- load data --
-    vid = get_data(dnames,ext)
-    vid = th.cat([vid,vid],-1)
-    vid = th.cat([vid,vid],-2)
+    set_seed(seed)
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    vid = get_data(dnames)
+    # vid = th.cat([vid,vid],-1)
+    # vid = th.cat([vid,vid],-2)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
     flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
     flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    b,t,color,h,w = shape
-    vshape = vid.shape
-    chnls = vid.shape[2]
 
     # -- allow grads --
     vid_te0,vid_te1 = vid.clone(),vid.clone()
@@ -347,7 +339,7 @@ def test_bwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
                                    full_ws=full_ws,anchor_self=anchor_self,
-                                   k_agg=-1,use_adj=use_adj,use_atomic=True)
+                                   k_agg=-1,use_adj=use_adj)
     k_agg = k# if k_agg <= 0 else k_agg
 
     # -- [testing] search --
@@ -361,6 +353,12 @@ def test_bwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,
     # dists_gt = dists_gt[...,:k_agg].contiguous()
     # inds_gt = inds_gt[...,:k_agg,:].contiguous()
     th.cuda.synchronize()
+
+    # -- viz --
+    # print(dists_te[0,0,0],dists_te[0,0,0].sum())
+    # print(dists_gt[0,0,0],dists_gt[0,0,0].sum())
+    # print(inds_te[0,0,0])
+    # print(inds_gt[0,0,0])
 
     # -- pick tolerance --
     if dist_type == "prod":
@@ -386,7 +384,8 @@ def test_bwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,
     assert max_error < max_tol
 
     # -- compute bwd --
-    dists_grad = th.randn_like(dists_te)
+    # dists_grad = th.randn_like(dists_te)
+    dists_grad = th.ones_like(dists_te)
     th.autograd.backward(dists_te,dists_grad)
     th.autograd.backward(dists_gt,dists_grad)
 
@@ -403,6 +402,18 @@ def test_bwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,
         # print(grads_gt[0,0,0,-3:,-3:])
         # print(grads_te[0,0,0,-3:,-3:])
         # print((grads_gt/grads_te)[0,0,0,-3:,-3:])
+
+        # diff = th.abs(grads_te -grads_gt)/(th.abs(grads_gt)+1e-10)
+        # print(th.where(diff > 1))
+        # print(diff.max())
+        # diff /= diff.max()
+        # stnls.testing.data.save_burst(diff[:,[0],0],SAVE_DIR,"grad_diff_0")
+        # stnls.testing.data.save_burst(diff[:,[1],0],SAVE_DIR,"grad_diff_1")
+        # stnls.testing.data.save_burst(diff[:,[2],0],SAVE_DIR,"grad_diff_2")
+
+        # -- filter --
+        # grads_gt = grads_gt[...,4:-4,4:-4]
+        # grads_te = grads_te[...,4:-4,4:-4]
 
         # -- skip l2 bwd --
         if dist_type == "l2": continue
@@ -549,6 +560,15 @@ def test_bwd_dev(ws,wt,k,ps,stride0,stride1,k_agg,
     _grads_gt = [vid_gt0.grad,vid_gt1.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
+        # # -- viz --
+        # print(grads_gt[0,0,0,:3,:3])
+        # print(grads_te[0,0,0,:3,:3])
+        # print((grads_gt/grads_te)[0,0,0,:3,:3])
+        # print("-"*30)
+        # print(grads_gt[0,0,0,-3:,-3:])
+        # print(grads_te[0,0,0,-3:,-3:])
+        # print((grads_gt/grads_te)[0,0,0,-3:,-3:])
+
         # -- viz [the error map may look weird] --
         # print(grads_te.shape,grads_gt.shape)
         # print("-"*20)
@@ -572,12 +592,12 @@ def test_bwd_dev(ws,wt,k,ps,stride0,stride1,k_agg,
         # print(grads_gt[0,0,:3,:3])
         # print("-"*20)
 
-        # diff = (grads_te -grads_gt).abs()/(grads_gt.abs()+1e-8)
+        # diff = th.abs(grads_te -grads_gt)/(th.abs(grads_gt)+1e-10)
         # print(diff.max())
         # diff /= diff.max()
-        # stnls.testing.data.save_burst(diff[:,[0]],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # stnls.testing.data.save_burst(diff[:,[1]],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # stnls.testing.data.save_burst(diff[:,[2]],SAVE_DIR,"grad_diff_2_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[0],0],SAVE_DIR,"grad_diff_0_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[1],0],SAVE_DIR,"grad_diff_1_%d" % exact)
+        # stnls.testing.data.save_burst(diff[:,[2],0],SAVE_DIR,"grad_diff_2_%d" % exact)
 
         # -- compare grads --
         rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)

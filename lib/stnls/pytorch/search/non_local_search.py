@@ -48,7 +48,8 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                  ws, wt, ps, k, dist_type,
                  stride0, stride1, dilation, pt,
                  anchor_self, remove_self, reflect_bounds,
-                 full_ws, full_ws_time, use_adj, off_H0, off_W0, off_H1, off_W1):
+                 full_ws, full_ws_time, use_adj,
+                 fwd_version, off_H0, off_W0, off_H1, off_W1):
 
     # -- unpack --
     device = vid0.device
@@ -74,14 +75,19 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val)
 
     # -- forward --
-    stnls_cuda.non_local_search_forward(vid0, vid1, fflow, bflow,
-                                        dists, inds,
-                                        wt, ps, k, dist_type_i, stride0,
-                                        stride1, dilation, pt, qshift,
-                                        reflect_bounds,
-                                        full_ws, full_ws_time,
-                                        search_abs, use_adj,
-                                        off_H0, off_W0, off_H1, off_W1)
+    fwd_version = "v1"
+    if fwd_version == "v1":
+       fwd_fxn = stnls_cuda.non_local_search_forward
+    elif fwd_version == "v2":
+        dists[...] = 0.
+        fwd_fxn = stnls_cuda.non_local_search_forward_v2
+    else:
+        raise ValueError(f"Uknown version [{version}]")
+    fwd_fxn(vid0, vid1, fflow, bflow, dists, inds,
+            wt, ps, k, dist_type_i, stride0,
+            stride1, dilation, pt, qshift,
+            reflect_bounds, full_ws, full_ws_time,
+            search_abs, use_adj, off_H0, off_W0, off_H1, off_W1)
 
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
@@ -113,7 +119,8 @@ class NonLocalSearchFunction(th.autograd.Function):
                 full_ws=False, full_ws_time=False,
                 anchor_self=False, remove_self=False,
                 use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                k_agg=-1, rbwd=True, nbwd=1, exact=False, use_atomic=True,
+                k_agg=-1, fwd_version="v1",
+                rbwd=True, nbwd=1, exact=False, use_atomic=True,
                 queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
 
         """
@@ -136,7 +143,7 @@ class NonLocalSearchFunction(th.autograd.Function):
                                  stride0, stride1, dilation, pt,
                                  anchor_self, remove_self, reflect_bounds,
                                  full_ws, full_ws_time, use_adj,
-                                 off_H0, off_W0, off_H1, off_W1)
+                                 fwd_version, off_H0, off_W0, off_H1, off_W1)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -145,7 +152,8 @@ class NonLocalSearchFunction(th.autograd.Function):
         ctx.vid_shape = vid0.shape
         ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
-                    "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
+                    "fwd_version":fwd_version,"k_agg":k_agg,
+                    "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
         for name,val in ctx_vars.items():
@@ -159,7 +167,7 @@ class NonLocalSearchFunction(th.autograd.Function):
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None,None,None
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -176,7 +184,8 @@ class NonLocalSearch(th.nn.Module):
                  full_ws=True, full_ws_time=True,
                  anchor_self=True, remove_self=False,
                  use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 k_agg=-1,rbwd=True, nbwd=1, exact=False, use_atomic=True,
+                 k_agg=-1,fwd_version="v1",
+                 rbwd=True, nbwd=1, exact=False, use_atomic=True,
                  queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
         super().__init__()
 
@@ -191,6 +200,7 @@ class NonLocalSearch(th.nn.Module):
         self.stride1 = stride1
         self.dilation = dilation
         self.pt = pt
+        self.fwd_version = fwd_version
 
         # -- manage patch and search boundaries --
         self.reflect_bounds = reflect_bounds
@@ -230,7 +240,8 @@ class NonLocalSearch(th.nn.Module):
                                             self.anchor_self,self.remove_self,
                                             self.use_adj,self.off_H0,self.off_W0,
                                             self.off_H1,self.off_W1,
-                                            self.k_agg,self.rbwd,self.nbwd,
+                                            self.k_agg,self.fwd_version,
+                                            self.rbwd,self.nbwd,
                                             self.exact,self.use_atomic,
                                             self.queries_per_thread,
                                             self.neigh_per_thread,
@@ -274,8 +285,8 @@ def _apply(vid0, vid1, fflow, bflow,
            full_ws=True, full_ws_time=True,
            anchor_self=True, remove_self=False,
            use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           k_agg=-1, rbwd=False, nbwd=1, exact=False, use_atomic=True,
-           queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
+           k_agg=-1, fwd_version="v1", rbwd=False, nbwd=1, exact=False,
+           use_atomic=True, queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -285,7 +296,7 @@ def _apply(vid0, vid1, fflow, bflow,
                stride0,stride1,dilation,pt,reflect_bounds,
                full_ws,full_ws_time,anchor_self,remove_self,
                use_adj,off_H0,off_W0,off_H1,off_W1,
-               k_agg,rbwd,nbwd,exact,use_atomic,
+               k_agg,fwd_version,rbwd,nbwd,exact,use_atomic,
                queries_per_thread,neigh_per_thread,channel_groups)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -299,7 +310,7 @@ def extract_config(cfg,restrict=True):
              "nheads":1,"dist_type":"l2",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True, "full_ws_time":True,
-             "anchor_self":True, "remove_self":False,
+             "anchor_self":True, "remove_self":False,"fwd_version":"v1",
              "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "k_agg":-1,"rbwd":False, "nbwd":1, "exact":False, "use_atomic": True,
              "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
@@ -315,7 +326,8 @@ def init(cfg):
                             anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
                             use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
                             off_H1=cfg.off_H1,off_W1=cfg.off_W1,
-                            k_agg=cfg.k_agg,rbwd=cfg.rbwd, nbwd=cfg.nbwd,
+                            k_agg=cfg.k_agg,fwd_version=cfg.fwd_version,
+                            rbwd=cfg.rbwd, nbwd=cfg.nbwd,
                             exact=cfg.exact, use_atomic=cfg.use_atomic,
                             queries_per_thread=cfg.queries_per_thread,
                             neigh_per_thread=cfg.neigh_per_thread,

@@ -92,7 +92,8 @@ void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i,
 // using namespace std;
 
 __device__
-void matmul1_xgrad(float *grad, float *mat_y, long *mat_i, float *mat_ox, int m, int n, int e, int o, int batch_size){
+void matmul1_xgrad(float *grad, float *mat_y, long *mat_i, float *mat_ox,
+                   int m, int n, int e, int o, int batch_size){
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int batch = blockIdx.z *blockDim.z + threadIdx.z;
@@ -126,14 +127,14 @@ void matmul1_ygrad(float *grad, float *mat_x, long *mat_i, float *mat_o,
     float sum = 0.0;
 
     for (int i = 0; i < o; i++) {
-    	int pos_i = (batch * m * o) + (row * o) + i;
-	int xind = mat_i[pos_i];
-	int pos_x = (batch * n * e) + (xind * e) + col;
 
-	int pos_g = (batch * m * o) + (row * o) + i;
-	float g = grad[pos_g];
+      int pos_i = (batch * m * o) + (row * o) + i;
+      int xind = mat_i[pos_i];
+      // int pos_g = (batch * m * o) + (row * o) + i;
+      float g = grad[pos_i];
 
-	sum = sum + (mat_x[pos_x] * g);
+      int pos_x = (batch * n * e) + (xind * e) + col;
+      sum = sum + (mat_x[pos_x] * g);
     }
     int pos_o = (batch * m * e) + (row * e) + col;
     mat_o[pos_o] = sum;
