@@ -287,7 +287,7 @@ class ConvQKV(nn.Module):
         super().__init__()
 
         inner_dim = dim_head *  heads
-        inner_dim_qk = int(qk_frac*dim_head) * heads
+        inner_dim_qk = max(int(qk_frac*dim_head),1) * heads
         self.heads = heads
         pad = (kernel_size - q_stride)//2
         self.to_q = nn.Conv2d(input_dim, inner_dim_qk, kernel_size=kernel_size,
