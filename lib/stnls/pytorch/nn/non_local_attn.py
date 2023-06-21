@@ -17,6 +17,7 @@ from easydict import EasyDict as edict
 import copy
 dcopy = copy.deepcopy
 from stnls.utils import config
+from stnls.utils.misc import optional
 
 # -- from timm.models.layers import trunc_normal_ --
 import torch
@@ -56,12 +57,13 @@ class NonLocalAttention(nn.Module):
         #         attn_cfg[k] = v
 
         # -- unpack --
-        embed_dim = attn_cfg.embed_dim
         nheads = attn_cfg.nheads
-        dim = embed_dim * nheads
+        inner_mult = optional(attn_cfg,"inner_mult",1)
+        embed_dim = attn_cfg.embed_dim * inner_mult
+        io_dim = attn_cfg.embed_dim * nheads
 
         # -- init configs --
-        self.dim = dim
+        self.dim = io_dim
         self.attn_cfg = attn_cfg
         self.search_cfg = search_cfg
         self.normz_cfg = normz_cfg
@@ -83,12 +85,12 @@ class NonLocalAttention(nn.Module):
         self.k_agg = search_cfg.k_agg
 
         # -- qkv attn --
-        self.qkv = ConvQKV(dim,nheads,embed_dim,
+        self.qkv = ConvQKV(io_dim,nheads,embed_dim,
                            attn_cfg.qk_frac,bias=attn_cfg.qkv_bias)
 
         # -- projection layer --
         if attn_cfg.use_attn_projection:
-            self.proj = nn.Conv2d(dim,dim,(1,1),stride=1,
+            self.proj = nn.Conv2d(io_dim*inner_mult,io_dim,(1,1),stride=1,
                                   padding="same",groups=1)
             self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
         else:
@@ -96,7 +98,7 @@ class NonLocalAttention(nn.Module):
             self.proj_drop = nn.Identity()
 
         # -- normzliation --
-        self.norm_layer = LayerNorm2D(dim) if self.use_norm_layer else nn.Identity()
+        self.norm_layer = LayerNorm2D(io_dim) if self.use_norm_layer else nn.Identity()
 
         # -- timers --
         self.use_timer = attn_cfg.attn_timer
