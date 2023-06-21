@@ -497,7 +497,8 @@ void non_local_search_forward_v2_cuda(
    // -- share --
    int psHalf = ps/2;
    int adj = use_adj ? psHalf : 0;
-   int patch_offset = adj - psHalf;
+   // int patch_offset = adj - psHalf;
+   int patch_offset = psHalf - adj;
 
    // -- viz --
    // fprintf(stdout,"ws_h,ws_w: %d,%d\n",ws_h,ws_w);
@@ -660,7 +661,8 @@ void non_local_search_backward_cuda(
   // -- shared --
   int psHalf = ps/2;
   int adj = use_adj ? psHalf : 0;
-  int patch_offset = adj - psHalf;
+  // int patch_offset = adj - psHalf;
+  int patch_offset = psHalf - adj;
 
   // -- view launch info --
   // fprintf(stdout,"BHD,nblocks_queries,chnls_nblocks: %d,%d,%d\n",
