@@ -1,5 +1,4 @@
 
-
 // #include <torch/extension.h>
 #include <torch/types.h>
 #include <cuda.h>
@@ -554,10 +553,12 @@ __global__ void non_local_search_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_dists,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
+    // torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> count0,
+    // torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> count1,
     int q_shift, int stride0, int nH0, int nW0, int nHW0,
     int off_H0, int off_W0, int off_H1, int off_W1,
-    int ps, int pt, int dilation, int patch_offset, bool reflect_bounds,
-    int ftrs_per_thread) {
+    int ps, int pt, int dilation, int patch_offset,
+    bool reflect_bounds, int ftrs_per_thread) {
 
   // -- shape --
   int nbatch = grad_dists.size(0);
@@ -581,6 +582,7 @@ __global__ void non_local_search_backward_kernel(
   scalar_t weight,pix0,pix1,pix;
   int iftr;
 
+
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
   int i1 = blockIdx.y*blockDim.y+threadIdx.y;
@@ -603,25 +605,34 @@ __global__ void non_local_search_backward_kernel(
     // -- pixel location from query index --
     get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
 
-    // // -- k neighbors --
-    // for (int i1=i1_start; i1 < (i1+1); i1++){
-
     // -- proposed location --
     prop_patch[0] = inds[ibatch][ihead][i0][i1][0];
     prop_patch[1] = inds[ibatch][ihead][i0][i1][1];
     prop_patch[2] = inds[ibatch][ihead][i0][i1][2];
     weight = grad_dists[ibatch][ihead][i0][i1];
 
+    // -- add count --
+    // if (i1 == 0){
+    //   if (ftr_start == 0){
+    //     atomicAdd(&(count0[ibatch][ihead][ref[0]][ref[1]][ref[2]]),1);
+    //   }
+    //   // if (valid_prop[3]){
+    //   //   atomicAdd(&(count1[ibatch][ihead][prop[0]][prop[1]][prop[2]]),1);
+    //   // }
+    // }
+
+
     // -- update patch --
     update_bwd_patch<scalar_t,DIST_TYPE>(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
+                     // count0[ibatch][ihead],count1[ibatch][ihead],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,
                      center_offsets,patch_offset,
                      iftr,ftr_start,ftr_end,
                      ref,prop,valid_ref,valid_prop,valid,
-                     T,H,W,pix0,pix1,pix);
+                     T,H,W,pix0,pix1,pix,i1);
 
   }
 }
@@ -665,11 +676,22 @@ void non_local_search_backward_cuda(
   int patch_offset = adj - psHalf;
   // int patch_offset = psHalf - adj;
 
+ 
+
+  // -- allocate counts --
+  // auto options = torch::TensorOptions()
+  //   .dtype(torch::kInt32)
+  //   .layout(torch::kStrided)
+  //   .device(torch::kCUDA, grad_vid0.device().index());
+  // auto count0 = torch::zeros({B,HD,T,H,W},options);
+  // auto count1 = torch::zeros({B,HD,T,H,W},options);
+
   // -- view launch info --
   // fprintf(stdout,"BHD,nblocks_queries,chnls_nblocks: %d,%d,%d\n",
   //         BHD,nblocks_queries,chnls_nblocks);
   // fprintf(stdout,"query_nthreads,neigh_nthreads: %d,%d\n",
   //         query_nthreads,neigh_nthreads);
+
 
   // -- launch kernel --
   if (dist_type == 0){ // prod
@@ -681,6 +703,8 @@ void non_local_search_backward_cuda(
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
           q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
           ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
     }));
@@ -693,11 +717,20 @@ void non_local_search_backward_cuda(
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
           q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
           ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
     }));
   }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }
+
+  // -- normalize --
+  // count0 = count0.view({B, HD, T, 1, H, W});
+  // count1 = count1.view({B, HD, T, 1, H, W});
+  // grad_vid0 /= count0;
+  // grad_vid1 /= count1;
+
 }
 
 

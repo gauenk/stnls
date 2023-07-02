@@ -27,6 +27,7 @@ __device__ __forceinline__ int bounds(int val, int lim ){
   return vval;
 }
 
+
 __device__ __forceinline__ 
 void get_pixel_loc(int* pix,  int qindex, int tmp, int stride0,
                    int nW0, int nHW0, int H, int W){
@@ -308,16 +309,19 @@ void update_bwd_patch(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid1,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
+    // torch::TensorAccessor<int,3,torch::RestrictPtrTraits,int32_t> count0,
+    // torch::TensorAccessor<int,3,torch::RestrictPtrTraits,int32_t> count1,
     scalar_t weight, int* ref_patch, int* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
     int* center_offsets, int patch_offset,
     int iftr, int ftr_start, int ftr_end,
     int* ref, int* prop, bool* valid_ref, bool* valid_prop, bool valid,
-    int T, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix){
+    int T, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix, int i1){
 
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
+
       ref[0] = bounds(ref_patch[0]+pk,T);
       valid_ref[0] = check_interval(ref[0],0,T);
 
@@ -360,13 +364,29 @@ void update_bwd_patch(
           valid = valid_ref[3] && valid_prop[3];
           if (not valid) { continue; }
           
+          // -- add count --
+          // if (ftr_start == 0){
+          //   if ((valid_ref[3])){
+          //   // if ((valid_ref[3]) && (i1==0)){
+          //     atomicAdd(&(count0[ref[0]][ref[1]][ref[2]]),1);
+          //   }
+          //   // only add if the i0 is different from the other i0 value
+          //   // ?equally? only add if i1 is same?...
+          //   if ((valid_prop[3])){// && (valid_ref[3])){
+          //     atomicAdd(&(count1[prop[0]][prop[1]][prop[2]]),1);
+          //   }
+          //   // if ((valid_prop[3]) && (i1==0)){
+          //   //   atomicAdd(&(count1[prop[0]][prop[1]][prop[2]]),1);
+          //   // }
+          // }
+
           // -- fill each channel --
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
             if (DIST_TYPE == 0){ // prod
               pix0 = weight*vid0[ref[0]][iftr][ref[1]][ref[2]];
               pix1 = weight*vid1[prop[0]][iftr][prop[1]][prop[2]];
-              atomicAdd_system(&(grad_vid0[ref[0]][iftr][ref[1]][ref[2]]),pix1);
-              atomicAdd_system(&(grad_vid1[prop[0]][iftr][prop[1]][prop[2]]),pix0);
+              atomicAdd(&(grad_vid0[ref[0]][iftr][ref[1]][ref[2]]),pix1);
+              atomicAdd(&(grad_vid1[prop[0]][iftr][prop[1]][prop[2]]),pix0);
             }else if(DIST_TYPE == 1){ // l2 norm
               pix0 = valid_ref[3] ? vid0[ref[0]][iftr][ref[1]][ref[2]] : (scalar_t)0.;
               pix1 = valid_prop[3] ? vid1[prop[0]][iftr][prop[1]][prop[2]] : (scalar_t)0.;

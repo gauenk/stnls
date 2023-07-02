@@ -27,7 +27,7 @@ class fold(th.autograd.Function):
     @staticmethod
     def forward(ctx, patches, vid, qstart, stride, adj, dilation):
         patches = patches.contiguous()
-        print(vid.shape,patches.shape)
+        # print(vid.shape,patches.shape)
         stnls_cuda.fold_forward(vid, patches, qstart, stride, adj, dilation)
         ctx.qstart = qstart
         ctx.stride = stride

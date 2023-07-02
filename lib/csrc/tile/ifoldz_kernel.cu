@@ -98,6 +98,9 @@ __global__ void stnls_ifoldz_forward_kernel(
     int sq_w = right - left;
     int sq_hw = sq_h * sq_w;
 
+    // -- reflect patches? --
+    bool reflect_patch = false;
+
     // -- strided size --
     int n_h = int((sq_h-1) / stride) + 1;
     int n_w = int((sq_w-1) / stride) + 1;
@@ -132,10 +135,12 @@ __global__ void stnls_ifoldz_forward_kernel(
               int ti = t_im + pk;
 
               // -- check bounds (we need the patch for the pixel!) --
-              valid = (_wi >= left) && (_wi < right_bnd);
-              valid = valid && (_hi >= top) && (_hi < btm_bnd);
+              // valid = (_wi >= left) && (_wi < right_bnd);
+              // valid = valid && (_hi >= top) && (_hi < btm_bnd);
               int wi = use_reflect ? bounds(_wi,left,right) : _wi;
               int hi = use_reflect ? bounds(_hi,top,btm) : _hi;
+              valid = (wi >= left) && (wi < right_bnd);
+              valid = valid && (hi >= top) && (hi < btm_bnd);
 
               // -- only if proposed index is aligned with stride --
               valid = valid && ((hi-top) % stride == 0) && ((wi-left) % stride == 0);

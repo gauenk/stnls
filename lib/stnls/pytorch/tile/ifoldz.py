@@ -26,6 +26,7 @@ class ifoldz(th.autograd.Function):
 
     """
 
+
     @staticmethod
     def forward(ctx, patches, vid, zvid, coords, qstart, stride,
                 dilation, use_adj, only_full,reflect_bounds):

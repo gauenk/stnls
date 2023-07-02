@@ -42,7 +42,6 @@ def raster_indices(inds,iH,iW,stride):
 
     return rI
 
-
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
 #       Indexing MatMult
@@ -50,16 +49,20 @@ def raster_indices(inds,iH,iW,stride):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def matmult_fwd(x,y,I):
+    # n3net uses "y" as ref and "x" as search
     b = y.shape[0]
     m = y.shape[1]
     n = x.shape[1]
     o = I.shape[2]
     e = x.shape[2]
     out = th.tensor(np.zeros(b*m*o), dtype=th.float).reshape(b,m,o).cuda()
+    # out = th.tensor(np.zeros(b*n*o), dtype=th.float).reshape(b,n,o).cuda()
+    # print("out.shape: ",out.shape)
     stnls_cuda.n3net_matmul1_fwd(x,y,I,out,n,m,e,o,b)
     return out
 
 def matmult_bwd(x,y,I,grad):
+    # n3net uses "x" as search and "y" as ref
     b = y.shape[0]
     m = y.shape[1]
     n = x.shape[1]

@@ -65,9 +65,19 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
 
     # -- forward --
     # print("inds.min(),inds_r.max(): ",inds.min(),inds.max())
+    # inds_r = raster_indices(inds,H,W,stride1)
+    # # print("inds_r.min(),inds_r.max(): ",inds_r.min(),inds_r.max(),inds_r.shape)
+    # prods = matmult_fwd(pat1,pat0,inds_r)
+
+    # print("inds.shape: ",inds.shape)
+    # print("pat0.shape: ",pat0.shape)
+    # print("pat1.shape: ",pat1.shape)
+
+    # -- forward [v2] --
     inds_r = raster_indices(inds,H,W,stride1)
     # print("inds_r.min(),inds_r.max(): ",inds_r.min(),inds_r.max(),inds_r.shape)
     prods = matmult_fwd(pat1,pat0,inds_r)
+
     # th.cuda.synchronize()
     if dist_type == "prod":
         dists = prods
@@ -171,6 +181,11 @@ class N3MatMultSearchFunction(th.autograd.Function):
         stride0,stride1 = ctx.stride0,ctx.stride1
         dilation,reflect_bounds = ctx.dil,ctx.reflect_bounds
 
+        # # -- debug --
+        # vid0[...] = 2.
+        # vid1[...] = 1.
+        # grad_dists[...] = 1
+
         # -- compute database --
         pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
         pat1 = vid2patches(vid1,nheads,stride1,ps,pt,dilation,reflect_bounds)
@@ -180,7 +195,14 @@ class N3MatMultSearchFunction(th.autograd.Function):
         inds = rearrange(inds,'b hd q l tr -> (b hd) q l tr')
         grad_dists = rearrange(grad_dists,'b hd q l -> (b hd) q l')
         inds_r = raster_indices(inds,H,W,stride1).contiguous()
-        pgrad1,pgrad0 = matmult_bwd(pat1,pat0,inds_r,grad_dists)
+        BHD = pat1.shape[0]
+        pgrad1,pgrad0 = [],[]
+        for b in range(BHD):
+            pgrad1_,pgrad0_ = matmult_bwd(pat1[[b]],pat0[[b]],inds_r[[b]],grad_dists[[b]])
+            pgrad1.append(pgrad1_)
+            pgrad0.append(pgrad0_)
+        pgrad1 = th.cat(pgrad1)
+        pgrad0 = th.cat(pgrad0)
 
         # -- reshape --
         B = vid0.shape[0]
@@ -188,18 +210,55 @@ class N3MatMultSearchFunction(th.autograd.Function):
         pgrad0 = rearrange(pgrad0,shape_str,b=B,pt=pt,ph=ps,pw=ps)
         pgrad1 = rearrange(pgrad1,shape_str,b=B,pt=pt,ph=ps,pw=ps)
 
+        # print("pgrad0.shape: ",pgrad0.shape)
+        # print(pgrad0[0,0,0,0,0])
+        # print(pgrad0[0,1,0,0,0])
+        # print(pgrad0[0,2,0,0,0])
+        # # print(pgrad0[0,3,0,0,0])
+        # print(pgrad0[0,32,0,0,0])
+        # print(pgrad0[0,33,0,0,0])
+        # print(pgrad0[0,34,0,0,0])
+        # print(pgrad0[0,32+32,0,0,0])
+        # print(pgrad0[0,32+33,0,0,0])
+        # print(pgrad0[0,32+34,0,0,0])
+
+
         # -- fold patch grads --
+        # grad0,grad0z = [],[]
+        # for b in range(B):
+        #     fold0 = stnls.iFoldz(vid0[:1].shape,stride=stride0,dilation=dilation,
+        #                          use_adj=False,reflect_bounds=reflect_bounds,
+        #                          device=vid0.device)
+        #     grad0_b,grad0z_b = fold0(pgrad0[[b]])
+        #     grad0.append(grad0_b)
+        #     grad0z.append(grad0z_b)
+        # grad0 = th.cat(grad0)
+        # grad0z = th.cat(grad0z)
+        # grad0 /= grad0z
+
         fold0 = stnls.iFoldz(vid0.shape,stride=stride0,dilation=dilation,
-                             use_adj=False,reflect_bounds=reflect_bounds,
+                             reflect_bounds=reflect_bounds,
                              device=vid0.device)
         grad0,grad0z = fold0(pgrad0)
-        grad0 = grad0# / grad0z
+        # print("grad0:")
+        # print(grad0[0,0,0,:3,:3])
+        # print(grad0[0,0,0,-3:,-3:])
+        # print("grad0z:")
+        # print(grad0z[0,0,0,:3,:3])
+        # print(grad0z[0,0,0,-3:,-3:])
+        grad0 = grad0 / grad0z
 
         fold1 = stnls.iFoldz(vid1.shape,stride=stride1,dilation=dilation,
-                             use_adj=False,reflect_bounds=reflect_bounds,
+                             reflect_bounds=reflect_bounds,
                              device=vid1.device)
         grad1,grad1z = fold1(pgrad1)
-        grad1 = grad1# / grad1z
+        # print("grad1:")
+        # print(grad1[0,0,0,:3,:3])
+        # print(grad1[0,0,0,-3:,-3:])
+        # print("grad1z:")
+        # print(grad1z[0,0,0,:3,:3])
+        # print(grad1z[0,0,0,-3:,-3:])
+        grad1 = grad1 / grad1z
 
         return grad0,grad1,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,\

@@ -9,6 +9,7 @@ from . import pads
 from . import misc
 from . import bench
 from . import config
+from . import vid_io
 
 # -- specific funcs --
 from .inds import get_nums_hw

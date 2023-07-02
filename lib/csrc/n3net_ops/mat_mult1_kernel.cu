@@ -67,9 +67,10 @@ void matmul1_fwd_cuda(at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i,
 		
   // Call kernel
   matmul1_fwd_kernel<<<grid, block>>>(mat_x.data_ptr<float>(),
-				      mat_y.data_ptr<float>(),
-				      mat_i.data_ptr<long>(),
-				      out.data_ptr<float>(), m, n, e, o, b);
+                                      mat_y.data_ptr<float>(),
+                                      mat_i.data_ptr<long>(),
+                                      out.data_ptr<float>(),
+                                      m, n, e, o, b);
   return;
 }
 
@@ -97,7 +98,7 @@ void matmul1_xgrad(float *grad, float *mat_y, long *mat_i, float *mat_ox,
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int batch = blockIdx.z *blockDim.z + threadIdx.z;
-
+    // "x" is search 
 
     if (batch >= batch_size || row >= m || col >= o)
         return;
@@ -119,6 +120,7 @@ void matmul1_ygrad(float *grad, float *mat_x, long *mat_i, float *mat_o,
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int batch = blockIdx.z *blockDim.z + threadIdx.z;
+    // "y" is search 
 
 
     if (batch >= batch_size || row >= m || col >= e)
@@ -130,10 +132,13 @@ void matmul1_ygrad(float *grad, float *mat_x, long *mat_i, float *mat_o,
 
       int pos_i = (batch * m * o) + (row * o) + i;
       int xind = mat_i[pos_i];
-      // int pos_g = (batch * m * o) + (row * o) + i;
-      float g = grad[pos_i];
-
       int pos_x = (batch * n * e) + (xind * e) + col;
+
+
+      int pos_g = (batch * m * o) + (row * o) + i;
+      float g = grad[pos_g];
+
+      // int pos_x = (batch * n * e) + (xind * e) + col;
       sum = sum + (mat_x[pos_x] * g);
     }
     int pos_o = (batch * m * e) + (row * e) + col;
@@ -148,12 +153,17 @@ void matmul1_bwd_kernel_xgrad(float *gradients, float *mat_x, float *mat_y, long
 
 
 __global__
-void matmul1_bwd_kernel_ygrad(float *gradients, float *mat_x, float *mat_y, long *mat_i, float *mat_oy, int m, int n,  int e, int o, int batch_size){
+void matmul1_bwd_kernel_ygrad(float *gradients, float *mat_x, float *mat_y,
+                              long *mat_i, float *mat_oy,
+                              int m, int n, int e, int o, int batch_size){
     matmul1_ygrad(gradients, mat_x, mat_i, mat_oy, m, n, e, o, batch_size);
 }
 
-void matmul1_bwd_cuda(at::Tensor gradients, at::Tensor mat_x, at::Tensor mat_y, at::Tensor mat_i, at::Tensor out_x, at::Tensor out_y, int m, int n, int e, int o, int b){
+void matmul1_bwd_cuda(at::Tensor gradients, at::Tensor mat_x, at::Tensor mat_y,
+                      at::Tensor mat_i, at::Tensor out_x, at::Tensor out_y,
+                      int m, int n, int e, int o, int b){
 	// Set array and CUDA block/grid sizes
+    // fprintf(stdout,"n,m,e,o,b: %d,%d,%d,%d,%d\n",n,m,e,o,b);
 
 	dim3 block(N_THREADS_E, N_THREADS_N, 1);
 	dim3 grid((int)ceil(((float)e)/N_THREADS_E), (int)ceil(((float)std::max(n, m))/N_THREADS_N), b);
@@ -162,8 +172,11 @@ void matmul1_bwd_cuda(at::Tensor gradients, at::Tensor mat_x, at::Tensor mat_y, 
 	matmul1_bwd_kernel_ygrad<<<grid, block>>>(gradients.data_ptr<float>(), mat_x.data_ptr<float>(), mat_y.data_ptr<float>(), mat_i.data_ptr<long>(), out_y.data_ptr<float>(), m, n, e, o, b);
 
 
-	dim3 block_xgrad(N_THREADS_E, N_THREADS_N, 1);
-	dim3 grid_xgrad((int)ceil(((float)e)/N_THREADS_E), (int)ceil(((float)std::max(n, m))/N_THREADS_N), b);
+	dim3 block_xgrad(N_THREADS_O, N_THREADS_N, 1);
+	// dim3 grid_xgrad((int)ceil(((float)e)/N_THREADS_E),
+    //                 (int)ceil(((float)std::max(n, m))/N_THREADS_N), b);
+	dim3 grid_xgrad((int)ceil(((float)o)/N_THREADS_O),
+                    (int)ceil(((float)std::max(n, m))/N_THREADS_N), b);
 
 	// Call kernel
 	matmul1_bwd_kernel_xgrad<<<grid_xgrad, block_xgrad>>>(gradients.data_ptr<float>(), mat_x.data_ptr<float>(), mat_y.data_ptr<float>(), mat_i.data_ptr<long>(), out_x.data_ptr<float>(), m, n, e, o, b);

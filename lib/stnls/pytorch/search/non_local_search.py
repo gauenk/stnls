@@ -119,7 +119,7 @@ class NonLocalSearchFunction(th.autograd.Function):
                 full_ws=False, full_ws_time=False,
                 anchor_self=False, remove_self=False,
                 use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                k_agg=-1, fwd_version="v1",
+                normalize_bwd=True, k_agg=-1, fwd_version="v1",
                 rbwd=True, nbwd=1, exact=False, use_atomic=True,
                 queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
 
@@ -150,10 +150,10 @@ class NonLocalSearchFunction(th.autograd.Function):
         ctx.save_for_backward(inds,vid0,vid1)
         ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"ps":ps,"pt":pt,
-                    "dil":dilation,"reflect_bounds":reflect_bounds,
-                    "fwd_version":fwd_version,"k_agg":k_agg,
-                    "rbwd":rbwd,"exact":exact,"nbwd":nbwd,
+        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"stride1":stride1,
+                    "ps":ps,"pt":pt,"dil":dilation,"reflect_bounds":reflect_bounds,
+                    "fwd_version":fwd_version,"normalize_bwd":normalize_bwd,
+                    "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
         for name,val in ctx_vars.items():
@@ -165,7 +165,19 @@ class NonLocalSearchFunction(th.autograd.Function):
     @staticmethod
     def backward(ctx, grad_dists, grad_inds_is_none):
         grad0,grad1 = nls_backward(ctx, grad_dists, grad_inds_is_none)
-        return grad0,grad1,None,None,None,None,None,None,None,\
+        # print(grad0.shape)
+        # import stnls
+        # print(grad0.max(),grad0.min())
+        # print(grad1.max(),grad1.min())
+        # grad0_s = grad0.abs().mean(-3,keepdim=True)
+        # grad0_s /= grad0_s.abs().max()
+        # stnls.utils.vid_io.save_video(grad0_s,"./output/grad/","grad0")
+        # grad1_s = grad1.abs().mean(-3,keepdim=True)
+        # grad1_s /= grad1_s.abs().max()
+        # stnls.utils.vid_io.save_video(grad1_s,"./output/grad/","grad1")
+        # exit()
+
+        return grad0,grad1,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -184,7 +196,7 @@ class NonLocalSearch(th.nn.Module):
                  full_ws=True, full_ws_time=True,
                  anchor_self=True, remove_self=False,
                  use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 k_agg=-1,fwd_version="v1",
+                 normalize_bwd=True,k_agg=-1,fwd_version="v1",
                  rbwd=True, nbwd=1, exact=False, use_atomic=True,
                  queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
         super().__init__()
@@ -219,6 +231,7 @@ class NonLocalSearch(th.nn.Module):
         self.off_W1 = off_W1
 
         # -- backprop params --
+        self.normalize_bwd = normalize_bwd
         self.k_agg = k_agg
         self.rbwd = rbwd
         self.nbwd = nbwd
@@ -240,8 +253,8 @@ class NonLocalSearch(th.nn.Module):
                                             self.anchor_self,self.remove_self,
                                             self.use_adj,self.off_H0,self.off_W0,
                                             self.off_H1,self.off_W1,
-                                            self.k_agg,self.fwd_version,
-                                            self.rbwd,self.nbwd,
+                                            self.normalize_bwd,self.k_agg,
+                                            self.fwd_version,self.rbwd,self.nbwd,
                                             self.exact,self.use_atomic,
                                             self.queries_per_thread,
                                             self.neigh_per_thread,
@@ -285,7 +298,8 @@ def _apply(vid0, vid1, fflow, bflow,
            full_ws=True, full_ws_time=True,
            anchor_self=True, remove_self=False,
            use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           k_agg=-1, fwd_version="v1", rbwd=False, nbwd=1, exact=False,
+           normalize_bwd=True, k_agg=-1, fwd_version="v1",
+           rbwd=False, nbwd=1, exact=False,
            use_atomic=True, queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
@@ -296,8 +310,8 @@ def _apply(vid0, vid1, fflow, bflow,
                stride0,stride1,dilation,pt,reflect_bounds,
                full_ws,full_ws_time,anchor_self,remove_self,
                use_adj,off_H0,off_W0,off_H1,off_W1,
-               k_agg,fwd_version,rbwd,nbwd,exact,use_atomic,
-               queries_per_thread,neigh_per_thread,channel_groups)
+               normalize_bwd,k_agg,fwd_version,rbwd,nbwd,exact,
+               use_atomic,queries_per_thread,neigh_per_thread,channel_groups)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -311,8 +325,9 @@ def extract_config(cfg,restrict=True):
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True, "full_ws_time":True,
              "anchor_self":True, "remove_self":False,"fwd_version":"v1",
-             "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "k_agg":-1,"rbwd":False, "nbwd":1, "exact":False, "use_atomic": True,
+             "use_adj":False, "off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
+             "normalize_bwd": True, "k_agg":-1,"rbwd":False, "nbwd":1,
+             "exact":False, "use_atomic": True,
              "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
@@ -326,9 +341,10 @@ def init(cfg):
                             anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
                             use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
                             off_H1=cfg.off_H1,off_W1=cfg.off_W1,
-                            k_agg=cfg.k_agg,fwd_version=cfg.fwd_version,
-                            rbwd=cfg.rbwd, nbwd=cfg.nbwd,
-                            exact=cfg.exact, use_atomic=cfg.use_atomic,
+                            normalize_bwd=cfg.normalize_bwd,k_agg=cfg.k_agg,
+                            fwd_version=cfg.fwd_version, rbwd=cfg.rbwd,
+                            nbwd=cfg.nbwd, exact=cfg.exact,
+                            use_atomic=cfg.use_atomic,
                             queries_per_thread=cfg.queries_per_thread,
                             neigh_per_thread=cfg.neigh_per_thread,
                             channel_groups=cfg.channel_groups)
