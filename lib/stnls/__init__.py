@@ -37,6 +37,7 @@ from .pytorch.tile.unfold import unfold,Unfold
 from .pytorch.tile.ifold import ifold,iFold
 from .pytorch.tile.ifoldz import ifoldz,iFoldz
 from .pytorch.tile.iunfold import iunfold,iUnfold
+from .pytorch.tile.nlfold import nlfold,NlFold
 
 # -- tiling k --
 from .pytorch.tile_k.fold_k import fold_k,FoldK

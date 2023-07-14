@@ -14,6 +14,7 @@ void init_interpolate_inds(py::module &);
 void init_anchor_self(py::module &);
 void init_jitter_unique_inds(py::module &);
 void init_topk_pwd(py::module &);
+void init_non_local_stack(py::module &);
 
 // -- reducing --
 void init_wpsum(py::module &);
@@ -27,6 +28,7 @@ void init_ifold(py::module &);
 void init_ifoldz(py::module &);
 void init_unfold(py::module &);
 void init_iunfold(py::module &);
+void init_nlfold(py::module &);
 
 // -- tile k --
 void init_foldk(py::module &);
@@ -66,7 +68,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_anchor_self(m);
   init_jitter_unique_inds(m);
   init_topk_pwd(m);
-
+  init_non_local_stack(m);
 
   // -- reducer --
   init_wpsum(m);
@@ -78,6 +80,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_ifoldz(m);
   init_unfold(m);
   init_iunfold(m);
+  init_nlfold(m);
 
   // -- tile_k --
   init_foldk(m);

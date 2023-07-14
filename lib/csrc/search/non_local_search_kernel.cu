@@ -581,7 +581,7 @@ __global__ void non_local_search_backward_kernel(
   bool valid;
   scalar_t weight,pix0,pix1,pix;
   int iftr;
-
+  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -592,9 +592,6 @@ __global__ void non_local_search_backward_kernel(
   // -- feature chunk --
   int ftr_start = threadIdx.z * ftrs_per_thread;
   int ftr_end = min(F,ftr_start + ftrs_per_thread);
-
-  // -- cleaner code --
-  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
 
   // -- each region --
   if ((i0 < Q) && (i1 < K)){

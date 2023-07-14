@@ -44,7 +44,7 @@ __global__ void stnls_unfoldk_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
-    int dilation, int adj, bool use_bounds, int qpt, int kpt){
+    int dilation, int ps_offset, bool reflect, int qpt, int kpt){
 
     // -- shapes --
     int bsize = vid.size(0);
@@ -55,7 +55,7 @@ __global__ void stnls_unfoldk_forward_kernel(
     int nq = patches.size(1);
     int k = patches.size(2);
     int pt = patches.size(3);
-    int ps = patches.size(5);
+    int ps = patches.size(6);
     int psHalf = (int)ps/2;
 
     // -- cuda threads --
@@ -92,13 +92,10 @@ __global__ void stnls_unfoldk_forward_kernel(
         wi = inds[bi][qi][ki][2];
 
         // -- fill across cuda threads --
-        if (use_bounds){
-          vi_h = bounds(hi+dilation*(pi - psHalf + adj),height);
-          vi_w = bounds(wi+dilation*(pj - psHalf + adj),width);
-        }else{
-          vi_h = hi+dilation*(pi - psHalf + adj);
-          vi_w = wi+dilation*(pj - psHalf + adj);
-        }
+        vi_h = hi+dilation*(pi - ps_offset);
+        vi_w = wi+dilation*(pj - ps_offset);
+        vi_h = reflect ? bounds(vi_h,height) : vi_h;
+        vi_w = reflect ? bounds(vi_w,width) : vi_w;
 
         // -- spatially valid --
         valid_hw = (vi_h >= 0) && (vi_h < height);
@@ -111,16 +108,14 @@ __global__ void stnls_unfoldk_forward_kernel(
           vi_t = bounds(ti + pk,nframes);
           valid_t = (vi_t >= 0) && (vi_t < nframes);
           valid = valid_hw && valid_t;
+          if (!valid){ continue; }
 
           // -- colors --
           for(int ci = 0; ci < colors; ci++){
-            if (valid){
-              pix = vid[bi][vi_t][ci][vi_h][vi_w];
-            }else{
-              pix = 0.;
-            }
+            pix = vid[bi][vi_t][ci][vi_h][vi_w];
             patches[bi][qi][ki][pk][ci][pi][pj] = pix;
           }
+          
         }
       }
     }
@@ -128,7 +123,11 @@ __global__ void stnls_unfoldk_forward_kernel(
 
 void stnls_cuda_unfoldk_forward(
     torch::Tensor vid, torch::Tensor patches, torch::Tensor inds,
-    int dilation, int adj, bool use_bounds) {
+    int dilation, int adj, bool reflect) {
+
+  // -- indexing --
+  int ps = patches.size(6);
+  int ps_offset = (adj > 0) ? 0 : ps/2;
 
   // -- kernel blocks --
   int bsize = inds.size(0);
@@ -139,7 +138,6 @@ void stnls_cuda_unfoldk_forward(
   dim3 nblocks(nblocks_queries,bsize);
 
   // -- kernel threads --
-  int ps = patches.size(5);
   int MAX_THREADS = 1024;
   int dim = ps*ps;
   int kpb = MAX_THREADS/dim; // num of "k" managed per block
@@ -152,7 +150,7 @@ void stnls_cuda_unfoldk_forward(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
-        dilation, adj, use_bounds, qpt, kpt);
+        dilation, ps_offset, reflect, qpt, kpt);
     }));
 }
 
@@ -169,8 +167,8 @@ __global__ void stnls_unfoldk_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_patches,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
-    const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
-    int dilation, int adj, bool use_bounds, int qpt, int cpt){
+    // const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> rand_nums,
+    int dilation, int adj, bool reflect, int qpt, int cpt){
 
   // shape
   int bsize =  grad_patches.size(0);
@@ -208,10 +206,10 @@ __global__ void stnls_unfoldk_backward_kernel(
     qi = q_start + _qi;
     if (qi < nq){
       // iterate
-      c0_offset = __float2int_rd(c0_dist * rand_nums[qi][0][0]);
+      c0_offset = 0;//__float2int_rd(c0_dist * rand_nums[qi][0][0]);
 
       for (int ki = 0; ki < k; ki++){
-        c0_offset = (c0_offset + 1) % c0_dist;
+        // c0_offset = (c0_offset + 1) % c0_dist;
         // c0_offset = __float2int_rd(c0_dist * rand_nums[qi][ki][0]);
         pi_offset = 0;//__float2int_rd(ps * rand_nums[qi][0][0]);
         pj_offset = 0;//__float2int_rd(ps * rand_nums[qi][0][0]);
@@ -228,8 +226,8 @@ __global__ void stnls_unfoldk_backward_kernel(
               ti = bounds(inds[bi][qi][ki][0] + pk,nframes);
               _hi = inds[bi][qi][ki][1] + dilation*(pi - psHalf + adj);
               _wi = inds[bi][qi][ki][2] + dilation*(pj - psHalf + adj);
-              hi = use_bounds ? bounds(_hi,height) : _hi;
-              wi = use_bounds ? bounds(_wi,width) : _wi;
+              hi = reflect ? bounds(_hi,height) : _hi;
+              wi = reflect ? bounds(_wi,width) : _wi;
               valid_h = (hi >= 0) && (hi < height);
               valid_w = (wi >= 0) && (wi < width);
               valid = valid_h && valid_w;
@@ -238,15 +236,15 @@ __global__ void stnls_unfoldk_backward_kernel(
                 c0 = (_c0 + c0_offset) % c0_dist + c0_start;
                 pix = grad_patches[bi][qi][ki][pk][c0][pi][pj];		
                 if (valid){
-		  if (USE_ATOMIC){
-		    atomicAdd(&vid[bi][ti][c0][hi][wi],pix);
-		  }else{
-		    vid[bi][ti][c0][hi][wi] += pix;
-		  }
+                  if (USE_ATOMIC){
+                    atomicAdd(&vid[bi][ti][c0][hi][wi],pix);
+                  }else{
+                    vid[bi][ti][c0][hi][wi] += pix;
+                  }
                 }
               }
             }
-            
+
           }
         }
       }
@@ -258,7 +256,7 @@ __global__ void stnls_unfoldk_backward_kernel(
 void stnls_cuda_unfoldk_backward(
     torch::Tensor vid, torch::Tensor grad_patches,
     torch::Tensor inds, int dilation, bool exact, int adj,
-    bool use_bounds, bool use_atomic) {
+    bool reflect, bool use_atomic) {
 
   // unpack params
   int bsize = inds.size(0);
@@ -303,9 +301,9 @@ void stnls_cuda_unfoldk_backward(
   //         exact,bpb,nthreads.x,nthreads.y);
 
   // -- allocate random memory --
-  auto cu_index = vid.device().index();
-  auto options = torch::TensorOptions().device(torch::kCUDA, cu_index).dtype(torch::kFloat32);
-  torch::Tensor rand_nums = torch::rand({numQueries,1,1},options);
+  // auto cu_index = vid.device().index();
+  // auto options = torch::TensorOptions().device(torch::kCUDA, cu_index).dtype(torch::kFloat32);
+  // torch::Tensor rand_nums = torch::rand({numQueries,1,1},options);
 
   // launch kernel
   if (use_atomic){
@@ -314,8 +312,8 @@ void stnls_cuda_unfoldk_backward(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
-        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
-        dilation, adj, use_bounds, bpb, cpt);
+        // rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        dilation, adj, reflect, bpb, cpt);
   }));
   }else{
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "stnls_unfoldk_backward_kernel", ([&] {
@@ -323,8 +321,8 @@ void stnls_cuda_unfoldk_backward(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
-        rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
-        dilation, adj, use_bounds, bpb, cpt);
+        // rand_nums.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        dilation, adj, reflect, bpb, cpt);
   }));
 
   }
@@ -343,7 +341,7 @@ __global__ void stnls_unfoldk_backward_kernel_eff(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_patches,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> inds,
-    int dilation, int adj, bool use_bounds, int qpt) {
+    int dilation, int adj, bool reflect, int qpt) {
 
   // shape
   int bsize = grad_patches.size(0);
@@ -379,8 +377,8 @@ __global__ void stnls_unfoldk_backward_kernel_eff(
               _wi = inds[bi][qi][ki][2] + dilation*(pj - psHalf + adj);
               hi = bounds(_hi,height);
               wi = bounds(_wi,width);
-              // hi = use_bounds ? bounds(hi,height) : hi;
-              // wi = use_bounds ? bounds(wi,width) : wi;
+              // hi = reflect ? bounds(hi,height) : hi;
+              // wi = reflect ? bounds(wi,width) : wi;
               valid_h = (hi >= 0) && (hi < height);
               valid_w = (wi >= 0) && (wi < width);
               valid = valid_h && valid_w;
@@ -401,7 +399,7 @@ __global__ void stnls_unfoldk_backward_kernel_eff(
 
 void stnls_cuda_unfoldk_backward_eff(
     torch::Tensor vid, torch::Tensor grad_patches,
-    torch::Tensor inds, int dilation, bool exact, int adj, bool use_bounds) {
+    torch::Tensor inds, int dilation, bool exact, int adj, bool reflect) {
 
   // launch params
   int bsize = inds.size(0);
@@ -429,7 +427,7 @@ void stnls_cuda_unfoldk_backward_eff(
         vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         grad_patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
-        dilation, adj, use_bounds, qpt);
+        dilation, adj, reflect, qpt);
   }));
 
 }

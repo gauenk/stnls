@@ -99,7 +99,7 @@ __global__ void stnls_ifoldz_forward_kernel(
     int sq_hw = sq_h * sq_w;
 
     // -- reflect patches? --
-    bool reflect_patch = false;
+    // bool reflect_patch = false;
 
     // -- strided size --
     int n_h = int((sq_h-1) / stride) + 1;

@@ -38,14 +38,18 @@ def default_pairs():
              "use_attn_projection":True,
              "drop_rate_proj":0.,
              "attn_timer":False,"use_attn_flow":True,
-             "use_norm_layer":False}
+             "use_norm_layer":False,"share_kv":False,
+             "attn_proj_version":"v1",
+             "attn_proj_ksize":-1,
+             "attn_proj_stride":"k_ps_ps",
+             "attn_proj_ngroup":"ngroups"}
     return pairs
 
 def extract_config(cfg,restrict=True):
     cfg = config.extract_pairs(cfg,default_pairs(),restrict=restrict)
     return cfg
 
-class NonLocalAttention(nn.Module):
+class NonLocalAttentionStack(nn.Module):
 
     def __init__(self, attn_cfg, search_cfg, normz_cfg, agg_cfg):
         super().__init__()
@@ -56,10 +60,13 @@ class NonLocalAttention(nn.Module):
         # for k,v in pairs.items():
         #     if not(k in attn_cfg):
         #         attn_cfg[k] = v
+        # attn_cfg = extract_config(dcopy(attn_cfg))
+        # print(attn_cfg)
 
         # -- unpack --
         nheads = attn_cfg.nheads
         inner_mult = optional(attn_cfg,"inner_mult",1)
+        share_kv = optional(attn_cfg,"share_kv",False)
         embed_dim = attn_cfg.embed_dim * inner_mult
         io_dim = attn_cfg.embed_dim * nheads
 
@@ -73,9 +80,14 @@ class NonLocalAttention(nn.Module):
         # -- init attn fxns --
         self.search = stnls.search.init(search_cfg)
         self.normz = stnls.normz.init(normz_cfg)
-        self.agg = stnls.reducer.init(agg_cfg)
+        # self.agg = stnls.reducer.init(agg_cfg)
+        self.stacking = stnls.tile.NonLocalStack(ps=search_cfg.ps,
+                                                 stride0=search_cfg.stride0)
+        # self.stacking = stnls.tile.non_local_stack(ps=search_cfg.ps,
+        #                                            stride0=search_cfg.stride0)
 
         # -- init vars of interest --
+        self.proj_version = attn_cfg.attn_proj_version
         self.use_norm_layer = attn_cfg.use_norm_layer
         self.use_flow = attn_cfg.use_attn_flow
         self.use_state_update = search_cfg.use_state_update
@@ -83,21 +95,82 @@ class NonLocalAttention(nn.Module):
         self.search_name = search_cfg.search_name
         self.stride0 = search_cfg.stride0
         self.dilation = search_cfg.dilation
-        self.k_agg = search_cfg.k_agg
+        self.k = search_cfg.k
+        self.k_agg = normz_cfg.k_agg
+        kagg = self.k if self.k_agg <= 0 else self.k_agg
 
         # -- qkv attn --
         self.qkv = ConvQKV(io_dim,nheads,embed_dim,
                            attn_cfg.qk_frac,bias=attn_cfg.qkv_bias,
-                           ngroups=attn_cfg.qkv_ngroups)
+                           ngroups=attn_cfg.qkv_ngroups,share_kv=share_kv)
 
         # -- projection layer --
-        if attn_cfg.use_attn_projection:
-            self.proj = nn.Conv2d(io_dim*inner_mult,io_dim,(1,1),stride=1,
+        if attn_cfg.attn_proj_version == "v1":
+            ps = 3#search_cfg.ps
+            self.proj = nn.Conv3d(io_dim*inner_mult,io_dim,
+                                  # kernel_size=(1,1,1),
+                                  # stride=(1,1,1),padding=(0,0,0),
+                                  kernel_size=(kagg,ps,ps),
+                                  stride=(kagg,1,1),
+                                  padding=(0,ps//2,ps//2),
+                                  groups=search_cfg.nheads)
+            self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
+        elif attn_cfg.attn_proj_version == "v2":
+            self.proj = nn.Conv3d(io_dim*inner_mult,io_dim,
+                                  (1,1,1),stride=1,
                                   padding="same",groups=1)
             self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
+        elif attn_cfg.attn_proj_version == "v3":
+
+            print(attn_cfg.attn_proj_ksize,
+                  attn_cfg.attn_proj_stride)
+            if "_" in attn_cfg.attn_proj_ksize:
+                ksizes = []
+                for ksize_str in attn_cfg.attn_proj_ksize.split("_"):
+                    if ksize_str == "k": ksizes.append(kagg)
+                    elif ksize_str == "ps": ksizes.append(self.ps)
+                    elif ksize_str == "ps//2": ksizes.append(self.ps//2)
+                    else: ksizes.append(int(ksize_str))
+            else:
+                msg = "Uknown proj kernel size. [%s]"
+                raise ValueError(msg % attn_cfg.attn_proj_ksize)
+            pads = [0,ksizes[1]//2,ksizes[2]//2]
+
+            if "_" in attn_cfg.attn_proj_stride:
+                strides = []
+                for stride_str in attn_cfg.attn_proj_stride.split("_"):
+                    if stride_str == "k": strides.append(kagg)
+                    elif stride_str == "ps": strides.append(self.ps)
+                    elif stride_str == "ps//2": strides.append(self.ps//2)
+                    else: strides.append(int(stride_str))
+            else:
+                msg = "Uknown proj kernel size. [%s]"
+                raise ValueError(msg % attn_cfg.attn_proj_ksize)
+
+            if attn_cfg.attn_proj_ngroup == "nheads":
+                ngroups = search_cfg.nheads
+            elif isinstance(attn_cfg.attn_proj_ngroup,int):
+                ngroups = attn_cfg.attn_proj_ngroup
+            else:
+                raise ValueError("Uknown proj ngroups [%s]" % attn_cfg.attn_proj_ngroup)
+
+            self.proj = nn.Conv3d(io_dim*inner_mult,io_dim,
+                                  kernel_size=ksizes,stride=strides,
+                                  padding=pads,groups=ngroups)
+            self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
+        elif attn_cfg.attn_proj_version == "v3":
+            """
+            Create patch embeddings of dimension: t k F h w -> t k' (f ps ps) nh nw
+              -> maybe t k F h w -> t (k F) h w
+                 with ngroups being both "k" and "1"? or "k" followed by "1"?
+            Then it folds the output: (f ps ps) nh nw -> fold -> f h w
+            Then it projects it back to standard embed dim: f h w -> F h w
+            """
+            raise NotImplementedError("")
         else:
-            self.proj = nn.Identity()
-            self.proj_drop = nn.Identity()
+            raise NotImplementedError("")
+            # self.proj = nn.Identity()
+            # self.proj_drop = nn.Identity()
 
         # -- normzliation --
         self.norm_layer = LayerNorm2D(io_dim) if self.use_norm_layer else nn.Identity()
@@ -124,12 +197,13 @@ class NonLocalAttention(nn.Module):
 
         # -- search --
         dists,inds = self.run_search(q_vid,k_vid,flows,state)
+        # print(inds.shape)
 
         # -- normalize --
         weights,inds = self.run_normalize(dists,inds)
 
         # -- aggregate --
-        vid = self.run_aggregation(v_vid,weights,inds,vid.shape)
+        vid = self.run_aggregation(v_vid,weights,inds)
 
         # -- projection --
         vid = self.run_projection(vid)
@@ -174,22 +248,26 @@ class NonLocalAttention(nn.Module):
         self.timer.sync_stop("normz")
         return dists,inds
 
-    def run_aggregation(self,v_vid,dists,inds,vshape):
+    def run_aggregation(self,v_vid,weights,inds):
 
         # -- aggregate patches --
         self.timer.sync_start("agg")
-        vid = self.agg(v_vid,dists,inds)
+        stack = self.stacking(v_vid,weights,inds)
+        # print("stack.shape: ",stack.shape)
+        # vid = self.agg(v_vid,dists,inds)
+        stack = rearrange(stack,'b hd k t c h w -> b t (hd c) k h w')
         self.timer.sync_stop("agg")
 
-        return vid
+        return stack
 
     def run_projection(self,vid):
         self.timer.sync_start("trans")
         B = vid.shape[0]
-        vid = rearrange(vid,'b t c h w -> (b t) c h w')
+        vid = rearrange(vid,'b t c k h w -> (b t) c k h w')
         vid = self.proj(vid)
         vid = self.proj_drop(vid)
-        vid = rearrange(vid,'(b t) c h w -> b t c h w',b=B)
+        vid = th.mean(vid,2,keepdim=True)
+        vid = rearrange(vid,'(b t) c 1 h w -> b t c h w',b=B)
         self.timer.sync_stop("trans")
         return vid
 
@@ -286,7 +364,7 @@ def rescale_flows(flows_og,H,W):
 class ConvQKV(nn.Module):
     def __init__(self, input_dim, heads = 8, dim_head = 64, qk_frac=1.,
                  kernel_size=1,q_stride=1, k_stride=1, v_stride=1, dropout = 0.,
-                 ngroups=1, last_stage=False,bias=True):
+                 ngroups=1, last_stage=False,bias=True,share_kv=False):
 
         super().__init__()
 
@@ -300,9 +378,11 @@ class ConvQKV(nn.Module):
         self.to_k = nn.Conv2d(input_dim, inner_dim_qk, kernel_size=kernel_size,
                               stride=k_stride, padding=pad, bias=bias,
                               groups=ngroups,padding_mode="reflect")
-        self.to_v = nn.Conv2d(input_dim, inner_dim, kernel_size=kernel_size,
-                              stride=v_stride, padding=pad, bias=bias,
-                              groups=ngroups,padding_mode="reflect")
+        self.to_v = None
+        if share_kv is False:
+            self.to_v = nn.Conv2d(input_dim, inner_dim, kernel_size=kernel_size,
+                                  stride=v_stride, padding=pad, bias=bias,
+                                  groups=ngroups,padding_mode="reflect")
 
     def forward(self, x, attn_kv=None):
 
@@ -314,7 +394,10 @@ class ConvQKV(nn.Module):
         # -- forward --
         q = self.to_q(x)
         k = self.to_k(attn_kv)
-        v = self.to_v(attn_kv)
+        if self.to_v is None:
+            v = k
+        else:
+            v = self.to_v(attn_kv)
 
         return q,k,v
 
@@ -322,7 +405,8 @@ class ConvQKV(nn.Module):
         flops = 0
         flops += conv2d_flops(self.to_q,H,W)
         flops += conv2d_flops(self.to_k,H,W)
-        flops += conv2d_flops(self.to_v,H,W)
+        if not(self.to_v is None):
+            flops += conv2d_flops(self.to_v,H,W)
         return flops
 
 def conv2d_flops(conv,H,W):
@@ -418,3 +502,5 @@ class LayerNorm2D(nn.LayerNorm):
         vid = rearrange(vid,'(b t) c h w -> b t c h w ',b=B)
         vid = vid.contiguous()
         return vid
+
+

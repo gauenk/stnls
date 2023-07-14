@@ -68,9 +68,10 @@ class ifold(th.autograd.Function):
 
         # -- backward --
         stnls_cuda.ifold_backward(grad_vid,grad_patches,
-                                 top, left, btm, right,
-                                 qStart,stride,dilation,adj,
-                                 only_full, reflect_bounds)
+                                  top, left, btm, right,
+                                  qStart,stride,dilation,adj,
+                                  only_full, reflect_bounds)
+        print(grad_patches.shape)
         return grad_patches,None,None,None,None,None,None,None,None
 
 class iFold(th.nn.Module):

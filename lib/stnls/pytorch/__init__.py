@@ -21,6 +21,7 @@ from .tile.unfold import unfold,Unfold
 from .tile.ifold import ifold,iFold
 from .tile.ifoldz import ifoldz,iFoldz
 from .tile.iunfold import iunfold,iUnfold
+from .tile.nlfold import nlfold,NlFold
 
 # -- tiling k --
 from .tile_k.fold_k import fold_k,FoldK
