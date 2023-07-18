@@ -272,10 +272,18 @@ def rescale_flows(flows_og,H,W):
     bflow = flows_og.bflow.view(B*T,2,_H,_W)
     shape = (H,W)
 
+    # -- scale factor --
+    scale_H =  _H/H
+    scale_W =  _W/W
+    scale = th.Tensor([scale_W,scale_H]).to(fflow.device)
+    scale = scale.view(1,2,1,1)
+
     # -- create new flows --
     flows = edict()
-    flows.fflow = tnnf.interpolate(fflow,size=shape,mode="bilinear")
-    flows.bflow = tnnf.interpolate(bflow,size=shape,mode="bilinear")
+    flows.fflow = tnnf.interpolate(fflow/scale,size=shape,
+                                   mode="bilinear",align_corners=True)
+    flows.bflow = tnnf.interpolate(bflow/scale,size=shape,
+                                   mode="bilinear",align_corners=True)
 
     # -- reshape --
     flows.fflow = flows.fflow.view(B,T,2,H,W)
