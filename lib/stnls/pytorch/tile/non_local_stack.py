@@ -69,7 +69,7 @@ class non_local_stack(th.autograd.Function):
         q_start=0
         ndim = vid.ndim
         vid = ensure_ndim6(vid,HD)
-        B,HD,T,F,W,H = vid.shape
+        B,HD,T,F,H,W = vid.shape
         stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
         counts = th.zeros((H,W),device=vid.device,dtype=th.int32)
 

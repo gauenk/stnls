@@ -28,6 +28,11 @@ from torch.nn.init import _calculate_fan_in_and_fan_out
 # -- rescale flow --
 import torch.nn.functional as tnnf
 
+# -- layers --
+from .res import ResBlockList
+from .chnl_attn import ChannelAttention
+from einops.layers.torch import Rearrange
+
 # -- benchmarking --
 from stnls.utils.timer import ExpTimer,ExpTimerList
 
@@ -42,7 +47,9 @@ def default_pairs():
              "attn_proj_version":"v1",
              "attn_proj_ksize":-1,
              "attn_proj_stride":"k_ps_ps",
-             "attn_proj_ngroup":"ngroups"}
+             "attn_proj_ngroup":"ngroups",
+             "attn_nres":2,
+             "attn_nres_ksize":"3"}
     return pairs
 
 def extract_config(cfg,restrict=True):
@@ -60,7 +67,7 @@ class NonLocalAttentionStack(nn.Module):
         # for k,v in pairs.items():
         #     if not(k in attn_cfg):
         #         attn_cfg[k] = v
-        # attn_cfg = extract_config(dcopy(attn_cfg))
+        attn_cfg = extract_config(dcopy(attn_cfg))
         # print(attn_cfg)
 
         # -- unpack --
@@ -122,8 +129,8 @@ class NonLocalAttentionStack(nn.Module):
             self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
         elif attn_cfg.attn_proj_version == "v3":
 
-            print(attn_cfg.attn_proj_ksize,
-                  attn_cfg.attn_proj_stride)
+            # print(attn_cfg.attn_proj_ksize,
+            #       attn_cfg.attn_proj_stride)
             if "_" in attn_cfg.attn_proj_ksize:
                 ksizes = []
                 for ksize_str in attn_cfg.attn_proj_ksize.split("_"):
@@ -158,7 +165,23 @@ class NonLocalAttentionStack(nn.Module):
                                   kernel_size=ksizes,stride=strides,
                                   padding=pads,groups=ngroups)
             self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
-        elif attn_cfg.attn_proj_version == "v3":
+        elif attn_cfg.attn_proj_version == "v4":
+            nres = attn_cfg.attn_nres
+            ksize = int(attn_cfg.attn_nres_ksize)
+            in_dim = io_dim*inner_mult#*self.k_agg
+            out_dim = io_dim
+            ps = 3#search_cfg.ps
+            self.proj = nn.Sequential(*[
+                Rearrange('b t k c h w -> (b k) t c h w',k=self.k_agg),
+                ChannelAttention(in_dim),
+                Rearrange('(b k) t c h w -> (b t) c k h w',k=self.k_agg),
+                nn.Conv3d(in_dim,out_dim,kernel_size=(kagg,ps,ps),
+                          stride=(kagg,1,1),padding=(0,ps//2,ps//2),groups=1),
+                # Rearrange('(b t) c h w -> b t c h w',b=B),
+                # ResBlockList(nres, out_dim, ksize),
+            ])
+            self.proj_drop = nn.Identity()
+        elif attn_cfg.attn_proj_version == "v5":
             """
             Create patch embeddings of dimension: t k F h w -> t k' (f ps ps) nh nw
               -> maybe t k F h w -> t (k F) h w
@@ -255,7 +278,8 @@ class NonLocalAttentionStack(nn.Module):
         stack = self.stacking(v_vid,weights,inds)
         # print("stack.shape: ",stack.shape)
         # vid = self.agg(v_vid,dists,inds)
-        stack = rearrange(stack,'b hd k t c h w -> b t (hd c) k h w')
+        # stack = rearrange(stack,'b hd k t c h w -> b t (hd c) k h w')
+        stack = rearrange(stack,'b hd k t c h w -> b t k (hd c) h w')
         self.timer.sync_stop("agg")
 
         return stack
@@ -263,11 +287,16 @@ class NonLocalAttentionStack(nn.Module):
     def run_projection(self,vid):
         self.timer.sync_start("trans")
         B = vid.shape[0]
-        vid = rearrange(vid,'b t c k h w -> (b t) c k h w')
-        vid = self.proj(vid)
-        vid = self.proj_drop(vid)
-        vid = th.mean(vid,2,keepdim=True)
-        vid = rearrange(vid,'(b t) c 1 h w -> b t c h w',b=B)
+        if self.proj_version in ["v1","v2","v3"]:
+            vid = rearrange(vid,'b t k c h w -> (b t) c k h w')
+            vid = self.proj(vid)
+            vid = self.proj_drop(vid)
+            vid = th.mean(vid,2,keepdim=True)
+            vid = rearrange(vid,'(b t) c 1 h w -> b t c h w',b=B)
+        else:
+            vid = self.proj(vid)
+            vid = self.proj_drop(vid)
+            vid = rearrange(vid,'(b t) c 1 h w -> b t c h w',b=B)
         self.timer.sync_stop("trans")
         return vid
 
@@ -350,10 +379,18 @@ def rescale_flows(flows_og,H,W):
     bflow = flows_og.bflow.view(B*T,2,_H,_W)
     shape = (H,W)
 
+    # -- scale factor --
+    scale_H =  _H/H
+    scale_W =  _W/W
+    scale = th.Tensor([scale_W,scale_H]).to(fflow.device)
+    scale = scale.view(1,2,1,1)
+
     # -- create new flows --
     flows = edict()
-    flows.fflow = tnnf.interpolate(fflow,size=shape,mode="bilinear")
-    flows.bflow = tnnf.interpolate(bflow,size=shape,mode="bilinear")
+    flows.fflow = tnnf.interpolate(fflow/scale,size=shape,
+                                   mode="bilinear",align_corners=True)
+    flows.bflow = tnnf.interpolate(bflow/scale,size=shape,
+                                   mode="bilinear",align_corners=True)
 
     # -- reshape --
     flows.fflow = flows.fflow.view(B,T,2,H,W)
