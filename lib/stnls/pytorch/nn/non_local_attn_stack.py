@@ -172,9 +172,9 @@ class NonLocalAttentionStack(nn.Module):
             out_dim = io_dim
             ps = 3#search_cfg.ps
             self.proj = nn.Sequential(*[
-                Rearrange('b t k c h w -> (b k) t c h w',k=self.k_agg),
-                ChannelAttention(in_dim),
-                Rearrange('(b k) t c h w -> (b t) c k h w',k=self.k_agg),
+                Rearrange('b t k c h w -> b t (k c) h w',k=self.k_agg),
+                ChannelAttention(in_dim*self.k_agg),
+                Rearrange('b k t (k c) h w -> (b t) c k h w',k=self.k_agg),
                 nn.Conv3d(in_dim,out_dim,kernel_size=(kagg,ps,ps),
                           stride=(kagg,1,1),padding=(0,ps//2,ps//2),groups=1),
                 # Rearrange('(b t) c h w -> b t c h w',b=B),
@@ -182,6 +182,23 @@ class NonLocalAttentionStack(nn.Module):
             ])
             self.proj_drop = nn.Identity()
         elif attn_cfg.attn_proj_version == "v5":
+            nres = attn_cfg.attn_nres
+            ngroups = search_cfg.nheads
+            ksize = int(attn_cfg.attn_nres_ksize)
+            in_dim = io_dim*inner_mult#*self.k_agg
+            out_dim = io_dim
+            ps0 = 1#search_cfg.ps
+            ps = 3
+            self.proj = nn.Sequential(*[
+                Rearrange('b t k c h w -> (b t) c k h w',k=self.k_agg),
+                nn.Conv3d(in_dim,in_dim*self.k_agg,kernel_size=(kagg,ps0,ps0),
+                          stride=(1,1,1),padding=(0,ps0//2,ps0//2),groups=ngroups),
+                Rearrange('bt (k c) 1 h w -> bt c k h w',k=self.k_agg),
+                nn.Conv3d(in_dim,out_dim,kernel_size=(kagg,ps,ps),
+                          stride=(kagg,1,1),padding=(0,ps//2,ps//2),groups=ngroups),
+            ])
+            self.proj_drop = nn.Identity()
+        elif attn_cfg.attn_proj_version == "v6":
             """
             Create patch embeddings of dimension: t k F h w -> t k' (f ps ps) nh nw
               -> maybe t k F h w -> t (k F) h w
