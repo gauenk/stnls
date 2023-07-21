@@ -47,7 +47,7 @@ def default_pairs():
              "attn_proj_version":"v1",
              "attn_proj_ksize":-1,
              "attn_proj_stride":"k_ps_ps",
-             "attn_proj_ngroup":"ngroups",
+             "attn_proj_ngroups":"ngroups",
              "attn_nres":2,
              "attn_nres_ksize":"3"}
     return pairs
@@ -154,12 +154,12 @@ class NonLocalAttentionStack(nn.Module):
                 msg = "Uknown proj kernel size. [%s]"
                 raise ValueError(msg % attn_cfg.attn_proj_ksize)
 
-            if attn_cfg.attn_proj_ngroup == "nheads":
+            if attn_cfg.attn_proj_ngroups == "nheads":
                 ngroups = search_cfg.nheads
-            elif isinstance(attn_cfg.attn_proj_ngroup,int):
-                ngroups = attn_cfg.attn_proj_ngroup
+            elif isinstance(attn_cfg.attn_proj_ngroups,int):
+                ngroups = attn_cfg.attn_proj_ngroups
             else:
-                raise ValueError("Uknown proj ngroups [%s]" % attn_cfg.attn_proj_ngroup)
+                raise ValueError("Uknown proj ngroups [%s]" % attn_cfg.attn_proj_ngroups)
 
             self.proj = nn.Conv3d(io_dim*inner_mult,io_dim,
                                   kernel_size=ksizes,stride=strides,
@@ -174,7 +174,7 @@ class NonLocalAttentionStack(nn.Module):
             self.proj = nn.Sequential(*[
                 Rearrange('b t k c h w -> b t (k c) h w',k=self.k_agg),
                 ChannelAttention(in_dim*self.k_agg),
-                Rearrange('b k t (k c) h w -> (b t) c k h w',k=self.k_agg),
+                Rearrange('b t (k c) h w -> (b t) c k h w',k=self.k_agg),
                 nn.Conv3d(in_dim,out_dim,kernel_size=(kagg,ps,ps),
                           stride=(kagg,1,1),padding=(0,ps//2,ps//2),groups=1),
                 # Rearrange('(b t) c h w -> b t c h w',b=B),
