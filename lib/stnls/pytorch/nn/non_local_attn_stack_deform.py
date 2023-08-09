@@ -56,7 +56,7 @@ def extract_config(cfg,restrict=True):
     cfg = config.extract_pairs(cfg,default_pairs(),restrict=restrict)
     return cfg
 
-class NonLocalAttentionStack(nn.Module):
+class NonLocalAttentionStack_MatchDeform(nn.Module):
 
     def __init__(self, attn_cfg, search_cfg, normz_cfg, agg_cfg):
         super().__init__()
@@ -243,20 +243,20 @@ class NonLocalAttentionStack(nn.Module):
         self.times = ExpTimerList(attn_cfg.attn_timer)
         self.timer = None
 
-    def forward(self, vid, flows=None, state=None):
+    def forward(self, q, k, v, flows=None, state=None):
 
         # -- init timer --
         self.timer = ExpTimer(self.use_timer)
         self.timer.sync_start("attn")
 
         # -- update flow --
-        B,T,C,H,W = vid.shape
+        B,T,C,H,W = q.shape
         if self.use_flow: flows = rescale_flows(flows,H,W)
 
         # -- extract --
-        in_vid = vid
-        vid = self.norm_layer(vid)
-        q_vid,k_vid,v_vid = self.get_qkv(vid)
+        # q = self.norm_layer(q)
+        # q = self.norm_layer(q)
+        q_vid,k_vid,v_vid = self.get_qkv(q,k,v)
 
         # -- search --
         dists,inds = self.run_search(q_vid,k_vid,flows,state)
@@ -278,19 +278,21 @@ class NonLocalAttentionStack(nn.Module):
 
         return vid
 
-    def get_qkv(self,vid):
+    def get_qkv(self,q,k,v):
 
         # -- compute --
-        B, T, C, H, W = vid.shape
-        vid = vid.view(B*T,C,H,W)
-        q_vid, k_vid, v_vid = self.qkv(vid,None)
+        B, T, C, H, W = q.shape
+        q = q.view(B*T,C,H,W)
+        k = k.view(B*T,C,H,W)
+        v = v.view(B*T,C,H,W)
+        q, k, v = self.qkv(q,k,v,None)
 
         # -- reshape --
-        q_vid = q_vid.view(B,T,-1,H,W)
-        k_vid = k_vid.view(B,T,-1,H,W)
-        v_vid = v_vid.view(B,T,-1,H,W)
+        q = q.view(B,T,-1,H,W)
+        k = k.view(B,T,-1,H,W)
+        v = v.view(B,T,-1,H,W)
 
-        return q_vid,k_vid,v_vid
+        return q,k,v
 
     def run_search(self,q_vid,k_vid,flows,state):
         self.timer.sync_start("search")
@@ -461,20 +463,19 @@ class ConvQKV(nn.Module):
                                   stride=v_stride, padding=pad, bias=bias,
                                   groups=ngroups,padding_mode="reflect")
 
-    def forward(self, x, attn_kv=None):
+    def forward(self, q, k, v):
 
         # -- unpack --
-        b, c, h, w = x.shape
+        b, c, h, w = q.shape
         nheads = self.heads
-        attn_kv = x if attn_kv is None else attn_kv
 
         # -- forward --
         q = self.to_q(x)
-        k = self.to_k(attn_kv)
+        k = self.to_k(k)
         if self.to_v is None:
             v = k
         else:
-            v = self.to_v(attn_kv)
+            v = self.to_v(v)
 
         return q,k,v
 

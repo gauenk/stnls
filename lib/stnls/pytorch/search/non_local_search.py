@@ -119,7 +119,7 @@ class NonLocalSearchFunction(th.autograd.Function):
                 full_ws=False, full_ws_time=False,
                 anchor_self=False, remove_self=False,
                 use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                normalize_bwd=True, k_agg=-1, fwd_version="v1",
+                normalize_bwd=False, k_agg=-1, fwd_version="v1",
                 rbwd=True, nbwd=1, exact=False, use_atomic=True,
                 queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
 
@@ -196,7 +196,7 @@ class NonLocalSearch(th.nn.Module):
                  full_ws=True, full_ws_time=True,
                  anchor_self=True, remove_self=False,
                  use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 normalize_bwd=True,k_agg=-1,fwd_version="v1",
+                 normalize_bwd=False,k_agg=-1,fwd_version="v1",
                  rbwd=True, nbwd=1, exact=False, use_atomic=True,
                  queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
         super().__init__()
@@ -298,7 +298,7 @@ def _apply(vid0, vid1, fflow, bflow,
            full_ws=True, full_ws_time=True,
            anchor_self=True, remove_self=False,
            use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           normalize_bwd=True, k_agg=-1, fwd_version="v1",
+           normalize_bwd=False, k_agg=-1, fwd_version="v1",
            rbwd=False, nbwd=1, exact=False,
            use_atomic=True, queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
     # wrap "new (2018) apply function
@@ -326,7 +326,7 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":True, "full_ws_time":True,
              "anchor_self":True, "remove_self":False,"fwd_version":"v1",
              "use_adj":False, "off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "normalize_bwd": True, "k_agg":-1,"rbwd":False, "nbwd":1,
+             "normalize_bwd": False, "k_agg":-1,"rbwd":False, "nbwd":1,
              "exact":False, "use_atomic": True,
              "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
     return extract_pairs(cfg,pairs,restrict=restrict)
