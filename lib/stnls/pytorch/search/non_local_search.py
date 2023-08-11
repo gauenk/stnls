@@ -137,7 +137,7 @@ class NonLocalSearchFunction(th.autograd.Function):
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
 
-        # -- run, optionally batched, forward function --
+        # -- run [optionally batched] forward function --
         dists,inds = nls_forward(batchsize, vid0, vid1, fflow, bflow,
                                  ws, wt, ps, k, dist_type,
                                  stride0, stride1, dilation, pt,
