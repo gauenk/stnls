@@ -4,8 +4,19 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <vector>
-using namespace at;
+#include <cuda/std/type_traits>
+#include <cstdio>
+#include "shared_nn_utils.cu"
 
+using namespace at;
+// #define AT_DISPATCH_CASE_ITYPE(...)   \
+//   AT_DISPATCH_CASE(at::ScalarType::Int32, __VA_ARGS__) \
+//   AT_DISPATCH_CASE(at::ScalarType::Double, __VA_ARGS__) \
+//   AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)  \
+//   AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)
+// #define AT_DISPATCH_ITYPES(TYPE, NAME, ...) \
+//   AT_DISPATCH_SWITCH(TYPE, NAME, AT_DISPATCH_CASE_ITYPE(__VA_ARGS__))
+// at::ScalarType get_type(torch::Tensor my_tensor);
 
 /****************************
 
@@ -13,12 +24,12 @@ using namespace at;
 
 ****************************/
 
-template <typename scalar_t>
+template <typename scalar_t, typename itype>
 __global__ void unique_topk_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists,
-    const torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<itype,3,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dists_topk,
-    torch::PackedTensorAccessor32<int,3,torch::RestrictPtrTraits> inds_topk,
+    torch::PackedTensorAccessor32<itype,3,torch::RestrictPtrTraits> inds_topk,
     int k, int qpt){
 
   // -- shaping vars --
@@ -81,7 +92,12 @@ __global__ void unique_topk_forward_kernel(
           diff = 0;
           #pragma unroll
           for (int ix = 0; ix < 3; ix++){
-            diff += inds[qi][kj][ix] != inds[qi][kl][ix];
+            if (is_same_v<itype,int>){
+            // if (itype == int){
+              diff += inds[qi][kj][ix] != inds[qi][kl][ix];
+            }else{
+              diff += fabs(inds[qi][kj][ix] - inds[qi][kl][ix]) > 1e-8;
+            }
           }
           any_same = (diff == 0) || any_same;
         }
@@ -112,16 +128,39 @@ void unique_topk_forward_cuda(const torch::Tensor dists, const torch::Tensor ind
    int nblocks = (Q-1)/(queries_per_thread*nthreads)+1;
 
    // launch kernel
-   AT_DISPATCH_FLOATING_TYPES(dists.type(),"unique_topk_forward_kernel", ([&] {
-      unique_topk_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        dists_topk.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-        inds_topk.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
-        k, queries_per_thread);
-      }));
+   // const auto& itype_str = inds.type();
+   // at::ScalarType _st = ::detail::scalar_type(the_type);
+   auto itype = get_type(inds);
+   auto dtype = get_type(dists);
+   if (itype == torch::kInt32){
+     AT_DISPATCH_FLOATING_TYPES(dists.type(),"unique_topk_forward_kernel", ([&] {
+         unique_topk_forward_kernel<scalar_t,int><<<nblocks, nthreads>>>(
+          dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+          dists_topk.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+          inds_topk.packed_accessor32<int,3,torch::RestrictPtrTraits>(),
+          k, queries_per_thread);
+        }));
+   }else if (itype == dtype){
+     AT_DISPATCH_FLOATING_TYPES(dists.type(),"unique_topk_forward_kernel", ([&] {
+         unique_topk_forward_kernel<scalar_t,scalar_t><<<nblocks, nthreads>>>(
+          dists.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+          dists_topk.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+          inds_topk.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+          k, queries_per_thread);
+        }));
+   }else{
+     std::cout << "Must have inds type be int or match dists.type().\n"<< std::endl;
+     assert(0==1);
+   }
 }
 
+// at::ScalarType get_type(torch::Tensor my_tensor){
+//   const auto& the_type = my_tensor.type();
+//   at::ScalarType _st = ::detail::scalar_type(the_type);
+//   return _st;
+// }
 
 /****************************
 

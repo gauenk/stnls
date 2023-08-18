@@ -1,3 +1,5 @@
+#include <cuda/std/type_traits>
+#include <cstdio>
 #include <torch/types.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -12,13 +14,16 @@
 // #include <vector>
 // #include <chrono>
 #include <ATen/ATen.h>
+template< class T, class U >
+inline constexpr bool is_same_v = cuda::std::is_same<T, U>::value;
 
 using namespace at;
 
 //#define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)    \
   
-__device__ __forceinline__ int bounds(int val, int lim ){
-  int vval = val;
+template<typename dtype=int>
+__device__ __forceinline__ dtype bounds(dtype val, int lim ){
+  dtype vval = val;
   if (val < 0){
     vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
   }else if (val >= lim){
@@ -28,31 +33,47 @@ __device__ __forceinline__ int bounds(int val, int lim ){
 }
 
 
+template<typename itype=int>
 __device__ __forceinline__ 
-void get_pixel_loc(int* pix,  int qindex, int tmp, int stride0,
+void get_pixel_loc(itype* pix,  int qindex, int tmp, int stride0,
                    int nW0, int nHW0, int H, int W){
   int nH_index;
-  tmp = qindex;
-  pix[0] = tmp / nHW0;
-  tmp = (tmp - pix[0]*nHW0); 
-  nH_index = tmp / nW0;
-  pix[1] = (nH_index*stride0) % H;
-  tmp = tmp - nH_index*nW0;
-  pix[2] = ((tmp % nW0) * stride0) % W;
+  if (is_same_v<itype,int>){
+    tmp = qindex;
+    pix[0] = tmp / nHW0;
+    tmp = (tmp - pix[0]*nHW0); 
+    nH_index = tmp / nW0;
+    pix[1] = (nH_index*stride0) % H;
+    tmp = tmp - nH_index*nW0;
+    pix[2] = ((tmp % nW0) * stride0) % W;
+  }else{
+    tmp = qindex;
+    pix[0] = round(tmp/nHW0);
+    tmp = (tmp - pix[0]*nHW0); 
+    nH_index = tmp / nW0;
+    pix[1] = round((nH_index*stride0) % H);
+    tmp = tmp - nH_index*nW0;
+    pix[2] = round(((tmp % nW0) * stride0) % W);
+  }
 }
 
+
+template<typename itype=int>
 __device__ __forceinline__
-bool check_interval(int val, int lower, int upper){
+bool check_interval(itype val, int lower, int upper){
   return (val >= lower) && (val < upper);
 }
+
+template<typename itype=int>
 __device__ __forceinline__
-void check_bounds(bool& valid_anchor, int* loc3d, int T, int H, int W){
-  valid_anchor = check_interval(loc3d[0],0,T);
-  valid_anchor = valid_anchor && check_interval(loc3d[1],0,H);
-  valid_anchor = valid_anchor && check_interval(loc3d[2],0,W);
+void check_bounds(bool& valid_anchor, itype* loc3d, int T, int H, int W){
+  valid_anchor = check_interval<itype>(loc3d[0],0,T);
+  valid_anchor = valid_anchor && check_interval<itype>(loc3d[1],0,H);
+  valid_anchor = valid_anchor && check_interval<itype>(loc3d[2],0,W);
 }
 
 
+// template<typename itype=int>
 __device__ __forceinline__
 void set_search_offsets(int& wsOff_h, int& wsOff_w, int hi, int wi, int stride1,
                         int wsHalf_h, int wsHalf_w, int wsMax_h, int wsMax_w,
@@ -88,51 +109,103 @@ void set_time_range(int& t_max, int t_shift, int ti, int T, int wt){
     t_max = min(T-1,ti + wt - t_shift);
 }
 
+template<typename itype=int>
 __device__ __forceinline__
-void increment_frame(int& n_ti, int& prev_ti, int& t_inc,
+void increment_frame(itype& n_ti, int& prev_ti, int& t_inc,
                      bool& swap_dir, int& dir, int ti, int t_max){
-  prev_ti = n_ti;
+  prev_ti = is_same_v<itype,int> ? n_ti : __float2int_rn(round(n_ti));
   n_ti += t_inc;
   swap_dir = n_ti > t_max; // max(t_max) == (T-1), a legal index.
   t_inc = (t_inc == 0) ? 1 : t_inc; // set after tindex == 0, forward first
   t_inc = swap_dir ? -1 : t_inc;
   n_ti = swap_dir ? ti-1 : n_ti;
   prev_ti = swap_dir ? ti : prev_ti;
-  dir = max(-1,min(1,n_ti - ti));
+  dir = max(-1,min(1,int(n_ti) - ti));
 }
 
+template<typename itype=int>
 __device__ __forceinline__ 
-void reset_centers(int* prop_patch, int* ref_patch, bool swap_dir){
-  prop_patch[1] = swap_dir ? ref_patch[1] : prop_patch[1];
-  prop_patch[2] = swap_dir ? ref_patch[2] : prop_patch[2];
+void reset_centers(itype* prop_patch, int* ref_patch, bool swap_dir){
+  if(is_same_v<itype,int>){
+    prop_patch[1] = swap_dir ? ref_patch[1] : prop_patch[1];
+    prop_patch[2] = swap_dir ? ref_patch[2] : prop_patch[2];
+  }else{
+    prop_patch[1] = swap_dir ? __int2float_rn(ref_patch[1]) : prop_patch[1];
+    prop_patch[2] = swap_dir ? __int2float_rn(ref_patch[2]) : prop_patch[2];
+  }
 }
 
-template<typename scalar_t>
+template<typename scalar_t, typename itype=int>
 __device__ __forceinline__ 
-void update_centers(int& hj_center, int& wj_center, int dir, int H, int W,
+void update_centers(itype& hj_center, itype& wj_center, int dir, int H, int W,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> fflow,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> bflow){
 
   // -- fixed so we can read both --
-  int hj_tmp = hj_center;
-  int wj_tmp = wj_center;
+  itype hj_tmp = hj_center;
+  itype wj_tmp = wj_center;
 
   // -- optical flow --
   if (dir != 0){
 
     // -- access flows --
     auto flow = dir > 0 ? fflow : bflow;
-    wj_center = int(1.*wj_center + flow[0][hj_tmp][wj_tmp] + 0.5);
-    hj_center = int(1.*hj_center + flow[1][hj_tmp][wj_tmp] + 0.5);
 
-    // -- rounding --
-    wj_center = int(max(0,min(W-1,int(wj_center))));
-    hj_center = int(max(0,min(H-1,int(hj_center))));
+
+    if(is_same_v<itype,int>){
+
+      // -- simple rounding if "int" --
+      wj_center = int(1.*wj_center + flow[0][hj_tmp][wj_tmp] + 0.5);
+      hj_center = int(1.*hj_center + flow[1][hj_tmp][wj_tmp] + 0.5);
+
+      // -- wrap around boarders --
+      wj_center = max(0,min(W-1,(int)wj_center));
+      hj_center = max(0,min(H-1,(int)hj_center));
+
+    }else{
+
+
+      // // -- simple rounding if "int" --
+      // wj_center = round(wj_center + flow[0][hj_tmp][wj_tmp]);
+      // hj_center = round(hj_center + flow[1][hj_tmp][wj_tmp]);
+
+      // // -- wrap around boarders --
+      // wj_center = max(0.,min(1.*W-1,(float)wj_center));
+      // hj_center = max(0.,min(1.*H-1,(float)hj_center));
+
+      // -- weighted average of neighbors --
+      float weight = 0;
+      int hj = 0, wj = 0;
+      for (int i=0;i<2;i++){
+        for (int j=0;j<2;j++){
+
+          // -- compute int locaion with weight --
+          hj = __float2int_rd(hj_tmp + i);
+          wj = __float2int_rd(wj_tmp + j);
+          weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
+
+          // -- ensure legal boudns --
+          hj = bounds(hj,H);
+          wj = bounds(wj,W);
+
+          // -- update with shift --
+          wj_center = wj_center + weight*flow[0][hj][wj];
+          hj_center = hj_center + weight*flow[1][hj][wj];
+        }
+      }
+
+      // -- wrap around boarders --
+      wj_center = max(0.,min(1.*W-1,(float)wj_center));
+      hj_center = max(0.,min(1.*H-1,(float)hj_center));
+
+    }
+
   }
 }
 
+template<typename itype=int>
 __device__ __forceinline__ 
-void set_search_patch(int* prop, int* frame_anchor,
+void set_search_patch(itype* prop, itype* frame_anchor,
                       int stride1, int ws_i, int ws_j, int wsOff_h,
                       int wsOff_w, int search_abs){
   prop[0] = frame_anchor[0];
@@ -221,6 +294,7 @@ void compute_dist(scalar_t& dist,
     }
   }
 }
+
 
 
 template<typename scalar_t, int DIST_TYPE>
@@ -400,5 +474,8 @@ void update_bwd_patch(
     }
 
 }
+
+
+
 
 

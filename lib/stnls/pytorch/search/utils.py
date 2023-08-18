@@ -10,21 +10,77 @@ from easydict import EasyDict as edict
 #
 #
 
-def allocate_pair(base_shape,device,dtype,idist_val):
+def allocate_pair(base_shape,device,dtype,idist_val,itype_str):
     dists = th.zeros(base_shape,device=device,dtype=dtype)
     dists[...] = idist_val
-    inds = th.zeros(base_shape+(3,),device=device,dtype=th.int32)
+    inds = th.zeros(base_shape+(3,),device=device,dtype=get_itype(itype_str))
     inds[...] = -1
     return dists,inds
 
-def allocate_inds(base_shape,device):
-    inds = th.zeros(base_shape+(3,),device=device,dtype=th.int32)
+def allocate_inds(base_shape,device,itype_str):
+    inds = th.zeros(base_shape+(3,),device=device,dtype=get_itype(itype_str))
     inds[...] = -1
     return inds
 
 def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
+
+def get_ctx_flows(itype,fflow,bflow):
+    if itype == "int":
+        device = fflow.device
+        dtype = fflow.dtype
+        flow = th.zeros((1,)*5,device=device,dtype=dtype)
+        flow = th.zeros((1,)*5,device=device,dtype=dtype)
+        return flow,flow
+    else:
+        return fflow,bflow
+
+def get_ctx_qinds(itype,qinds):
+    if itype == "int":
+        device = qinds.device
+        dtype = qinds.dtype
+        enable_api = th.zeros((1,)*5,device=device,dtype=dtype)
+        return enable_api
+    else:
+        return qinds
+
+def allocate_grad_flows(itype,vid_shape,device):
+    if itype == "int":
+        grad_fflow = th.zeros((1,)*5,device=device,dtype=th.float32)
+        grad_bflow = th.zeros((1,)*5,device=device,dtype=th.float32)
+    else:
+        B,HD,T,C,H,W = vid_shape
+        grad_fflow = th.zeros((B,T,2,H,W),device=device,dtype=th.float32)
+        grad_bflow = th.zeros((B,T,2,H,W),device=device,dtype=th.float32)
+    return grad_fflow,grad_bflow
+
+def allocate_grad_qinds(itype,ishape,device):
+    if itype == "int":
+        grad_qinds = th.zeros((1,)*5,device=device,dtype=th.int)
+    else:
+        B,HD,Q,K,_ = ishape
+        grad_qinds = th.zeros((B,HD,Q,K,3),device=device,dtype=th.float32)
+    return grad_qinds
+
+def get_itype(itype_str):
+    if itype_str in ["int","int32"]:
+        return th.int32
+    elif itype_str == "float":
+        return th.float32
+    else:
+        raise ValueError(f"Uknown itype [{itype_str}]")
+
+def get_inds(inds,itype):
+    inds = inds.contiguous()
+    if itype == "int" and th.is_floating_point(inds):
+        return inds.round().int()
+    elif itype == "float" and not(th.is_floating_point(inds)):
+        return inds.float()
+    else:
+        return inds
+
+
 
 #
 #

@@ -17,7 +17,7 @@ from stnls.utils import extract_pairs
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
 from .utils import get_ctx_flows
 from .shared import manage_self
-from .nls_bwd_impl import nls_backward
+from .nls_bwd_impl_offsets import nls_backward_offsets
 from .batching_utils import run_batched,batching_info
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -26,10 +26,11 @@ from .batching_utils import run_batched,batching_info
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+
 def nls_forward(batchsize,*args):
     vid_idx = 0
-    ws_idx,wt_idx = 4,5
-    stride0_idx = 9
+    ws_idx,wt_idx = 5,6
+    stride0_idx = 10
     # dists,inds = nls_forward(batchsize, vid0, vid1, fflow, bflow,
     #                          ws, wt, ps, k, dist_type,
     #                          stride0, stride1, dilation, pt,
@@ -45,7 +46,8 @@ def nls_forward(batchsize,*args):
         return run_batched(nls_fwd_main,batchsize,vid_idx,
                            stride0_idx,ws_idx,wt_idx,*args)
 
-def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
+def nls_fwd_main(qshift, Q, vid0, vid1,
+                 fflow, bflow, offsets,
                  ws, wt, ps, k, dist_type,
                  stride0, stride1, dilation, pt,
                  anchor_self, remove_self, reflect_bounds,
@@ -53,7 +55,6 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                  fwd_version, itype, off_H0, off_W0, off_H1, off_W1):
 
     # -- unpack --
-    # itype = "int"
     device = vid0.device
     B,HD,T,C,H,W = vid0.shape
 
@@ -85,7 +86,9 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
         fwd_fxn = stnls_cuda.non_local_search_forward_v2
     else:
         raise ValueError(f"Uknown version [{version}]")
-    fwd_fxn(vid0, vid1, fflow, bflow, dists, inds,
+    fwd_fxn(vid0, vid1,
+            fflow, bflow, offsets,
+            dists, inds,
             wt, ps, k, dist_type_i, stride0,
             stride1, dilation, pt, qshift,
             reflect_bounds, full_ws, full_ws_time,
@@ -100,8 +103,8 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                              remove_self,qshift,stride0,H,W)
 
     # -- topk --
-    dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                               descending=descending,unique=False)
+    dists,inds,order = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+                                     descending=descending,unique=False)
 
     return dists,inds
 
@@ -111,10 +114,10 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-class NonLocalSearchFunction(th.autograd.Function):
+class NonLocalSearchOffsetsFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, fflow, bflow,
+    def forward(ctx, vid0, vid1, fflow, bflow, offsets,
                 ws, wt, ps, k, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True,
@@ -139,9 +142,12 @@ class NonLocalSearchFunction(th.autograd.Function):
         device = vid0.device
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
+        itype_fwd = "float"
+        itype_bwd = "float"
 
         # -- run, optionally batched, forward function --
-        dists,inds = nls_forward(batchsize, vid0, vid1, fflow, bflow,
+        dists,inds = nls_forward(batchsize, vid0, vid1,
+                                 fflow, bflow, offsets,
                                  ws, wt, ps, k, dist_type,
                                  stride0, stride1, dilation, pt,
                                  anchor_self, remove_self, reflect_bounds,
@@ -151,10 +157,7 @@ class NonLocalSearchFunction(th.autograd.Function):
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
-        fflow,bflow = get_ctx_flows(itype_bwd,fflow,bflow)
-        ctx.save_for_backward(inds,vid0,vid1,fflow,bflow)
-        if itype_bwd == "int":
-            ctx.mark_non_differentiable(inds)
+        ctx.save_for_backward(inds,vid0,vid1,fflow,bflow,offsets)
         ctx.vid_shape = vid0.shape
         ctx_vars = {"batchsize":batchsize,"stride0":stride0,"stride1":stride1,
                     "ps":ps,"pt":pt,"dil":dilation,"reflect_bounds":reflect_bounds,
@@ -162,7 +165,9 @@ class NonLocalSearchFunction(th.autograd.Function):
                     "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,
-                    "dist_type_i":dist_type_i,"itype_bwd":itype_bwd}
+                    "dist_type_i":dist_type_i,"itype_bwd":itype_bwd,
+                    "ws":ws, "wt":wt, "stride1":stride1,
+                    "full_ws":full_ws, "full_ws_time":full_ws_time}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 
@@ -171,8 +176,9 @@ class NonLocalSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
-        grad0,grad1,gfflow,gbflow = nls_backward(ctx, grad_dists, grad_inds)
-        return grad0,grad1,gfflow,gbflow,None,None,None,None,None,None,None,\
+        grads = nls_backward_offsets(ctx, grad_dists, grad_inds)
+        grad0,grad1,gfflow,gbflow,goffests = grads
+        return grad0,grad1,gfflow,gbflow,goffests,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -183,7 +189,7 @@ class NonLocalSearchFunction(th.autograd.Function):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
-class NonLocalSearch(th.nn.Module):
+class NonLocalSearchOffsets(th.nn.Module):
 
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
@@ -242,8 +248,8 @@ class NonLocalSearch(th.nn.Module):
         self.channel_groups = channel_groups
 
 
-    def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
-        return NonLocalSearchFunction.apply(vid0,vid1,fflow,bflow,
+    def forward(self, vid0, vid1, fflow, bflow, offsets, batchsize=-1):
+        return NonLocalSearchOffsetsFunction.apply(vid0,vid1,fflow,bflow,offsets,
                                             self.ws,self.wt,self.ps,self.k,
                                             self.nheads,batchsize,
                                             self.dist_type,self.stride0,
@@ -307,7 +313,7 @@ def _apply(vid0, vid1, fflow, bflow,
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
-    fxn = NonLocalSearchFunction.apply
+    fxn = NonLocalSearchOffsetsFunction.apply
     return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
@@ -339,7 +345,7 @@ def extract_config(cfg,restrict=True):
 
 def init(cfg):
     cfg = extract_config(cfg)
-    search = NonLocalSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
+    search = NonLocalSearchOffsets(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
                             dist_type=cfg.dist_type, stride0=cfg.stride0,
                             stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
                             reflect_bounds=cfg.reflect_bounds,

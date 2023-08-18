@@ -47,8 +47,21 @@ def get_counts(vid,stride0,ps,pt,dilation,use_adj,reflect_bounds):
     stnls_cuda.nlfold_forward(_vid, counts, patches, stride0, dilation,
                               use_adj,  reflect_bounds)
     counts = counts[0,0,0].type(th.int32)
-    print(counts.shape)
     return counts
+
+def get_inds(inds,itype):
+    inds = inds.contiguous()
+    if itype == "int" and th.is_floating_point(inds):
+        return inds.round().int()
+    elif itype in ["float","2d","3d"] and not(th.is_floating_point(inds)):
+        return inds.float()
+    else:
+        return inds
+
+def get_imode(itype):
+    if itype == "int": return 0
+    elif itype == "2d": return 1
+    elif itype in ["float","3d"]: return 2
 
 class non_local_stack(th.autograd.Function):
     """
@@ -61,7 +74,8 @@ class non_local_stack(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid, weights, inds,
                 ps=7,stride0=4,pt=1,reflect_bounds=True,
-                dilation=1,use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0):
+                dilation=1,use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
+                itype_fwd="int",itype_bwd="int"):
 
         # -- init --
         HD = inds.shape[1]
@@ -76,12 +90,14 @@ class non_local_stack(th.autograd.Function):
         # -- non-local stacking --
         vid = vid.contiguous()
         weights = weights.contiguous()
-        inds = inds.contiguous()
+        inds = get_inds(inds,itype_fwd)
+        imode = get_imode(itype_fwd)
+        # print(inds,imode)
         stnls_cuda.non_local_stack_forward(vid, weights, inds,
                                            stack, counts,
                                            ps, pt, dilation, stride0,
                                            use_adj, reflect_bounds, q_start,
-                                           off_H0, off_W0, off_H1, off_W1)
+                                           off_H0, off_W0, off_H1, off_W1, imode)
         # print(counts[30:34,30:34])
         # counts = get_counts(vid,stride0,ps,pt,
         #                     dilation,use_adj,reflect_bounds)
@@ -98,6 +114,7 @@ class non_local_stack(th.autograd.Function):
         ctx.ndim = ndim
         ctx.off_H0,ctx.off_W0 = off_H0,off_W0
         ctx.off_H1,ctx.off_W1 = off_H1,off_W1
+        ctx.itype_bwd = itype_bwd
 
         return stack
 
@@ -113,12 +130,16 @@ class non_local_stack(th.autograd.Function):
         reflect_bounds = ctx.reflect_bounds
         off_H0,off_W0 = ctx.off_H0,ctx.off_W0
         off_H1,off_W1 = ctx.off_H1,ctx.off_W1
+        itype_bwd = ctx.itype_bwd
         ndim = ctx.ndim
+        imode = get_imode(itype_bwd)
 
         # -- alloc --
         grad_vid = th.zeros_like(vid)
         grad_weights = th.zeros_like(weights)
         grad_stack = grad_stack.contiguous()
+        if itype_bwd != "int": grad_inds = th.zeros_like(inds)
+        else: grad_inds = th.zeros((1,)*5).to(inds.device)
 
         # -- view --
         # print("grad_vid.shape: ",grad_vid.shape)
@@ -159,24 +180,28 @@ class non_local_stack(th.autograd.Function):
         grad_stack = grad_stack / counts.view((1,1,1,1,1,H,W))
         # print(grad_stack[0,0,0,0,0,30:34,30:34])
         stnls_cuda.non_local_stack_backward(
-            grad_vid,grad_weights,grad_stack,
+            grad_vid,grad_weights,grad_inds,grad_stack,
             vid,weights,inds,stack,counts,
             ps,pt,dilation,stride0,use_adj,reflect_bounds,
-            off_H0,off_W0,off_H1,off_W1)
+            off_H0,off_W0,off_H1,off_W1, imode)
 
         # -- ensure original ndim --
         grad_vid = revert_ndim(grad_vid,ndim)
 
-        return grad_vid,grad_weights,None,None,None,\
-            None,None,None,None,None,None,None,None
+        # -- don't propogate "int" --
+        if itype_bwd == "int": grad_inds = None
+
+        return grad_vid,grad_weights,grad_inds,None,None,\
+            None,None,None,None,None,None,None,None,None,None
 
 class NonLocalStack(th.nn.Module):
 
-    def __init__(self,ps=7,stride0=4,pt=1,reflect_bounds=True,dilation=1,use_adj=False,
-                 off_H0=0,off_W0=0,off_H1=0,off_W1=0):
+    def __init__(self,ps=7,stride0=4,pt=1,reflect_bounds=True,
+                 dilation=1,use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
+                 itype_fwd="int",itype_bwd="int"):
         super().__init__()
         _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj",
-                 "off_H0","off_W0","off_H1","off_W1"]
+                 "off_H0","off_W0","off_H1","off_W1","itype_fwd","itype_bwd"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))

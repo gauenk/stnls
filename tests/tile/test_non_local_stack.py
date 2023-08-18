@@ -75,16 +75,17 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     run_flow = False
     reflect_bounds = True
     set_seed(seed)
+    itype_fwd = "float"
 
     # -- load data --
     vid = get_data(dnames,ext)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
-    # flows.fflow = th.clamp(5*th.randn_like(flows.fflow),-5,5)
-    # flows.bflow = th.clamp(5*th.randn_like(flows.bflow),-5,5)
-    flows.fflow = th.clamp(5*th.zeros_like(flows.fflow),-5,5)
-    flows.bflow = th.clamp(5*th.zeros_like(flows.bflow),-5,5)
+    flows.fflow = th.clamp(5*th.randn_like(flows.fflow),-5,5).round()
+    flows.bflow = th.clamp(5*th.randn_like(flows.bflow),-5,5).round()
+    # flows.fflow = th.clamp(5*th.zeros_like(flows.fflow),-5,5)
+    # flows.bflow = th.clamp(5*th.zeros_like(flows.bflow),-5,5)
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -92,12 +93,13 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
                                 dist_type=dist_type, dilation=dil,
                                 stride0=stride0, stride1=stride1,
                                 reflect_bounds=reflect_bounds, full_ws=full_ws,
-                                anchor_self=anchor_self)
+                                anchor_self=anchor_self,itype_fwd=itype_fwd)
     dists,inds = search(vid,vid,flows.fflow,flows.bflow)
     weights = th.exp(-dists/10)
     # weights[...] = 1.
     stacking = stnls.tile.NonLocalStack(ps=ps,stride0=stride0,
-                                        reflect_bounds=reflect_bounds)
+                                        reflect_bounds=reflect_bounds,
+                                        itype_fwd=itype_fwd)
     stacking_gt = stnls.tile.NonLocalStackGt(ps=ps,stride0=stride0,
                                              reflect_bounds=reflect_bounds)
 
@@ -178,6 +180,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     clean_flow = True
     run_flow = False
     reflect_bounds = True
+    itype_fwd = "float"
+    itype_bwd = "float"
     set_seed(seed)
 
     # -- load data --
@@ -189,16 +193,17 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
     # flows.fflow = th.clamp(5*th.randn_like(flows.fflow),-5,5)
     # flows.bflow = th.clamp(5*th.randn_like(flows.bflow),-5,5)
-    flows.fflow = th.clamp(5*th.zeros_like(flows.fflow),-5,5)
-    flows.bflow = th.clamp(5*th.zeros_like(flows.bflow),-5,5)
+    flows.fflow = th.clamp(5*th.zeros_like(flows.fflow),-5,5).round()
+    flows.bflow = th.clamp(5*th.zeros_like(flows.bflow),-5,5).round()
 
     # -- exec fold fxns --
     sch = stnls.search
     search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                   dist_type=dist_type, dilation=dil,
-                                   stride0=stride0, stride1=stride1,
-                                   reflect_bounds=True,#reflect_bounds,
-                                   full_ws=full_ws,anchor_self=anchor_self)
+                                dist_type=dist_type, dilation=dil,
+                                stride0=stride0, stride1=stride1,
+                                reflect_bounds=True,#reflect_bounds,
+                                full_ws=full_ws,anchor_self=anchor_self,
+                                itype_fwd=itype_fwd)
     dists,inds = search(vid,vid,flows.fflow,flows.bflow)
     # dists[...] = 1
 
@@ -211,8 +216,11 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     weights_gt = dists_gt#th.exp(-dists_gt/10)
 
     # -- init stacking --
+    # stacking = stnls.tile.NonLocalStack(ps=ps,stride0=stride0,
+    #                                     reflect_bounds=reflect_bounds)
     stacking = stnls.tile.NonLocalStack(ps=ps,stride0=stride0,
-                                        reflect_bounds=reflect_bounds)
+                                        reflect_bounds=reflect_bounds,
+                                        itype_fwd=itype_fwd,itype_bwd=itype_bwd)
     stacking_gt = stnls.tile.NonLocalStackGt(ps=ps,stride0=stride0,
                                              reflect_bounds=reflect_bounds)
 

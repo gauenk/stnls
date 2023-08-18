@@ -36,6 +36,14 @@ def revert_ndim(grad_vid,ndim):
         grad_vid = rearrange(grad_vid,'b hd t f h w -> b t (hd f) h w')
     return grad_vid
 
+def get_inds(inds,itype):
+    inds = inds.contiguous()
+    if itype == "int" and th.is_floating_point(inds):
+        return inds.round().int()
+    elif itype == "float" and not(th.is_floating_point(inds)):
+        return inds.float()
+    else:
+        return inds
 
 class NonLocalStackGt(th.nn.Module):
 
@@ -62,6 +70,7 @@ class NonLocalStackGt(th.nn.Module):
         # print(vid[0,0,0,0,:5,:5])
         nH = (H-1)//self.stride0+1
         nW = (W-1)//self.stride0+1
+        inds = get_inds(inds,"int")
 
         # -- get non-local patches --
         stack = []

@@ -1,3 +1,23 @@
+
+#include <torch/types.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <vector>
+#include <cuda/std/type_traits>
+#include <cstdio>
+// #include <cuda/std/type_traits>
+// #include <cstdio>
+
+inline
+at::ScalarType get_type(const torch::Tensor my_tensor){
+  const auto& the_type = my_tensor.type();
+  at::ScalarType _st = ::detail::scalar_type(the_type);
+  return _st;
+}
+
+template< class T, class U >
+inline constexpr bool is_same_v = ::cuda::std::is_same<T, U>::value;
+
 __inline__ __device__ int bounds(int val, int lim ){
   int vval = val;
   if (val < 0){
