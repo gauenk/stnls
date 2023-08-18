@@ -462,8 +462,8 @@ void update_bwd_patch(
               atomicAdd(&(grad_vid0[ref[0]][iftr][ref[1]][ref[2]]),pix1);
               atomicAdd(&(grad_vid1[prop[0]][iftr][prop[1]][prop[2]]),pix0);
             }else if(DIST_TYPE == 1){ // l2 norm
-              pix0 = valid_ref[3] ? vid0[ref[0]][iftr][ref[1]][ref[2]] : (scalar_t)0.;
-              pix1 = valid_prop[3] ? vid1[prop[0]][iftr][prop[1]][prop[2]] : (scalar_t)0.;
+              pix0 = vid0[ref[0]][iftr][ref[1]][ref[2]];
+              pix1 = vid1[prop[0]][iftr][prop[1]][prop[2]];
               pix = 2 * weight * (pix0 - pix1);
               atomicAdd(&grad_vid0[ref[0]][iftr][ref[1]][ref[2]],pix);
               atomicAdd(&grad_vid1[prop[0]][iftr][prop[1]][prop[2]],-pix);
