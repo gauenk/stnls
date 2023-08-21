@@ -10,7 +10,7 @@ void non_local_search_offsets3d_forward_cuda(
     const torch::Tensor offsets,
     torch::Tensor dists, torch::Tensor inds,
     int wt, int ps, int k, int dist_type,
-    int stride0, int stride1, int dilation, int pt, int qshift,
+    int stride0, float stride1, int dilation, int pt, int qshift,
     bool reflect_bounds, bool full_ws, bool full_ws_time,
     bool search_abs, bool use_adj,
     int off_H0, int off_W0, int off_H1, int off_W1);
@@ -27,7 +27,7 @@ void non_local_search_offsets3d_backward_cuda(
     int ps, int pt, int dilation, bool reflect_bounds,
     bool use_adj, int off_H0, int off_W0,
     int off_H1, int off_W1, int dist_type,
-    int ws, int wt, int stride1, bool full_ws, bool full_ws_time);
+    int ws, int wt, float stride1, bool full_ws, bool full_ws_time);
 
 // C++ interface
 
@@ -42,7 +42,7 @@ void non_local_search_offsets_forward(
     const torch::Tensor offsets,
     torch::Tensor dists, torch::Tensor inds,
     int wt, int ps, int k, int dist_type,
-    int stride0, int stride1, int dilation, int pt, int qshift,
+    int stride0, float stride1, int dilation, int pt, int qshift,
     bool reflect_bounds, bool full_ws, bool full_ws_time,
     bool search_abs, bool use_adj,
     int off_H0, int off_W0, int off_H1, int off_W1){
@@ -73,7 +73,7 @@ void non_local_search_offsets_backward(
     int nH0, int nW0, int ps, int pt, int dilation,
     bool reflect_bounds, bool use_adj, int off_H0, int off_W0,
     int off_H1, int off_W1, int dist_type,
-    int ws, int wt, int stride1,
+    int ws, int wt, float stride1,
     bool full_ws, bool full_ws_time) {
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);

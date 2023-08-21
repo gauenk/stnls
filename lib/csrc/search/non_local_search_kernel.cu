@@ -93,6 +93,7 @@ __global__ void non_local_search_forward_kernel(
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
+
     //---------------------------
     //       Anchor Pixel
     //---------------------------
@@ -109,8 +110,8 @@ __global__ void non_local_search_forward_kernel(
     check_bounds(valid_ref_patch,ref_patch,T,H,W);
 
     // -- search region offsets --
-    set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
-                       wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws);
+    // set_search_offsets(wsOff_h, wsOff_w, ref_patch[1], ref_patch[2], stride1,
+    //                    wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws);
 
     // -- temporal search bounds --
     set_time_range(t_max,t_shift,ref_patch[0],T,wt);
@@ -142,8 +143,10 @@ __global__ void non_local_search_forward_kernel(
                                fflow[ibatch][prev_ti],bflow[ibatch][prev_ti]);
       
       // -- search region offsets --
-      set_search_offsets(wsOff_h,wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
-			 wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws_time);
+      set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
+                         wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws_time);
+
+
 
       // ---------------------------------------
       //          spatial searching
@@ -165,7 +168,6 @@ __global__ void non_local_search_forward_kernel(
 
           // -- init dist --
           dist = 0;
-
 
           //  -- compute patch difference --
           if (valid){
@@ -379,8 +381,8 @@ __global__ void non_local_search_forward_v2_kernel(
     check_bounds(valid_ref_patch,ref_patch,T,H,W);
 
     // -- search region offsets --
-    set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
-                       wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws);
+    // set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
+    //                    wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws);
 
     // -- temporal search bounds --
     set_time_range(t_max,t_shift,ref_patch[0],T,wt);
@@ -412,8 +414,8 @@ __global__ void non_local_search_forward_v2_kernel(
                                fflow[ibatch][prev_ti],bflow[ibatch][prev_ti]);
       
       // -- search region offsets --
-      set_search_offsets(wsOff_h,wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
-                         wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws_time);
+      set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
+                         wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws_time);
 
       // ---------------------------------------
       //          spatial searching

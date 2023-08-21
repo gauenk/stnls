@@ -26,7 +26,7 @@ __device__ __forceinline__ dtype bounds(dtype val, int lim ){
   dtype vval = val;
   if (val < 0){
     vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
-  }else if (val >= lim){
+  }else if (val > (lim-1)){
     vval = 2*(lim-1)-val; // want ("H" -> "H-2") _not_ ("H" -> "H-1")
   }
   return vval;
@@ -61,7 +61,7 @@ void get_pixel_loc(itype* pix,  int qindex, int tmp, int stride0,
 template<typename itype=int>
 __device__ __forceinline__
 bool check_interval(itype val, int lower, int upper){
-  return (val >= lower) && (val < upper);
+  return (val >= lower) && (val <= (upper-1));
 }
 
 template<typename itype=int>
@@ -73,24 +73,68 @@ void check_bounds(bool& valid_anchor, itype* loc3d, int T, int H, int W){
 }
 
 
-// template<typename itype=int>
+template<typename itype=int>
 __device__ __forceinline__
-void set_search_offsets(int& wsOff_h, int& wsOff_w, int hi, int wi, int stride1,
-                        int wsHalf_h, int wsHalf_w, int wsMax_h, int wsMax_w,
+void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
+                        itype hi, itype wi, itype stride1,
+                        itype wsHalf_h, itype wsHalf_w, int ws_h, int ws_w,
                         int H, int W, bool full_ws){
     if(full_ws){
-      wsOff_h = (hi-max(hi-stride1*wsHalf_h,0))/stride1;
-      wsOff_w = (wi-max(wi-stride1*wsHalf_w,0))/stride1;
-      if ((hi+wsMax_h) >= H){
-        wsOff_h+=(hi+wsMax_h-min(hi+stride1*wsMax_h,H-1)-1)/stride1 + 1;
+
+      // -- bound min --
+      if ( (hi - stride1 * wsHalf_h) < 0){
+        wsOff_h = hi/stride1;
+      }else{
+        wsOff_h = (ws_h-1)/2;
       }
-      if ((wi+wsMax_w) >= W){
-        wsOff_w+=(wi+wsMax_w-min(wi+stride1*wsMax_w,W-1)-1)/stride1 + 1;
+      if ( (wi - stride1 * wsHalf_w) < 0){
+        wsOff_w = wi/stride1;
+      }else{
+        wsOff_w = (ws_w-1)/2;
       }
+
+      // -- bound max --
+      itype hMax = hi + stride1 * ((ws_h-1) - wsOff_h);
+      itype wMax = wi + stride1 * ((ws_w-1) - wsOff_w);
+      if (hMax > (H-1)){
+        wsOff_h = -((H-1)-hi)/stride1 + (ws_h-1);
+      }
+      if (wMax > (W-1)){
+        wsOff_w = -((W-1)-wi)/stride1 + (ws_w-1);
+      }
+
+      // -- rounding ensures reference patch is included in search space --
+      wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h);
+      wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w);
+
     }else{
-      wsOff_h = wsHalf_h;
-      wsOff_w = wsHalf_w;
+      wsOff_h = (ws_h-1)/2;
+      wsOff_w = (ws_w-1)/2;
     }
+
+    // int wsMax_w = ws_w-1 + (ws_w-1)/2;
+    // int wsMax_h = ws_h-1 + (ws_h-1)/2;
+    // if(full_ws){
+    //   wsOff_h = (hi-max(hi-stride1*wsHalf_h,(itype)0))/stride1;
+    //   wsOff_w = (wi-max(wi-stride1*wsHalf_w,(itype)0))/stride1;
+    //   if ((hi+wsMax_h) >= H){
+    //     if (is_same_v<itype,int>){
+    //       wsOff_h+=(hi+wsMax_h-min(int(hi+stride1*wsMax_h),H-1)-1)/stride1+1;
+    //     }else{
+    //       wsOff_h+=(hi+wsMax_h-min((float)hi+stride1*wsMax_h,(float)H-1))/stride1;
+    //     }
+    //   }
+    //   if ((wi+wsMax_w) >= W){
+    //     if (is_same_v<itype,int>){
+    //       wsOff_w+=(wi+wsMax_w-min(int(wi+stride1*wsMax_w),W-1)-1)/stride1+1;
+    //     }else{
+    //       wsOff_w+=(wi+wsMax_w-min((float)wi+stride1*wsMax_w,(float)W-1))/stride1;
+    //     }
+    //   }
+    // }else{
+    //   wsOff_h = wsHalf_h;
+    //   wsOff_w = wsHalf_w;
+    // }
 }
 
 __device__ __forceinline__
@@ -206,8 +250,8 @@ void update_centers(itype& hj_center, itype& wj_center, int dir, int H, int W,
 template<typename itype=int>
 __device__ __forceinline__ 
 void set_search_patch(itype* prop, itype* frame_anchor,
-                      int stride1, int ws_i, int ws_j, int wsOff_h,
-                      int wsOff_w, int search_abs){
+                      itype stride1, int ws_i, int ws_j,
+                      itype wsOff_h, itype wsOff_w, int search_abs){
   prop[0] = frame_anchor[0];
   if (search_abs){
     prop[1] = stride1 * ws_i;

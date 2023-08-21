@@ -84,7 +84,7 @@ void fill_non_local_patch_bilin2d(
           }
 
           // -- fill each channel --
-          nl_i[0] = __float2int_rn(nl[0]);
+          nl_i[0] = __float2int_rn(round(nl[0]));
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
 
             scalar_t pix = 0;
@@ -184,12 +184,11 @@ void fill_non_local_patch_bwd_bilin2d(
           // int count = counts[ref[1]][ref[2]];
 
           // -- fill each channel --
-          nl_i[0] = __float2int_rn(nl[0]);
+          nl_i[0] = __float2int_rn(round(nl[0]));
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
 
             // -- grad to BP --
-            // scalar_t grad_stack_pix=grad_stack[ref[0]][iftr][ref[1]][ref[2]];//;/count;
-            scalar_t grad_stack_pix = grad_stack[ref[0]][iftr][ref[1]][ref[2]];//;/count;
+            scalar_t grad_stack_pix = grad_stack[ref[0]][iftr][ref[1]][ref[2]];
 
             // -- handle continuous spatial indices --
             scalar_t igrad1 = 0;
@@ -207,8 +206,8 @@ void fill_non_local_patch_bwd_bilin2d(
                 // -- interpolate weight --
                 nl_i[1] = __float2int_rd(nl[1]+ix);
                 nl_i[2] = __float2int_rd(nl[2]+jx);
-                g1 = max(0.,1-fabs(nl_i[1]-nl[1]));
-                g2 = max(0.,1-fabs(nl_i[2]-nl[2]));
+                g1 = max(0.,1-fabs(nl[1]-nl_i[1]));
+                g2 = max(0.,1-fabs(nl[2]-nl_i[2]));
                 w = g1 * g2;
 
                 // -- legalize inds --
@@ -220,15 +219,19 @@ void fill_non_local_patch_bwd_bilin2d(
                 pix += w*v;
 
                 // -- index grads --
-                igrad1 += (nl_i[1]-nl[1]) < 0 ? g2*v : -g2*v;
-                igrad2 += (nl_i[2]-nl[2]) < 0 ? g1*v : -g1*v;
+                igrad1 += (nl[1] - nl_i[1]) < 0 ? g2*v : -g2*v;
+                igrad2 += (nl[2] - nl_i[2]) < 0 ? g1*v : -g1*v;
 
+                // -- update video --
+                atomicAdd(&(grad_vid[nl_i[0]][iftr][nl_i[1]][nl_i[2]]),
+                          w*grad_stack_pix*weight);
               }
             }
 
-            // -- atomic add --
-            atomicAdd(&(grad_vid[nl[0]][iftr][nl[1]][nl[2]]),grad_stack_pix*weight);
+            // -- update dists --
             atomicAdd(&(grad_weights[qi][ki]),grad_stack_pix*pix);
+
+            // -- update inds --
             atomicAdd(&(grad_inds[qi][ki][1]),grad_stack_pix*weight*igrad1);
             atomicAdd(&(grad_inds[qi][ki][2]),grad_stack_pix*weight*igrad2);
 

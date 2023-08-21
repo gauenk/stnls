@@ -27,7 +27,7 @@ __global__ void non_local_search_forward_bilin2d_kernel(
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
     int ws_h, int ws_w, int wt, int ps, int pt,
-    int stride0, int stride1, int dilation,
+    int stride0, float _stride1, int dilation,
     int q_shift, int nH0, int nW0, int nHW0,
     bool reflect_bounds, bool full_ws, bool full_ws_time,
     bool search_abs, int patch_offset,
@@ -43,6 +43,7 @@ __global__ void non_local_search_forward_bilin2d_kernel(
   int W = vid0.size(5);
   int Q = dists.size(2);
   int ST = dists.size(3);
+  scalar_t stride1 = static_cast<scalar_t>(_stride1);
 
   // -- invalid constant --
   float invalid = __int_as_float(0x7f800000);
@@ -52,12 +53,12 @@ __global__ void non_local_search_forward_bilin2d_kernel(
 
   // -- search region offsets --
   // int psHalf = (ps)/2;
-  int wsHalf_h = (ws_h)/2;
-  int wsHalf_w = (ws_w)/2;
-  int wsMax_h = stride1*(ws_h-1-wsHalf_h);
-  int wsMax_w = stride1*(ws_w-1-wsHalf_w);
+  scalar_t wsHalf_h = (ws_h-1)/2;
+  scalar_t wsHalf_w = (ws_w-1)/2;
+  // int wsMax_h = stride1*(ws_h-1-wsHalf_h);
+  // int wsMax_w = stride1*(ws_w-1-wsHalf_w);
   // int adj = use_adj ? psHalf : 0;
-  int wsOff_h,wsOff_w;
+  scalar_t wsOff_h,wsOff_w;
 
   // -- time indices --
   int t_shift;
@@ -113,8 +114,8 @@ __global__ void non_local_search_forward_bilin2d_kernel(
     check_bounds<int>(valid_ref_patch,ref_patch,T,H,W);
 
     // -- search region offsets --
-    set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
-                       wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws);
+    // set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
+    //                    wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws);
 
     // -- temporal search bounds --
     set_time_range(t_max,t_shift,ref_patch[0],T,wt);
@@ -149,9 +150,8 @@ __global__ void non_local_search_forward_bilin2d_kernel(
       
       // -- search region offsets --
       set_search_offsets(wsOff_h,wsOff_w,
-                         __float2int_rd(frame_anchor[1]),
-                         __float2int_rd(frame_anchor[2]),
-                         stride1, wsHalf_h, wsHalf_w, wsMax_h, wsMax_w,
+                         frame_anchor[1],frame_anchor[2],
+                         stride1, wsHalf_h, wsHalf_w, ws_h, ws_w,
                          H, W, full_ws_time);
 
       // ---------------------------------------
@@ -169,7 +169,7 @@ __global__ void non_local_search_forward_bilin2d_kernel(
   
           // -- compute proposed location --
           set_search_patch<scalar_t>(prop_patch,frame_anchor,stride1,
-                                ws_i,ws_j,wsOff_h,wsOff_w,search_abs);
+                                     ws_i,ws_j,wsOff_h,wsOff_w,search_abs);
           check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
           valid = valid_ref_patch && valid_prop_patch;
 
@@ -179,23 +179,21 @@ __global__ void non_local_search_forward_bilin2d_kernel(
           //  -- compute patch difference --
           if (valid){
 
+            // if (fabs(1.*ref_patch[0] - prop_patch[0]) < 1e-5){
+            //   #pragma unroll
+            //   for (int _i=0; _i < 3; _i++){
+            //     prop_i[_i] = __float2int_rn(round(prop_patch[_i]));
+            //   }
 
+            //   compute_dist<scalar_t,DIST_TYPE>(dist,
+            //                vid0[ibatch][ihead],vid1[ibatch][ihead],
+            //                ref_patch, prop_i, 
+            //                ref_pix, prop_pix_i, valid_ref, valid_prop,
+            //                ps,pt,dilation,reflect_bounds,
+            //                patch_offset,center_offsets,invalid,
+            //                T,C,H,W,pix0,pix1,_dist);
 
-            if (fabs(1.*ref_patch[0] - prop_patch[0]) < 1e-5){
-              #pragma unroll
-              for (int _i=0; _i < 3; _i++){
-                prop_i[_i] = __float2int_rn(round(prop_patch[_i]));
-              }
-
-              compute_dist<scalar_t,DIST_TYPE>(dist,
-                           vid0[ibatch][ihead],vid1[ibatch][ihead],
-                           ref_patch, prop_i, 
-                           ref_pix, prop_pix_i, valid_ref, valid_prop,
-                           ps,pt,dilation,reflect_bounds,
-                           patch_offset,center_offsets,invalid,
-                           T,C,H,W,pix0,pix1,_dist);
-
-            }else{
+            // }else{
               compute_dist_bilin2d<scalar_t,DIST_TYPE>(dist,
                            vid0[ibatch][ihead],vid1[ibatch][ihead],
                            ref_patch, prop_patch, 
@@ -203,8 +201,7 @@ __global__ void non_local_search_forward_bilin2d_kernel(
                            ps,pt,dilation,reflect_bounds,
                            patch_offset,center_offsets,invalid,
                            T,C,H,W,pix0,pix1,_dist);
-            }
-    
+          // }
           }
 
           // -- assignent --
@@ -225,7 +222,7 @@ void non_local_search_forward_bilin2d_cuda(
     const torch::Tensor fflow, const torch::Tensor bflow,
     torch::Tensor dists, torch::Tensor inds,
     int wt, int ps, int k, int dist_type,
-    int stride0, int stride1, int dilation, int pt, int q_shift,
+    int stride0, float stride1, int dilation, int pt, int q_shift,
     bool reflect_bounds, bool full_ws, bool full_ws_time,
     bool search_abs, bool use_adj,
     int off_H0, int off_W0, int off_H1, int off_W1){
@@ -387,7 +384,6 @@ __global__ void non_local_search_backward_bilin2d_kernel(
     update_bwd_patch_bilin2d<scalar_t,DIST_TYPE>(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
-                     // count0[ibatch][ihead],count1[ibatch][ihead],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,
                      center_offsets,patch_offset,
@@ -395,7 +391,6 @@ __global__ void non_local_search_backward_bilin2d_kernel(
                      ref,prop,prop_i,
                      valid_ref,valid_prop,valid,
                      T,H,W,pix0,pix1,pix,i1);
-
 
 
     // -- update fflow,bflow --

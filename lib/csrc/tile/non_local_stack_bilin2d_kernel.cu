@@ -113,6 +113,8 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
       //      Fill Non-Local Patch
       //----------------------------------
 
+
+
       // scalar_t w = weights[ibatch][ihead][qi][ki];
       fill_non_local_patch_bilin2d<scalar_t>(stack[ibatch][ihead][ki],
                                             counts,vid[ibatch][ihead],
@@ -279,6 +281,7 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
                    center_offsets,patch_offset,
                    iftr,ftr_start,ftr_end,
                    nframes,height,width,pix,qi,ki);
+
 
     }
 

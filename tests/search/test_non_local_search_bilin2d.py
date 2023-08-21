@@ -203,6 +203,11 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     print(th.where(th.isnan(diff)))
     print(dists_te[th.where(th.isnan(diff))])
     print(dists_gt[th.where(th.isnan(diff))])
+    inds = []
+    for i in range(3):
+        inds.append(inds_gt[...,i][th.where(th.isnan(diff))])
+    inds = th.stack(inds,-1)
+    print(inds)
     diff = diff[args0]
 
     # -- viz --

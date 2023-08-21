@@ -30,6 +30,8 @@ __global__ void anchor_self_kernel(
   itype i_tmp[3];
   scalar_t d_tmp;
   int qi,i_mod,qindex;
+  scalar_t delta,dmin_curr;
+  int min_idx;
 
   // -- for each location --
   for (int qi_ix = 0; qi_ix < q_per_thread; qi_ix++){
@@ -64,21 +66,36 @@ __global__ void anchor_self_kernel(
     
 
     // -- search for matching index --
+    min_idx = 0;
+    dmin_curr = 100;
     for (self_index = 0; self_index < K; self_index++){
 
+      delta = 0;
       eq_loc = true;
       for (int ix=0; ix<3; ix++){
         if (is_same_v<itype,int>){
           eq_loc = eq_loc && (inds[bi][qi][self_index][ix] ==  loc[ix]);
         }else{
-          eq_loc = eq_loc && (fabs(inds[bi][qi][self_index][ix] - loc[ix]) < 1e-8);
+          delta += fabs(inds[bi][qi][self_index][ix] - loc[ix]);
         }
       }
-      if (eq_loc){ break; }
+      eq_loc = eq_loc && (delta < 1e-8);
+
+      if (is_same_v<itype,int>){
+        if (eq_loc){ min_idx = self_index; break; }
+      }else{
+        if (delta < 1e-8){ min_idx = self_index; break; }// break if equal
+        else if (delta < dmin_curr){ // update min otherwise
+          min_idx = self_index;
+          dmin_curr = delta;
+        }
+      }
+          
     }
-    assert(self_index<K);
+    assert(min_idx<K);
 
     // -- swap dists --
+    self_index = min_idx;
     d_tmp = dists[bi][qi][0];
     dists[bi][qi][0] = dists[bi][qi][self_index];
     dists[bi][qi][self_index] = d_tmp;

@@ -27,7 +27,7 @@ __device__ __forceinline__ dtype bounds(dtype val, int lim ){
   dtype vval = val;
   if (val < 0){
     vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
-  }else if (val >= lim){
+  }else if (val > (lim-1)){
     vval = 2*(lim-1)-val; // want ("H" -> "H-2") _not_ ("H" -> "H-1")
   }
   return vval;
@@ -60,7 +60,7 @@ void get_pixel_loc(int* pix,  int qindex, int tmp, int stride0,
 template<typename itype=int>
 __device__ __forceinline__
 bool check_interval(itype val, int lower, int upper){
-  return (val >= lower) && (val < upper);
+  return (val >= lower) && (val <= (upper-1));
 }
 
 template<typename itype=int>
@@ -72,24 +72,42 @@ void check_bounds(bool& valid_anchor, itype* loc3d, int T, int H, int W){
 }
 
 
-__device__ __forceinline__
-void set_search_offsets(int& wsOff_h, int& wsOff_w, int hi, int wi, int stride1,
-                        int wsHalf_h, int wsHalf_w, int wsMax_h, int wsMax_w,
-                        int H, int W, bool full_ws){
-    if(full_ws){
-      wsOff_h = (hi-max(hi-stride1*wsHalf_h,0))/stride1;
-      wsOff_w = (wi-max(wi-stride1*wsHalf_w,0))/stride1;
-      if ((hi+wsMax_h) >= H){
-        wsOff_h+=(hi+wsMax_h-min(hi+stride1*wsMax_h,H-1)-1)/stride1 + 1;
-      }
-      if ((wi+wsMax_w) >= W){
-        wsOff_w+=(wi+wsMax_w-min(wi+stride1*wsMax_w,W-1)-1)/stride1 + 1;
-      }
-    }else{
-      wsOff_h = wsHalf_h;
-      wsOff_w = wsHalf_w;
-    }
-}
+// __device__ __forceinline__
+// void set_search_offsets(int& wsOff_h, int& wsOff_w,
+//                         int hi, int wi, int stride1,
+//                         int wsHalf_h, int wsHalf_w, int ws_h, int ws_w,
+//                         int H, int W, bool full_ws){
+
+//     if(full_ws){
+
+//       // -- bound min --
+//       if ( hi - stride1 * wsHalf_h < 0){
+//         wsOff_h = hi/stride1;
+//       }else{
+//         wsOff_h = (ws_h-1)/2;
+//       }
+//       if ( wi - stride1 * wsHalf_w < 0){
+//         wsOff_w = wi/stride1;
+//       }else{
+//         wsOff_w = (ws_w-1)/2;
+//       }
+
+//       // -- bound max --
+//       itype hMax = hi + stride1 * ((ws_h-1) - wsOff_h);
+//       itype wMax = wi + stride1 * ((ws_w-1) - wsOff_w);
+//       if (hMax > (H-1)){
+//         wsOff_h = -((H-1)-hi)/stride1 + (ws_h-1);
+//       }
+//       if (hMax > (W-1)){
+//         wsOff_w = -((W-1)-wi)/stride1 + (ws_w-1);
+//       }
+
+//       // -- rounding ensures reference patch is included in search space --
+//       wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h);
+//       wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w);
+
+//     }
+// }
 
 __device__ __forceinline__
 void set_search_minmax(int& wsMax, int& wsMin, int wsOff,
@@ -169,9 +187,17 @@ void update_centers(itype& hj_center, itype& wj_center, int dir, int H, int W,
       int hj = 0, wj = 0;
       for (int i=0;i<2;i++){
         for (int j=0;j<2;j++){
+
+          // -- compute int locaion with weight --
           hj = __float2int_rd(hj_tmp + i);
           wj = __float2int_rd(wj_tmp + j);
           weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
+
+          // -- ensure legal boudns --
+          hj = bounds(hj,H);
+          wj = bounds(wj,W);
+
+          // -- update with shift --
           wj_center = wj_center + weight*flow[0][hj][wj];
           hj_center = hj_center + weight*flow[1][hj][wj];
         }
@@ -346,9 +372,7 @@ void fill_non_local_patch_bwd(
 
           // -- fill each channel --
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
-            // scalar_t grad_stack_pix = grad_stack[ref[0]][iftr][ref[1]][ref[2]];//;/count;
             scalar_t grad_stack_pix = grad_stack[ref[0]][iftr][ref[1]][ref[2]];//;/count;
-
             scalar_t pix = vid[nl[0]][iftr][nl[1]][nl[2]];///count;
             // scalar_t pix = stack[ref[0]][iftr][ref[1]][ref[2]];
             atomicAdd(&(grad_vid[nl[0]][iftr][nl[1]][nl[2]]),grad_stack_pix*weight);

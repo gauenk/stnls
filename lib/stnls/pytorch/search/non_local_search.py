@@ -79,7 +79,11 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
     # -- forward --
     fwd_version = "v1"
     if fwd_version == "v1":
-        fwd_fxn = stnls_cuda.non_local_search_forward
+        if itype == "int":
+            fwd_fxn = stnls_cuda.non_local_search_forward
+        else:
+            fwd_fxn = stnls_cuda.non_local_search_bilin2d_forward
+            stride1 = float(stride1)
     elif fwd_version == "v2":
         dists[...] = 0.
         fwd_fxn = stnls_cuda.non_local_search_forward_v2
@@ -94,6 +98,9 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
     inds=inds.view(B,HD,Q,-1,3)
+    # print(dists)
+    # print(inds)
+    # exit()
 
     # -- manage self dists --
     dists,inds = manage_self(dists,inds,anchor_self,

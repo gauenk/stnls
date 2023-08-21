@@ -454,7 +454,7 @@ void update_bwd_offsets_bilin3d(
     scalar_t* iweight, int*ref_patch, scalar_t* prop, int* prop_i,
     bool* valid_ref, bool* valid_prop, bool valid,
     int T, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix, int i1,
-    int ws, int wt, int stride1, bool full_ws, bool full_ws_time){
+    int ws, int wt, scalar_t stride1, bool full_ws, bool full_ws_time){
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // -- determine (st,wi,wj) --
@@ -466,18 +466,18 @@ void update_bwd_offsets_bilin3d(
     }
 
     // -- find frame anchor --
-    int frame_anchor[3];
-    frame_anchor[0] = ref_patch[0];
-    frame_anchor[1] = ref_patch[1];
-    frame_anchor[2] = ref_patch[2];
+    scalar_t frame_anchor[3];
+    frame_anchor[0] = __int2float_rn(ref_patch[0]);
+    frame_anchor[1] = __int2float_rn(ref_patch[1]);
+    frame_anchor[2] = __int2float_rn(ref_patch[2]);
 
     // -- search region offsets --
-    int wsOff_h,wsOff_w;
-    int wsHalf = (ws)/2;
+    scalar_t wsOff_h,wsOff_w;
+    scalar_t wsHalf = (ws)/2;
     // int wsHalf = (ws)/2;
-    int wsMax = stride1*(ws-1-wsHalf);
-    set_search_offsets(wsOff_h, wsOff_w, ref_patch[1], ref_patch[2], stride1,
-                       wsHalf, wsHalf, wsMax, wsMax, H, W, full_ws);
+    // int wsMax = stride1*(ws-1-wsHalf);
+    // set_search_offsets(wsOff_h, wsOff_w, ref_patch[1], ref_patch[2], stride1,
+    //                    wsHalf, wsHalf, wsMax, wsMax, H, W, full_ws);
 
     // -- temporal search bounds --
     int t_shift,t_max;
@@ -491,7 +491,8 @@ void update_bwd_offsets_bilin3d(
     int dir = 0;
     int st_i;
     for(st_i = 0; st_i < ST; st_i++){
-      if (frame_anchor[0] == prop_i[0]){break;}
+      // -- stop at current time --
+      if (fabs(frame_anchor[0] - prop_i[0])<1e-8){break;}
 
       // -- increment frame index --
       increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_max);
@@ -504,14 +505,17 @@ void update_bwd_offsets_bilin3d(
                                fflow[prev_ti],bflow[prev_ti]);
       
       // -- search region offsets --
-      set_search_offsets(wsOff_h,wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
-                         wsHalf, wsHalf, wsMax, wsMax, H, W, full_ws_time);
+      set_search_offsets(wsOff_h,wsOff_w,
+                         frame_anchor[1], frame_anchor[2], stride1,
+                         wsHalf, wsHalf, ws, ws, H, W, full_ws_time);
 
     }
 
     // -- compute spatial offset --
     int wi = prop_i[1] - ref_patch[1];
     int wj = prop_i[2] - ref_patch[2];
+    // int wi = frame_anchor[1] - ref_patch[1];
+    // int wj = frame_anchor[2] - ref_patch[2];
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // -- update offset gradient --

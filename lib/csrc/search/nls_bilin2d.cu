@@ -74,10 +74,6 @@ void compute_dist_bilin2d(scalar_t& dist,
           valid_ref[3] = valid_ref[3] && valid_ref[bool_idx];
           valid_prop[3] = valid_prop[3] && valid_prop[bool_idx];
         }
-        ref[0] = 0;
-        ref[1] = 0;
-        ref[2] = 0;
-        valid_ref[3] = true;
 
         // -- set time --
         prop_i[0] = __float2int_rn(prop[0]);
@@ -89,15 +85,15 @@ void compute_dist_bilin2d(scalar_t& dist,
           pix0 = valid_ref[3] ? vid0[ref[0]][ci][ref[1]][ref[2]] : 0;
 
           // -- interpolate pixel value --
-          pix0 = 0;
+          pix1 = 0;
           #pragma unroll
           for (int ix=0;ix<2;ix++){
-            // #pragma unroll
+            #pragma unroll
             for (int jx=0;jx<2;jx++){
-              prop_i[1] = __float2int_rd(prop[1]+static_cast<scalar_t>(ix));
-              interp[0] = max(0.,1-fabs(static_cast<scalar_t>(prop_i[1])-prop[1]));
-              prop_i[2] = __float2int_rd(prop[2]+static_cast<scalar_t>(jx));
-              interp[1] = max(0.,1-fabs(static_cast<scalar_t>(prop_i[2])-prop[2]));
+              prop_i[1] = __float2int_rd(prop[1]+ix);
+              interp[0] = max(0.,1-fabs(prop_i[1]-prop[1]));
+              prop_i[2] = __float2int_rd(prop[2]+jx);
+              interp[1] = max(0.,1-fabs(prop_i[2]-prop[2]));
 
               // -- compute weight --
               w = interp[0] * interp[1];
@@ -202,22 +198,6 @@ void update_bwd_patch_bilin2d(
           valid = valid_ref[3] && valid_prop[3];
           if (not valid) { continue; }
           
-          // -- add count --
-          // if (ftr_start == 0){
-          //   if ((valid_ref[3])){
-          //   // if ((valid_ref[3]) && (i1==0)){
-          //     atomicAdd(&(count0[ref[0]][ref[1]][ref[2]]),1);
-          //   }
-          //   // only add if the i0 is different from the other i0 value
-          //   // ?equally? only add if i1 is same?...
-          //   if ((valid_prop[3])){// && (valid_ref[3])){
-          //     atomicAdd(&(count1[prop[0]][prop[1]][prop[2]]),1);
-          //   }
-          //   // if ((valid_prop[3]) && (i1==0)){
-          //   //   atomicAdd(&(count1[prop[0]][prop[1]][prop[2]]),1);
-          //   // }
-          // }
-
           // -- set time --
           prop_i[0] = __float2int_rn(prop[0]);
 
@@ -232,14 +212,14 @@ void update_bwd_patch_bilin2d(
             scalar_t w = 0;
             #pragma unroll
             for (int ix=0;ix<2;ix++){
-              prop_i[1] = __float2int_rd(prop[1]+ix);
-              interp[0] = max(0.,1-fabs(prop_i[1]-prop[1]));
               #pragma unroll
               for (int jx=0;jx<2;jx++){
-                prop_i[2] = __float2int_rd(prop[2]+jx);
-                interp[1] = max(0.,1-fabs(prop_i[2]-prop[2]));
 
                 // -- interpolation weight --
+                prop_i[1] = __float2int_rd(prop[1]+ix);
+                interp[0] = max(0.,1-fabs(prop[1]-prop_i[1]));
+                prop_i[2] = __float2int_rd(prop[2]+jx);
+                interp[1] = max(0.,1-fabs(prop[2]-prop_i[2]));
                 w = interp[0] * interp[1];
 
                 // -- ensure legal bounds --
@@ -263,14 +243,14 @@ void update_bwd_patch_bilin2d(
             scalar_t wpix0 = weight*pix0;
             #pragma unroll
             for (int ix=0;ix<2;ix++){
-              prop_i[1] = __float2int_rd(prop[1]+ix);
-              interp[0] = max(0.,1-fabs(prop_i[1]-prop[1]));
               #pragma unroll
               for (int jx=0;jx<2;jx++){
-                prop_i[2] = __float2int_rd(prop[2]+jx);
-                interp[1] = max(0.,1-fabs(prop_i[2]-prop[2]));
 
                 // -- interpolation weighting --
+                prop_i[1] = __float2int_rd(prop[1]+ix);
+                interp[0] = max(0.,1-fabs(prop[1]-prop_i[1]));
+                prop_i[2] = __float2int_rd(prop[2]+jx);
+                interp[1] = max(0.,1-fabs(prop[2]-prop_i[2]));
                 w = interp[0] * interp[1];
 
                 // -- ensure legal bounds --
@@ -297,16 +277,10 @@ void update_bwd_patch_bilin2d(
 template<typename scalar_t>
 __device__ __forceinline__ 
 void update_bwd_flows_bilin2d(
-    // torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid0,
-    // torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid1,
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_fflow,
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_bflow,
-    // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
-    // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> fflow,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> bflow,
-    // torch::TensorAccessor<int,3,torch::RestrictPtrTraits,int32_t> count0,
-    // torch::TensorAccessor<int,3,torch::RestrictPtrTraits,int32_t> count1,
     scalar_t* iweight, int* ref, scalar_t* prop, int* prop_i,
     int ps, int pt, int dilation, bool reflect_bounds,
     int* center_offsets, int patch_offset,
@@ -330,9 +304,9 @@ void update_bwd_flows_bilin2d(
     // -- init incs --
     scalar_t w;
     scalar_t interm[3],interm_n[3];
-    scalar_t grad0 = 0;
-    scalar_t grad1 = 0;
-    scalar_t g0,g1,v0,v1,g0_f,g1_f;
+    scalar_t gradW = 0;
+    scalar_t gradH = 0;
+    scalar_t gH,gW,v0,v1,gH_f,gW_f;
     int tx;
 
     // -- setup --
@@ -345,8 +319,8 @@ void update_bwd_flows_bilin2d(
     // -- compute gradient across time --
     for (int _tx = 0; _tx < delta_ta; _tx++){
 
-      scalar_t grad0_t = 0;
-      scalar_t grad1_t = 0;
+      scalar_t gradW_t = 0;
+      scalar_t gradH_t = 0;
 
       tx = inc * _tx;
       v0,v1 = 0,0;
@@ -357,16 +331,16 @@ void update_bwd_flows_bilin2d(
 
 #pragma unroll
       for (int ix=0;ix<2;ix++){
-        prop_i[1] = __float2int_rd(interm[1]+ix);
-        g0 = max(0.,1-fabs(prop_i[1]-interm[1]));
 #pragma unroll
         for (int jx=0;jx<2;jx++){
+          prop_i[1] = __float2int_rd(interm[1]+ix);
+          gH = max(0.,1-fabs(prop_i[1]-interm[1]));
           prop_i[2] = __float2int_rd(interm[2]+jx);
-          g1 = max(0.,1-fabs(prop_i[2]-interm[2]));
+          gW = max(0.,1-fabs(prop_i[2]-interm[2]));
 
           // -- compute direction --
-          bool left0 = (prop_i[1]-interm[1]) < 0;
-          bool left1 = (prop_i[2]-interm[2]) < 0;
+          bool left0 = (interm[1]-prop_i[1]) < 0;
+          bool left1 = (interm[2]-prop_i[2]) < 0;
 
           // -- ensure legal inds --
           prop_i[1] = bounds(prop_i[1],H);
@@ -377,20 +351,20 @@ void update_bwd_flows_bilin2d(
           v1 = flow[prop_i[0]][1][prop_i[1]][prop_i[2]];
 
           // -- update next location --
-          interm_n[1] += g0*g1*v0;
-          interm_n[2] += g0*g1*v1;
+          interm_n[1] += gH*gW*v0;
+          interm_n[2] += gH*gW*v1;
 
           // -- update gradient --
-          grad0_t += left0 ? g1*v0 : -g1*v0;
-          grad1_t += left1 ? g0*v1 : -g0*v1;
+          gradW_t += left0 ? gH*v0 : -gH*v0;
+          gradH_t += left1 ? gW*v1 : -gW*v1;
         }
       }
 
       // -- accumulate across time --
-      grad0 += _tx > 1 ? grad0*grad0_t : grad0_t;
-      grad1 += _tx > 1 ? grad1*grad1_t : grad1_t;
-      // grad0 += 1;
-      // grad1 += 1;
+      gradW += _tx > 1 ? gradW*gradW_t/2. : gradW_t/2.;// div by 2 since repeated ix or jx
+      gradH += _tx > 1 ? gradH*gradH_t/2. : gradH_t/2.;
+      // gradW += 1;
+      // gradH += 1;
 
     }
 
@@ -398,15 +372,16 @@ void update_bwd_flows_bilin2d(
     prop_i[0] = bounds(src_t,T);
 #pragma unroll
     for (int ix=0;ix<2;ix++){
-      prop_i[1] = __float2int_rd(prop[1]+ix);
-      g0 = max(0.,1-fabs(prop_i[1]-prop[1]));
 #pragma unroll
       for (int jx=0;jx<2;jx++){
+        prop_i[1] = __float2int_rd(prop[1]+ix);
+        gH = max(0.,1-fabs(prop_i[1]-prop[1]));
+
         prop_i[2] = __float2int_rd(prop[2]+jx);
-        g1 = max(0.,1-fabs(prop_i[2]-prop[2]));
+        gW = max(0.,1-fabs(prop_i[2]-prop[2]));
 
         // -- finish weights --
-        w = g0 * g1;
+        w = gH * gW;
 
         // -- ensure legal bounds --
         prop_i[1] = bounds(prop_i[1],H);
@@ -414,9 +389,9 @@ void update_bwd_flows_bilin2d(
 
         // -- update --
         atomicAdd(&g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]],\
-                  w*iweight[2]*grad0);
+                  w*iweight[2]*gradW);
         atomicAdd(&g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]],\
-                  w*iweight[1]*grad1);
+                  w*iweight[1]*gradH);
       }
     }
 

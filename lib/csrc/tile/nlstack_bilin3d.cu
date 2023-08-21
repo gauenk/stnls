@@ -220,15 +220,20 @@ void fill_non_local_patch_bwd_bilin3d(
                 pix += w*v;
 
                 // -- index grads --
-                igrad1 += (nl_i[1]-nl[1]) < 0 ? g2*v : -g2*v;
-                igrad2 += (nl_i[2]-nl[2]) < 0 ? g1*v : -g1*v;
+                igrad1 += (nl[1]-nl_i[1]) < 0 ? g2*v : -g2*v;
+                igrad2 += (nl[2]-nl_i[2]) < 0 ? g1*v : -g1*v;
+
+                // -- update video --
+                atomicAdd(&(grad_vid[nl[0]][iftr][nl[1]][nl[2]]),
+                          grad_stack_pix*weight);
 
               }
             }
 
-            // -- atomic add --
-            atomicAdd(&(grad_vid[nl[0]][iftr][nl[1]][nl[2]]),grad_stack_pix*weight);
+            // -- update dists  --
             atomicAdd(&(grad_weights[qi][ki]),grad_stack_pix*pix);
+
+            // -- update inds  --
             atomicAdd(&(grad_inds[qi][ki][1]),grad_stack_pix*weight*igrad1);
             atomicAdd(&(grad_inds[qi][ki][2]),grad_stack_pix*weight*igrad2);
 
