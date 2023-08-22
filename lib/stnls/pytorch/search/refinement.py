@@ -73,11 +73,16 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
 
     # -- run --
     # print(vid0.shape,qinds.shape)
-    stnls_cuda.refinement_forward(vid0, vid1, qinds, dists, inds,
-                                  ws_h, ws_w, ps, k, dist_type_i,
-                                  stride0, stride1, dilation, pt, qshift,
-                                  reflect_bounds, full_ws, use_adj,
-                                  off_H0, off_W0, off_H1, off_W1, imode)
+    if imode == 0:
+        fwd_fxn = stnls_cuda.refinement_forward
+    else:
+        fwd_fxn = stnls_cuda.refinement_bilin2d_forward
+        stride1 = float(stride1)
+    fwd_fxn(vid0, vid1, qinds, dists, inds,
+            ws_h, ws_w, ps, k, dist_type_i,
+            stride0, stride1, dilation, pt, qshift,
+            reflect_bounds, full_ws, use_adj,
+            off_H0, off_W0, off_H1, off_W1)
     # print("dists [max,min]: ",th.max(dists).item(),th.min(dists).item())
 
     # -- no negative --

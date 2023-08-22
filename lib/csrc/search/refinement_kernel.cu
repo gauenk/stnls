@@ -103,8 +103,10 @@ __global__ void refinement_forward_kernel(
     check_bounds(valid_ref[3],ref_patch,T,H,W);
 
     // -- search region offsets --
-    set_search_offsets(wrOff_h,wrOff_w, ref_patch[1], ref_patch[2],
-                       stride1, wrHalf_h, wrHalf_w, wrMax_h, wrMax_w, H, W, full_ws);
+    set_search_offsets(wrOff_h,wrOff_w,
+                       ref_patch[1], ref_patch[2],
+                       stride1, wrHalf_h, wrHalf_w,
+                       wr_h, wr_w, H, W, full_ws);
 
     // -- [unused] set search bounds for [optionally] expanded region --
     // set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
@@ -258,7 +260,7 @@ __global__ void refinement_forward_bilin2d_kernel(
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
     int wr_h, int wr_w, int ws_h2, int ws_w2,
-    int ps, int pt, int k, int stride0, int stride1, int dilation,
+    int ps, int pt, int k, int stride0, float _stride1, int dilation,
     int q_shift, int nH0, int nW0, int nHW0, bool reflect_bounds, bool full_ws,
     bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
     int q_per_thread, int k_per_thread, int wr_h_per_thread, int wr_w_per_thread){
@@ -271,6 +273,7 @@ __global__ void refinement_forward_bilin2d_kernel(
   int W = vid0.size(5);
   int Q = dists.size(2);
   int K = qinds.size(3);
+  scalar_t stride1 = static_cast<scalar_t>(_stride1);
 
   // -- invalid constant --
   scalar_t invalid = (scalar_t)__int_as_float(0x7f800000);
@@ -280,14 +283,14 @@ __global__ void refinement_forward_bilin2d_kernel(
 
   // -- search region offsets --
   int psHalf = (ps)/2;
-  int wrHalf_h = (wr_h)/2;
-  int wrHalf_w = (wr_w)/2;
-  int wrOff_h = wrHalf_h;
-  int wrOff_w = wrHalf_w;
-  int wrMax_h = stride1*(wr_h-1-wrOff_h);
-  int wrMax_w = stride1*(wr_w-1-wrOff_w);
-  int wrMin_h = -stride1 * wrOff_h;
-  int wrMin_w = -stride1 * wrOff_h;
+  scalar_t wrHalf_h = (wr_h-1)/2;
+  scalar_t wrHalf_w = (wr_w-1)/2;
+  scalar_t wrOff_h = wrHalf_h;
+  scalar_t wrOff_w = wrHalf_w;
+  // int wrMax_h = stride1*(wr_h-1-wrOff_h);
+  // int wrMax_w = stride1*(wr_w-1-wrOff_w);
+  // int wrMin_h = -stride1 * wrOff_h;
+  // int wrMin_w = -stride1 * wrOff_h;
   int adj = use_adj ? psHalf : 0;
 
   // -- cuda index --
@@ -339,8 +342,8 @@ __global__ void refinement_forward_bilin2d_kernel(
     check_bounds(valid_ref[3],ref_patch,T,H,W);
 
     // -- search region offsets --
-    set_search_offsets(wrOff_h,wrOff_w, ref_patch[1], ref_patch[2],
-                       stride1, wrHalf_h, wrHalf_w, wrMax_h, wrMax_w, H, W, full_ws);
+    // set_search_offsets(wrOff_h,wrOff_w, ref_patch[1], ref_patch[2],
+    //                    stride1, wrHalf_h, wrHalf_w, wr_h, wr_w, H, W, full_ws);
 
     // -- [unused] set search bounds for [optionally] expanded region --
     // set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
