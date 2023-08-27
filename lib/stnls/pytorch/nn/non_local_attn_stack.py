@@ -232,6 +232,7 @@ class NonLocalAttentionStack(nn.Module):
             raise NotImplementedError("")
         else:
             raise NotImplementedError("")
+
             # self.proj = nn.Identity()
             # self.proj_drop = nn.Identity()
 
