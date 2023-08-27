@@ -45,8 +45,9 @@ def refine_forward(batchsize,*args):
 def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
                     ws, wr, ps, k, dist_type,
                     stride0, stride1, dilation, pt,
-                    anchor_self, remove_self, reflect_bounds,
-                    full_ws, use_adj, itype_fwd, off_H0, off_W0, off_H1, off_W1):
+                    topk_mode, anchor_self, remove_self,
+                    reflect_bounds, full_ws, use_adj, itype_fwd,
+                    off_H0, off_W0, off_H1, off_W1):
 
     # -- fix negative Q --
     if Q > 0:
@@ -104,8 +105,19 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     qinds = rearrange(qinds,'b hd q k tr -> (b hd q) k tr')
     k = min(qinds.shape[1],k)
     # print(dists[0,0,0],inds[0,0,0],len(dists[0,0,0]),k)
-    dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                              descending=descending,unique=True,qinds=qinds)
+    if topk_mode == "default":
+        dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+                                   descending=descending,unique=True,qinds=qinds)
+    elif topk_mode == "time":
+        wt = th.unique(inds[0,0,:,0])
+        st = 2*wt+1
+        assert k % st == 0
+        ke = k//st
+        dists,inds = stnls.nn.topk_time(dists,inds,ke,wr,dim=3,anchor=anchor_self,
+                                        descending=descending,unique=True)
+    else:
+        raise ValueError(f"Unknown topk_mode [{topk_mode}]")
+
     # print(dists[0,0,0])
     # print("^"*30)
 
@@ -124,7 +136,7 @@ class RefineSearchFunction(th.autograd.Function):
                 ws, ps, k, wr, kr, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-                anchor_self=True, remove_self=False,
+                topk_mode="default", anchor_self=True, remove_self=False,
                 use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
                 normalize_bwd=False, k_agg=-1,
                 itype_fwd="int",itype_bwd="int",
@@ -156,9 +168,9 @@ class RefineSearchFunction(th.autograd.Function):
         dists,inds = refine_forward(batchsize, vid0, vid1, qinds,
                                     ws, wr, ps, k, dist_type,
                                     stride0, stride1, dilation, pt,
-                                    anchor_self,remove_self, reflect_bounds,
-                                    full_ws, use_adj, itype_fwd,
-                                    off_H0, off_W0, off_H1, off_W1)
+                                    topk_mode, anchor_self,remove_self,
+                                    reflect_bounds, full_ws, use_adj,
+                                    itype_fwd, off_H0, off_W0, off_H1, off_W1)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -189,7 +201,7 @@ class RefineSearchFunction(th.autograd.Function):
         # print("refinement: ",grad_dists.shape,grad_inds_is_none)
         grad0,grad1,grad_qinds = ref_backward(ctx, grad_dists, grad_inds_is_none)
         return grad0,grad1,grad_qinds,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None
 
 class RefineSearch(th.nn.Module):
@@ -197,7 +209,7 @@ class RefineSearch(th.nn.Module):
     def __init__(self, ws, ps, k, wr, kr, nheads=1,
                  dist_type="l2", stride0=4, stride1=1, dilation=1, pt=1,
                  reflect_bounds=True, full_ws=False,
-                 anchor_self=False, remove_self=False,
+                 topk_mode="default", anchor_self=False, remove_self=False,
                  use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
                  normalize_bwd=False, k_agg=-1,
                  itype_fwd="int",itype_bwd="int",
@@ -223,6 +235,7 @@ class RefineSearch(th.nn.Module):
         self.full_ws = full_ws
 
         # -- special mods to "self" search --
+        self.topk_mode = topk_mode
         self.anchor_self = anchor_self
         self.remove_self = remove_self
 
@@ -256,8 +269,9 @@ class RefineSearch(th.nn.Module):
                                           self.dist_type,self.stride0,self.stride1,
                                           self.dilation,self.pt,
                                           self.reflect_bounds,self.full_ws,
-                                          self.anchor_self,self.remove_self,
-                                          self.use_adj,self.off_H0,self.off_W0,
+                                          self.topk_mode,self.anchor_self,
+                                          self.remove_self,self.use_adj,
+                                          self.off_H0,self.off_W0,
                                           self.off_H1,self.off_W1,
                                           self.normalize_bwd,self.k_agg,
                                           self.itype_fwd,self.itype_bwd,
@@ -284,7 +298,7 @@ def _apply(vid0, vid1, qinds,
            ws, ps, k, wr, kr=-1, nheads=1, batchsize=-1,
            dist_type="l2", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-           anchor_self=True, remove_self=False,
+           topk_mode="default", anchor_self=True, remove_self=False,
            use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
            normalize_bwd=False, k_agg=-1,rbwd=False, nbwd=1, exact=False, use_atomic=True,
            queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
@@ -296,7 +310,7 @@ def _apply(vid0, vid1, qinds,
                ws, ps, k, wr, kr, nheads, batchsize,
                dist_type, stride0, stride1,
                dilation, pt, reflect_bounds,
-               full_ws, anchor_self, remove_self,
+               full_ws, topk_mode, anchor_self, remove_self,
                use_adj, off_H0, off_W0, off_H1, off_W1,
                normalize_bwd, k_agg, rbwd, nbwd, exact, use_atomic,
                queries_per_thread, neigh_per_thread, channel_groups)
@@ -313,7 +327,7 @@ def extract_config(cfg,restrict=True):
              "nheads":1,"dist_type":"l2",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":False,
-             "anchor_self":True, "remove_self":False,
+             "topk_mode": "default", "anchor_self":True, "remove_self":False,
              "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "normalize_bwd": False, "k_agg":-1,
              "itype_fwd":"int", "itype_bwd":"int",
@@ -327,8 +341,9 @@ def init(cfg):
                           stride0=cfg.stride0, stride1=cfg.stride1,
                           dilation=cfg.dilation, pt=cfg.pt,
                           reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
-                          anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
-                          use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
+                          topk_mode=cfg.topk_mode, anchor_self=cfg.anchor_self,
+                          remove_self=cfg.remove_self, use_adj=cfg.use_adj,
+                          off_H0=cfg.off_H0,off_W0=cfg.off_W0,
                           off_H1=cfg.off_H1,off_W1=cfg.off_W1,
                           normalize_bwd=cfg.normalize_bwd, k_agg=cfg.k_agg,
                           itype_fwd=cfg.itype_fwd,itype_bwd=cfg.itype_bwd,

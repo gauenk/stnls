@@ -29,6 +29,7 @@ from torch.nn.init import _calculate_fan_in_and_fan_out
 import torch.nn.functional as tnnf
 
 # -- layers --
+from .utils import rescale_flows
 from .res import ResBlockList
 from .chnl_attn import ChannelAttention
 from einops.layers.torch import Rearrange
@@ -49,7 +50,8 @@ def default_pairs():
              "attn_proj_stride":"k_ps_ps",
              "attn_proj_ngroups":"ngroups",
              "attn_nres":2,
-             "attn_nres_ksize":"3",}
+             "attn_nres_ksize":"3",
+             "itype_fwd":"int","itype_bwd":"int"}
     return pairs
 
 def extract_config(cfg,restrict=True):
@@ -89,7 +91,9 @@ class NonLocalAttentionStack(nn.Module):
         self.normz = stnls.normz.init(normz_cfg)
         # self.agg = stnls.reducer.init(agg_cfg)
         self.stacking = stnls.tile.NonLocalStack(ps=search_cfg.ps,
-                                                 stride0=search_cfg.stride0)
+                                                 stride0=search_cfg.stride0,
+                                                 itype_fwd=search_cfg.itype_fwd,
+                                                 itype_bwd=search_cfg.itype_bwd)
         # self.stacking = stnls.tile.non_local_stack(ps=search_cfg.ps,
         #                                            stride0=search_cfg.stride0)
 
@@ -404,39 +408,6 @@ class NonLocalAttentionStack(nn.Module):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def rescale_flows(flows_og,H,W):
-
-    # -- corner case --
-    if flows_og is None: return None
-
-    # -- check --
-    B,T,_,_H,_W = flows_og.fflow.shape
-    if _H == H:
-        return flows_og
-
-    # -- alloc --
-    fflow = flows_og.fflow.view(B*T,2,_H,_W)
-    bflow = flows_og.bflow.view(B*T,2,_H,_W)
-    shape = (H,W)
-
-    # -- scale factor --
-    scale_H =  _H/H
-    scale_W =  _W/W
-    scale = th.Tensor([scale_W,scale_H]).to(fflow.device)
-    scale = scale.view(1,2,1,1)
-
-    # -- create new flows --
-    flows = edict()
-    flows.fflow = tnnf.interpolate(fflow/scale,size=shape,
-                                   mode="bilinear",align_corners=True)
-    flows.bflow = tnnf.interpolate(bflow/scale,size=shape,
-                                   mode="bilinear",align_corners=True)
-
-    # -- reshape --
-    flows.fflow = flows.fflow.view(B,T,2,H,W)
-    flows.bflow = flows.bflow.view(B,T,2,H,W)
-
-    return flows
 
 class ConvQKV(nn.Module):
     def __init__(self, input_dim, heads = 8, dim_head = 64, qk_frac=1.,

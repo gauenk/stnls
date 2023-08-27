@@ -20,8 +20,8 @@ template <typename scalar_t, int DIST_TYPE>
 __global__ void non_local_search_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
     int ws_h, int ws_w, int wt, int ps, int pt,
@@ -72,6 +72,8 @@ __global__ void non_local_search_forward_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
+  bool acc_flow = fflow.size(2) == 1;
+  int delta_ti;
 
   // decls
   int ref_patch[3];
@@ -136,11 +138,13 @@ __global__ void non_local_search_forward_kernel(
       increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_max);
 
       // -- possibly reset (frame_anchor <- reference_patch) --
-      reset_centers(frame_anchor,ref_patch,swap_dir);
+      reset_centers(frame_anchor,ref_patch,swap_dir || not(acc_flow));
 
       // -- compute offset with optical flow --
+      delta_ti = acc_flow ? 0 : abs(ref_patch[0] - frame_anchor[0]);
       update_centers<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
-                               fflow[ibatch][prev_ti],bflow[ibatch][prev_ti]);
+                               fflow[ibatch][prev_ti][delta_ti],
+                               bflow[ibatch][prev_ti][delta_ti]);
       
       // -- search region offsets --
       set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
@@ -247,8 +251,8 @@ void non_local_search_forward_cuda(
        non_local_search_forward_kernel<scalar_t,0><<<nblocks, nthreads>>>(
             vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws_h, ws_w, wt, ps, pt, stride0, stride1, dilation, 
@@ -261,8 +265,8 @@ void non_local_search_forward_cuda(
        non_local_search_forward_kernel<scalar_t,1><<<nblocks, nthreads>>>(
             vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws_h, ws_w, wt, ps, pt, stride0, stride1, dilation, 
@@ -286,8 +290,8 @@ template <typename scalar_t, int DIST_TYPE>
 __global__ void non_local_search_forward_v2_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
     int ws_h, int ws_w, int wt, int ps, int pt,
@@ -332,6 +336,8 @@ __global__ void non_local_search_forward_v2_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
+  bool acc_flow = fflow.size(2) == 1;
+  int delta_ti;
 
   // decls
   int ref_patch[3];
@@ -407,11 +413,13 @@ __global__ void non_local_search_forward_v2_kernel(
       increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_max);
 
       // -- possibly reset (frame_anchor <- reference_patch) --
-      reset_centers(frame_anchor,ref_patch,swap_dir);
+      reset_centers(frame_anchor,ref_patch,swap_dir || not(acc_flow));
 
       // -- compute offset with optical flow --
+      delta_ti = acc_flow ? 0 : abs(ref_patch[0] - frame_anchor[0]);
       update_centers<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
-                               fflow[ibatch][prev_ti],bflow[ibatch][prev_ti]);
+                               fflow[ibatch][prev_ti][delta_ti],
+                               bflow[ibatch][prev_ti][delta_ti]);
       
       // -- search region offsets --
       set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
@@ -513,8 +521,8 @@ void non_local_search_forward_v2_cuda(
        non_local_search_forward_v2_kernel<scalar_t,0><<<nblocks, nthreads>>>(
             vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws_h, ws_w, wt, ps, pt, stride0, stride1, dilation, 
@@ -527,8 +535,8 @@ void non_local_search_forward_v2_cuda(
        non_local_search_forward_v2_kernel<scalar_t,1><<<nblocks, nthreads>>>(
             vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws_h, ws_w, wt, ps, pt, stride0, stride1, dilation, 

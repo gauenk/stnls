@@ -214,15 +214,19 @@ void fill_non_local_patch_bwd_bilin2d(
                 nl_i[1] = bounds(nl_i[1],H);
                 nl_i[2] = bounds(nl_i[2],W);
                 
-                // -- compute update --
+                // -- read video --
                 v = vid[nl_i[0]][iftr][nl_i[1]][nl_i[2]];
+
+                // -- dist grad --
                 pix += w*v;
 
-                // -- index grads --
-                igrad1 += (nl[1] - nl_i[1]) < 0 ? g2*v : -g2*v;
-                igrad2 += (nl[2] - nl_i[2]) < 0 ? g1*v : -g1*v;
-
-                // -- update video --
+                // -- index grad --
+                igrad1 += (nl_i[1] - nl[1]) < 0 ? g2*v :    \
+                  ((nl_i[1] - nl[1]) > 0 ? -g2*v : 0);
+                igrad2 += (nl_i[2] - nl[2]) < 0 ? g1*v :    \
+                  ((nl_i[1] - nl[1]) > 0 ? -g1*v : 0);
+                
+                // -- video grad --
                 atomicAdd(&(grad_vid[nl_i[0]][iftr][nl_i[1]][nl_i[2]]),
                           w*grad_stack_pix*weight);
               }

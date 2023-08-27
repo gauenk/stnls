@@ -22,8 +22,8 @@ template <typename scalar_t, int DIST_TYPE>
 __global__ void non_local_search_forward_bilin2d_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
     int ws_h, int ws_w, int wt, int ps, int pt,
@@ -75,6 +75,8 @@ __global__ void non_local_search_forward_bilin2d_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
+  bool acc_flow = fflow.size(2) == 1;
+  int delta_ti;
 
   // decls
   int ref_patch[3];
@@ -142,11 +144,13 @@ __global__ void non_local_search_forward_bilin2d_kernel(
 
 
       // -- possibly reset (frame_anchor <- reference_patch) --
-      reset_centers<scalar_t>(frame_anchor,ref_patch,swap_dir);
+      reset_centers<scalar_t>(frame_anchor,ref_patch,swap_dir || not(acc_flow));
 
       // -- compute offset with optical flow --
+      delta_ti = acc_flow ? 0 : abs(ref_patch[0] - __float2int_rn(frame_anchor[0]));
       update_centers<scalar_t,scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
-                                        fflow[ibatch][prev_ti],bflow[ibatch][prev_ti]);
+                                        fflow[ibatch][prev_ti][delta_ti],
+                                        bflow[ibatch][prev_ti][delta_ti]);
       
       // -- search region offsets --
       set_search_offsets(wsOff_h,wsOff_w,
@@ -240,8 +244,8 @@ void non_local_search_forward_bilin2d_cuda(
    int st = dists.size(3);
    int ws_h = dists.size(4);
    int ws_w = dists.size(5);
-   int ws_h_threads = std::min(ws_h,27);
-   int ws_w_threads = std::min(ws_w,27);
+   int ws_h_threads = std::min(ws_h,25);
+   int ws_w_threads = std::min(ws_w,25);
    int ws_h_per_thread = ((ws_h-1)/ws_h_threads) + 1;
    int ws_w_per_thread = ((ws_w-1)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
@@ -270,8 +274,8 @@ void non_local_search_forward_bilin2d_cuda(
        non_local_search_forward_bilin2d_kernel<scalar_t,0><<<nblocks, nthreads>>>(
             vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
             ws_h, ws_w, wt, ps, pt, stride0, stride1, dilation, 
@@ -285,8 +289,8 @@ void non_local_search_forward_bilin2d_cuda(
        non_local_search_forward_bilin2d_kernel<scalar_t,1><<<nblocks, nthreads>>>(
             vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
             ws_h, ws_w, wt, ps, pt, stride0, stride1, dilation, 
@@ -306,16 +310,16 @@ void non_local_search_forward_bilin2d_cuda(
 
 ****************************/
 
-template <typename scalar_t, int DIST_TYPE>
+template <typename scalar_t, int DIST_TYPE, bool ACC_FLOW>
 __global__ void non_local_search_backward_bilin2d_kernel(
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid0,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid1,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_fflow,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_bflow,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_fflow,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_bflow,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> fflow,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> bflow,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_dists,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_inds,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> inds,
@@ -392,17 +396,30 @@ __global__ void non_local_search_backward_bilin2d_kernel(
                      valid_ref,valid_prop,valid,
                      T,H,W,pix0,pix1,pix,i1);
 
-
     // -- update fflow,bflow --
-    update_bwd_flows_bilin2d<scalar_t>(
-                     grad_fflow[ibatch],grad_bflow[ibatch],
-                     fflow[ibatch],bflow[ibatch],
-                     iweight,ref_patch,prop_patch,prop_i,
-                     ps,pt,dilation,reflect_bounds,
-                     center_offsets,patch_offset,
-                     iftr,ftr_start,ftr_end,
-                     valid_ref,valid_prop,valid,
-                     T,H,W,pix0,pix1,pix,i1);
+    if (ACC_FLOW){
+
+      update_bwd_flows_accum_bilin2d<scalar_t>(
+                       grad_fflow[ibatch][0],
+                       grad_bflow[ibatch][0],
+                       fflow[ibatch][0],bflow[ibatch][0],
+                       iweight,ref_patch,prop_patch,prop_i,
+                       ps,pt,dilation,reflect_bounds,
+                       center_offsets,patch_offset,
+                       iftr,ftr_start,ftr_end,
+                       valid_ref,valid_prop,valid,
+                       T,H,W,pix0,pix1,pix,i1);
+    }else{
+      int delta_t = __float2int_rd(prop_patch[0]) - ref_patch[0];
+#pragma unroll
+      for (int _idx=0; _idx < 3; _idx++){
+        prop_patch[_idx] = __int2float_rn(ref_patch[_idx]);
+      }
+      update_bwd_flows_direct_bilin2d<scalar_t>(
+                       grad_fflow[ibatch],grad_bflow[ibatch],
+                       fflow[ibatch],bflow[ibatch],
+                       iweight,prop_patch,prop_i,delta_t,H,W);
+    }
 
 
   }
@@ -415,7 +432,7 @@ void non_local_search_backward_bilin2d_cuda(
     const torch::Tensor fflow, const torch::Tensor bflow,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds, int q_shift, int stride0, int nH0, int nW0,
-    int ps, int pt, int dilation, bool reflect_bounds, bool use_adj,
+    int ps, int pt, int wt, int dilation, bool reflect_bounds, bool use_adj,
     int off_H0, int off_W0, int off_H1, int off_W1, int dist_type) {
 
   // -- unpack --
@@ -463,51 +480,100 @@ void non_local_search_backward_bilin2d_cuda(
   //         BHD,nblocks_queries,chnls_nblocks);
   // fprintf(stdout,"query_nthreads,neigh_nthreads: %d,%d\n",
   //         query_nthreads,neigh_nthreads);
-
+  int st = 2*wt+1;
+  bool ACC_FLOW = fflow.size(1) != st; // (b,st,t,2,h,w) because Transposed.
+  // fprintf(stdout,"%d,%d\n",fflow.size(2),st);
 
   // -- launch kernel --
   if (dist_type == 0){ // prod
-    AT_DISPATCH_FLOATING_TYPES(vid0.type(),
-                               "non_local_search_backward_bilin2d_kernel", ([&] {
-    non_local_search_backward_bilin2d_kernel<scalar_t,0>
-      <<<blocksPerGrid, threadsPerBlock>>>(
-          grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          grad_fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          grad_bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-          grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
-          ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
-    }));
+    if (ACC_FLOW == true){
+      AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                                 "non_local_search_backward_bilin2d_kernel", ([&] {
+        non_local_search_backward_bilin2d_kernel<scalar_t,0,true>
+        <<<blocksPerGrid, threadsPerBlock>>>(
+            grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+            grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
+            ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+      }));
+    }else{
+      AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                                 "non_local_search_backward_bilin2d_kernel", ([&] {
+        non_local_search_backward_bilin2d_kernel<scalar_t,0,false>
+        <<<blocksPerGrid, threadsPerBlock>>>(
+            grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+            grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
+            ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+      }));
+    }
   }else if (dist_type == 1){ // l2
-    AT_DISPATCH_FLOATING_TYPES(vid0.type(),
-                               "non_local_search_backward_bilin2d_kernel", ([&] {
-    non_local_search_backward_bilin2d_kernel<scalar_t,1>
-      <<<blocksPerGrid, threadsPerBlock>>>(
-          grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          grad_fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          grad_bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-          grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
-          ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
-    }));
+    if (ACC_FLOW == true){
+
+      AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                                 "non_local_search_backward_bilin2d_kernel", ([&] {
+      non_local_search_backward_bilin2d_kernel<scalar_t,1,true>
+        <<<blocksPerGrid, threadsPerBlock>>>(
+            grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+            grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
+            ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+      }));
+    }else{
+      AT_DISPATCH_FLOATING_TYPES(vid0.type(),
+                                 "non_local_search_backward_bilin2d_kernel", ([&] {
+      non_local_search_backward_bilin2d_kernel<scalar_t,1,false>
+        <<<blocksPerGrid, threadsPerBlock>>>(
+            grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            fflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            bflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+            grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            // count0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            // count1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            q_shift, stride0, nH0, nW0, nHW0, off_H0, off_W0, off_H1, off_W1,
+            ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+      }));
+    }
   }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }
 
