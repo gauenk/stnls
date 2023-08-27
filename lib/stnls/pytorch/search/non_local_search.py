@@ -15,7 +15,7 @@ from stnls.utils import extract_pairs
 
 # -- local --
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
-from .utils import get_ctx_flows
+from .utils import get_ctx_flows,ensure_flow_shape
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
 from .batching_utils import run_batched,batching_info
@@ -35,9 +35,12 @@ def nls_forward(batchsize,*args):
     #                          stride0, stride1, dilation, pt,
     #                          anchor_self, remove_self, reflect_bounds,
     #                          full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
+    # print("vid.shape,stride0,ws,wt: ",
+    #       args[vid_idx].shape,args[stride0_idx],args[ws_idx],args[wt_idx])
     ntotal,nbatches,batchsize = batching_info(args[vid_idx],args[stride0_idx],
                                               args[ws_idx],args[wt_idx],
                                               batchsize)
+    # print(nbatches,batchsize)
     if nbatches == 1: # shortcut
         qshift,nqueries = 0,-1
         return nls_fwd_main(qshift,nqueries,*args)
@@ -48,7 +51,7 @@ def nls_forward(batchsize,*args):
 def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
                  ws, wt, ps, k, dist_type,
                  stride0, stride1, dilation, pt,
-                 anchor_self, remove_self, reflect_bounds,
+                 topk_mode, anchor_self, remove_self, reflect_bounds,
                  full_ws, full_ws_time, use_adj,
                  fwd_version, itype, off_H0, off_W0, off_H1, off_W1):
 
@@ -98,17 +101,28 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
     inds=inds.view(B,HD,Q,-1,3)
-    # print(dists)
-    # print(inds)
-    # exit()
+
+    # -- fill nan --
+    fill_val = -np.inf if dist_type == "prod" else np.inf
+    dists = th.nan_to_num(dists,fill_val)
 
     # -- manage self dists --
     dists,inds = manage_self(dists,inds,anchor_self,
                              remove_self,qshift,stride0,H,W)
 
     # -- topk --
-    dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                               descending=descending,unique=False)
+    if topk_mode == "default":
+        dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+                                   descending=descending,unique=False)
+    elif topk_mode == "time":
+        st = 2*wt+1
+        assert k % st == 0
+        ke = k//st
+        dists,inds = stnls.nn.topk_time(dists,inds,ke,ws,dim=3,anchor=anchor_self,
+                                        descending=descending,unique=False)
+    else:
+        raise ValueError(f"Unknown topk_mode [{topk_mode}]")
+
 
     return dists,inds
 
@@ -125,8 +139,8 @@ class NonLocalSearchFunction(th.autograd.Function):
                 ws, wt, ps, k, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True,
-                full_ws=False, full_ws_time=False,
-                anchor_self=False, remove_self=False,
+                full_ws=True, full_ws_time=True,
+                topk_mode="default",anchor_self=False, remove_self=False,
                 use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
                 normalize_bwd=False, k_agg=-1,
                 fwd_version="v1", itype_fwd="int", itype_bwd="int",
@@ -147,13 +161,17 @@ class NonLocalSearchFunction(th.autograd.Function):
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
 
+        # -- manage forward shape --
+        fflow = ensure_flow_shape(fflow)
+        bflow = ensure_flow_shape(bflow)
+
         # -- run [optionally batched] forward function --
         dists,inds = nls_forward(batchsize, vid0, vid1, fflow, bflow,
                                  ws, wt, ps, k, dist_type,
                                  stride0, stride1, dilation, pt,
-                                 anchor_self, remove_self, reflect_bounds,
-                                 full_ws, full_ws_time, use_adj,
-                                 fwd_version, itype_fwd,
+                                 topk_mode, anchor_self, remove_self,
+                                 reflect_bounds, full_ws, full_ws_time,
+                                 use_adj, fwd_version, itype_fwd,
                                  off_H0, off_W0, off_H1, off_W1)
 
         # -- setup ctx --
@@ -164,7 +182,8 @@ class NonLocalSearchFunction(th.autograd.Function):
             ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
         ctx_vars = {"batchsize":batchsize,"stride0":stride0,"stride1":stride1,
-                    "ps":ps,"pt":pt,"dil":dilation,"reflect_bounds":reflect_bounds,
+                    "ps":ps,"pt":pt,"ws":ws,"wt":wt,"dil":dilation,
+                    "reflect_bounds":reflect_bounds,
                     "fwd_version":fwd_version,"normalize_bwd":normalize_bwd,
                     "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
@@ -181,7 +200,7 @@ class NonLocalSearchFunction(th.autograd.Function):
         grad0,grad1,gfflow,gbflow = nls_backward(ctx, grad_dists, grad_inds)
         return grad0,grad1,gfflow,gbflow,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None,None,None,None
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -195,7 +214,7 @@ class NonLocalSearch(th.nn.Module):
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
-                 full_ws=True, full_ws_time=True,
+                 topk_mode="default", full_ws=True, full_ws_time=True,
                  anchor_self=True, remove_self=False,
                  use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
                  normalize_bwd=False,k_agg=-1,
@@ -227,6 +246,7 @@ class NonLocalSearch(th.nn.Module):
         self.full_ws_time = full_ws_time
 
         # -- special mods to "self" search --
+        self.topk_mode = topk_mode
         self.anchor_self = anchor_self
         self.remove_self = remove_self
 
@@ -250,6 +270,8 @@ class NonLocalSearch(th.nn.Module):
 
 
     def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
+        assert self.ws > 0,"Must have nonzero spatial search window"
+        assert self.wt > 0,"Must have nonzero time search window"
         return NonLocalSearchFunction.apply(vid0,vid1,fflow,bflow,
                                             self.ws,self.wt,self.ps,self.k,
                                             self.nheads,batchsize,
@@ -257,8 +279,9 @@ class NonLocalSearch(th.nn.Module):
                                             self.stride1,self.dilation,self.pt,
                                             self.reflect_bounds,
                                             self.full_ws,self.full_ws_time,
-                                            self.anchor_self,self.remove_self,
-                                            self.use_adj,self.off_H0,self.off_W0,
+                                            self.topk_mode,self.anchor_self,
+                                            self.remove_self,self.use_adj,
+                                            self.off_H0,self.off_W0,
                                             self.off_H1,self.off_W1,
                                             self.normalize_bwd,self.k_agg,
                                             self.fwd_version,
@@ -340,7 +363,7 @@ def extract_config(cfg,restrict=True):
              "use_adj":False, "off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
              "normalize_bwd": False, "k_agg":-1,"rbwd":False, "nbwd":1,
              "itype_fwd":"int","itype_bwd":"int",
-             "exact":False, "use_atomic": True,
+             "exact":False, "use_atomic": True, "topk_mode":"default",
              "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
@@ -349,7 +372,7 @@ def init(cfg):
     search = NonLocalSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
                             dist_type=cfg.dist_type, stride0=cfg.stride0,
                             stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
-                            reflect_bounds=cfg.reflect_bounds,
+                            reflect_bounds=cfg.reflect_bounds, topk_mode=cfg.topk_mode,
                             full_ws=cfg.full_ws, full_ws_time=cfg.full_ws_time,
                             anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
                             use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,

@@ -22,7 +22,7 @@ void non_local_inds_cuda(
     torch::Tensor inds,
     const torch::Tensor fflow,
     const torch::Tensor bflow,
-    int ws, int stride0, int stride1,
+    int ws, int wt, int stride0, int stride1,
     bool full_ws, bool full_ws_time);
 
 // C++ interface
@@ -35,14 +35,14 @@ void non_local_inds(
     torch::Tensor inds,
     const torch::Tensor fflow,
     const torch::Tensor bflow,
-    int ws, int stride0, int stride1,
+    int ws, int wt, int stride0, int stride1,
     bool full_ws, bool full_ws_time){
   CHECK_INPUT(inds);
   CHECK_INPUT(fflow);
   CHECK_INPUT(bflow);
   non_local_inds_cuda(inds, fflow, bflow,
-		      ws, stride0, stride1,
-		      full_ws, full_ws_time);
+                      ws, wt, stride0, stride1,
+                      full_ws, full_ws_time);
 }
 
 

@@ -60,8 +60,8 @@ def get_inds(inds,itype):
 
 def get_imode(itype):
     if itype == "int": return 0
-    elif itype == "2d": return 1
-    elif itype in ["float","3d"]: return 2
+    elif itype in ["float","2d"]: return 1
+    elif itype in ["3d"]: return 2
 
 class non_local_stack(th.autograd.Function):
     """
@@ -210,3 +210,26 @@ class NonLocalStack(th.nn.Module):
         inputs = [getattr(self,var) for var in self._vars]
         stack = non_local_stack.apply(vid, weights, inds, *inputs)
         return stack
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#        [Python Dict API] stnls.tile.init(pydict)
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def extract_config(cfg,restrict=True):
+    pairs = {"ps":7,"stride0":4,"pt":1,"reflect_bounds":True,
+             "dilation":1, "use_adj":False,
+             "off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
+             "itype_fwd":"int","itype_bwd":"int"}
+    return extract_pairs(cfg,pairs,restrict=restrict)
+
+def init(cfg):
+    cfg = extract_config(cfg)
+    search = NonLocalStack(cfg.ps,cfg.stride0,cfg.pt,cfg.reflect_bounds,
+                           cfg.dilation,cfg.use_adj,
+                           cfg.off_H0,cfg.off_W0,cfg.off_H1,cfg.off_W1,
+                           cfg.itype_fwd,cfg.itype_bwd)
+    return search
+
+

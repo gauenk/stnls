@@ -111,6 +111,7 @@ __global__ void non_local_stack_forward_kernel(
       //      Fill Non-Local Patch
       //----------------------------------
 
+
       // scalar_t w = weights[ibatch][ihead][qi][ki];
       fill_non_local_patch<scalar_t>(stack[ibatch][ihead][ki],
                                      counts,vid[ibatch][ihead],
@@ -259,7 +260,6 @@ __global__ void non_local_stack_backward_kernel(
       //----------------------------------
       //      Fill Non-Local Patch
       //----------------------------------
-
 
       // scalar_t w = weights[ibatch][ihead][qi][ki];
       fill_non_local_patch_bwd<scalar_t>(grad_vid[ibatch][ihead],

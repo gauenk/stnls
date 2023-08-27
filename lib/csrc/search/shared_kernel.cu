@@ -84,11 +84,13 @@ void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
       // -- bound min --
       if ( (hi - stride1 * wsHalf_h) < 0){
         wsOff_h = hi/stride1;
+        // wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h-0.5);
       }else{
         wsOff_h = (ws_h-1)/2;
       }
       if ( (wi - stride1 * wsHalf_w) < 0){
         wsOff_w = wi/stride1;
+        // wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w-0.5);
       }else{
         wsOff_w = (ws_w-1)/2;
       }
@@ -97,10 +99,12 @@ void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
       itype hMax = hi + stride1 * ((ws_h-1) - wsOff_h);
       itype wMax = wi + stride1 * ((ws_w-1) - wsOff_w);
       if (hMax > (H-1)){
-        wsOff_h = -((H-1)-hi)/stride1 + (ws_h-1);
+        wsOff_h = (hi - (H-1))/stride1 + (ws_h-1);
+        // wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h+0.5);
       }
       if (wMax > (W-1)){
-        wsOff_w = -((W-1)-wi)/stride1 + (ws_w-1);
+        wsOff_w = (wi - (W-1))/stride1 + (ws_w-1);
+        // wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w+0.5);
       }
 
       // -- rounding ensures reference patch is included in search space --
@@ -169,13 +173,13 @@ void increment_frame(itype& n_ti, int& prev_ti, int& t_inc,
 
 template<typename itype=int>
 __device__ __forceinline__ 
-void reset_centers(itype* prop_patch, int* ref_patch, bool swap_dir){
+void reset_centers(itype* prop_patch, int* ref_patch, bool reset){
   if(is_same_v<itype,int>){
-    prop_patch[1] = swap_dir ? ref_patch[1] : prop_patch[1];
-    prop_patch[2] = swap_dir ? ref_patch[2] : prop_patch[2];
+    prop_patch[1] = reset ? ref_patch[1] : prop_patch[1];
+    prop_patch[2] = reset ? ref_patch[2] : prop_patch[2];
   }else{
-    prop_patch[1] = swap_dir ? __int2float_rn(ref_patch[1]) : prop_patch[1];
-    prop_patch[2] = swap_dir ? __int2float_rn(ref_patch[2]) : prop_patch[2];
+    prop_patch[1] = reset ? __int2float_rn(ref_patch[1]) : prop_patch[1];
+    prop_patch[2] = reset ? __int2float_rn(ref_patch[2]) : prop_patch[2];
   }
 }
 

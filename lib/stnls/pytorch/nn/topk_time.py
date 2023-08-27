@@ -2,7 +2,6 @@
 
 Compute TopK across the time window
 
-
 """
 
 # -- import misc --
@@ -21,7 +20,7 @@ from .dim2_utils import dimN_dim2,dim2_dimN
 # from ..search.shared import manage_self
 
 def run(dists,inds,k,ws,dim=1,anchor=True,
-        descending=True,unique=False):
+        descending=True,unique=False,include_self_time=False):
 
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     #
@@ -36,7 +35,8 @@ def run(dists,inds,k,ws,dim=1,anchor=True,
     dists,inds,dshape,ishape = dimN_dim2(dists,inds,dim)
 
     # -- run top-k --
-    dists,inds = topk_menu(dists,inds,k,ws,anchor,descending,unique)
+    dists,inds = topk_menu(dists,inds,k,ws,anchor,descending,
+                           unique,include_self_time)
 
     # -- return squares --
     k = inds.shape[1]
@@ -44,18 +44,21 @@ def run(dists,inds,k,ws,dim=1,anchor=True,
     return dists,inds
 
 def topk_menu(dists,inds,k,ws,anchor=False,
-              descending=True,unique=False):
+              descending=True,unique=False,include_self_time=False):
     """
 
     Select which topk to run
 
     """
-    if anchor:
-        return anchored_topk(dists,inds,k,ws,descending,unique)
-    elif unique:
-        return unique_topk(dists,inds,k,descending)
-    else:
-        return standard_topk(dists,inds,k,ws,descending)
+    assert anchor == True
+    assert unique == False
+    # if anchor:
+    #     return anchored_topk(dists,inds,k,ws,descending,unique)
+    # elif unique:
+    #     return unique_topk(dists,inds,k,descending)
+    # else:
+    #     return standard_topk(dists,inds,k,ws,descending)
+    standard_topk_time(dists,inds,k,ws,descending,include_self_time)
 
 # def anchored_topk(dists,inds,k,ws,descending,unique):
 
@@ -79,7 +82,8 @@ def topk_menu(dists,inds,k,ws,anchor=False,
 
 #     return dists,inds
 
-def standard_topk(dists,inds,K,ws,descending):
+
+def standard_topk(dists,inds,K,ws,descending,include_self_time):
 
     # -- reshape round 2 --
     shape_str = 'b (sT wsH wsW) -> b (wsH wsW) sT'
@@ -93,6 +97,11 @@ def standard_topk(dists,inds,K,ws,descending):
     # -- order --
     order = th.argsort(dists,dim=1,descending=descending)#[:,:K]
     oK = order.shape[1]
+    print(order)
+    exit()
+    zidx = th.where(order == 0)
+    print(order.shape)
+    order = th.cat([order[zidx],order[:zidx],order[zidx+1:]],0) # anchor self
 
     # -- topk dists --
     dists_k = th.gather(dists,1,order)
@@ -106,12 +115,15 @@ def standard_topk(dists,inds,K,ws,descending):
     # dists_k = th.cat([dists_k[:,:2,[t]].reshape(Q,2) for t in range(sT)],1)
     # inds_k = th.cat([inds_k[:,:2,[t],:].reshape(Q,2,3) for t in range(sT)],1)
     num = K
+    t0 = num if include_self_time else 1
     dists_k = th.cat(
-        [dists_k[:,:1,[0]].reshape(Q,1),] +
+        [dists_k[:,:num,[0]].reshape(Q,1),] +
         [dists_k[:,:num,[t]].reshape(Q,num) for t in range(1,sT)],1)
     inds_k = th.cat(
-        [inds_k[:,:1,[0]].reshape(Q,1,3),] +
+        [inds_k[:,:num,[0]].reshape(Q,1,3),] +
         [inds_k[:,:num,[t],:].reshape(Q,num,3) for t in range(1,sT)],1)
+
+
     # dists_k = th.cat([dists_k[:,[0],[0]].reshape(Q,1),
     #                   dists_k[:,1:,1:].reshape(Q,-1)],1)
     # inds_k = th.cat([inds_k[:,[0],[0],:].reshape(Q,1,3),
@@ -125,6 +137,7 @@ def standard_topk(dists,inds,K,ws,descending):
 
 def unique_topk(dists,inds,K,descending=False):
 
+    raise NotImplementedError("")
 
     # -- sort by dists --
     args = th.argsort(dists,dim=1,descending=descending)
@@ -139,6 +152,7 @@ def unique_topk(dists,inds,K,descending=False):
     return dists_topk,inds_topk
 
 def unique_select(dists,inds,K,descending):
+    raise NotImplementedError("")
     inds = inds.contiguous()
     dists_topk,inds_topk = allocate_topk(dists,inds,K,descending)
     stnls_cuda.unique_topk(dists,inds,dists_topk,inds_topk,K)

@@ -17,7 +17,7 @@ __global__ void non_local_inds_kernel(
     torch::PackedTensorAccessor64<int,6,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> bflow,
-    int ws, int nH, int nW, int nHW,
+    int ws, int wt, int nH, int nW, int nHW,
     int stride0, int stride1, bool full_ws, bool full_ws_time,
     int q_per_thread, int ws_h_per_thread, int ws_w_per_thread){
 
@@ -32,7 +32,7 @@ __global__ void non_local_inds_kernel(
   int St = inds.size(2);
   int Ss_h = inds.size(3);
   int Ss_w = inds.size(4);
-  int wt = (St-1)/2; // St is *always* odd
+  // int wt = (St-1)/2; // St is *always* odd
 
   // -- temporal search --
   int hj = 0;
@@ -207,7 +207,7 @@ void non_local_inds_cuda(
      torch::Tensor inds,
      const torch::Tensor fflow,
      const torch::Tensor bflow,
-     int ws, int stride0, int stride1,
+     int ws, int wt, int stride0, int stride1,
      bool full_ws, bool full_ws_time){
   
   // -- unpack --
@@ -249,7 +249,7 @@ void non_local_inds_cuda(
        inds.packed_accessor64<int,6,torch::RestrictPtrTraits>(),
        fflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
        bflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
-       ws, nH, nW, nHW, stride0, stride1, full_ws, full_ws_time,
+       ws, wt, nH, nW, nHW, stride0, stride1, full_ws, full_ws_time,
        q_per_thread, ws_h_per_thread, ws_w_per_thread);
       }));
 

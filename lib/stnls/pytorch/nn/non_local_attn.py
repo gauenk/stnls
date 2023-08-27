@@ -31,6 +31,8 @@ import torch.nn.functional as tnnf
 # -- benchmarking --
 from stnls.utils.timer import ExpTimer,ExpTimerList
 
+# -- layers --
+from .utils import rescale_flows
 
 def default_pairs():
     pairs = {"qk_frac":1.,"qkv_bias":True,
@@ -257,39 +259,6 @@ class NonLocalAttention(nn.Module):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def rescale_flows(flows_og,H,W):
-
-    # -- corner case --
-    if flows_og is None: return None
-
-    # -- check --
-    B,T,_,_H,_W = flows_og.fflow.shape
-    if _H == H:
-        return flows_og
-
-    # -- alloc --
-    fflow = flows_og.fflow.view(B*T,2,_H,_W)
-    bflow = flows_og.bflow.view(B*T,2,_H,_W)
-    shape = (H,W)
-
-    # -- scale factor --
-    scale_H =  _H/H
-    scale_W =  _W/W
-    scale = th.Tensor([scale_W,scale_H]).to(fflow.device)
-    scale = scale.view(1,2,1,1)
-
-    # -- create new flows --
-    flows = edict()
-    flows.fflow = tnnf.interpolate(fflow/scale,size=shape,
-                                   mode="bilinear",align_corners=True)
-    flows.bflow = tnnf.interpolate(bflow/scale,size=shape,
-                                   mode="bilinear",align_corners=True)
-
-    # -- reshape --
-    flows.fflow = flows.fflow.view(B,T,2,H,W)
-    flows.bflow = flows.bflow.view(B,T,2,H,W)
-
-    return flows
 
 class ConvQKV(nn.Module):
     def __init__(self, input_dim, heads = 8, dim_head = 64, qk_frac=1.,

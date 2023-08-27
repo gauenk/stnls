@@ -45,14 +45,14 @@ def get_ctx_qinds(itype,qinds):
     else:
         return qinds
 
-def allocate_grad_flows(itype,vid_shape,device):
+def allocate_grad_flows(itype,f_shape,device):
     if itype == "int":
-        grad_fflow = th.zeros((1,)*5,device=device,dtype=th.float32)
-        grad_bflow = th.zeros((1,)*5,device=device,dtype=th.float32)
+        grad_fflow = th.zeros((1,)*6,device=device,dtype=th.float32)
+        grad_bflow = th.zeros((1,)*6,device=device,dtype=th.float32)
     else:
-        B,HD,T,C,H,W = vid_shape
-        grad_fflow = th.zeros((B,T,2,H,W),device=device,dtype=th.float32)
-        grad_bflow = th.zeros((B,T,2,H,W),device=device,dtype=th.float32)
+        B,T,L,C,H,W = f_shape
+        grad_fflow = th.zeros((B,T,L,2,H,W),device=device,dtype=th.float32)
+        grad_bflow = th.zeros((B,T,L,2,H,W),device=device,dtype=th.float32)
     return grad_fflow,grad_bflow
 
 def allocate_grad_qinds(itype,ishape,device):
@@ -98,6 +98,12 @@ def filter_k(inds,kr,k=None):
     else: Ks = int(kr)
     return inds[...,:Ks,:].contiguous()
 
+
+def ensure_flow_shape(flow):
+    if flow.ndim == 5:
+        B,T,_,H,W = flow.shape
+        flow = flow.view(B,T,1,2,H,W)
+    return flow
 #
 #
 # -- Shaping input videos with Heads --

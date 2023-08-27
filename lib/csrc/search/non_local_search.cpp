@@ -51,7 +51,7 @@ void non_local_search_backward_bilin2d_cuda(
     const torch::Tensor fflow, const torch::Tensor bflow,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds, int q_shift, int stride0, int nH0, int nW0,
-    int ps, int pt, int dilation, bool reflect_bounds,
+    int ps, int pt, int wt, int dilation, bool reflect_bounds,
     bool use_adj, int off_H0, int off_W0,
     int off_H1, int off_W1, int dist_type);
 
@@ -138,9 +138,10 @@ void non_local_search_backward(
     const torch::Tensor fflow, const torch::Tensor bflow,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds, int q_shift, int stride0,
-    int nH0, int nW0, int ps, int pt, int dilation,
+    int nH0, int nW0, int ps, int pt, int wt, int dilation,
     bool reflect_bounds, bool use_adj, int off_H0, int off_W0,
     int off_H1, int off_W1, int dist_type) {
+
   CHECK_INPUT(grad_vid0);
   CHECK_INPUT(grad_vid1);
   CHECK_INPUT(grad_fflow);
@@ -151,8 +152,8 @@ void non_local_search_backward(
   CHECK_INPUT(bflow);
   CHECK_INPUT(grad_dists);
   CHECK_INPUT(grad_inds);
-  // CHECK_INPUT(dists);
   CHECK_INPUT(inds);
+
   if(inds.dtype() == torch::kInt32){
     non_local_search_backward_cuda(
           grad_vid0, grad_vid1, vid0, vid1,
@@ -167,7 +168,7 @@ void non_local_search_backward(
           vid0, vid1, fflow, bflow,
           grad_dists, grad_inds, inds,
           q_shift, stride0, nH0, nW0,
-          ps, pt, dilation, reflect_bounds,
+          ps, pt, wt, dilation, reflect_bounds,
           use_adj, off_H0, off_W0,
           off_H1, off_W1, dist_type);
   }
