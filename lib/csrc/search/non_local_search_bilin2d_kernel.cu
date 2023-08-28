@@ -398,7 +398,6 @@ __global__ void non_local_search_backward_bilin2d_kernel(
 
     // -- update fflow,bflow --
     if (ACC_FLOW){
-
       update_bwd_flows_accum_bilin2d<scalar_t>(
                        grad_fflow[ibatch][0],
                        grad_bflow[ibatch][0],
