@@ -97,6 +97,17 @@ __global__ void ref_bwd_dists_bilin2d_kernel(
                      valid_ref,valid_prop,valid,
                      T,H,W,pix0,pix1,pix,i1);
 
+    // -- update gradient inds --
+    // update_bwd_inds_bilin2d<scalar_t,DIST_TYPE>(
+    //     grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
+    //     vid0[ibatch][ihead],vid1[ibatch][ihead],
+    //     weight,ref_patch,prop_patch,
+    //     ps,pt,dilation,reflect_bounds,
+    //     center_offsets,patch_offset,
+    //     iftr,ftr_start,ftr_end,
+    //     ref,prop,prop_i,
+    //     valid_ref,valid_prop,valid,
+    //     T,H,W,pix0,pix1,pix,i1);
 
   }
 }
@@ -363,7 +374,7 @@ __global__ void ref_bwd_inds_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_inds,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> qinds,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> inds,
-    int num_per_thread){
+    int QK, int num_per_thread){
 
   // -- unpack shape --
   int Ksearch = qinds.size(3);
@@ -382,6 +393,7 @@ __global__ void ref_bwd_inds_kernel(
 
     // -- select (qi,ki) --
     index = _index + _ix;
+    if (index >= QK){ break; }
     int qi = index / Kagg;
     int ki = index - qi*Kagg;
 
@@ -419,7 +431,7 @@ void ref_bwd_inds_cuda(
    int nheads = inds.size(1);
    int nqueries = inds.size(2);
    int kagg = inds.size(3);
-
+   int QK = nqueries * kagg;
 
    // -- num threads --
    int _nthreads = 256;
@@ -431,7 +443,6 @@ void ref_bwd_inds_cuda(
    int _nblocks = (nRun-1)/(_nthreads*num_per_thread)+1;
    dim3 nblocks(_nblocks,nbatch,nheads);
 
-
    // -- launch kernel --
    AT_DISPATCH_FLOATING_TYPES(inds.type(),"ref_bwd_inds_kernel", ([&] {
    ref_bwd_inds_kernel<scalar_t><<<nblocks, nthreads>>>(
@@ -439,7 +450,7 @@ void ref_bwd_inds_cuda(
           grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           qinds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          num_per_thread);
+          QK,num_per_thread);
        }));
 
 }

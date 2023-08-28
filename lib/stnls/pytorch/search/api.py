@@ -12,6 +12,7 @@ search_name: Choose which search function
 
 from . import non_local_search
 from . import refinement
+from . import paired_search
 from . import quadref
 from . import approx_space
 from . import approx_time
@@ -37,6 +38,8 @@ MENU = edict({"exact":"non_local_search",
               "nls":"non_local_search",
               "nl":"non_local_search",
               "refine":"refinement",
+              "pair":"paired_search",
+              "paired":"paired_search",
               "quadref":"quadref",
               "quad_ref":"quadref",
               "qrefine":"quadref",

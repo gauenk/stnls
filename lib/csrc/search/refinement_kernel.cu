@@ -5,7 +5,8 @@
 #include <cuda_runtime.h>
 #include <vector>
 #include <cstddef>
-#include "shared_kernel.cu"
+// #include "shared_kernel.cu"
+#include "nls_bilin2d.cu"
 using namespace at;
 
 /****************************
@@ -301,9 +302,10 @@ __global__ void refinement_forward_bilin2d_kernel(
   int qindex,qindex_tmp;
 
   // -- fwd decls --
-  int prop_center[2];
-  int prop_patch[3];
-  int prop_pix[3];
+  scalar_t prop_center[3];
+  scalar_t prop_patch[3];
+  scalar_t prop_pix[3];
+  int prop_i[3];
   int ref_patch[3];
   int ref_pix[3];
   bool valid;
@@ -357,9 +359,15 @@ __global__ void refinement_forward_bilin2d_kernel(
       if (si >= K){ continue; }
 
       // -- unpack base -- 
-      prop_patch[0] = qinds[ibatch][ihead][qi][si][0]; // no search
-      prop_center[0] = qinds[ibatch][ihead][qi][si][1];
-      prop_center[1] = qinds[ibatch][ihead][qi][si][2];
+      prop_center[0] = qinds[ibatch][ihead][qi][si][0]; // no search
+      prop_center[1] = qinds[ibatch][ihead][qi][si][1];
+      prop_center[2] = qinds[ibatch][ihead][qi][si][2];
+
+      // -- search region offsets --
+      set_search_offsets(wrOff_h,wrOff_w,
+                         prop_center[1],prop_center[2],
+                         stride1, wrHalf_h, wrHalf_w, wr_h, wr_w,
+                         H, W, full_ws);
 
       // ---------------------------------------
       //     for each position to search
@@ -380,8 +388,11 @@ __global__ void refinement_forward_bilin2d_kernel(
           // ----------------------
           //    spatial center
           // ----------------------
-          prop_patch[1] = (prop_center[0]) + stride1 * (wh - wrOff_h);
-          prop_patch[2] = (prop_center[1]) + stride1 * (ww - wrOff_w);
+          // -- compute proposed location --
+          set_search_patch<scalar_t>(prop_patch,prop_center,stride1,
+                                     wh,ww,wrOff_h,wrOff_w,false);
+          // prop_patch[1] = (prop_center[0]) + stride1 * (wh - wrOff_h);
+          // prop_patch[2] = (prop_center[1]) + stride1 * (ww - wrOff_w);
 
           // -- check bounds of pixel location --
           check_bounds(valid_prop[3],prop_patch,T,H,W);
@@ -389,10 +400,10 @@ __global__ void refinement_forward_bilin2d_kernel(
 
           //  -- compute patch difference --
           if (valid){
-            compute_dist<scalar_t,DIST_TYPE>(dist,
+            compute_dist_bilin2d<scalar_t,DIST_TYPE>(dist,
                          vid0[ibatch][ihead],vid1[ibatch][ihead],
                          ref_patch, prop_patch, 
-                         ref_pix, prop_pix, valid_ref, valid_prop,
+                         ref_pix, prop_pix, prop_i, valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
                          patch_offset,center_offsets,invalid,
                          T,C,H,W,pix0,pix1,_dist);

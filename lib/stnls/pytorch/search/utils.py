@@ -45,15 +45,14 @@ def get_ctx_qinds(itype,qinds):
     else:
         return qinds
 
-def allocate_grad_flows(itype,f_shape,device):
+def allocate_grad_flow(itype,f_shape,device):
     if itype == "int":
         grad_fflow = th.zeros((1,)*6,device=device,dtype=th.float32)
-        grad_bflow = th.zeros((1,)*6,device=device,dtype=th.float32)
     else:
         B,T,L,C,H,W = f_shape
         grad_fflow = th.zeros((B,T,L,2,H,W),device=device,dtype=th.float32)
-        grad_bflow = th.zeros((B,T,L,2,H,W),device=device,dtype=th.float32)
-    return grad_fflow,grad_bflow
+    return grad_fflow
+
 
 def allocate_grad_qinds(itype,ishape,device):
     if itype == "int":
