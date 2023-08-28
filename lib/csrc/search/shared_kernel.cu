@@ -32,6 +32,19 @@ __device__ __forceinline__ dtype bounds(dtype val, int lim ){
   return vval;
 }
 
+template<typename dtype=int>
+__device__ __forceinline__ dtype bounds_clip(dtype val, int lim ){
+  dtype vval = val;
+  if (val < 0){
+    vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
+    vval = vval > (lim-1) ? 0 : vval;
+  }else if (val > (lim-1)){
+    vval = 2*(lim-1)-val; // want ("H" -> "H-2") _not_ ("H" -> "H-1")
+    vval = vval < 0 ? lim-1 : vval;
+  }
+  return vval;
+}
+
 
 template<typename itype=int>
 __device__ __forceinline__ 
@@ -233,8 +246,8 @@ void update_centers(itype& hj_center, itype& wj_center, int dir, int H, int W,
           weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
 
           // -- ensure legal boudns --
-          hj = bounds(hj,H);
-          wj = bounds(wj,W);
+          hj = bounds_clip(hj,H);
+          wj = bounds_clip(wj,W);
 
           // -- update with shift --
           wj_center = wj_center + weight*flow[0][hj][wj];

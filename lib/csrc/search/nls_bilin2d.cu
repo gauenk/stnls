@@ -92,12 +92,12 @@ void compute_dist_bilin2d(scalar_t& dist,
           for (int ix=0;ix<2;ix++){
             #pragma unroll
             for (int jx=0;jx<2;jx++){
+
+              // -- interpolation weight --
               prop_i[1] = __float2int_rd(prop[1]+ix);
               interp[0] = max(0.,1-fabs(prop_i[1]-prop[1]));
               prop_i[2] = __float2int_rd(prop[2]+jx);
               interp[1] = max(0.,1-fabs(prop_i[2]-prop[2]));
-
-              // -- compute weight --
               w = interp[0] * interp[1];
 
               // -- ensure legal bounds --
@@ -327,10 +327,14 @@ void update_bwd_flows_accum_bilin2d(
       // gradH_t = 0;
 
       v0,v1 = 0,0;
-      interm[0] = __int2float_rd(ref[0]+tx*inc);
-      interm[1] = interm_n[1];
-      interm[2] = interm_n[2];
-      prop_i[0] = __float2int_rd(interm[0]);
+      // interm[0] = __int2float_rd(ref[0]+tx*inc);
+      interm[1] = bounds_clip(interm_n[1],H);
+      interm[2] = bounds_clip(interm_n[2],W);
+
+      prop_i[0] = ref[0]+tx*inc;
+      // assert(prop_i[0] >= 0);
+      // assert(prop_i[0] < T);
+      // prop_i[0] = bounds(prop_i[0],T);
 
 #pragma unroll
       for (int ix=0;ix<2;ix++){
@@ -351,71 +355,33 @@ void update_bwd_flows_accum_bilin2d(
           // bool right1 = (prop_i[2]-interm[2]) > 0;
 
           // -- ensure legal inds --
-          prop_i[1] = bounds(prop_i[1],H);
-          prop_i[2] = bounds(prop_i[2],W);
+          prop_i[1] = bounds_clip(prop_i[1],H);
+          prop_i[2] = bounds_clip(prop_i[2],W);
+          // assert(prop_i[1] >= 0);
+          // assert(prop_i[1] < H);
+          // assert(prop_i[2] >= 0);
+          // assert(prop_i[2] < W);
 
           // -- read --
           v0 = flow[prop_i[0]][0][prop_i[1]][prop_i[2]];
           v1 = flow[prop_i[0]][1][prop_i[1]][prop_i[2]];
+          // v0 = flow[prop_i[0]][0][0][0];
+          // v1 = flow[prop_i[0]][1][0][0];
+          // v0 = flow[0][0][prop_i[1]][prop_i[2]];
+          // v1 = flow[0][1][prop_i[1]][prop_i[2]];
 
           // -- update next location --
-          interm_n[1] += w*v0;
-          interm_n[2] += w*v1;
-
-          // // -- update gradient --
-          // gradW_t += left0 ? gH*v0 : (right0 ? -gH*v0 : 0);
-          // gradH_t += left1 ? gW*v1 : (right1 ? -gW*v1 : 0);
+          interm_n[1] += w*v1;
+          interm_n[2] += w*v0;
 
           // -- update --
-          // atomicAdd(&g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]],1.);
-          // atomicAdd(&g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]],1.);
-          atomicAdd(&g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]],    \
-                    w*iweight[2]);
-          atomicAdd(&g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]],    \
-                    w*iweight[1]);
+          atomicAdd(&(g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]]),w*iweight[2]);
+          atomicAdd(&(g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]]),w*iweight[1]);
 
         }
       }
 
-      // // -- accumulate across time --
-      // gradW += _tx == 0 ? gradW_t ? gradW*gradW_t;
-      // gradH += _tx == 0 ? gradH_t ? gradH*gradH_t;
-
-  //     // -- update gradient at flow --
-  //     prop_i[0] = __float2int_rn(interm[0]);
-  // #pragma unroll
-  //     for (int ix=0;ix<2;ix++){
-  // #pragma unroll
-  //       for (int jx=0;jx<2;jx++){
-  //         prop_i[1] = __float2int_rd(interm[1]+ix);
-  //         gH = max(0.,1-fabs(prop_i[1]-interm[1]));
-  
-  //         prop_i[2] = __float2int_rd(interm[2]+jx);
-  //         gW = max(0.,1-fabs(prop_i[2]-interm[2]));
-  
-  //         // -- finish weights --
-  //         w = gH * gW;
-  
-  //         // -- ensure legal bounds --
-  //         prop_i[1] = bounds(prop_i[1],H);
-  //         prop_i[2] = bounds(prop_i[2],W);
-  
-          // // -- update --
-          // atomicAdd(&g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]],    \
-          //           w*iweight[2]*gradW);
-          // atomicAdd(&g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]],    \
-          //           w*iweight[1]*gradH);
-      //   }
-      // }
-  
     } // end of backward through time
-
-    // // -- update gradient --
-    // atomicAdd(&g_flow[ref[0]][0][ref[1]][ref[2]],  \
-    //           w*iweight[2]*gradW);
-    // atomicAdd(&g_flow[ref[0]][1][ref[1]][ref[2]],  \
-    //           w*iweight[1]*gradH);
-
 
 }
 

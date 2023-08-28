@@ -65,18 +65,24 @@ def nls_backward(ctx, grad_dists, grad_inds):
 
     # print(grad_inds)
     # print(th.any(th.isnan(grad_inds)))
+    # print(th.any(th.isnan(fflow)),th.any(th.isnan(bflow)))
 
     # print(inds)
     # print(inds.shape)
     # -- allow for repeated exec --
     bwd_fxn = stnls_cuda.non_local_search_backward
+    # print(fflow.shape,bflow.shape,grad_fflow.shape,grad_bflow.shape)
+    # print("hi 1")
+    # th.cuda.synchronize()
+    # print("hi 2")
     bwd_fxn(grad_vid0,grad_vid1,grad_fflow,grad_bflow,
             vid0,vid1,fflow,bflow,
             grad_dists,grad_inds,inds,
             qshift,ctx.stride0,nH0,nW0,
             ctx.ps,ctx.pt,ctx.wt,ctx.dil,ctx.reflect_bounds,ctx.use_adj,
             ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,ctx.dist_type_i)
-
+    # th.cuda.synchronize()
+    # print("bye.")
     # print(vid0.shape)
     # print("-"*30)
     # print("-"*30)

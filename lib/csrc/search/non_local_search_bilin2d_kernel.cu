@@ -383,7 +383,6 @@ __global__ void non_local_search_backward_bilin2d_kernel(
       iweight[_idx] = grad_inds[ibatch][ihead][i0][i1][_idx];
     }
 
-
     // -- update vid0,vid1 --
     update_bwd_patch_bilin2d<scalar_t,DIST_TYPE>(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
@@ -408,6 +407,7 @@ __global__ void non_local_search_backward_bilin2d_kernel(
                        iftr,ftr_start,ftr_end,
                        valid_ref,valid_prop,valid,
                        T,H,W,pix0,pix1,pix,i1);
+
     }else{
       int delta_t = __float2int_rd(prop_patch[0]) - ref_patch[0];
 #pragma unroll
@@ -452,8 +452,9 @@ void non_local_search_backward_bilin2d_cuda(
   int nheads = grad_dists.size(1);
   int nq = grad_dists.size(2);
   int k = grad_dists.size(3);
-  int ftr_threads = min(15,F);
-  dim3 threadsPerBlock(10,4,ftr_threads);
+  // int ftr_threads = min(15,F);
+  int ftr_threads = min(1,F);
+  dim3 threadsPerBlock(32,8,ftr_threads);
   dim3 blocksPerGrid(1, 1, nheads*nbatch);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
