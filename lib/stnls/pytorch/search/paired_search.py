@@ -14,7 +14,7 @@ import stnls
 from stnls.utils import extract_pairs
 
 # -- local --
-from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
+from .utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
 from .utils import get_ctx_flows,ensure_flow_shape
 from .shared import manage_self
 from .paired_bwd_impl import paired_backward
@@ -26,58 +26,37 @@ from .batching_utils import run_batched,batching_info
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def nls_forward(batchsize,*args):
-    vid_idx = 0
-    ws_idx,wt_idx = 4,5
-    stride0_idx = 9
-    # dists,inds = nls_forward(batchsize, vid0, vid1, flow,
-    #                          ws, wt, ps, k, dist_type,
-    #                          stride0, stride1, dilation, pt,
-    #                          anchor_self, remove_self, reflect_bounds,
-    #                          full_ws, use_adj, off_H0, off_W0, off_H1, off_W1)
-    # print("vid.shape,stride0,ws,wt: ",
-    #       args[vid_idx].shape,args[stride0_idx],args[ws_idx],args[wt_idx])
-    ntotal,nbatches,batchsize = batching_info(args[vid_idx],args[stride0_idx],
-                                              args[ws_idx],args[wt_idx],
-                                              batchsize)
-    # print(nbatches,batchsize)
-    if nbatches == 1: # shortcut
-        qshift,nqueries = 0,-1
-        return nls_fwd_main(qshift,nqueries,*args)
-    else:
-        return run_batched(nls_fwd_main,batchsize,vid_idx,
-                           stride0_idx,ws_idx,wt_idx,*args)
+def paired_forward(batchsize,*args):
+    qshift,nqueries = 0,-1
+    return paired_fwd_main(qshift,nqueries,*args)
 
-def nls_fwd_main(qshift, Q, vid0, vid1, flow,
-                 ws, wt, ps, k, dist_type,
-                 stride0, stride1, dilation, pt,
-                 topk_mode, anchor_self, remove_self, reflect_bounds,
-                 full_ws, full_ws_time, use_adj,
-                 fwd_version, itype, off_H0, off_W0, off_H1, off_W1):
+def paired_fwd_main(qshift, Q, frame0, frame1, flow,
+                    ws, ps, k, dist_type,
+                    stride0, stride1, dilation, pt,
+                    topk_mode, anchor_self, remove_self, reflect_bounds,
+                    full_ws, full_ws_time, use_adj,
+                    fwd_version, itype, off_H0, off_W0, off_H1, off_W1):
 
     # -- unpack --
     # itype = "int"
-    device = vid0.device
-    B,HD,T,C,H,W = vid0.shape
+    device = frame0.device
+    B,HD,C,H,W = frame0.shape
 
     # -- derived shapes --
     nH0 = (H-1)//stride0+1
     nW0 = (W-1)//stride0+1
-    Q = T*nH0*nW0 if Q <= 0 else Q
+    Q = nH0*nW0 if Q <= 0 else Q
 
     # -- search space --
     ws_h,ws_w = ws,ws
-    search_abs = ws == -1
-    if search_abs:
-        ws_h,ws_w = nH0,nW0
 
     # -- settings from distance type --
     dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
     # -- allocate results --
-    st = min(2*wt+1,T)
-    base_shape = (B,HD,Q,st,ws_h,ws_w)
-    dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val,itype)
+    base_shape = (B,HD,Q,ws_h,ws_w)
+    dists,inds = allocate_pair_2d(base_shape,device,frame0.dtype,idist_val,itype)
+    # print("inds.shape: ",inds.shape)
 
     # -- forward --
     fwd_version = "v1"
@@ -87,20 +66,18 @@ def nls_fwd_main(qshift, Q, vid0, vid1, flow,
         else:
             fwd_fxn = stnls_cuda.paired_search_bilin2d_forward
             stride1 = float(stride1)
-    elif fwd_version == "v2":
-        dists[...] = 0.
-        fwd_fxn = stnls_cuda.non_local_search_forward_v2
     else:
         raise ValueError(f"Uknown version [{version}]")
-    fwd_fxn(vid0, vid1, flow, dists, inds,
-            wt, ps, k, dist_type_i, stride0,
-            stride1, dilation, pt, qshift,
+    # print(frame0.shape,flow.shape,dists.shape,inds.shape)
+    fwd_fxn(frame0, frame1, flow, dists, inds,
+            ps, k, dist_type_i, stride0,
+            stride1, dilation, qshift,
             reflect_bounds, full_ws, full_ws_time,
-            search_abs, use_adj, off_H0, off_W0, off_H1, off_W1)
+            use_adj, off_H0, off_W0, off_H1, off_W1)
 
     # -- compress search region --
     dists=dists.view(B,HD,Q,-1)
-    inds=inds.view(B,HD,Q,-1,3)
+    inds=inds.view(B,HD,Q,-1,2)
 
     # -- fill nan --
     fill_val = -np.inf if dist_type == "prod" else np.inf
@@ -135,8 +112,8 @@ def nls_fwd_main(qshift, Q, vid0, vid1, flow,
 class PairedSearchFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid0, vid1, flow,
-                ws, wt, ps, k, nheads=1, batchsize=-1,
+    def forward(ctx, frame0, frame1, flow,
+                ws, ps, k, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True,
                 full_ws=True, full_ws_time=True,
@@ -150,38 +127,35 @@ class PairedSearchFunction(th.autograd.Function):
         """
         Run the non-local search
 
-        vid0 = [B,T,C,H,W] or [B,HD,T,C,H,W]
+        frame0 = [B,T,C,H,W] or [B,HD,T,C,H,W]
         ws = search Window Spatial (ws)
-        wt = search Window Time (wt)
         """
 
         # -- reshape with heads --
-        dtype = vid0.dtype
-        device = vid0.device
-        vid0,vid1 = shape_vids(nheads,[vid0,vid1])
-        B,HD,T,F,H,W = vid0.shape
-
-        # -- manage forward shape --
-        flow = ensure_flow_shape(flow)
+        dtype = frame0.dtype
+        device = frame0.device
+        frame0,frame1 = shape_frames(nheads,[frame0,frame1])
+        B,HD,F,H,W = frame0.shape
+        flow = flow.contiguous()
 
         # -- run [optionally batched] forward function --
-        dists,inds = nls_forward(batchsize, vid0, vid1, flow, bflow,
-                                 ws, wt, ps, k, dist_type,
-                                 stride0, stride1, dilation, pt,
-                                 topk_mode, anchor_self, remove_self,
-                                 reflect_bounds, full_ws, full_ws_time,
-                                 use_adj, fwd_version, itype_fwd,
-                                 off_H0, off_W0, off_H1, off_W1)
+        dists,inds = paired_forward(batchsize, frame0, frame1, flow,
+                                    ws, ps, k, dist_type,
+                                    stride0, stride1, dilation, pt,
+                                    topk_mode, anchor_self, remove_self,
+                                    reflect_bounds, full_ws, full_ws_time,
+                                    use_adj, fwd_version, itype_fwd,
+                                    off_H0, off_W0, off_H1, off_W1)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
         flow,_ = get_ctx_flows(itype_bwd,flow,flow)
-        ctx.save_for_backward(inds,vid0,vid1,flow)
+        ctx.save_for_backward(inds,frame0,frame1,flow)
         if itype_bwd == "int":
             ctx.mark_non_differentiable(inds)
-        ctx.vid_shape = vid0.shape
+        ctx.vid_shape = frame0.shape
         ctx_vars = {"batchsize":batchsize,"stride0":stride0,"stride1":stride1,
-                    "ps":ps,"pt":pt,"ws":ws,"wt":wt,"dil":dilation,
+                    "ps":ps,"pt":pt,"ws":ws,"dil":dilation,
                     "reflect_bounds":reflect_bounds,
                     "fwd_version":fwd_version,"normalize_bwd":normalize_bwd,
                     "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
@@ -196,8 +170,8 @@ class PairedSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
-        grad0,grad1,gfflow,gbflow = paired_backward(ctx, grad_dists, grad_inds)
-        return grad0,grad1,gfflow,gbflow,None,None,None,None,None,None,None,\
+        grad0,grad1,gfflow = paired_backward(ctx, grad_dists, grad_inds)
+        return grad0,grad1,gfflow,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -210,7 +184,7 @@ class PairedSearchFunction(th.autograd.Function):
 
 class PairedSearch(th.nn.Module):
 
-    def __init__(self, ws, wt, ps, k, nheads=1,
+    def __init__(self, ws, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
                  topk_mode="default", full_ws=True, full_ws_time=True,
@@ -224,7 +198,6 @@ class PairedSearch(th.nn.Module):
 
         # -- core search params --
         self.ws = ws
-        self.wt = wt
         self.ps = ps
         self.k = k
         self.nheads = nheads
@@ -268,28 +241,27 @@ class PairedSearch(th.nn.Module):
         self.channel_groups = channel_groups
 
 
-    def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
+    def forward(self, frame0, frame1, flow, batchsize=-1):
         assert self.ws > 0,"Must have nonzero spatial search window"
-        assert self.wt > 0,"Must have nonzero time search window"
-        return PairedSearchFunction.apply(vid0,vid1,fflow,bflow,
-                                            self.ws,self.wt,self.ps,self.k,
-                                            self.nheads,batchsize,
-                                            self.dist_type,self.stride0,
-                                            self.stride1,self.dilation,self.pt,
-                                            self.reflect_bounds,
-                                            self.full_ws,self.full_ws_time,
-                                            self.topk_mode,self.anchor_self,
-                                            self.remove_self,self.use_adj,
-                                            self.off_H0,self.off_W0,
-                                            self.off_H1,self.off_W1,
-                                            self.normalize_bwd,self.k_agg,
-                                            self.fwd_version,
-                                            self.itype_fwd,self.itype_bwd,
-                                            self.rbwd,self.nbwd,self.exact,
-                                            self.use_atomic,
-                                            self.queries_per_thread,
-                                            self.neigh_per_thread,
-                                            self.channel_groups)
+        return PairedSearchFunction.apply(frame0,frame1,flow,
+                                          self.ws,self.ps,self.k,
+                                          self.nheads,batchsize,
+                                          self.dist_type,self.stride0,
+                                          self.stride1,self.dilation,self.pt,
+                                          self.reflect_bounds,
+                                          self.full_ws,self.full_ws_time,
+                                          self.topk_mode,self.anchor_self,
+                                          self.remove_self,self.use_adj,
+                                          self.off_H0,self.off_W0,
+                                          self.off_H1,self.off_W1,
+                                          self.normalize_bwd,self.k_agg,
+                                          self.fwd_version,
+                                          self.itype_fwd,self.itype_bwd,
+                                          self.rbwd,self.nbwd,self.exact,
+                                          self.use_atomic,
+                                          self.queries_per_thread,
+                                          self.neigh_per_thread,
+                                          self.channel_groups)
 
     def flops(self,T,F,H,W):
         print("hi.")
@@ -301,7 +273,7 @@ class PairedSearch(th.nn.Module):
         # -- compute search --
         nrefs_hw = ((H-1)//self.stride0+1) * ((W-1)//self.stride0+1)
         nrefs = T * HD * nrefs_hw
-        nsearch = ws_h * ws_w * (2*wt+1)
+        nsearch = ws_h * ws_w
         flops_per_search = 2 * F * ps * ps * pt
         search_flops = nrefs * nsearch * flops_per_search
         flops = search_flops
@@ -318,12 +290,12 @@ class PairedSearch(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#            [Direct API]  stnls.search.nls(...)
+#            [Direct API]  stnls.search.paired(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def _apply(vid0, vid1, flow,
-           ws, wt, ps, k, nheads=1, batchsize=-1,
+def _apply(frame0, frame1, flow,
+           ws, ps, k, nheads=1, batchsize=-1,
            dist_type="l2", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True,
            full_ws=True, full_ws_time=True,
@@ -337,7 +309,7 @@ def _apply(vid0, vid1, flow,
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
     fxn = PairedSearchFunction.apply
-    return fxn(vid0,vid1,flow,ws,wt,ps,k,
+    return fxn(frame0,frame1,flow,ws,ps,k,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
                full_ws,full_ws_time,anchor_self,remove_self,
@@ -354,7 +326,7 @@ def _apply(vid0, vid1, flow,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,
+    pairs = {"ws":-1,"ps":7,"k":10,
              "nheads":1,"dist_type":"l2",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True, "full_ws_time":True,
@@ -368,7 +340,7 @@ def extract_config(cfg,restrict=True):
 
 def init(cfg):
     cfg = extract_config(cfg)
-    search = PairedSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
+    search = PairedSearch(cfg.ws, cfg.ps, cfg.k, nheads=cfg.nheads,
                           dist_type=cfg.dist_type, stride0=cfg.stride0,
                           stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
                           reflect_bounds=cfg.reflect_bounds, topk_mode=cfg.topk_mode,

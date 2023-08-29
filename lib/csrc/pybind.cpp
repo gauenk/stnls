@@ -3,6 +3,7 @@
 // -- search --
 void init_non_local_search(py::module &);
 void init_refinement(py::module &);
+void init_paired_search(py::module &);
 
 // -- nn --
 void init_pfc(py::module &);
@@ -57,6 +58,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   // -- search --
   init_non_local_search(m);
   init_refinement(m);
+  init_paired_search(m);
 
   // -- nn --
   init_pfc(m);

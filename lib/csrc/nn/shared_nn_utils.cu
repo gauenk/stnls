@@ -46,3 +46,28 @@ __inline__ __device__ int bounds2(int val, int lb, int ub){
 }
 
 
+
+template<typename itype=int>
+__device__ __forceinline__ 
+void get_pixel_loc(itype* pix,  int qindex, int tmp, int stride0,
+                   int nW0, int nHW0, int H, int W){
+  int nH_index;
+  if (is_same_v<itype,int>){
+    tmp = qindex;
+    pix[0] = tmp / nHW0;
+    tmp = (tmp - pix[0]*nHW0); 
+    nH_index = tmp / nW0;
+    pix[1] = (nH_index*stride0) % H;
+    tmp = tmp - nH_index*nW0;
+    pix[2] = ((tmp % nW0) * stride0) % W;
+  }else{
+    tmp = qindex;
+    pix[0] = round(tmp/nHW0);
+    tmp = (tmp - pix[0]*nHW0); 
+    nH_index = tmp / nW0;
+    pix[1] = round((nH_index*stride0) % H);
+    tmp = tmp - nH_index*nW0;
+    pix[2] = round(((tmp % nW0) * stride0) % W);
+  }
+}
+

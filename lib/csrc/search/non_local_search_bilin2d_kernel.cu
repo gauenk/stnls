@@ -52,12 +52,15 @@ __global__ void non_local_search_forward_bilin2d_kernel(
   }
 
   // -- search region offsets --
-  // int psHalf = (ps)/2;
-  scalar_t wsHalf_h = (ws_h-1)/2;
-  scalar_t wsHalf_w = (ws_w-1)/2;
-  // int wsMax_h = stride1*(ws_h-1-wsHalf_h);
-  // int wsMax_w = stride1*(ws_w-1-wsHalf_w);
-  // int adj = use_adj ? psHalf : 0;
+  // int wsHalf_h = (ws_h-1)/2;
+  // int wsHalf_w = (ws_w-1)/2;
+  // int wsOff_h,wsOff_w;
+
+  // -- search region offsets --
+  scalar_t wsHalf_h = trunc((ws_h)/2);
+  scalar_t wsHalf_w = trunc((ws_w)/2);
+  // scalar_t wsHalf_h = (ws_h-1)/2;
+  // scalar_t wsHalf_w = (ws_w-1)/2;
   scalar_t wsOff_h,wsOff_w;
 
   // -- time indices --
@@ -115,10 +118,6 @@ __global__ void non_local_search_forward_bilin2d_kernel(
     // -- check bounds of pixel location --
     check_bounds<int>(valid_ref_patch,ref_patch,T,H,W);
 
-    // -- search region offsets --
-    // set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
-    //                    wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws);
-
     // -- temporal search bounds --
     set_time_range(t_max,t_shift,ref_patch[0],T,wt);
 
@@ -151,12 +150,13 @@ __global__ void non_local_search_forward_bilin2d_kernel(
       update_centers<scalar_t,scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
                                         fflow[ibatch][prev_ti][delta_ti],
                                         bflow[ibatch][prev_ti][delta_ti]);
+
       
       // -- search region offsets --
-      set_search_offsets(wsOff_h,wsOff_w,
-                         frame_anchor[1],frame_anchor[2],
-                         stride1, wsHalf_h, wsHalf_w, ws_h, ws_w,
-                         H, W, full_ws_time);
+      set_search_offsets<scalar_t>(wsOff_h,wsOff_w,
+                                   frame_anchor[1],frame_anchor[2],
+                                   stride1, wsHalf_h, wsHalf_w,
+                                   ws_h, ws_w, H, W, full_ws_time);
 
       // ---------------------------------------
       //          spatial searching
@@ -170,7 +170,7 @@ __global__ void non_local_search_forward_bilin2d_kernel(
         for (int _yi = 0; _yi < ws_w_per_thread; _yi++){
           ws_j = threadIdx.y + blockDim.y*_yi;
           if (ws_j >= ws_w){ continue; }
-  
+
           // -- compute proposed location --
           set_search_patch<scalar_t>(prop_patch,frame_anchor,stride1,
                                      ws_i,ws_j,wsOff_h,wsOff_w,search_abs);
@@ -183,21 +183,6 @@ __global__ void non_local_search_forward_bilin2d_kernel(
           //  -- compute patch difference --
           if (valid){
 
-            // if (fabs(1.*ref_patch[0] - prop_patch[0]) < 1e-5){
-            //   #pragma unroll
-            //   for (int _i=0; _i < 3; _i++){
-            //     prop_i[_i] = __float2int_rn(round(prop_patch[_i]));
-            //   }
-
-            //   compute_dist<scalar_t,DIST_TYPE>(dist,
-            //                vid0[ibatch][ihead],vid1[ibatch][ihead],
-            //                ref_patch, prop_i, 
-            //                ref_pix, prop_pix_i, valid_ref, valid_prop,
-            //                ps,pt,dilation,reflect_bounds,
-            //                patch_offset,center_offsets,invalid,
-            //                T,C,H,W,pix0,pix1,_dist);
-
-            // }else{
               compute_dist_bilin2d<scalar_t,DIST_TYPE>(dist,
                            vid0[ibatch][ihead],vid1[ibatch][ihead],
                            ref_patch, prop_patch, 
@@ -205,11 +190,10 @@ __global__ void non_local_search_forward_bilin2d_kernel(
                            ps,pt,dilation,reflect_bounds,
                            patch_offset,center_offsets,invalid,
                            T,C,H,W,pix0,pix1,_dist);
-          // }
           }
 
           // -- assignent --
-          if (!valid){ dist = invalid; }
+          if (!valid){ dist = 0.1234 * valid_ref_patch - 2*0.1234 * valid_prop_patch; }
           dists[ibatch][ihead][qi][st_i][ws_i][ws_j] = dist;
           inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0];
           inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1];
@@ -266,6 +250,7 @@ void non_local_search_forward_bilin2d_cuda(
    // -- viz --
    // fprintf(stdout,"ws_h,ws_w: %d,%d\n",ws_h,ws_w);
    // fprintf(stdout,"nquery_blocks,B,HD: %d,%d,%d\n",nquery_blocks,B,HD);
+   // fprintf(stdout,"full_ws,full_ws_time: %d,%d\n",full_ws,full_ws_time);
 
    // launch kernel
    if (dist_type == 0){

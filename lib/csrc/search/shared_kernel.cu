@@ -1,10 +1,11 @@
-#include <cuda/std/type_traits>
-#include <cstdio>
 #include <torch/types.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <vector>
 #include <cstddef>
+
+#include <cuda/std/type_traits>
+#include <cstdio>
 
 #include <math.h>
 // #include "stdio.h"
@@ -70,6 +71,24 @@ void get_pixel_loc(itype* pix,  int qindex, int tmp, int stride0,
   }
 }
 
+template<typename itype=int>
+__device__ __forceinline__ 
+void get_pixel_loc_2d(itype* pix,  int qindex, int tmp, int stride0,
+                      int nW0, int H, int W){
+  int nH_index;
+  if (is_same_v<itype,int>){
+    nH_index = qindex / nW0;
+    pix[0] = (nH_index*stride0) % H;
+    tmp = qindex - nH_index*nW0;
+    pix[1] = ((tmp % nW0) * stride0) % W;
+  }else{
+    nH_index = qindex / nW0;
+    pix[0] = round((nH_index*stride0) % H);
+    tmp = qindex - nH_index*nW0;
+    pix[1] = round(((tmp % nW0) * stride0) % W);
+  }
+}
+
 
 template<typename itype=int>
 __device__ __forceinline__
@@ -85,38 +104,50 @@ void check_bounds(bool& valid_anchor, itype* loc3d, int T, int H, int W){
   valid_anchor = valid_anchor && check_interval<itype>(loc3d[2],0,W);
 }
 
+template<typename itype=int>
+__device__ __forceinline__
+void check_bounds_2d(bool& valid_anchor, itype* loc2d, int H, int W){
+  valid_anchor = check_interval<itype>(loc2d[0],0,H);
+  valid_anchor = valid_anchor && check_interval<itype>(loc2d[1],0,W);
+}
+
 
 template<typename itype=int>
 __device__ __forceinline__
 void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
                         itype hi, itype wi, itype stride1,
-                        itype wsHalf_h, itype wsHalf_w, int ws_h, int ws_w,
+                        itype wsHalf_h, itype wsHalf_w,
+                        int ws_h, int ws_w,
                         int H, int W, bool full_ws){
     if(full_ws){
 
       // -- bound min --
       if ( (hi - stride1 * wsHalf_h) < 0){
-        wsOff_h = hi/stride1;
+        // wsOff_h = hi/stride1;
+        wsOff_h = floor(hi/stride1);
         // wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h-0.5);
       }else{
-        wsOff_h = (ws_h-1)/2;
+        wsOff_h = wsHalf_h;
       }
       if ( (wi - stride1 * wsHalf_w) < 0){
-        wsOff_w = wi/stride1;
+        // wsOff_w = wi/stride1;
+        wsOff_w = floor(wi/stride1);
         // wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w-0.5);
       }else{
-        wsOff_w = (ws_w-1)/2;
+        wsOff_w = wsHalf_w;
       }
 
       // -- bound max --
       itype hMax = hi + stride1 * ((ws_h-1) - wsOff_h);
       itype wMax = wi + stride1 * ((ws_w-1) - wsOff_w);
       if (hMax > (H-1)){
-        wsOff_h = (hi - (H-1))/stride1 + (ws_h-1);
+        // wsOff_h = (hi - (H-1))/stride1 + (ws_h-1);
+        wsOff_h = ceil((hi - (H-1))/stride1 + (ws_h-1));
         // wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h+0.5);
       }
       if (wMax > (W-1)){
-        wsOff_w = (wi - (W-1))/stride1 + (ws_w-1);
+        // wsOff_w = (wi - (W-1))/stride1 + (ws_w-1);
+        wsOff_w = ceil((wi - (W-1))/stride1 + (ws_w-1));
         // wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w+0.5);
       }
 
@@ -125,8 +156,8 @@ void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
       wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w);
 
     }else{
-      wsOff_h = (ws_h-1)/2;
-      wsOff_w = (ws_w-1)/2;
+      wsOff_h = wsHalf_h;
+      wsOff_w = wsHalf_w;
     }
 
     // int wsMax_w = ws_w-1 + (ws_w-1)/2;
@@ -198,69 +229,66 @@ void reset_centers(itype* prop_patch, int* ref_patch, bool reset){
 
 template<typename scalar_t, typename itype=int>
 __device__ __forceinline__ 
-void update_centers(itype& hj_center, itype& wj_center, int dir, int H, int W,
-  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> fflow,
-  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> bflow){
+void update_centers_flow(itype& hj_center, itype& wj_center, int H, int W,
+  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow){
+
 
   // -- fixed so we can read both --
   itype hj_tmp = hj_center;
   itype wj_tmp = wj_center;
 
-  // -- optical flow --
-  if (dir != 0){
+  // -- update --
+  if(is_same_v<itype,int>){
 
-    // -- access flows --
-    auto flow = dir > 0 ? fflow : bflow;
+    // -- simple rounding if "int" --
+    wj_center = int(1.*wj_center + flow[0][hj_tmp][wj_tmp] + 0.5);
+    hj_center = int(1.*hj_center + flow[1][hj_tmp][wj_tmp] + 0.5);
 
+    // -- wrap around boarders --
+    wj_center = max(0,min(W-1,(int)wj_center));
+    hj_center = max(0,min(H-1,(int)hj_center));
 
-    if(is_same_v<itype,int>){
-
-      // -- simple rounding if "int" --
-      wj_center = int(1.*wj_center + flow[0][hj_tmp][wj_tmp] + 0.5);
-      hj_center = int(1.*hj_center + flow[1][hj_tmp][wj_tmp] + 0.5);
-
-      // -- wrap around boarders --
-      wj_center = max(0,min(W-1,(int)wj_center));
-      hj_center = max(0,min(H-1,(int)hj_center));
-
-    }else{
+  }else{
 
 
-      // // -- simple rounding if "int" --
-      // wj_center = round(wj_center + flow[0][hj_tmp][wj_tmp]);
-      // hj_center = round(hj_center + flow[1][hj_tmp][wj_tmp]);
+    // -- weighted average of neighbors --
+    float weight = 0;
+    int hj = 0, wj = 0;
+    for (int i=0;i<2;i++){
+      for (int j=0;j<2;j++){
 
-      // // -- wrap around boarders --
-      // wj_center = max(0.,min(1.*W-1,(float)wj_center));
-      // hj_center = max(0.,min(1.*H-1,(float)hj_center));
+        // -- compute int locaion with weight --
+        hj = __float2int_rd(hj_tmp + i);
+        wj = __float2int_rd(wj_tmp + j);
+        weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
 
-      // -- weighted average of neighbors --
-      float weight = 0;
-      int hj = 0, wj = 0;
-      for (int i=0;i<2;i++){
-        for (int j=0;j<2;j++){
+        // -- ensure legal boudns --
+        hj = bounds(hj,H);
+        wj = bounds(wj,W);
 
-          // -- compute int locaion with weight --
-          hj = __float2int_rd(hj_tmp + i);
-          wj = __float2int_rd(wj_tmp + j);
-          weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
-
-          // -- ensure legal boudns --
-          hj = bounds_clip(hj,H);
-          wj = bounds_clip(wj,W);
-
-          // -- update with shift --
-          wj_center = wj_center + weight*flow[0][hj][wj];
-          hj_center = hj_center + weight*flow[1][hj][wj];
-        }
+        // -- update with shift --
+        wj_center = wj_center + weight*flow[0][hj][wj];
+        hj_center = hj_center + weight*flow[1][hj][wj];
       }
-
-      // -- wrap around boarders --
-      wj_center = max(0.,min(1.*W-1,(float)wj_center));
-      hj_center = max(0.,min(1.*H-1,(float)hj_center));
-
     }
 
+    // -- wrap around boarders --
+    wj_center = max(0.,min(1.*W-1,(float)wj_center));
+    hj_center = max(0.,min(1.*H-1,(float)hj_center));
+
+  }
+}
+
+template<typename scalar_t, typename itype=int>
+__device__ __forceinline__ 
+void update_centers(itype& hj_center, itype& wj_center, int dir, int H, int W,
+  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> fflow,
+  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> bflow){
+
+  // -- access flows --
+  auto flow = dir > 0 ? fflow : bflow;
+  if (dir != 0){
+    update_centers_flow(hj_center,wj_center,H,W,flow);
   }
 }
 

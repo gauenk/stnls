@@ -67,7 +67,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
 
     # -- search space --
     ws_h,ws_w = ws,ws
-    search_abs = ws == -1
+    search_abs = False#ws == -1
     if search_abs:
         ws_h,ws_w = nH0,nW0
 
@@ -92,6 +92,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
         fwd_fxn = stnls_cuda.non_local_search_forward_v2
     else:
         raise ValueError(f"Uknown version [{version}]")
+    print(full_ws, full_ws_time,search_abs)
     fwd_fxn(vid0, vid1, fflow, bflow, dists, inds,
             wt, ps, k, dist_type_i, stride0,
             stride1, dilation, pt, qshift,

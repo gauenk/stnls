@@ -17,6 +17,13 @@ def allocate_pair(base_shape,device,dtype,idist_val,itype_str):
     inds[...] = -1
     return dists,inds
 
+def allocate_pair_2d(base_shape,device,dtype,idist_val,itype_str):
+    dists = th.zeros(base_shape,device=device,dtype=dtype)
+    dists[...] = idist_val
+    inds = th.zeros(base_shape+(2,),device=device,dtype=get_itype(itype_str))
+    inds[...] = -1
+    return dists,inds
+
 def allocate_inds(base_shape,device,itype_str):
     inds = th.zeros(base_shape+(3,),device=device,dtype=get_itype(itype_str))
     inds[...] = -1
@@ -118,6 +125,20 @@ def shape_vids(nheads,vids):
             c = vid.shape[2]
             assert c % nheads == 0,"must be multiple of each other."
             shape_str = 'b t (HD c) h w -> b HD t c h w'
+            vid = rearrange(vid,shape_str,HD=nheads).contiguous()
+        assert vid.shape[1] == nheads
+        _vids.append(vid)
+    return _vids
+
+def shape_frames(nheads,vids):
+    _vids = []
+    for vid in vids:
+        # -- reshape with heads --
+        assert vid.ndim in [4,5], "Must be 4 or 5 dims."
+        if vid.ndim == 4:
+            c = vid.shape[1]
+            assert c % nheads == 0,"must be multiple of each other."
+            shape_str = 'b (HD c) h w -> b HD c h w'
             vid = rearrange(vid,shape_str,HD=nheads).contiguous()
         assert vid.shape[1] == nheads
         _vids.append(vid)

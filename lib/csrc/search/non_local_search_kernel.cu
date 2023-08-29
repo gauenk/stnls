@@ -72,7 +72,7 @@ __global__ void non_local_search_forward_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
-  bool acc_flow = fflow.size(2) == 1;
+  bool acc_flow = fflow.size(2) != ST;
   int delta_ti;
 
   // decls
@@ -172,6 +172,7 @@ __global__ void non_local_search_forward_kernel(
 
           // -- init dist --
           dist = 0;
+
 
           //  -- compute patch difference --
           if (valid){
@@ -336,7 +337,7 @@ __global__ void non_local_search_forward_v2_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
-  bool acc_flow = fflow.size(2) == 1;
+  bool acc_flow = fflow.size(2) != ST;
   int delta_ti;
 
   // decls
