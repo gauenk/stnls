@@ -262,6 +262,7 @@ __global__ void non_local_stack_backward_kernel(
       //----------------------------------
 
       // scalar_t w = weights[ibatch][ihead][qi][ki];
+
       fill_non_local_patch_bwd<scalar_t>(grad_vid[ibatch][ihead],
                                          grad_weights[ibatch][ihead],
                                          counts,

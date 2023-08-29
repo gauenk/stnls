@@ -86,10 +86,17 @@ class NonLocalAttentionStack(nn.Module):
         self.normz_cfg = normz_cfg
         self.agg_cfg = agg_cfg
 
+        # -- mangling [remove me when exps are done] --
+        itype_fwd = search_cfg.itype_fwd
+        if search_cfg.search_name in ["ref","refine"]:
+            if "ref_itype_fwd" in search and not(search_cfg.ref_itype_fwd is None):
+                search_cfg.itype_fwd = search_cfg.ref_itype_fwd
+
         # -- init attn fxns --
         self.search = stnls.search.init(search_cfg)
         self.normz = stnls.normz.init(normz_cfg)
         # self.agg = stnls.reducer.init(agg_cfg)
+        search_cfg.itype_fwd = itype_fwd
         self.stacking = stnls.tile.NonLocalStack(ps=search_cfg.ps,
                                                  stride0=search_cfg.stride0,
                                                  itype_fwd=search_cfg.itype_fwd,
@@ -236,6 +243,7 @@ class NonLocalAttentionStack(nn.Module):
             raise NotImplementedError("")
         else:
             raise NotImplementedError("")
+
             # self.proj = nn.Identity()
             # self.proj_drop = nn.Identity()
 

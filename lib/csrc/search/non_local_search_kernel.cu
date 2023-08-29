@@ -628,6 +628,7 @@ __global__ void non_local_search_backward_kernel(
     //   // }
     // }
 
+
     // -- update patch --
     update_bwd_patch<scalar_t,DIST_TYPE>(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],

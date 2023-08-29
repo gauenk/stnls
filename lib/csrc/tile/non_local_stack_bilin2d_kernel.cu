@@ -329,6 +329,7 @@ void non_local_stack_bilin2d_backward_cuda(
   int ftrs_per_thread = (nftrs-1)/ftr_threads+1;
 
 
+
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "non_local_stack_bilin2d_backward_kernel", ([&] {
         non_local_stack_bilin2d_backward_kernel<scalar_t>
