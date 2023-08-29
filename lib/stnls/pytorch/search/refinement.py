@@ -81,9 +81,12 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
         stride1 = float(stride1)
 
     # -- allow for int fwd when actually float --
-    if itype_fwd == "int":  
+    # print(qinds.dtype)
+    q_dtype = qinds.dtype
+    if itype_fwd == "int":
         inds = inds.int()
-        qinds = qinds.round().int()
+        if qinds.dtype == th.float:
+            qinds = qinds.round().int()
         stride1 = int(max(1,int(stride1)))
 
     # -- forward --
@@ -95,7 +98,8 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     # print("dists [max,min]: ",th.max(dists).item(),th.min(dists).item())
 
     # -- allow for int fwd when actually float --
-    if itype_fwd == "int" and qinds.dtype == th.float: 
+    if itype_fwd == "int" and q_dtype == th.float:
+        qinds = qinds.float()
         inds = inds.float()
 
     # -- no negative --

@@ -89,7 +89,7 @@ class NonLocalAttentionStack(nn.Module):
         # -- mangling [remove me when exps are done] --
         itype_fwd = search_cfg.itype_fwd
         if search_cfg.search_name in ["ref","refine"]:
-            if "ref_itype_fwd" in search and not(search_cfg.ref_itype_fwd is None):
+            if "ref_itype_fwd" in search_cfg and not(search_cfg.ref_itype_fwd is None):
                 search_cfg.itype_fwd = search_cfg.ref_itype_fwd
 
         # -- init attn fxns --
