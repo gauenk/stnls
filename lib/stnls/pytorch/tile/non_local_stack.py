@@ -179,6 +179,7 @@ class non_local_stack(th.autograd.Function):
         # print(grad_stack[0,0,0,0,0,30:34,30:34])
         grad_stack = grad_stack / counts.view((1,1,1,1,1,H,W))
         # print(grad_stack[0,0,0,0,0,30:34,30:34])
+        # print(grad_inds.dtype()
         stnls_cuda.non_local_stack_backward(
             grad_vid,grad_weights,grad_inds,grad_stack,
             vid,weights,inds,stack,counts,

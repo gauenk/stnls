@@ -79,12 +79,24 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     else:
         fwd_fxn = stnls_cuda.refinement_bilin2d_forward
         stride1 = float(stride1)
+
+    # -- allow for int fwd when actually float --
+    if itype_fwd == "int":  
+        inds = inds.int()
+        qinds = qinds.round().int()
+        stride1 = int(max(1,int(stride1)))
+
+    # -- forward --
     fwd_fxn(vid0, vid1, qinds, dists, inds,
             ws_h, ws_w, ps, k, dist_type_i,
             stride0, stride1, dilation, pt, qshift,
             reflect_bounds, full_ws, use_adj,
             off_H0, off_W0, off_H1, off_W1)
     # print("dists [max,min]: ",th.max(dists).item(),th.min(dists).item())
+
+    # -- allow for int fwd when actually float --
+    if itype_fwd == "int" and qinds.dtype == th.float: 
+        inds = inds.float()
 
     # -- no negative --
     # if th.any(qinds[0]<0):
@@ -197,9 +209,9 @@ class RefineSearchFunction(th.autograd.Function):
         return dists,inds
 
     @staticmethod
-    def backward(ctx, grad_dists, grad_inds_is_none):
+    def backward(ctx, grad_dists, grad_inds):
         # print("refinement: ",grad_dists.shape,grad_inds_is_none)
-        grad0,grad1,grad_qinds = ref_backward(ctx, grad_dists, grad_inds_is_none)
+        grad0,grad1,grad_qinds = ref_backward(ctx, grad_dists, grad_inds)
         return grad0,grad1,grad_qinds,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None
