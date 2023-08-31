@@ -314,12 +314,14 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    M = 3
+    M = 5
     # flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
     # flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
-    flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
-    flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
+    # flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
+    # flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
     # flows.fflow = th.zeros_like(flows.fflow)
+    flows.fflow = th.clamp(M*th.ones_like(flows.fflow),-M,M).round()/4.
+    flows.bflow = th.clamp(M*th.ones_like(flows.bflow),-M,M).round()/4.
     # flows.bflow = th.zeros_like(flows.bflow)
 
 
@@ -332,7 +334,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     itype_bwd = "float"
 
     # -- init data --
-    vid0 = vid#+th.randn_like(vid)
+    vid0 = vid+th.randn_like(vid)
     vid1 = vid.clone()
     vid0_te = vid0.clone().requires_grad_(True)
     vid0_gt = vid0.clone().requires_grad_(True)
@@ -374,22 +376,29 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # dists_te = dists_te[:,:,256:512]
     # inds_te = inds_te[:,:,256:512]
 
+
     # -- compare --
     mean_tol = 5e-3
     max_tol = 1e-4
-    # run_compare(dists_gt,dists_te,mean_tol,max_tol)
-    # max_tol = 1e-3
-    # run_compare(inds_gt,inds_te,mean_tol,max_tol)
+    run_compare(dists_gt,dists_te,mean_tol,max_tol)
+    max_tol = 1e-3
+    run_compare(inds_gt,inds_te,mean_tol,max_tol)
 
     # -- backprop inds --
     inds_grad = th.ones_like(inds_gt)
     th.autograd.backward(inds_gt,inds_grad,retain_graph=True)
     th.autograd.backward(inds_te,inds_grad,retain_graph=True)
 
+    # -- viz --
+    print(th.any(th.isnan(bflow_gt.grad)))
+    print(th.any(th.isnan(bflow_te.grad)))
+    print(th.stack([fflow_te.grad[0],fflow_gt.grad[0]],-1))
+
     # -- flow grads --
     _grads_gt = [fflow_gt.grad,bflow_gt.grad]
     _grads_te = [fflow_te.grad,bflow_te.grad]
     for idx,(grads_gt,grads_te) in enumerate(zip(_grads_gt,_grads_te)):
+        # print(th.any(th.isnan(grads_gt)),th.any(th.isnan(grads_te)))
         run_compare(grads_gt,grads_te,mean_tol,max_tol)
 
     # -- backprop vids --

@@ -446,6 +446,7 @@ __global__ void non_local_search_backward_bilin2d_kernel(
                        grad_fflow[ibatch],grad_bflow[ibatch],
                        fflow[ibatch],bflow[ibatch],
                        iweight,prop_patch,prop_i,delta_t,H,W);
+
     }
 
 
