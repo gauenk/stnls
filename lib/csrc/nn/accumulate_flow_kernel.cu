@@ -73,14 +73,14 @@ void update_centers_flow(itype& hj_center, itype& wj_center, int H, int W,
     }
 
     // -- wrap around boarders --
-    wj_center = max((float)0.,(float)min((float)1.*W-1,(float)wj_center));
-    hj_center = max((float)0.,(float)min((float)1.*H-1,(float)hj_center));
+    // wj_center = max((float)0.,(float)min((float)1.*W-1,(float)wj_center));
+    // hj_center = max((float)0.,(float)min((float)1.*H-1,(float)hj_center));
 
   }
 }
 
 template <typename scalar_t, typename itype>
-__global__ void accumulate_flow_kernel(
+__global__ void accumulate_flow_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
     torch::PackedTensorAccessor32<itype,6,torch::RestrictPtrTraits> pfflow,
@@ -135,7 +135,6 @@ __global__ void accumulate_flow_kernel(
       pflow[bi][ti][ta][1][hn][wn] = h_center - hi_a;
       pflow[bi][ti][ta][0][hn][wn] = w_center - wi_a;
 
-
       // -- incriment pre-computed frame index --
       ta++;
     }
@@ -166,7 +165,7 @@ __global__ void accumulate_flow_kernel(
 }
 
 
-void accumulate_flow_cuda(
+void accumulate_flow_forward_cuda(
      const torch::Tensor fflow, const torch::Tensor bflow,
      torch::Tensor pfflow, torch::Tensor pbflow, int stride0){
   
@@ -192,8 +191,8 @@ void accumulate_flow_cuda(
 
   // -- launch kernel --
   if(pfflow.dtype() == torch::kInt32){
-    AT_DISPATCH_FLOATING_TYPES(fflow.type(), "accumulate_flow_kernel", ([&] {
-        accumulate_flow_kernel<scalar_t,int><<<nblocks, nthreads>>>(
+    AT_DISPATCH_FLOATING_TYPES(fflow.type(), "accumulate_flow_forward_kernel", ([&] {
+        accumulate_flow_forward_kernel<scalar_t,int><<<nblocks, nthreads>>>(
          fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          pfflow.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
@@ -201,8 +200,8 @@ void accumulate_flow_cuda(
          stride0,locs_per_thread);
         }));
   }else{
-    AT_DISPATCH_FLOATING_TYPES(fflow.type(), "accumulate_flow_kernel", ([&] {
-        accumulate_flow_kernel<scalar_t,scalar_t><<<nblocks, nthreads>>>(
+    AT_DISPATCH_FLOATING_TYPES(fflow.type(), "accumulate_flow_forward_kernel", ([&] {
+        accumulate_flow_forward_kernel<scalar_t,scalar_t><<<nblocks, nthreads>>>(
          fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          pfflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
@@ -212,3 +211,149 @@ void accumulate_flow_cuda(
   }
 
 }
+
+/*******************************************
+
+
+             Backward Flow
+
+
+*******************************************/
+
+
+// template <typename scalar_t, typename itype>
+// __global__ void accumulate_flow_backward_kernel(
+//     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_fflow,
+//     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_bflow,
+//     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_inds,
+//     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> fflow,
+//     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> bflow,
+//     torch::PackedTensorAccessor32<itype,6,torch::RestrictPtrTraits> pfflow,
+//     torch::PackedTensorAccessor32<itype,6,torch::RestrictPtrTraits> pbflow,
+//     int stride0, int locs_per_thread){
+
+//   // -- unpack --
+//   int bi = blockIdx.y;
+//   int raster_index = locs_per_thread*(threadIdx.x + blockDim.x * blockIdx.x);
+//   int T = fflow.size(1);
+//   int H = fflow.size(3);
+//   int W = fflow.size(4);
+//   int nH = (H-1)/stride0+1;
+//   int nW = (W-1)/stride0+1;
+//   int nHW = nH*nW;
+//   int TnHW = T*nH*nW;
+//   int tmp;
+//   int ref[3];
+
+//   // -- get location --
+//   for (int loc = 0; loc < locs_per_thread; loc++){
+
+//     // -- get location --
+//     int qi = raster_index + loc;
+//     if (qi >= TnHW){ return; } 
+//     get_pixel_loc(ref,qi,tmp,stride0,nW,nHW,H,W);
+//     int ti = ref[0];
+//     int wn = ref[1];
+//     int hn = ref[2];
+
+//     itype hi_a,wi_a;
+//     if (is_same_v<itype,int>){
+//       hi_a = (hn * stride0) % H;
+//       wi_a = (wn * stride0) % W;
+//     }else{
+//       hi_a = trunc(__int2float_rn((hn * stride0) % H));
+//       wi_a = trunc(__int2float_rn((wn * stride0) % W));
+//     }
+
+//     // -- run left --
+//     int ta = 0;
+//     auto flow = bflow;
+//     auto pflow = pbflow;
+//     itype h_center = hi_a;
+//     itype w_center = wi_a;
+//     for(int tj=ti; tj > 0; tj--){
+
+//       // -- accumulate center offset  --
+//       update_centers_flow<scalar_t,itype>(h_center,w_center,H,W,flow[bi][tj]);
+
+//       // -- assignment  --
+//       pflow[bi][ti][ta][1][hn][wn] = h_center - hi_a;
+//       pflow[bi][ti][ta][0][hn][wn] = w_center - wi_a;
+
+
+//       // -- incriment pre-computed frame index --
+//       ta++;
+//     }
+
+//     // -- run right --
+//     ta = 0;
+//     flow = fflow;
+//     pflow = pfflow;
+//     h_center = hi_a;
+//     w_center = wi_a;
+//     for(int tj=ti; tj < (T-1); tj++){
+
+//       // -- accumulate center offset  --
+//       update_centers_flow(h_center,w_center,H,W,flow[bi][tj]);
+
+//       // -- assignment  --
+//       // pflow[bi][ti][ta][1][hn][wn] = h_center - hi_a;
+//       // pflow[bi][ti][ta][0][hn][wn] = w_center - wi_a;
+//       pflow[bi][ti][ta][1][hn][wn] = h_center - hi_a;
+//       pflow[bi][ti][ta][0][hn][wn] = w_center - wi_a;
+
+//       // -- incriment pre-computed frame index --
+//       ta++;
+
+//     }
+//   }
+    
+// }
+
+
+// void accumulate_flow_backward_cuda(
+//      const torch::Tensor fflow, const torch::Tensor bflow,
+//      torch::Tensor pfflow, torch::Tensor pbflow, int stride0){
+  
+//   // -- unpack --
+//   int B = fflow.size(0);
+//   int T = fflow.size(1);
+//   int H = fflow.size(3);
+//   int W = fflow.size(4);
+
+//   // -- num 2 run --
+//   int nH = (H-1)/stride0+1;
+//   int nW = (W-1)/stride0+1;
+//   int nRun = T*nH*nW;
+
+//   // -- kernel params --
+//   int locs_per_thread = 1;
+//   int _nthreads = 256;
+//   dim3 nthreads(_nthreads);
+//   int _nblocks = (nRun-1)/(_nthreads*locs_per_thread)+1;
+//   dim3 nblocks(_nblocks,B);
+//   // fprintf(stdout,"nblocks,nthreads: %d,%d\n",_nblocks,_nthreads);
+//   // fprintf(stdout,"stride0: %d\n",stride0);
+
+//   // -- launch kernel --
+//   if(pfflow.dtype() == torch::kInt32){
+//     AT_DISPATCH_FLOATING_TYPES(fflow.type(), "accumulate_flow_backward_kernel", ([&] {
+//         accumulate_flow_backward_kernel<scalar_t,int><<<nblocks, nthreads>>>(
+//          fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+//          bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+//          pfflow.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+//          pbflow.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+//          stride0,locs_per_thread);
+//         }));
+//   }else{
+//     AT_DISPATCH_FLOATING_TYPES(fflow.type(), "accumulate_flow_backward_kernel", ([&] {
+//         accumulate_flow_backward_kernel<scalar_t,scalar_t><<<nblocks, nthreads>>>(
+//          fflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+//          bflow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+//          pfflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+//          pbflow.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+//          stride0,locs_per_thread);
+//         }));
+//   }
+
+// }

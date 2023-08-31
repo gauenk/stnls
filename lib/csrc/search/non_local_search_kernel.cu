@@ -137,6 +137,7 @@ __global__ void non_local_search_forward_kernel(
       // -- increment frame index --
       increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_max);
 
+
       // -- possibly reset (frame_anchor <- reference_patch) --
       reset_centers(frame_anchor,ref_patch,swap_dir || not(acc_flow));
 
@@ -339,6 +340,7 @@ __global__ void non_local_search_forward_v2_kernel(
   bool swap_dir = false;
   bool acc_flow = fflow.size(2) != ST;
   int delta_ti;
+
 
   // decls
   int ref_patch[3];

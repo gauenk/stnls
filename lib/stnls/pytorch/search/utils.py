@@ -56,8 +56,7 @@ def allocate_grad_flow(itype,f_shape,device):
     if itype == "int":
         grad_fflow = th.zeros((1,)*6,device=device,dtype=th.float32)
     else:
-        B,T,L,C,H,W = f_shape
-        grad_fflow = th.zeros((B,T,L,2,H,W),device=device,dtype=th.float32)
+        grad_fflow = th.zeros(f_shape,device=device,dtype=th.float32)
     return grad_fflow
 
 

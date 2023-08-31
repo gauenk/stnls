@@ -84,6 +84,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
     if fwd_version == "v1":
         if itype == "int":
             fwd_fxn = stnls_cuda.non_local_search_forward
+            stride1 = max(1,int(stride1))
         else:
             fwd_fxn = stnls_cuda.non_local_search_bilin2d_forward
             stride1 = float(stride1)
@@ -92,6 +93,9 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
         fwd_fxn = stnls_cuda.non_local_search_forward_v2
     else:
         raise ValueError(f"Uknown version [{version}]")
+    fflow = fflow.transpose(1,2).contiguous()
+    bflow = bflow.transpose(1,2).contiguous()
+    # print(fflow.shape)
     fwd_fxn(vid0, vid1, fflow, bflow, dists, inds,
             wt, ps, k, dist_type_i, stride0,
             stride1, dilation, pt, qshift,

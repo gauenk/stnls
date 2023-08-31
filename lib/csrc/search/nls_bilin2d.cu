@@ -94,9 +94,9 @@ void compute_dist_bilin2d(scalar_t& dist,
             for (int jx=0;jx<2;jx++){
 
               // -- interpolation weight --
-              prop_i[1] = __float2int_rd(prop[1]+ix);
+              prop_i[1] = __float2int_rz(prop[1]+ix);
               interp[0] = max(0.,1-fabs(prop_i[1]-prop[1]));
-              prop_i[2] = __float2int_rd(prop[2]+jx);
+              prop_i[2] = __float2int_rz(prop[2]+jx);
               interp[1] = max(0.,1-fabs(prop_i[2]-prop[2]));
               w = interp[0] * interp[1];
 
@@ -108,7 +108,9 @@ void compute_dist_bilin2d(scalar_t& dist,
               pix1 += valid_prop[3] ? w*vid1[prop_i[0]][ci][prop_i[1]][prop_i[2]] : 0;
             }
           }
+          // pix1 = 1;
 
+          // pix1 = 1;
           // int i1 = __float2int_rn(round(prop[1]));
           // int i2 = __float2int_rn(round(prop[2]));
           // pix1 = vid1[prop_i[0]][ci][i1][i2];
@@ -138,12 +140,7 @@ void update_bwd_patch_bilin2d(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid1,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
-    // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> fflow,
-    // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> bflow,
-    // torch::TensorAccessor<int,3,torch::RestrictPtrTraits,int32_t> count0,
-    // torch::TensorAccessor<int,3,torch::RestrictPtrTraits,int32_t> count1,
-    scalar_t weight,
-    int* ref_patch, scalar_t* prop_patch,
+    scalar_t weight, int* ref_patch, scalar_t* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
     int* center_offsets, int patch_offset,
     int iftr, int ftr_start, int ftr_end,

@@ -78,8 +78,9 @@ __global__ void non_local_search_forward_bilin2d_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
-  bool acc_flow = fflow.size(2) == 1;
-  int delta_ti;
+  // bool acc_flow = fflow.size(2) == 1;
+  bool acc_flow = true;//fflow.size(1) != ST;
+  int deltaT;
 
   // decls
   int ref_patch[3];
@@ -93,6 +94,8 @@ __global__ void non_local_search_forward_bilin2d_kernel(
   bool valid_ref_patch,valid_prop_patch;
   bool valid_ref[4];
   bool valid_prop[4];
+  scalar_t acc_frame[3];
+
 
   // -- cleaner code --
   int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
@@ -101,11 +104,13 @@ __global__ void non_local_search_forward_bilin2d_kernel(
   int qindex,qindex_tmp;
   scalar_t dist,pix0,pix1,_dist;
 
+
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
     //---------------------------
     //       Anchor Pixel
     //---------------------------
+
 
     // -- block start --
     qi = q_start + q_index;
@@ -125,6 +130,9 @@ __global__ void non_local_search_forward_bilin2d_kernel(
     frame_anchor[0] = __int2float_rn(ref_patch[0]);
     frame_anchor[1] = __int2float_rn(ref_patch[1]);
     frame_anchor[2] = __int2float_rn(ref_patch[2]);
+    acc_frame[0] = frame_anchor[0];
+    acc_frame[1] = frame_anchor[1];
+    acc_frame[2] = frame_anchor[2];
     prev_ti = ref_patch[0];
     t_inc = 0;
     swap_dir = false;
@@ -138,30 +146,59 @@ __global__ void non_local_search_forward_bilin2d_kernel(
       // ---------------------------------------
 
       // -- increment frame index --
+      // increment_frame<scalar_t>(acc_frame[0],prev_ti,t_inc,
+      //                           swap_dir,dir,ref_patch[0],t_max);
       increment_frame<scalar_t>(frame_anchor[0],prev_ti,t_inc,
                                 swap_dir,dir,ref_patch[0],t_max);
 
-
       // -- possibly reset (frame_anchor <- reference_patch) --
-      reset_centers<scalar_t>(frame_anchor,ref_patch,swap_dir || not(acc_flow));
+      // reset_centers<scalar_t>(frame_anchor,ref_patch,swap_dir || not(acc_flow));
+      // reset_centers<scalar_t>(acc_frame,ref_patch,swap_dir || not(acc_flow));
+      // reset_centers<scalar_t>(frame_anchor,ref_patch,true);
+      // frame_anchor[0] = swap_dir ? __float2int_rn(ref_patch[0])-1 : frame_anchor[0];
+      frame_anchor[1] = __int2float_rn(ref_patch[1]);
+      frame_anchor[2] = __int2float_rn(ref_patch[2]);
 
       // -- compute offset with optical flow --
-      delta_ti = acc_flow ? 0 : abs(ref_patch[0] - __float2int_rn(frame_anchor[0]));
-      update_centers<scalar_t,scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
-                                        fflow[ibatch][prev_ti][delta_ti],
-                                        bflow[ibatch][prev_ti][delta_ti]);
+      // deltaT = abs(ref_patch[0] - __float2int_rn(acc_frame[0]));
+      deltaT = abs(ref_patch[0] - __float2int_rn(frame_anchor[0]));
+      int acc_index = acc_flow ? 0 : deltaT;
+      deltaT = acc_flow ? deltaT : 1;
 
-      
+
+      update_centers<scalar_t,scalar_t>(frame_anchor[1],frame_anchor[2],
+                                        ref_patch[0],dir,deltaT,H,W,
+                                        fflow[ibatch][acc_index],
+                                        bflow[ibatch][acc_index]);
+      // update_centers<scalar_t,scalar_t>(acc_frame[1],acc_frame[2],
+      //                                   ref_patch[0],dir,deltaT,H,W,
+      //                                   fflow[ibatch][acc_index],
+      //                                   bflow[ibatch][acc_index]);
+      // auto flow = dir > 0 ? fflow[ibatch][acc_index] : bflow[ibatch][acc_index];
+      // if (dir!=0){
+      //   update_centers_flow(acc_frame[1],acc_frame[2],H,W,flow[deltaT-1]);
+      // }
+
+      // frame_anchor[0] = acc_frame[0];
+      // frame_anchor[1] = bounds(acc_frame[1],H);
+      // frame_anchor[2] = bounds(acc_frame[2],W);
+      frame_anchor[1] = bounds(frame_anchor[1],H);
+      frame_anchor[2] = bounds(frame_anchor[2],W);
+      // frame_anchor[1] = floorf(frame_anchor[1]*1000)/(float)1000;
+      // frame_anchor[2] = floorf(frame_anchor[2]*1000)/(float)1000;
+
+
       // -- search region offsets --
-      set_search_offsets<scalar_t>(wsOff_h,wsOff_w,
-                                   frame_anchor[1],frame_anchor[2],
+      // wsOff_h = 0;
+      // wsOff_w = 0;
+      set_search_offsets<scalar_t>(wsOff_h, wsOff_w,
+                                   frame_anchor[1], frame_anchor[2],
                                    stride1, wsHalf_h, wsHalf_w,
-                                   ws_h, ws_w, H, W, full_ws_time);
+                                   ws_h, ws_w, H, W, true);
 
       // ---------------------------------------
       //          spatial searching
       // ---------------------------------------
-  
 
       // -- search across space --
       for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
@@ -172,8 +209,11 @@ __global__ void non_local_search_forward_bilin2d_kernel(
           if (ws_j >= ws_w){ continue; }
 
           // -- compute proposed location --
-          set_search_patch<scalar_t>(prop_patch,frame_anchor,stride1,
-                                     ws_i,ws_j,wsOff_h,wsOff_w,search_abs);
+          prop_patch[0] = frame_anchor[0];
+          prop_patch[1] = frame_anchor[1] + stride1 * (ws_i - wsOff_h);
+          prop_patch[2] = frame_anchor[2] + stride1 * (ws_j - wsOff_w);
+          // set_search_patch<scalar_t>(prop_patch,frame_anchor,stride1,
+          //                            ws_i,ws_j,wsOff_h,wsOff_w,search_abs);
           check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
           valid = valid_ref_patch && valid_prop_patch;
 
@@ -182,6 +222,7 @@ __global__ void non_local_search_forward_bilin2d_kernel(
 
           //  -- compute patch difference --
           if (valid){
+
 
               compute_dist_bilin2d<scalar_t,DIST_TYPE>(dist,
                            vid0[ibatch][ihead],vid1[ibatch][ihead],
@@ -192,8 +233,10 @@ __global__ void non_local_search_forward_bilin2d_kernel(
                            T,C,H,W,pix0,pix1,_dist);
           }
 
+
+
           // -- assignent --
-          if (!valid){ dist = 0.1234 * valid_ref_patch - 2*0.1234 * valid_prop_patch; }
+          if (!valid){ dist = invalid; }
           dists[ibatch][ihead][qi][st_i][ws_i][ws_j] = dist;
           inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0];
           inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1];

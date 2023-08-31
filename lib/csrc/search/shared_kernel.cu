@@ -27,8 +27,10 @@ __device__ __forceinline__ dtype bounds(dtype val, int lim ){
   dtype vval = val;
   if (val < 0){
     vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
+    // vval = 10; // want ("-1" -> "1") _not_ ("-1" -> "0")
   }else if (val > (lim-1)){
     vval = 2*(lim-1)-val; // want ("H" -> "H-2") _not_ ("H" -> "H-1")
+    // vval = 10;
   }
   return vval;
 }
@@ -121,20 +123,20 @@ void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
                         int H, int W, bool full_ws){
     if(full_ws){
 
+      // -- init --
+      wsOff_h = wsHalf_h;
+      wsOff_w = wsHalf_w;
+
       // -- bound min --
       if ( (hi - stride1 * wsHalf_h) < 0){
         // wsOff_h = hi/stride1;
         wsOff_h = floor(hi/stride1);
         // wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h-0.5);
-      }else{
-        wsOff_h = wsHalf_h;
       }
       if ( (wi - stride1 * wsHalf_w) < 0){
         // wsOff_w = wi/stride1;
         wsOff_w = floor(wi/stride1);
         // wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w-0.5);
-      }else{
-        wsOff_w = wsHalf_w;
       }
 
       // -- bound max --
@@ -230,12 +232,11 @@ void reset_centers(itype* prop_patch, int* ref_patch, bool reset){
 template<typename scalar_t, typename itype=int>
 __device__ __forceinline__ 
 void update_centers_flow(itype& hj_center, itype& wj_center, int H, int W,
-  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow){
-
+     const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow){
 
   // -- fixed so we can read both --
-  itype hj_tmp = hj_center;
-  itype wj_tmp = wj_center;
+  itype hj_tmp = bounds<itype>(hj_center,H);
+  itype wj_tmp = bounds<itype>(wj_center,W);
 
   // -- update --
   if(is_same_v<itype,int>){
@@ -252,43 +253,147 @@ void update_centers_flow(itype& hj_center, itype& wj_center, int H, int W,
 
 
     // -- weighted average of neighbors --
+    // float fH=0,fW=0;
     float weight = 0;
     int hj = 0, wj = 0;
     for (int i=0;i<2;i++){
       for (int j=0;j<2;j++){
 
         // -- compute int locaion with weight --
-        hj = __float2int_rd(hj_tmp + i);
-        wj = __float2int_rd(wj_tmp + j);
+        hj = __float2int_rz(hj_tmp + i);
+        wj = __float2int_rz(wj_tmp + j);
         weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
 
         // -- ensure legal boudns --
         hj = bounds(hj,H);
         wj = bounds(wj,W);
 
+        // bool valid_h = check_interval(hj,0,H);
+        // bool valid_w = check_interval(wj,0,W);
+        // bool valid = valid_h and valid_w;
+
         // -- update with shift --
+        // wj_center = valid ? wj_center + weight*flow[0][hj][wj] : wj_center;
+        // hj_center = valid ? hj_center + weight*flow[1][hj][wj] : hj_center;
+        // fW += weight*flow[0][hj][wj];
+        // fH += weight*flow[1][hj][wj];
         wj_center = wj_center + weight*flow[0][hj][wj];
         hj_center = hj_center + weight*flow[1][hj][wj];
+
       }
     }
 
+    // wj_center += fW;
+    // hj_center += fH;
+
     // -- wrap around boarders --
-    wj_center = max(0.,min(1.*W-1,(float)wj_center));
-    hj_center = max(0.,min(1.*H-1,(float)hj_center));
+    // wj_center = max(0.,min(1.*W-1,(float)wj_center));
+    // hj_center = max(0.,min(1.*H-1,(float)hj_center));
 
   }
+}
+template<typename scalar_t, typename itype=int>
+__device__ __forceinline__ 
+void update_centers_flow_v2(itype& fH, itype& fW,
+                            itype hj_center, itype wj_center,
+                            int H, int W,
+     const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow){
+
+
+  // -- allow for indexing --
+  hj_center = bounds<itype>(hj_center,H);
+  wj_center = bounds<itype>(wj_center,W);
+
+  // -- weighted average of neighbors --
+  float weight = 0;
+  int hj = 0, wj = 0;
+  for (int i=0;i<2;i++){
+    for (int j=0;j<2;j++){
+
+      // -- compute int locaion with weight --
+      hj = __float2int_rz(hj_center + i);
+      wj = __float2int_rz(wj_center + j);
+      weight = max(0.,1-fabs(hj-hj_center)) * max(0.,1-fabs(wj-wj_center));
+
+      // -- ensure legal boudns --
+      hj = bounds(hj,H);
+      wj = bounds(wj,W);
+
+      // bool valid_h = check_interval(hj,0,H);
+      // bool valid_w = check_interval(wj,0,W);
+      // bool valid = valid_h and valid_w;
+
+      // -- update with shift --
+      // wj_center = valid ? wj_center + weight*flow[0][hj][wj] : wj_center;
+      // hj_center = valid ? hj_center + weight*flow[1][hj][wj] : hj_center;
+      // fi += weight*flow[0][hj][wj];
+      // fj += weight*flow[1][hj][wj];
+      fW += weight*flow[0][hj][wj];
+      fH += weight*flow[1][hj][wj];
+
+    }
+  }
+
+}
+
+
+template<typename scalar_t, typename itype=int>
+__device__ __forceinline__ 
+void update_centers_dt(itype& hj_center, itype& wj_center, int ti,
+                       int dir, int dT, int H, int W,
+  const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> flow){
+  int tj = 0;
+  // itype hj=hj_center;
+  // itype wj=wj_center;
+  // itype acc_fH=0,acc_fW=0;
+  // itype fH=0,fW=0;
+  for (int dt=0; dt < dT; dt++){
+    tj = (dir > 0) ? ti+dt : ti-dt;
+
+    update_centers_flow(hj_center,wj_center,H,W,flow[tj]);
+    // update_centers_flow_v2(fH,fW,hj_center,wj_center,H,W,flow[tj]);
+    // // update_centers_flow(fh,fw,H,W,flow[tj]);
+
+    // // -- truncate --
+    // // fH = floorf(fH*10000)/10000;
+    // // fW = floorf(fW*10000)/10000;
+
+    // // -- add to grid --
+    // hj_center = hj_center + fH;
+    // wj_center = wj_center + fW;
+
+    // // -- accumulate --
+    // acc_fH += fH;
+    // acc_fW += fW;
+
+    // // -- reset --
+    // fH=0,fW=0;
+      
+  }
+
+  // -- silly assignment for float-precision --
+  // hj_center = hj + acc_fH;
+  // wj_center = wj + acc_fW;
+
+  // -- update centers --
+  // hj_center += fh;
+  // wj_center += fw;
+  // wj_center = bounds(wj_center,W);
+  // hj_center = bounds(hj_center,H);
 }
 
 template<typename scalar_t, typename itype=int>
 __device__ __forceinline__ 
-void update_centers(itype& hj_center, itype& wj_center, int dir, int H, int W,
-  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> fflow,
-  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> bflow){
+void update_centers(itype& hj_center, itype& wj_center, int ti, int dir,
+                    int dT, int H, int W,
+  const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> fflow,
+  const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> bflow){
 
   // -- access flows --
   auto flow = dir > 0 ? fflow : bflow;
   if (dir != 0){
-    update_centers_flow(hj_center,wj_center,H,W,flow);
+    // update_centers_flow(hj_center,wj_center,H,W,flow);
+    update_centers_dt(hj_center,wj_center,ti,dir,dT,H,W,flow);
   }
 }
 

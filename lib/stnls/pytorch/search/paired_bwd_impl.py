@@ -46,62 +46,18 @@ def paired_backward(ctx, grad_dists, grad_inds):
     nW0 = (W-1)//ctx.stride0+1
     qshift = 0 # no batching backward.
 
-    # -- transpose (T,ST) -> (ST,T) --
-    grad_flow = grad_flow.transpose(1,2).contiguous()
-    flow = flow.transpose(1,2).contiguous()
-
-    # -- debug --
-    # vid0[...] = 2.
-    # vid1[...] = 1.
-    # grad_dists[...] = 1
-    # print(ctx.reflect_bounds,ctx.use_adj)
-    # ctx.reflect_bounds = True
-    # ctx.reflect_bounds = False
-    # ctx.use_adj = True
-    # # grad_vid0[...] = 1
-    # # grad_vid1[...] = 1
-
-    # print(grad_inds)
-    # print(th.any(th.isnan(grad_inds)))
-    # print(th.any(th.isnan(fflow)),th.any(th.isnan(bflow)))
-
-    # print(inds)
-    # print(inds.shape)
     # -- allow for repeated exec --
-    bwd_fxn = stnls_cuda.non_local_search_backward
-    # print(fflow.shape,bflow.shape,grad_fflow.shape,grad_bflow.shape)
-    # print("hi 1")
-    # th.cuda.synchronize()
-    # print("hi 2")
-    bwd_fxn(grad_vid0,grad_vid1,grad_fflow,grad_bflow,
-            vid0,vid1,fflow,bflow,
+    grad_inds = grad_inds.contiguous()
+    bwd_fxn = stnls_cuda.paired_search_backward
+    bwd_fxn(grad_vid0,grad_vid1,grad_flow,vid0,vid1,
             grad_dists,grad_inds,inds,
             qshift,ctx.stride0,nH0,nW0,
-            ctx.ps,ctx.pt,ctx.wt,ctx.dil,ctx.reflect_bounds,ctx.use_adj,
+            ctx.ps,ctx.dil,ctx.reflect_bounds,ctx.use_adj,
             ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,ctx.dist_type_i)
-    # th.cuda.synchronize()
-    # print("bye.")
-    # print(vid0.shape)
-    # print("-"*30)
-    # print("-"*30)
-    # print("fflow")
-    # print(grad_fflow)
-    # print("bflow")
-    # print(grad_bflow)
-    # print("-"*30)
-    # print("-"*30)
-
-    # exit(0)
-
-    # -- transpose (ST,T) -> (T,ST) --
-    grad_fflow = grad_fflow.transpose(1,2).contiguous()
-    grad_bflow = grad_bflow.transpose(1,2).contiguous()
-    fflow = fflow.transpose(1,2).contiguous()
-    bflow = bflow.transpose(1,2).contiguous()
 
     # -- finalize shape --
-    grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')
-    grad_vid1 = rearrange(grad_vid1,'B H t c h w -> B t (H c) h w')
+    grad_vid0 = rearrange(grad_vid0,'B H c h w -> B (H c) h w')
+    grad_vid1 = rearrange(grad_vid1,'B H c h w -> B (H c) h w')
 
     # -- normz --
     # from torch.nn.functional import fold
@@ -167,14 +123,13 @@ def paired_backward(ctx, grad_dists, grad_inds):
 
     # -- no grad if ints --
     if itype_bwd == "int":
-        grad_fflow,grad_bflow = None,None
+        grad_flow = None
 
     # -- no "ST" dimension if ST == 1 --
-    grad_fflow = grad_fflow.squeeze(2)
-    grad_bflow = grad_bflow.squeeze(2)
+    # grad_fflow = grad_fflow.squeeze(2)
+    # grad_bflow = grad_bflow.squeeze(2)
 
-
-    return grad_vid0,grad_vid1,grad_fflow,grad_bflow
+    return grad_vid0,grad_vid1,grad_flow
 
 def nls_backward_offsets(ctx, grad_dists, grad_inds):
 
