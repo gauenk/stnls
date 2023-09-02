@@ -221,10 +221,10 @@ void fill_non_local_patch_bwd_bilin2d(
                 pix += w*v;
 
                 // -- index grad --
-                igrad1 += (nl_i[1] - nl[1]) < 0 ? g2*v :    \
-                  ((nl_i[1] - nl[1]) > 0 ? -g2*v : 0);
-                igrad2 += (nl_i[2] - nl[2]) < 0 ? g1*v :    \
-                  ((nl_i[1] - nl[1]) > 0 ? -g1*v : 0);
+                igrad1 += (nl_i[2] - nl[2]) < 0 ? -g2*v :    \
+                  ((nl_i[2] - nl[2]) > 0 ? g2*v : 0);
+                igrad2 += (nl_i[1] - nl[1]) < 0 ? -g1*v :    \
+                  ((nl_i[1] - nl[1]) > 0 ? g1*v : 0);
                 
                 // -- video grad --
                 atomicAdd(&(grad_vid[nl_i[0]][iftr][nl_i[1]][nl_i[2]]),

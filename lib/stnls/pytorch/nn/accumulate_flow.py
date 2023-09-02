@@ -19,10 +19,96 @@ def run(*args,**kwargs):
     elif len(args) == 3:
         return run_pair(*args,**kwargs)
 
-def run_flows(flows,stride0=1,dtype=None):
-    return run_pair(flows.fflow,flows.bflow,stride0=stride0,dtype=dtype)
+class accumulate_flow_th(th.autograd.Function):
 
-def run_pair(fflow,bflow,stride0=1,dtype=None,interpolation_mode="bilinear"):
+    @staticmethod
+    def forward(ctx, fflow, bflow, stride0):
+
+        # -- get sizes --
+        B,T,_,H,W = bflow.shape
+        nH = (H-1)//stride0+1
+        nW = (W-1)//stride0+1
+        dtype = fflow.dtype
+        device = fflow.device
+
+        # -- init --
+        pfflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
+        pbflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
+
+        # -- forward --
+        stnls_cuda.accumulate_flow_forward(fflow,bflow,pfflow,pbflow,stride0)
+
+        # -- setup ctx --
+        ctx.save_for_backward(fflow,bflow,pfflow,pbflow)
+        ctx_vars = {"stride0":stride0,"fshape":list(fflow.shape)}
+        for name,val in ctx_vars.items():
+            setattr(ctx,name,val)
+
+        return pfflow,pbflow
+
+    @staticmethod
+    def backward(ctx, grad_pfflow, grad_pbflow):
+
+        # -- init --
+        grad_fflow = th.zeros(ctx.fshape,device=grad_pfflow.device)
+        grad_bflow = th.zeros(ctx.fshape,device=grad_pfflow.device)
+
+        # -- get sizes --
+        stride0 = ctx.stride0
+        dtype = grad_bflow.dtype
+        device = grad_bflow.device
+        B,T,_,H,W = grad_bflow.shape
+        nH = (H-1)//stride0+1
+        nW = (W-1)//stride0+1
+        dev = th.zeros((B,T*nH*nW,T-1,T-1,2,2,6),device=device,dtype=dtype)
+
+        # print(grad_pfflow[0,0,:,0])
+        # print(grad_pfflow[0,:,0,0])
+        # print(grad_pfflow[0,:,0,0])
+
+        # -- backward --
+        fflow,bflow,pfflow,pbflow = ctx.saved_tensors
+        bflow = fflow.clone()
+        # fflow[0,0,:,:4,:4] = fflow[0,1,:,:4,:4]
+        # fflow[0,0,0,:4,:4] = fflow[0,1,1,:4,:4]
+        # fflow[0,1,0,:4,:4] = fflow[0,1,1,:4,:4]
+        # fflow[0,2,:,:4,:4] = fflow[0,1,:,:4,:4]
+        # print(fflow[0,0,:,:4,:4])
+        # print(fflow[0,1,:,:5,:5])
+        # print(fflow[0,1,:,:4,:4])
+        # print(fflow[0,2,:,:4,:4])
+        # print(pfflow[0,0,:,:,:4,:4])
+        stnls_cuda.accumulate_flow_backward(dev,grad_fflow,grad_bflow,
+                                            grad_pfflow, grad_pbflow,
+                                            fflow,bflow,pfflow,pbflow,
+                                            ctx.stride0)
+
+        print("-="*10 + " dev + " + "-="*10)
+        # B, Q, patial FLOW dt, partial ACC dt, 2, 2, 4
+        print(dev[0,0,0,1])
+        print("-"*10)
+        print(dev[0,0,1,1])
+        print("-"*10)
+        print(dev[0,1,1,1])
+        print("-"*10)
+        print(dev[0,2,1,1])
+        args = th.where(th.logical_or(dev[...,-2]>0.1,dev[...,-1]>0.1))
+        args_th = th.stack(args)
+        print(args_th.shape)
+        print(args_th)
+        # exit()
+        print("-="*20)
+        print("-="*20)
+
+
+        return grad_fflow,grad_bflow,None
+
+
+def run_flows(flows,stride0=1,dtype=None,fwd_mode="pytorch"):
+    return run_pair(flows.fflow,flows.bflow,stride0=stride0,dtype=dtype,fwd_mode=fwd_mode)
+
+def run_pair(fflow,bflow,stride0=1,dtype=None,
+             interpolation_mode="bilinear",fwd_mode="pytorch"):
 
     # -- unpack --
     B,T,_,H,W = fflow.shape
@@ -30,17 +116,21 @@ def run_pair(fflow,bflow,stride0=1,dtype=None,interpolation_mode="bilinear"):
     device = fflow.device
     dtype = fflow.dtype if dtype is None else dtype
 
-    # -- get size --
-    nH = (H-1)//stride0+1
-    nW = (W-1)//stride0+1
-
-    # -- allocate --
-    pfflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
-    pbflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
 
     # -- run --
-    # stnls_cuda.accumulate_flow_forward(fflow,bflow,pfflow,pbflow,stride0)
-    run_accumulate_flow(fflow,bflow,pfflow,pbflow,stride0,interpolation_mode)
+    if fwd_mode == "pytorch":
+
+        # -- get size --
+        nH = (H-1)//stride0+1
+        nW = (W-1)//stride0+1
+
+        # -- allocate --
+        pfflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
+        pbflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
+        run_accumulate_flow(fflow,bflow,pfflow,pbflow,stride0,interpolation_mode)
+    else:
+        pfflow, pbflow = accumulate_flow_th.apply(fflow,bflow,stride0)
+        # stnls_cuda.accumulate_flow_forward(fflow,bflow,pfflow,pbflow,stride0)
 
     # -- rounding to remove numerical errors with interpolation --
     # pfflow = th.round(pfflow,decimals=4)
@@ -73,7 +163,7 @@ def run_accumulate_flow(fflow,bflow,pfflow,pbflow,stride0,imode):
                     #     print(pfflow[0,ti,tn])
                     #     print(flow_warp(fflow[:,ti+tk], pfflow[:,ti,tn], imode)[0,:,:3,:3])
                     # pfflow[:,ti,tn] = th.round(pfflow[:,ti,tn],decimals=3)
-                    pfflow[:,ti,tn] += flow_warp(fflow[:,ti+tk], pfflow[:,ti,tn], imode)
+                    pfflow[:,ti,tn] = pfflow[:,ti,tn] + flow_warp(fflow[:,ti+tk], pfflow[:,ti,tn], imode)
                     # pfflow[:,ti,tn] = th.round(pfflow[:,ti,tn],decimals=3)
                     # bclip(pfflow[:,ti,tn],H,W)
                     # tmp = pfflow[:,ti,tn].clone()
@@ -91,7 +181,7 @@ def run_accumulate_flow(fflow,bflow,pfflow,pbflow,stride0,imode):
                 for tk in range(1,tn+1):
                     # bclip(pbflow[:,ti,tn],H,W)
                     # pbflow[:,ti,tn] = th.round(pbflow[:,ti,tn],decimals=3)
-                    pbflow[:,ti,tn] += flow_warp(bflow[:,ti-tk], pbflow[:,ti,tn], imode)
+                    pbflow[:,ti,tn] = pbflow[:,ti,tn] + flow_warp(bflow[:,ti-tk], pbflow[:,ti,tn], imode)
                     # pbflow[:,ti,tn] = th.round(pbflow[:,ti,tn],decimals=3)
                     # pbflow[:,ti,tn] += flow_warp(pbflow[:,ti,tn], bflow[:,ti-tk])
 
@@ -156,6 +246,7 @@ def flow_warp(x, flow, interp_mode='bilinear',
     vgrid_x = 2.0 * vgrid[:, 0, :, :] / max(wp - 1, 1) - 1.0
     vgrid_y = 2.0 * vgrid[:, 1, :, :] / max(hp - 1, 1) - 1.0
     vgrid_scaled = th.stack((vgrid_x, vgrid_y), dim=-1)
+    # print(vgrid_scaled.requires_grad)
     # print(vgrid_scaled.min(),vgrid_scaled.max())
     # print(vgrid_scaled[0,:,0,0])
     # print(vgrid_scaled[0,:,0,1])

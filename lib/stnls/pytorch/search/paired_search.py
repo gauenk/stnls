@@ -274,11 +274,11 @@ class PairedSearch(th.nn.Module):
                 if ti == tj:
                     flow = zflow
                 elif ti < tj:
+                    print("fwd: ",ti,tj,tj-ti-1)
                     # flow = acc_flows.fflow[:,tj - ti - 1]
-                    # print("fwd: ",ti,tj,tj-ti-1)
                     flow = acc_flows.fflow[:,ti,tj-ti-1]
                 elif ti > tj:
-                    # print("bwd: ",ti,tj,ti-tj-1)
+                    print("bwd: ",ti,tj,ti-tj-1)
                     # flow = acc_flows.bflow[:,ti - tj - 1]
                     flow = acc_flows.bflow[:,ti,ti-tj-1]
                 flow = flow.float()

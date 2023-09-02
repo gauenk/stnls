@@ -390,12 +390,8 @@ void update_bwd_flows_accum_bilin2d(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_bflow,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> fflow,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> bflow,
-    scalar_t* iweight, int* ref, scalar_t* prop, int* prop_i,
-    int ps, int pt, int dilation, bool reflect_bounds,
-    int* center_offsets, int patch_offset,
-    int iftr, int ftr_start, int ftr_end,
-    bool* valid_ref, bool* valid_prop, bool valid,
-    int T, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix, int i1){
+    scalar_t prop_time, scalar_t* iweight, int* ref, int* prop_i,
+    int T, int H, int W){
 
 
     // 
@@ -403,11 +399,11 @@ void update_bwd_flows_accum_bilin2d(
     //
 
     // -- pick a direction --
-    int delta_t = __float2int_rd(prop[0]) - ref[0];
+    int delta_t = __float2int_rd(prop_time) - ref[0];
     int inc = delta_t > 0 ? 1 : -1;
     auto flow = delta_t > 0 ? fflow : bflow;
     auto g_flow = delta_t > 0 ? grad_fflow : grad_bflow;
-    int src_t = __float2int_rd(prop[0]) - inc;
+    int src_t = __float2int_rd(prop_time) - inc;
     int delta_ta = abs(delta_t);
 
     // -- init incs --
@@ -434,7 +430,6 @@ void update_bwd_flows_accum_bilin2d(
       tx = inc * _tx;
       v0,v1 = 0,0;
       interm[0] = __float2int_rd(ref[0]) + tx;
-      // interm[0]+inc;
       prop_i[0] = __float2int_rd(interm[0]);
       interm[1] = interm_n[1];
       interm[2] = interm_n[2];
@@ -456,7 +451,7 @@ void update_bwd_flows_accum_bilin2d(
 
           // -- ensure legal inds --
           prop_i[1] = bounds(prop_i[1],H);
-          prop_i[2] = bounds(prop_i[2],H);
+          prop_i[2] = bounds(prop_i[2],W);
 
           // -- read --
           v0 = flow[prop_i[0]][0][prop_i[1]][prop_i[2]];
@@ -468,60 +463,32 @@ void update_bwd_flows_accum_bilin2d(
 
           if (_tx > 0){ // first iteration (_tx=0) only updates interm_n
 
+            // -- update gradient --
+            // gradW_t += left0 ? gH*v0 : (right0 ? -gH*v0 : 0);
+            // gradH_t += left1 ? gW*v1 : (right1 ? -gW*v1 : 0);
+
             // -- update flows --
-            if (_tx == 1){
-              atomicAdd(&g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]],gH*gW*iweight[2]);
-              atomicAdd(&g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]],gH*gW*iweight[1]);
-            }
+            // if (_tx > 1){
+            atomicAdd(&g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]],gH*gW*iweight[2]);
+            atomicAdd(&g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]],gH*gW*iweight[1]);
+            // }
 
           }
+
         }
       }
 
       // -- accumulate across time --
       gradW += _tx > 0 ? gradW*gradW_t : 1;
       gradH += _tx > 0 ? gradH*gradH_t : 1;
-
-      // gradH += gradH*gradH_t;
-      // gradW += 1;
-      // gradH += 1;
-
-      // -- update at point --
-// #pragma unroll
-//       for (int ix=0;ix<2;ix++){
-// #pragma unroll
-//         for (int jx=0;jx<2;jx++){
-
-//           // -- interpolation weight --
-//           prop_i[1] = __float2int_rd(interm[1]+ix);
-//           gH = max(0.,1-fabs(prop_i[1]-interm[1]));
-//           prop_i[2] = __float2int_rd(interm[2]+jx);
-//           gW = max(0.,1-fabs(prop_i[2]-interm[2]));
-
-
-      // atomicAdd(&g_flow[ref[0]][0][ref[1]][ref[2]],gradW*iweight[2]);
-      // atomicAdd(&g_flow[ref[0]][1][ref[1]][ref[2]],gradH*iweight[1]);
-      //   }
-      // }
+      // gradW_t = gradW;
+      // gradH_t = gradH;
 
     }
-
-    // if (delta_ta == 1){
-    //   gradW = 1;
-    //   gradH = 1;
-    // }
-    // // -- udpate gradient --
-    // ref_i[1] = __float2int_rd(ref[1]);
-    // ref_i[2] = __float2int_rd(ref[2]);
-
-    // // -- ensure legal bounds --
-    // ref_i[1] = bounds(ref_i[1],H);
-    // ref_i[2] = bounds(ref_i[2],W);
 
     // -- update --
     atomicAdd(&g_flow[ref[0]][0][ref[1]][ref[2]],gradW*iweight[2]);
     atomicAdd(&g_flow[ref[0]][1][ref[1]][ref[2]],gradH*iweight[1]);
-
 }
 
 template<typename scalar_t>

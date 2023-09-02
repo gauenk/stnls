@@ -409,3 +409,112 @@ void update_bwd_bilin2d_patch_2d(
 }
 
 
+template<typename scalar_t, int DIST_TYPE>
+__device__ __forceinline__ 
+void update_bwd_flow_accum_flows_2d(
+    torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> g_flow,
+    const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow,
+    scalar_t prop_time, scalar_t* iweight, int* ref,
+    int H, int W){
+
+
+    // 
+    // -- update optical flow (forward or backward) --
+    //
+
+    // -- pick a direction --
+    int prop_i[3];
+    int delta_t = __float2int_rd(prop_time) - ref[0];
+    int inc = delta_t > 0 ? 1 : -1;
+    // auto flow = delta_t > 0 ? fflow : bflow;
+    // auto g_flow = delta_t > 0 ? grad_fflow : grad_bflow;
+    int src_t = __float2int_rd(prop_time) - inc;
+    int delta_ta = abs(delta_t);
+
+    // -- init incs --
+    scalar_t w;
+    scalar_t interm[3],interm_n[3];
+    scalar_t gradW = 0;
+    scalar_t gradH = 0;
+    scalar_t gH,gW,v0,v1,gH_f,gW_f;
+    int tx;
+
+    // -- setup --
+#pragma unroll
+    for (int idx=0;idx<3;idx++){
+      interm[idx] = __int2float_rd(ref[idx]);
+      interm_n[idx] = interm[idx];
+    }
+
+    // -- compute gradient across time --
+    for (int _tx = 0; _tx < delta_ta; _tx++){
+
+      scalar_t gradW_t = 0;
+      scalar_t gradH_t = 0;
+
+      tx = inc * _tx;
+      v0,v1 = 0,0;
+      interm[0] = __float2int_rd(ref[0]) + tx;
+      prop_i[0] = __float2int_rd(interm[0]);
+      interm[1] = interm_n[1];
+      interm[2] = interm_n[2];
+
+#pragma unroll
+      for (int ix=0;ix<2;ix++){
+#pragma unroll
+        for (int jx=0;jx<2;jx++){
+          prop_i[1] = __float2int_rd(interm[1]+ix);
+          gH = max(0.,1-fabs(prop_i[1]-interm[1]));
+          prop_i[2] = __float2int_rd(interm[2]+jx);
+          gW = max(0.,1-fabs(prop_i[2]-interm[2]));
+
+          // // -- compute direction --
+          // bool left0 = (interm[1]-prop_i[1]) < 0;
+          // bool left1 = (interm[2]-prop_i[2]) < 0;
+          // bool right0 = (interm[1]-prop_i[1]) > 0;
+          // bool right1 = (interm[2]-prop_i[2]) > 0;
+
+          // -- ensure legal inds --
+          prop_i[1] = bounds(prop_i[1],H);
+          prop_i[2] = bounds(prop_i[2],W);
+
+          // -- read --
+          v0 = flow[prop_i[0]][0][prop_i[1]][prop_i[2]];
+          v1 = flow[prop_i[0]][1][prop_i[1]][prop_i[2]];
+
+          // -- update next location --
+          interm_n[1] += gH*gW*v0;
+          interm_n[2] += gH*gW*v1;
+
+          if (_tx > 0){ // first iteration (_tx=0) only updates interm_n
+
+            // -- update gradient --
+            // gradW_t += left0 ? gH*v0 : (right0 ? -gH*v0 : 0);
+            // gradH_t += left1 ? gW*v1 : (right1 ? -gW*v1 : 0);
+
+            // -- update flows --
+            // if (_tx > 1){
+            atomicAdd(&g_flow[prop_i[0]][0][prop_i[1]][prop_i[2]],gH*gW*iweight[2]);
+            atomicAdd(&g_flow[prop_i[0]][1][prop_i[1]][prop_i[2]],gH*gW*iweight[1]);
+            // }
+
+          }
+
+        }
+      }
+
+      // -- accumulate across time --
+      gradW += _tx > 0 ? gradW*gradW_t : 1;
+      gradH += _tx > 0 ? gradH*gradH_t : 1;
+      // gradW_t = gradW;
+      // gradH_t = gradH;
+
+    }
+
+    // -- update --
+    atomicAdd(&g_flow[ref[0]][0][ref[1]][ref[2]],gradW*iweight[2]);
+    atomicAdd(&g_flow[ref[0]][1][ref[1]][ref[2]],gradH*iweight[1]);
+
+}
+
+

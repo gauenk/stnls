@@ -425,16 +425,17 @@ __global__ void non_local_search_backward_bilin2d_kernel(
 
     // -- update fflow,bflow --
     if (ACC_FLOW){
+
       update_bwd_flows_accum_bilin2d<scalar_t>(
                        grad_fflow[ibatch][0],
                        grad_bflow[ibatch][0],
                        fflow[ibatch][0],bflow[ibatch][0],
-                       iweight,ref_patch,prop_patch,prop_i,
-                       ps,pt,dilation,reflect_bounds,
-                       center_offsets,patch_offset,
-                       iftr,ftr_start,ftr_end,
-                       valid_ref,valid_prop,valid,
-                       T,H,W,pix0,pix1,pix,i1);
+                       prop_patch[0],iweight,ref_patch,prop_i,
+                       // ps,pt,dilation,reflect_bounds,
+                       // center_offsets,patch_offset,
+                       // iftr,ftr_start,ftr_end,
+                       // valid_ref,valid_prop,valid,
+                       T,H,W);
 
     }else{
       int delta_t = __float2int_rd(prop_patch[0]) - ref_patch[0];

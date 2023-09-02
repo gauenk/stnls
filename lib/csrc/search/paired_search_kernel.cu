@@ -704,6 +704,8 @@ __global__ void paired_search_bilin2d_backward_kernel(
                      H,W,pix0,pix1,pix,i1);
 
     // -- update flows --
+    // update_bwd_flow_accum_flows_2d(grad_flow[ibatch],flow[ibatch],
+    //                                iweight, ref_patch, prop_patch, H, W);
     atomicAdd(&(grad_flow[ibatch][0][ref[0]][ref[1]]),iweight[1]);
     atomicAdd(&(grad_flow[ibatch][1][ref[0]][ref[1]]),iweight[0]);
 

@@ -19,10 +19,13 @@ void accumulate_flow_forward_cuda(
     torch::Tensor pfflow, torch::Tensor pbflow,
     int stride0);
 
-// void accumulate_flow_backward_cuda(
-//     const torch::Tensor fflow,const torch::Tensor bflow,
-//     torch::Tensor pfflow, torch::Tensor pbflow,
-//     int stride0);
+void accumulate_flow_backward_cuda(
+    torch::Tensor dev,
+    torch::Tensor grad_fflow, torch::Tensor grad_bflow,
+    const torch::Tensor grad_pfflow, const torch::Tensor grad_pbflow,
+    const torch::Tensor fflow, const torch::Tensor bflow,
+    const torch::Tensor pfflow, const torch::Tensor pbflow,
+    int stride0);
 
 // C++ interface
 
@@ -41,17 +44,27 @@ void accumulate_flow_forward(
   accumulate_flow_forward_cuda(fflow, bflow, pfflow, pbflow, stride0);
 }
 
-// void accumulate_flow_backward(
-//     torch::Tensor grad_fflow, const torch::Tensor grad_bflow,
-//     const torch::Tensor fflow, const torch::Tensor bflow,
-//     const torch::Tensor pfflow, const torch::Tensor pbflow,
-//     int stride0){
-//   CHECK_INPUT(fflow);
-//   CHECK_INPUT(bflow);
-//   CHECK_INPUT(pfflow);
-//   CHECK_INPUT(pbflow);
-//   accumulate_flow_backward_cuda(fflow, bflow, pfflow, pbflow, stride0);
-// }
+void accumulate_flow_backward(
+    torch::Tensor dev,
+    torch::Tensor grad_fflow, torch::Tensor grad_bflow,
+    const torch::Tensor grad_pfflow, const torch::Tensor grad_pbflow,
+    const torch::Tensor fflow, const torch::Tensor bflow,
+    const torch::Tensor pfflow, const torch::Tensor pbflow,
+    int stride0){
+  CHECK_INPUT(dev);
+  CHECK_INPUT(grad_fflow);
+  CHECK_INPUT(grad_bflow);
+  CHECK_INPUT(grad_pfflow);
+  CHECK_INPUT(grad_pbflow);
+  CHECK_INPUT(fflow);
+  CHECK_INPUT(bflow);
+  CHECK_INPUT(pfflow);
+  CHECK_INPUT(pbflow);
+  accumulate_flow_backward_cuda(dev,grad_fflow,grad_bflow,
+                                grad_pfflow,grad_pbflow,
+                                fflow, bflow,
+                                pfflow, pbflow, stride0);
+}
 
 
 
@@ -59,7 +72,7 @@ void accumulate_flow_forward(
 void init_accumulate_flow(py::module &m){
   m.def("accumulate_flow_forward", &accumulate_flow_forward,
         "Accumulate Offsets from Optical Flow (CUDA)");
-  // m.def("accumulate_flow_backward", &accumulate_flow_backward,
-  //       "Accumulate Offsets from Optical Flow (CUDA)");
+  m.def("accumulate_flow_backward", &accumulate_flow_backward,
+        "Accumulate Offsets from Optical Flow (CUDA)");
 
 }
