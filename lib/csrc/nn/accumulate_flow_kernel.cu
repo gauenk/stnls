@@ -261,6 +261,18 @@ void assign_bilin2d(scalar_t dAdF0[2], scalar_t dAdF1[2],
                     scalar_t gv0, scalar_t gv1, scalar_t* prop, int H, int W,
      torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> g_flow){
 
+  // -- check bounds --
+  // int sH = check_interval(prop[1],0,H) ? 1 : -1;
+  // int sW = check_interval(prop[2],0,W) ? 1 : -1;
+  // dAdF0[0] = sW*dAdF0[0];
+  // dAdF0[1] = sW*dAdF0[1];
+  // dAdF1[0] = sH*dAdF1[0];
+  // dAdF1[1] = sH*dAdF1[1];
+
+  // -- init wrap --
+  // prop[1] = bounds(prop[1],H);
+  // prop[2] = bounds(prop[2],W);
+
   // -- read --
   int prop_i[2];
   scalar_t gH,gW,w;
@@ -275,6 +287,13 @@ void assign_bilin2d(scalar_t dAdF0[2], scalar_t dAdF1[2],
       prop_i[1] = __float2int_rd(prop[2]+jx);
       gW = max(0.,1-fabs(prop_i[1]-prop[2]));
       w = gH*gW;
+
+      // if (not(check_interval(prop_i[0],0,H))){
+      //     continue;
+      // }
+      // if (not(check_interval(prop_i[1],0,W))){
+      //     continue;
+      // }
 
       // -- bounds --
       prop_i[0] = bounds(prop_i[0],H);
@@ -328,6 +347,8 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
   any_zero[1] = false;
 
   // -- check bounds --
+  // int sH = 1;//check_interval(prop[1],0,H) ? 1 : -1;
+  // int sW = 1;//check_interval(prop[2],0,W) ? 1 : -1;
   int sH = check_interval(prop[1],0,H) ? 1 : -1;
   int sW = check_interval(prop[2],0,W) ? 1 : -1;
 
@@ -359,6 +380,10 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
       bool right0 = (prop_i[0]-prop[1]) > 0;
       bool left1 = (prop_i[1]-prop[2]) < 0;
       bool right1 = (prop_i[1]-prop[2]) > 0;
+      // bool left0 = ix == 0;
+      // bool right0 = ix == 1;
+      // bool left1 = jx == 0;
+      // bool right1 = jx == 1;
 
       // zero out edge
       any_zero[0] = (not(left0) && not(right0)) or any_zero[0];
@@ -366,9 +391,21 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
       // left1 = jx == 0;
       // right1 = jx == 1;
 
+      // -- bounds
+      // int sH = check_interval(prop_i[1],0,H) ? 1 : -1;
+      // int sW = check_interval(prop_i[2],0,W) ? 1 : -1;
+
       // -- bounds --
-      prop_i[0] = bounds(prop_i[0],H);
-      prop_i[1] = bounds(prop_i[1],W);
+      // if (not(check_interval(prop_i[0],0,H))){
+      //     continue;
+      // }
+      // if (not(check_interval(prop_i[1],0,W))){
+      //     continue;
+      // }
+      // int cH = check_interval(prop_i[1],0,H) ? 1 : -1;
+      // int cW = check_interval(prop_i[2],0,W) ? 1 : -1;
+      // prop_i[0] = bounds(prop_i[0],H);
+      // prop_i[1] = bounds(prop_i[1],W);
       // assert (prop_i[0]>=0);
       // assert (prop_i[1]>=0);
 
@@ -389,11 +426,18 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
       // dev[ix][jx][5] = vW;
 
       // -- update --
+      // dFlow[0][0] += left1 ? -sW*gH*vW : (right1 ? sW*gH*vW : 0); // dF[0]/dF[0]; A(0)
+      // dFlow[0][1] += left0 ? -sH*gW*vW : (right0 ? sH*gW*vW : 0); // dF[0]/dF[0]; A(1)
+
+      // dFlow[1][0] += left1 ? -sW*gH*vH : (right1 ? sW*gH*vH : 0); // dF[1]/dF[1]; A(0)
+      // dFlow[1][1] += left0 ? -sH*gW*vH : (right0 ? sH*gW*vH : 0); // dF[1]/dF[1]; A(1)
+
       dFlow[0][0] += left1 ? -gH*vW : (right1 ? gH*vW : 0); // dF[0]/dF[0]; A(0)
       dFlow[0][1] += left0 ? -gW*vW : (right0 ? gW*vW : 0); // dF[0]/dF[0]; A(1)
 
       dFlow[1][0] += left1 ? -gH*vH : (right1 ? gH*vH : 0); // dF[1]/dF[1]; A(0)
       dFlow[1][1] += left0 ? -gW*vH : (right0 ? gW*vH : 0); // dF[1]/dF[1]; A(1)
+
 
     }
   }
@@ -432,10 +476,10 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
     _dAdF1[1] = dAdF1[1];
 
     // -- update --
-    dAdF0[0] += dFlow[0][0]*_dAdF0[0] + dFlow[0][1]*_dAdF0[1];
-    dAdF0[1] += dFlow[1][0]*_dAdF0[0] + dFlow[1][1]*_dAdF0[1];
-    dAdF1[0] += dFlow[0][0]*_dAdF1[0] + dFlow[0][1]*_dAdF1[1];
-    dAdF1[1] += dFlow[1][0]*_dAdF1[0] + dFlow[1][1]*_dAdF1[1];
+    dAdF0[0] += dFlow[0][0]*sW*_dAdF0[0] + dFlow[0][1]*sH*_dAdF0[1];
+    dAdF0[1] += dFlow[1][0]*sW*_dAdF0[0] + dFlow[1][1]*sH*_dAdF0[1];
+    dAdF1[0] += dFlow[0][0]*sW*_dAdF1[0] + dFlow[0][1]*sH*_dAdF1[1];
+    dAdF1[1] += dFlow[1][0]*sW*_dAdF1[0] + dFlow[1][1]*sH*_dAdF1[1];
 
     // dAdF1[1] += (tx == 1) ? dFlow[1][1] : dFlow[1][1] * dAdF1[1];//*dAdF1[0][0];
     // dAdF0[0][0] += dFlow[0]*dAdF0[0][0];

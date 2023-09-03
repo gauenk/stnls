@@ -479,13 +479,34 @@ def test_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # flows.fflow = th.zeros_like(flows.fflow)
     flows.fflow = 0.1*th.ones_like(flows.fflow)
     # flows.fflow[:,1,0,2:3,2:3] = 1./3
-    flows.fflow[:,:,0,:1,:1] = -.8
+    # flows.fflow[:,:,0,:1,:1] = -.8
+    # flows.fflow[:,:,0,:3,:3] = -2.1
     # flows.fflow[:,2] = flows.fflow[:,1]
     flows.bflow = flows.fflow.clone()
     # flows.fflow[:,:,0,:h//2,:w//2] = -1/5.
     # flows.bflow = th.clamp(M*th.ones_like(flows.bflow),-M,M).round()/5.
 
+    flows.fflow[...] = 0.
+    flows.fflow[:,0] = -1./5
+    flows.fflow[:,1] = 1./3
+    flows.fflow[:,2] = -1./6
     # flows.fflow = th.round(th.clamp(th.randn_like(flows.fflow)/15.,-0.1,.1),decimals=5)
+    flows.fflow = th.round(th.clamp(th.randn_like(flows.fflow)/10.,-0.1,.1),decimals=5)
+    # flows.fflow = th.round(th.clamp(th.randn_like(flows.fflow)/10.,-0.1,.1),decimals=5)
+    flows.fflow = th.round(th.randn_like(flows.fflow)*3,decimals=5)
+    flows.fflow = th.round(th.randn_like(flows.fflow)/2.,decimals=8)
+    flows.fflow = th.round(th.randn_like(flows.fflow)*2.,decimals=8)
+    flows.fflow = th.round(th.clamp(th.randn_like(flows.fflow)/2.,-1.1,1.1),decimals=5)
+    # isint = th.abs(th.round(flows.fflow) - flows.fflow) < 1e-10
+    # flows.fflow[isint] = th.clamp(th.randn_like(flows.fflow[isint]),-0.1,.1)
+    # isint = th.abs(th.round(flows.fflow) - flows.fflow) < 1e-10
+    # flows.fflow[isint] = th.clamp(th.randn_like(flows.fflow[isint]),-0.1,.1)
+    # isint = th.abs(th.round(flows.fflow) - flows.fflow) < 1e-10
+    # flows.fflow[isint] = th.clamp(th.randn_like(flows.fflow[isint]),-0.1,.1)
+    print(flows.fflow.max())
+
+
+    # flows.fflow = th.round(th.clamp(th.randn_like(flows.fflow)/3.,-0.2,.2),decimals=6)
     # flows.bflow = th.round(th.clamp(th.randn_like(flows.bflow)/15.,-0.1,.1),decimals=5)
 
     # -- init data --
@@ -509,7 +530,10 @@ def test_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
                                  itype_fwd=itype_fwd,itype_bwd=itype_bwd,
                                  normalize_bwd=False)
     dists_te,inds_te = search_te.paired_vids(vid0, vid1, acc_flows_te, wt)
-    print(acc_flows_te.fflow.requires_grad)
+    afflow_gt = acc_flows_gt.fflow
+    # acc_flows_te.fflow[...] = acc_flows_gt.fflow
+
+    # print(acc_flows_te.fflow.requires_grad)
 
     # print(fflow_te[0,0,:,:2,:2])
     # print(fflow_te[0,1,:,:2,:2])
@@ -521,17 +545,18 @@ def test_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # th.autograd.backward(inds_te,inds_grad)
     afflow_te = acc_flows_te.fflow
     afflow_grad = th.ones_like(afflow_gt)
-    afflow_grad = th.randn_like(afflow_gt)
-    afflow_grad[...] = 0
-    afflow_grad[0,0,0] = 1
+    # afflow_grad = th.randn_like(afflow_gt)
+    # afflow_grad[...] = 0
+    # afflow_grad[0,0,0] = 1
+    # afflow_grad[0,0,1] = 1
 
     # afflow_grad[0,0,:,:,3:-3,3:-3] = 1
     # afflow_grad[0,0,1,:,:1,:1] = 1
     # afflow_grad[0,0,1,:,8:9,17:18] = 1
 
     # -- passing test --
-    afflow_grad = th.zeros_like(afflow_gt)
-    afflow_grad[0,0,:2,:,:2,:2] = 1.
+    # afflow_grad = th.zeros_like(afflow_gt)
+    # afflow_grad[0,0,:2,:,:2,:2] = 1.
 
     # -- passing test --
     # afflow_grad = th.randn_like(afflow_gt)
@@ -540,7 +565,7 @@ def test_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # afflow_grad[...,:,:3] = 0
     # afflow_grad[...,:,-3:] = 0
 
-    print(afflow_grad[...,3:-3,3:-3])
+    # print(afflow_grad[...,3:-3,3:-3])
 
 
 
@@ -554,7 +579,8 @@ def test_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # afflow_grad[:,:,:,1] = 0
     # print(afflow_grad.shape)
     # print(afflow_grad)
-    # afflow_grad = th.randn_like(afflow_gt)
+    afflow_grad = th.randn_like(afflow_gt)
+    afflow_grad = th.randn_like(afflow_gt)
 
     th.autograd.backward(afflow_te,afflow_grad)
     th.autograd.backward(afflow_gt,afflow_grad)
@@ -587,11 +613,25 @@ def test_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     grad_gt =fflow_gt.grad
     grad_te =fflow_te.grad
-    diff = th.abs(grad_gt - grad_te)
+    diff = th.abs(grad_gt - grad_te)/(grad_gt.abs()+1e-3)
     args = th.where(diff > 1e-2)
     print(args)
     print(fflow_te[args])
-    # print(afflow_te[:,:,0][args])
     print(len(args[0]))
+    print(th.any(th.abs(th.round(afflow_te) - afflow_te)<1e-9).item())
+    for t in range(4):
+        isint = th.abs(th.round(afflow_te[0,t,:4-t]) - afflow_te[0,t,:4-t])<1e-9
+        print(th.sum(1*isint))
     print(th.stack([grad_gt[args],grad_te[args]],-1))
+
+    # -- compare fwd --
+    afflow_gt = acc_flows_gt.fflow
+    afflow_te = acc_flows_te.fflow
+    diff = th.abs(afflow_gt - afflow_te)/(afflow_gt.abs()+1e-3)
+    args = th.where(diff > 1e-2)
+    print(args)
+    print(th.mean((acc_flows_gt.fflow - acc_flows_te.fflow)**2))
+    print(th.stack([afflow_gt[args],afflow_te[args]],-1))
+
+
 
