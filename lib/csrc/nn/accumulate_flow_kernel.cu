@@ -12,53 +12,9 @@
 #include <cuda/std/type_traits>
 #include <cstdio>
 #include "../search/nls_bilin2d.cu"
-// #include "shared_nn_utils.cu"
-// #include "../search/nls_bilin2d.cu"
 
 
 using namespace at;
-
-// template<typename dtype=int>
-// __device__ __forceinline__ dtype bounds_clip(dtype val, int lim ){
-//   dtype vval = val;
-//   if (val < 0){
-//     vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
-//     vval = vval > (lim-1) ? 0 : vval;
-//   }else if (val > (lim-1)){
-//     vval = 2*(lim-1)-val; // want ("H" -> "H-2") _not_ ("H" -> "H-1")
-//     vval = vval < 0 ? lim-1 : vval;
-//   }
-//   return vval;
-// }
-
-// template<typename scalar_t>
-// __device__ __forceinline__ 
-// void bilinear_index(
-//      const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow,
-//      scalar_t& v0, scalar_t& v1,
-//      scalar_t hj_center, scalar_t wj_center, int H, int W){
-//   v0=0;
-//   v1=0;
-// #pragma unroll
-//     for (int i=0;i<2;i++){
-// #pragma unroll
-//       for (int j=0;j<2;j++){
-
-//         // -- compute int locaion with weight --
-//         hj = __float2int_rd(hj_center + i);
-//         wj = __float2int_rd(wj_center + j);
-//         weight = max(0.,1-fabs(hj-hj_center)) * max(0.,1-fabs(wj-wj_center));
-
-//         // -- ensure legal boudns --
-//         hj = bounds(hj,H);
-//         wj = bounds(wj,W);
-
-//         // -- update with shift --
-//         v0 += weight*flow[0][hj][wj];
-//         v1 += weight*flow[1][hj][wj];
-//       }
-//     }
-// }
 
 template<typename scalar_t, typename itype=int>
 __device__ __forceinline__ 
@@ -70,48 +26,29 @@ void update_centers_flow_acc(itype& hj_center, itype& wj_center, int H, int W,
   itype hj_tmp = hj_center;
   itype wj_tmp = wj_center;
 
-  // -- update --
-  if(is_same_v<itype,int>){
-
-    // // -- simple rounding if "int" --
-    // wj_center = int(1.*wj_center + flow[0][hj_tmp][wj_tmp] + 0.5);
-    // hj_center = int(1.*hj_center + flow[1][hj_tmp][wj_tmp] + 0.5);
-
-    // // -- wrap around boarders --
-    // wj_center = max(0,min(W-1,(int)wj_center));
-    // hj_center = max(0,min(H-1,(int)hj_center));
-
-  }else{
-
-
-    // -- weighted average of neighbors --
-    float weight = 0;
-    int hj = 0, wj = 0;
+  // -- weighted average of neighbors --
+  float weight = 0;
+  int hj = 0, wj = 0;
 #pragma unroll
-    for (int i=0;i<2;i++){
+  for (int i=0;i<2;i++){
 #pragma unroll
-      for (int j=0;j<2;j++){
+    for (int j=0;j<2;j++){
 
-        // -- compute int locaion with weight --
-        hj = __float2int_rd(hj_tmp + i);
-        wj = __float2int_rd(wj_tmp + j);
-        weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
+      // -- compute int locaion with weight --
+      hj = __float2int_rd(hj_tmp + i);
+      wj = __float2int_rd(wj_tmp + j);
+      weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
 
-        // -- ensure legal boudns --
-        hj = bounds(hj,H);
-        wj = bounds(wj,W);
+      // -- ensure legal boudns --
+      hj = bounds(hj,H);
+      wj = bounds(wj,W);
 
-        // -- update with shift --
-        wj_center += weight*flow[0][hj][wj];
-        hj_center += weight*flow[1][hj][wj];
-      }
+      // -- update with shift --
+      wj_center += weight*flow[0][hj][wj];
+      hj_center += weight*flow[1][hj][wj];
     }
-
-    // -- wrap around boarders --
-    // wj_center = max((float)0.,(float)min((float)1.*W-1,(float)wj_center));
-    // hj_center = max((float)0.,(float)min((float)1.*H-1,(float)hj_center));
-
   }
+
 }
 
 template <typename scalar_t, typename itype>
@@ -261,18 +198,6 @@ void assign_bilin2d(scalar_t dAdF0[2], scalar_t dAdF1[2],
                     scalar_t gv0, scalar_t gv1, scalar_t* prop, int H, int W,
      torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> g_flow){
 
-  // -- check bounds --
-  // int sH = check_interval(prop[1],0,H) ? 1 : -1;
-  // int sW = check_interval(prop[2],0,W) ? 1 : -1;
-  // dAdF0[0] = sW*dAdF0[0];
-  // dAdF0[1] = sW*dAdF0[1];
-  // dAdF1[0] = sH*dAdF1[0];
-  // dAdF1[1] = sH*dAdF1[1];
-
-  // -- init wrap --
-  // prop[1] = bounds(prop[1],H);
-  // prop[2] = bounds(prop[2],W);
-
   // -- read --
   int prop_i[2];
   scalar_t gH,gW,w;
@@ -288,13 +213,6 @@ void assign_bilin2d(scalar_t dAdF0[2], scalar_t dAdF1[2],
       gW = max(0.,1-fabs(prop_i[1]-prop[2]));
       w = gH*gW;
 
-      // if (not(check_interval(prop_i[0],0,H))){
-      //     continue;
-      // }
-      // if (not(check_interval(prop_i[1],0,W))){
-      //     continue;
-      // }
-
       // -- bounds --
       prop_i[0] = bounds(prop_i[0],H);
       prop_i[1] = bounds(prop_i[1],W);
@@ -302,14 +220,6 @@ void assign_bilin2d(scalar_t dAdF0[2], scalar_t dAdF1[2],
       // -- write --
       atomicAdd(&(g_flow[0][prop_i[0]][prop_i[1]]),w*(dAdF0[0]*gv0+ dAdF0[1]*gv1));
       atomicAdd(&(g_flow[1][prop_i[0]][prop_i[1]]),w*(dAdF1[0]*gv0+ dAdF1[1]*gv1));
-      // atomicAdd(&(g_flow[0][prop_i[0]][prop_i[1]]),w*w0[0][1]*gv1);
-      // atomicAdd(&(g_flow[1][prop_i[0]][prop_i[1]]),w*w1[0][0]*gv1);
-      // atomicAdd(&(g_flow[1][prop_i[0]][prop_i[1]]),w*w1[0][1]*gv0);
-      // atomicAdd(&(g_flow[0][prop_i[0]][prop_i[1]]),w*w0[ix][jx]*gv0);
-      // atomicAdd(&(g_flow[1][prop_i[0]][prop_i[1]]),w*w1[ix][jx]*gv1);
-      // atomicAdd(&(g_flow[0][prop_i[0]][prop_i[1]]),w*gv0);
-      // atomicAdd(&(g_flow[1][prop_i[0]][prop_i[1]]),w*gv1);
-
     }
   }
 
@@ -342,20 +252,18 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
   dFlow[0][1] = 0;
   dFlow[1][0] = 0;
   dFlow[1][1] = 0;
-  bool any_zero[2];
-  any_zero[0] = false;
-  any_zero[1] = false;
+
+  // -- zero out any invalid --
+  // bool any_zero[2];
+  // any_zero[0] = false;
+  // any_zero[1] = false;
 
   // -- check bounds --
-  // int sH = 1;//check_interval(prop[1],0,H) ? 1 : -1;
-  // int sW = 1;//check_interval(prop[2],0,W) ? 1 : -1;
+  // scalar_t eps = 1e-7;
+  // prop[1] = prop[1]-eps;
+  // prop[2] = prop[2]-eps;
   int sH = check_interval(prop[1],0,H) ? 1 : -1;
   int sW = check_interval(prop[2],0,W) ? 1 : -1;
-
-  dev[0][0][2] = prop[1];
-  dev[0][0][3] = prop[2];
-  dev[0][0][4] = sH;
-  dev[0][0][5] = sW;
 
   // -- init wrap --
   prop[1] = bounds(prop[1],H);
@@ -368,12 +276,17 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
     for (int jx=0;jx<2;jx++){
 
       // -- interpolation weights --
-      // prop_i[0] = __float2int_rz(prop[1]+ix);
       prop_i[0] = __float2int_rz(ix ==0 ? floorf(prop[1]) : ceilf(prop[1]));
+      // prop_i[0] = __float2int_rz(ix ==0 ? floorf(prop[1]) : (floorf(prop[1])+1));
       gH = max(0.,1-fabs(prop_i[0]-prop[1]));
-      // prop_i[1] = __float2int_rz(prop[2]+jx);
+      // gH = (ix == 0) ? 1 - (prop[1] - prop_i[0]) : 1 - (prop_i[0] - prop[1]);
+      // gH = (ix == 0) ? prop_i[0] - prop[1]: prop[1] - prop_i[0];
+
       prop_i[1] = __float2int_rz(jx ==0 ? floorf(prop[2]) : ceilf(prop[2]));
+      // prop_i[1] = __float2int_rz(jx ==0 ? floorf(prop[2]) : (floorf(prop[2])+1));
       gW = max(0.,1-fabs(prop_i[1]-prop[2]));
+      // gW = (jx == 0) ? 1 - (prop[2] - prop_i[1]) : 1 - (prop_i[1] - prop[2]);
+      // gW = (jx == 0) ? prop_i[1] - prop[2] : prop[2] - prop_i[1];
 
       // -- compute direction --
       bool left0 = (prop_i[0]-prop[1]) < 0;
@@ -385,53 +298,15 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
       // bool left1 = jx == 0;
       // bool right1 = jx == 1;
 
-      // zero out edge
-      any_zero[0] = (not(left0) && not(right0)) or any_zero[0];
-      any_zero[1] = (not(left1) && not(right1)) or any_zero[1];
-      // left1 = jx == 0;
-      // right1 = jx == 1;
-
-      // -- bounds
-      // int sH = check_interval(prop_i[1],0,H) ? 1 : -1;
-      // int sW = check_interval(prop_i[2],0,W) ? 1 : -1;
-
-      // -- bounds --
-      // if (not(check_interval(prop_i[0],0,H))){
-      //     continue;
-      // }
-      // if (not(check_interval(prop_i[1],0,W))){
-      //     continue;
-      // }
-      // int cH = check_interval(prop_i[1],0,H) ? 1 : -1;
-      // int cW = check_interval(prop_i[2],0,W) ? 1 : -1;
-      // prop_i[0] = bounds(prop_i[0],H);
-      // prop_i[1] = bounds(prop_i[1],W);
-      // assert (prop_i[0]>=0);
-      // assert (prop_i[1]>=0);
+      // -- zero out edge --
+      // any_zero[0] = (not(left0) && not(right0)) or any_zero[0];
+      // any_zero[1] = (not(left1) && not(right1)) or any_zero[1];
 
       // -- read --
       vW = flow[0][prop_i[0]][prop_i[1]];
       vH = flow[1][prop_i[0]][prop_i[1]];
-      // if ((prop_i[0] < 2) && (prop_i[1] < 2)){
-      //   vH = static_cast<scalar_t>(1/2.);
-      // }else{
-      //   vH = static_cast<scalar_t>(1/10.);
-      // }
-      // vH = static_cast<scalar_t>(1/10.);
-
-      // -- write --
-      dev[ix][jx][0] = prop_i[0];
-      dev[ix][jx][1] = prop_i[1];
-      // dev[ix][jx][4] = vH;
-      // dev[ix][jx][5] = vW;
 
       // -- update --
-      // dFlow[0][0] += left1 ? -sW*gH*vW : (right1 ? sW*gH*vW : 0); // dF[0]/dF[0]; A(0)
-      // dFlow[0][1] += left0 ? -sH*gW*vW : (right0 ? sH*gW*vW : 0); // dF[0]/dF[0]; A(1)
-
-      // dFlow[1][0] += left1 ? -sW*gH*vH : (right1 ? sW*gH*vH : 0); // dF[1]/dF[1]; A(0)
-      // dFlow[1][1] += left0 ? -sH*gW*vH : (right0 ? sH*gW*vH : 0); // dF[1]/dF[1]; A(1)
-
       dFlow[0][0] += left1 ? -gH*vW : (right1 ? gH*vW : 0); // dF[0]/dF[0]; A(0)
       dFlow[0][1] += left0 ? -gW*vW : (right0 ? gW*vW : 0); // dF[0]/dF[0]; A(1)
 
@@ -442,56 +317,30 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
     }
   }
   
-  if(any_zero[0]){
-    dFlow[0][1] = 0;
-    dFlow[1][1] = 0;
-  }
-  if(any_zero[1]){
-    dFlow[0][0] = 0;
-    dFlow[1][0] = 0;
-  }
+  // if(any_zero[1]){
+  //   dFlow[0][1] = 0;
+  //   dFlow[1][1] = 0;
+  // }
+  // if(any_zero[0]){
+  //   dFlow[0][0] = 0;
+  //   dFlow[1][0] = 0;
+  // }
 
   // -- reset or accumulate --
-  if (tx == 0){
-    // dFlow[0] = 1;
-    // dFlow[1] = 1;
-    dAdF0[0] = dFlow[0][0]*dAdF0[0] + dFlow[0][1]*dAdF0[1];
-    dAdF0[1] = dFlow[1][0]*dAdF0[0] + dFlow[1][1]*dAdF0[1];
-    dAdF1[0] = dFlow[0][0]*dAdF1[0] + dFlow[0][1]*dAdF1[1];
-    dAdF1[1] = dFlow[1][0]*dAdF1[0] + dFlow[1][1]*dAdF1[1];
-  }else{
-    // dFlow[0] = 0;
-    // dFlow[1] = 0;
-    // int tmp0 = dAdF0[0][0];
-    // int tmp1 = dAdF1[0][0];
-    // dAdF0[0][0] += dFlow[0][0]*dAdF0[0][0] + dFlow[0][1]*dAdF0[0][0];
-    // dAdF1[0][0] += dFlow[1][0]*dAdF1[0][0] + dFlow[1][1]*dAdF1[0][0];
     
-    // -- assign --
-    scalar_t _dAdF0[2];
-    scalar_t _dAdF1[2];
-    _dAdF0[0] = dAdF0[0];
-    _dAdF0[1] = dAdF0[1];
-    _dAdF1[0] = dAdF1[0];
-    _dAdF1[1] = dAdF1[1];
+  // -- assign --
+  scalar_t _dAdF0[2];
+  scalar_t _dAdF1[2];
+  _dAdF0[0] = dAdF0[0];
+  _dAdF0[1] = dAdF0[1];
+  _dAdF1[0] = dAdF1[0];
+  _dAdF1[1] = dAdF1[1];
 
-    // -- update --
-    dAdF0[0] += dFlow[0][0]*sW*_dAdF0[0] + dFlow[0][1]*sH*_dAdF0[1];
-    dAdF0[1] += dFlow[1][0]*sW*_dAdF0[0] + dFlow[1][1]*sH*_dAdF0[1];
-    dAdF1[0] += dFlow[0][0]*sW*_dAdF1[0] + dFlow[0][1]*sH*_dAdF1[1];
-    dAdF1[1] += dFlow[1][0]*sW*_dAdF1[0] + dFlow[1][1]*sH*_dAdF1[1];
-
-    // dAdF1[1] += (tx == 1) ? dFlow[1][1] : dFlow[1][1] * dAdF1[1];//*dAdF1[0][0];
-    // dAdF0[0][0] += dFlow[0]*dAdF0[0][0];
-    // dAdF1[0][0] += dFlow[1]*dAdF1[0][0];
-  }
-
-  // -- update using bounds --
-  // dAdF0[0] = sW*dAdF0[0];
-  // dAdF0[1] = sW*dAdF0[1];
-  // dAdF1[0] = sH*dAdF1[0];
-  // dAdF1[1] = sH*dAdF1[1];
-
+  // -- update --
+  dAdF0[0] += dFlow[0][0]*sW*_dAdF0[0] + dFlow[0][1]*sH*_dAdF0[1];
+  dAdF0[1] += dFlow[1][0]*sW*_dAdF0[0] + dFlow[1][1]*sH*_dAdF0[1];
+  dAdF1[0] += dFlow[0][0]*sW*_dAdF1[0] + dFlow[0][1]*sH*_dAdF1[1];
+  dAdF1[1] += dFlow[1][0]*sW*_dAdF1[0] + dFlow[1][1]*sH*_dAdF1[1];
 
 }
 
@@ -515,7 +364,6 @@ __global__ void accumulate_flow_backward_kernel(
   int ibatch = blockIdx.y;
   int raster_index = locs_per_thread*(threadIdx.x + blockDim.x * blockIdx.x);
   int dir = threadIdx.y;
-  int t_flow = threadIdx.z;
   int T = fflow.size(1);
   int H = fflow.size(3);
   int W = fflow.size(4);
@@ -525,6 +373,7 @@ __global__ void accumulate_flow_backward_kernel(
   int prop_i[3];
   scalar_t prop[3];
   scalar_t prop_time;
+  bool isFwd;
 
   // -- fwd decl --
   scalar_t v0,v1,gv0,gv1;
@@ -532,11 +381,12 @@ __global__ void accumulate_flow_backward_kernel(
   scalar_t dAdF1[2];
 
   // -- get directional information --
-  if (dir != 0){ return; }
-  auto flow = dir == 0 ? fflow[ibatch] : bflow[ibatch];
-  auto g_flow = dir == 0 ? grad_fflow[ibatch] : grad_bflow[ibatch];
-  auto pflow = dir == 0 ? pfflow[ibatch] : pbflow[ibatch];
-  auto g_pflow = dir == 0 ? grad_pfflow[ibatch] : grad_pbflow[ibatch];
+  isFwd = dir == 0;
+  int t_flow = threadIdx.z;//isFwd ? threadIdx.z : threadIdx.z+1;
+  auto flow = isFwd ? fflow[ibatch] : bflow[ibatch];
+  auto g_flow = isFwd ? grad_fflow[ibatch] : grad_bflow[ibatch];
+  auto pflow = isFwd ? pfflow[ibatch] : pbflow[ibatch];
+  auto g_pflow = isFwd ? grad_pfflow[ibatch] : grad_pbflow[ibatch];
 
   // -- get location --
   for (int loc = 0; loc < locs_per_thread; loc++){
@@ -546,81 +396,56 @@ __global__ void accumulate_flow_backward_kernel(
     if (qi >= TnHW){ break; } 
     get_pixel_loc(ref,qi,tmp,stride0,nW,nHW,H,W);
 
-    // -- assignments --
+    // -- init/reset --
     v0 = 0;
     v1 = 0;
     gv0 = 0;
     gv1 = 0;
-    // set_to_const(dAdF0,dAdF1,static_cast<scalar_t>(0));
 
-    int t_inc = dir == 0 ? 1 : -1;
-    int t_start = t_flow;//ref[0] + t_flow*t_inc;
+    // -- directional indexing --
+    int t_inc = 1;
+    int Acc_time_start = t_flow-ref[0];
+    int t_end = (T-1)-t_flow;
+    if (Acc_time_start < 0) { return; }
 
     // -- write location --
     refs[0] = __int2float_rn(ref[0]);
-    int dt = t_flow-ref[0];
-    // if (dt >= 2){ return; }
-    // if (dt > 0){ return; }
-
-    if ((dt < 0) && (dir == 0)){ return; }
-    // if ((refs[0] > t_flow) && (dir == 0)){ return; }
-    // if ((refs[0] < t_flow) && (dir == 1)){ return; }
-    if (dir == 1){ return; }
-    if (dt == 0){
+    if (Acc_time_start == 0){
       refs[1] = __int2float_rn(ref[1]);
       refs[2] = __int2float_rn(ref[2]);
     }else{
-      refs[1] = ref[1] + pflow[ref[0]][dt-1][1][ref[1]][ref[2]];
-      refs[2] = ref[2] + pflow[ref[0]][dt-1][0][ref[1]][ref[2]];
+      refs[1] = ref[1] + pflow[ref[0]][Acc_time_start-1][1][ref[1]][ref[2]];
+      refs[2] = ref[2] + pflow[ref[0]][Acc_time_start-1][0][ref[1]][ref[2]];
     }
-
-    int time = 0;
-    // int t_end = dir == 0 ? (T-1)-ref[0]-t_flow : ref[0]-t_flow;
-    int t_end = dir == 0 ? (T-1)-t_flow : 0;//ref[0]-t_flow;
 
     // -- iterate across accumulated flows --
     for(int tx=0; tx < t_end; tx++){
 
       // -- read gradient --
-      gv0 = g_pflow[ref[0]][dt+tx][0][ref[1]][ref[2]];
-      gv1 = g_pflow[ref[0]][dt+tx][1][ref[1]][ref[2]];
-      // gv0 = g_pflow[ref[0]][tx][0][ref[1]][ref[2]];
-      // gv1 = g_pflow[ref[0]][tx][1][ref[1]][ref[2]];
+      gv0 = g_pflow[ref[0]][Acc_time_start+tx][0][ref[1]][ref[2]];
+      gv1 = g_pflow[ref[0]][Acc_time_start+tx][1][ref[1]][ref[2]];
 
-      // -- update weights --
-      // update_weights(dAdF0,dAdF1,prop,H,W,flow[ref[0]+tx+1]); // for next one
-      // set_to_const(dAdF0,dAdF1,static_cast<scalar_t>(1));
+      // -- update dA[i]dF[j] as dAdFj[i] --
       if (tx==0){
-        // set_to_const(dAdF0,dAdF1,static_cast<scalar_t>(1));
         dAdF0[0] = 1;
         dAdF0[1] = 0;
         dAdF1[0] = 0;
         dAdF1[1] = 1;
-        // update_weights(dAdF0,dAdF1,prop,H,W,flow[tx+1]); // for next one
       }else{
-        // set_to_const(dAdF0,dAdF1,static_cast<scalar_t>(0));
-        update_weights(dAdF0,dAdF1,prop,H,W,tx,flow[t_flow+tx],
-                       dev[ibatch][qi][t_flow][tx]); // for next one
+
+        // -- update proposed location --
+        prop[1] = __int2float_rn(ref[1]) +                      \
+          pflow[ref[0]][Acc_time_start+tx-1][1][ref[1]][ref[2]];
+        prop[2] = __int2float_rn(ref[2]) +                      \
+          pflow[ref[0]][Acc_time_start+tx-1][0][ref[1]][ref[2]];
+
+        // -- update weights --
+        update_weights(dAdF0,dAdF1,prop,H,W,tx,flow[t_flow+t_inc*tx],
+                       dev[ibatch][qi][t_flow][tx]);
       }
-      // set_to_const(dAdF0,dAdF1,static_cast<scalar_t>(1));
 
       // -- assign to each of the 4 interpolated flow values --
       assign_bilin2d(dAdF0,dAdF1,gv0,gv1,refs,H,W,g_flow[t_flow]);
-
-      // -- update proposed location --
-      prop[1] = __int2float_rn(ref[1]) + pflow[ref[0]][dt+tx][1][ref[1]][ref[2]];
-      prop[2] = __int2float_rn(ref[2]) + pflow[ref[0]][dt+tx][0][ref[1]][ref[2]];
-      // prop[1] = __int2float_rn(ref[1]);
-      // prop[2] = __int2float_rn(ref[2]);
-      // prop[1] = __int2float_rn(ref[1]) + 0.1;
-      // prop[2] = __int2float_rn(ref[2]) + 0.1;
-
-
-      // if (tx >= 0){ break; }
-      // prop[1] = ref[1] + flow[0][1][ref[1]][ref[2]];
-      // prop[2] = ref[2] + flow[0][0][ref[1]][ref[2]];
-      // prop[1] = ref[1];
-      // prop[2] = ref[2];
 
     }
 
