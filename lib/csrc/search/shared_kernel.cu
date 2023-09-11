@@ -64,12 +64,12 @@ void get_pixel_loc(itype* pix,  int qindex, int tmp, int stride0,
     pix[2] = ((tmp % nW0) * stride0) % W;
   }else{
     tmp = qindex;
-    pix[0] = round(tmp/nHW0);
+    pix[0] = floor(tmp/nHW0);
     tmp = (tmp - pix[0]*nHW0); 
     nH_index = tmp / nW0;
-    pix[1] = round((nH_index*stride0) % H);
+    pix[1] = floor((nH_index*stride0) % H);
     tmp = tmp - nH_index*nW0;
-    pix[2] = round(((tmp % nW0) * stride0) % W);
+    pix[2] = floor(((tmp % nW0) * stride0) % W);
   }
 }
 
@@ -130,12 +130,14 @@ void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
       // -- bound min --
       if ( (hi - stride1 * wsHalf_h) < 0){
         // wsOff_h = hi/stride1;
-        wsOff_h = floor(hi/stride1);
+        wsOff_h = floor(hi/(1.*stride1));
+        // wsOff_h = ceil(hi/(1.*stride1));
         // wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h-0.5);
       }
       if ( (wi - stride1 * wsHalf_w) < 0){
         // wsOff_w = wi/stride1;
-        wsOff_w = floor(wi/stride1);
+        wsOff_w = floor(wi/(1.*stride1));
+        // wsOff_w = ceil(wi/(1.*stride1));
         // wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w-0.5);
       }
 
@@ -144,12 +146,14 @@ void set_search_offsets(itype& wsOff_h, itype& wsOff_w,
       itype wMax = wi + stride1 * ((ws_w-1) - wsOff_w);
       if (hMax > (H-1)){
         // wsOff_h = (hi - (H-1))/stride1 + (ws_h-1);
-        wsOff_h = ceil((hi - (H-1))/stride1 + (ws_h-1));
+        wsOff_h = ceil((hi - (H-1))/(1.*stride1) + (ws_h-1));
+        // wsOff_h = floor((hi - (H-1))/(1.*stride1) + (ws_h-1));
         // wsOff_h = is_same_v<itype,int> ? wsOff_h : round(wsOff_h+0.5);
       }
       if (wMax > (W-1)){
         // wsOff_w = (wi - (W-1))/stride1 + (ws_w-1);
-        wsOff_w = ceil((wi - (W-1))/stride1 + (ws_w-1));
+        wsOff_w = ceil((wi - (W-1))/(1.*stride1) + (ws_w-1));
+        // wsOff_w = floor((wi - (W-1))/(1.*stride1) + (ws_w-1));
         // wsOff_w = is_same_v<itype,int> ? wsOff_w : round(wsOff_w+0.5);
       }
 
@@ -380,6 +384,19 @@ void update_centers_dt(itype& hj_center, itype& wj_center, int ti,
   // wj_center += fw;
   // wj_center = bounds(wj_center,W);
   // hj_center = bounds(hj_center,H);
+}
+
+template<typename scalar_t, typename itype=int>
+__device__ __forceinline__ 
+void update_centers_v0(itype& hj_center, itype& wj_center, int dir, int H, int W,
+  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> fflow,
+  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> bflow){
+
+  // -- access flows --
+  auto flow = dir > 0 ? fflow : bflow;
+  if (dir != 0){
+    update_centers_flow(hj_center,wj_center,H,W,flow);
+  }
 }
 
 template<typename scalar_t, typename itype=int>

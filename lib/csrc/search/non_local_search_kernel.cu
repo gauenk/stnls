@@ -72,7 +72,7 @@ __global__ void non_local_search_forward_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
-  bool acc_flow = fflow.size(2) != ST;
+  // bool acc_flow = fflow.size(2) != ST;
   int delta_ti;
 
   // decls
@@ -108,6 +108,7 @@ __global__ void non_local_search_forward_kernel(
     // -- pixel location from query index --
     get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
 
+
     // -- check bounds of pixel location --
     check_bounds(valid_ref_patch,ref_patch,T,H,W);
 
@@ -137,20 +138,18 @@ __global__ void non_local_search_forward_kernel(
       // -- increment frame index --
       increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_max);
 
-
       // -- possibly reset (frame_anchor <- reference_patch) --
-      reset_centers(frame_anchor,ref_patch,swap_dir || not(acc_flow));
+      reset_centers(frame_anchor,ref_patch,swap_dir);// || not(acc_flow));
 
       // -- compute offset with optical flow --
-      delta_ti = acc_flow ? 0 : abs(ref_patch[0] - frame_anchor[0]);
-      update_centers<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
-                               fflow[ibatch][prev_ti][delta_ti],
-                               bflow[ibatch][prev_ti][delta_ti]);
-      
+      delta_ti = 0;//abs(ref_patch[0] - frame_anchor[0]);
+      update_centers_v0<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
+                                  fflow[ibatch][prev_ti][delta_ti],
+                                  bflow[ibatch][prev_ti][delta_ti]);
+
       // -- search region offsets --
       set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
                          wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws_time);
-
 
 
       // ---------------------------------------
@@ -226,8 +225,8 @@ void non_local_search_forward_cuda(
    int ws_w = dists.size(5);
    int ws_h_threads = std::min(ws_h,27);
    int ws_w_threads = std::min(ws_w,27);
-   int ws_h_per_thread = ((ws_h-1)/ws_h_threads) + 1;
-   int ws_w_per_thread = ((ws_w-1)/ws_w_threads) + 1;
+   int ws_h_per_thread = ((ws_h)/ws_h_threads) + 1;
+   int ws_w_per_thread = ((ws_w)/ws_w_threads) + 1;
    dim3 nthreads(ws_h_threads,ws_w_threads);
 
    // -- nblocks --
@@ -338,7 +337,7 @@ __global__ void non_local_search_forward_v2_kernel(
   int dir = 0;
   int prev_ti = -1;
   bool swap_dir = false;
-  bool acc_flow = fflow.size(2) != ST;
+  // bool acc_flow = fflow.size(2) != ST;
   int delta_ti;
 
 
@@ -416,17 +415,22 @@ __global__ void non_local_search_forward_v2_kernel(
       increment_frame(frame_anchor[0],prev_ti,t_inc,swap_dir,dir,ref_patch[0],t_max);
 
       // -- possibly reset (frame_anchor <- reference_patch) --
-      reset_centers(frame_anchor,ref_patch,swap_dir || not(acc_flow));
+      reset_centers(frame_anchor,ref_patch,swap_dir);// || not(acc_flow));
 
       // -- compute offset with optical flow --
-      delta_ti = acc_flow ? 0 : abs(ref_patch[0] - frame_anchor[0]);
-      update_centers<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
-                               fflow[ibatch][prev_ti][delta_ti],
-                               bflow[ibatch][prev_ti][delta_ti]);
-      
+      // delta_ti = acc_flow ? 0 : abs(ref_patch[0] - frame_anchor[0]);
+      delta_ti = 0;//abs(ref_patch[0] - frame_anchor[0]);
+      update_centers_v0<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
+                                  fflow[ibatch][prev_ti][delta_ti],
+                                  bflow[ibatch][prev_ti][delta_ti]);
+      // update_centers<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
+      //                          fflow[ibatch][prev_ti][delta_ti],
+      //                          bflow[ibatch][prev_ti][delta_ti]);
       // -- search region offsets --
       set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
                          wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws_time);
+
+
 
       // ---------------------------------------
       //          spatial searching

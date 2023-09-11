@@ -42,7 +42,7 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
 
 def pytest_generate_tests(metafunc):
     test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
-                  "dilation":[1],"wt":[0],"ws":[3],
+                  "dilation":[1],"wt":[1],"ws":[3],
                   "k":[-1],"exact":[False],"nheads":[1],
                   "anchor_self":[False],"seed":[0],"dist_type":["prod"],
                   "k_agg":[-1]}
@@ -228,8 +228,10 @@ def test_fwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
-    # flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
-    # flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
+    # flows.fflow = th.clamp(10*th.zeros_like(flows.fflow),-10,10)
+    # flows.bflow = th.clamp(10*th.zeros_like(flows.bflow),-10,10)
+    flows.fflow = th.clamp(0.49*th.ones_like(flows.fflow),-10,10)
+    flows.bflow = th.clamp(0.49*th.ones_like(flows.bflow),-10,10)
     # flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
     # flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
 
@@ -251,7 +253,9 @@ def test_fwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,anchor_self=anchor_self,
+                                   full_ws=full_ws,
+                                   full_ws_time=full_ws,
+                                   anchor_self=anchor_self,
                                    use_adj=use_adj,normalize_bwd=True,
                                    itype_fwd="int")
 
@@ -277,10 +281,10 @@ def test_fwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     args0 = th.where(th.logical_not(th.logical_or(isinf,issmall))) # remove invalid
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-8)
 
-    print(dists_te)
-    print(dists_gt)
-    # print(inds_te)
-    # print(inds_gt)
+    print(dists_te[0,0,-2])
+    print(dists_gt[0,0,-2])
+    # print(th.cat([inds_te,inds_gt],-1)[0,0,1])
+    print(th.cat([inds_te,inds_gt],-1)[0,0,-2])
 
     # -- test --
     error = diff[args0].mean().item()

@@ -93,7 +93,7 @@ def nls_fwd_main(qshift, Q, vid0, vid1, fflow, bflow,
         fwd_fxn = stnls_cuda.non_local_search_forward_v2
     else:
         raise ValueError(f"Uknown version [{version}]")
-    fflow = fflow.transpose(1,2).contiguous()
+    fflow = fflow.transpose(1,2).contiguous() # b,t,st
     bflow = bflow.transpose(1,2).contiguous()
     # print(fflow.shape)
     fwd_fxn(vid0, vid1, fflow, bflow, dists, inds,

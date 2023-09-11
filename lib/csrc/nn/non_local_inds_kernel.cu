@@ -11,6 +11,45 @@ Get indices of a non-local search
 #include <assert.h>
 #include "../search/shared_kernel.cu"
 
+template<typename scalar_t, typename itype=int>
+__device__ __forceinline__ 
+void update_centers_flow_acc(itype& hj_center, itype& wj_center, int H, int W,
+  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int64_t> flow){
+
+
+  // -- fixed so we can read both --
+  itype hj_tmp = hj_center;
+  itype wj_tmp = wj_center;
+  scalar_t h_acc = 0;
+  scalar_t w_acc = 0;
+
+  // -- weighted average of neighbors --
+  float weight = 0;
+  int hj = 0, wj = 0;
+#pragma unroll
+  for (int i=0;i<2;i++){
+#pragma unroll
+    for (int j=0;j<2;j++){
+
+      // -- compute int locaion with weight --
+      hj = __float2int_rd(hj_tmp + i);
+      wj = __float2int_rd(wj_tmp + j);
+      weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
+
+      // -- ensure legal boudns --
+      hj = bounds(hj,H);
+      wj = bounds(wj,W);
+
+      // -- update with shift --
+      h_acc += weight*flow[0][hj][wj];
+      w_acc += weight*flow[1][hj][wj];
+    }
+  }
+  hj_center = hj_center + h_acc;
+  wj_center = wj_center + w_acc;
+
+}
+
 
 template <typename scalar_t>
 __global__ void non_local_inds_kernel(
@@ -110,17 +149,23 @@ __global__ void non_local_inds_kernel(
     for(int tj=ref[0]+1; tj <= t_right; tj++){
 
       // -- accumulate --
-      hj_tmp = hj;
-      wj_tmp = wj;
-      hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
-      wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
-      hj = max(0,min(H-1,hj));
-      wj = max(0,min(W-1,wj));
+      update_centers_flow_acc(hj,wj,H,W,flow[ibatch][t_prev]);
+      hj = bounds(hj,H-1);
+      wj = bounds(wj,W-1);
+      // itype& hj_center, itype& wj_center, int H, int W,
+      //   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow)
+      // hj_tmp = hj;
+      // wj_tmp = wj;
+      // hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
+      // wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
+      // hj = max(0,min(H-1,hj));
+      // wj = max(0,min(W-1,wj));
 
       // ---------------------------------------
       //   spatial radius centered @ offset
       // ---------------------------------------
   
+
       // -- search region offsets --
       set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
 			 wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws_time);
@@ -160,12 +205,15 @@ __global__ void non_local_inds_kernel(
     for(int tj=ref[0]-1; tj >= t_left; tj--){
 
       // -- accumulate --
-      hj_tmp = hj;
-      wj_tmp = wj;
-      hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
-      wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
-      hj = max(0,min(H-1,hj));
-      wj = max(0,min(W-1,wj));
+      update_centers_flow_acc(hj,wj,H,W,flow[ibatch][t_prev]);
+      hj = bounds(hj,H-1);
+      wj = bounds(wj,W-1);
+      // hj_tmp = hj;
+      // wj_tmp = wj;
+      // hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
+      // wj = int(1.*wj + flow[ibatch][t_prev][0][hj_tmp][wj_tmp] + 0.5);
+      // hj = max(0,min(H-1,hj));
+      // wj = max(0,min(W-1,wj));
 
       // ---------------------------------------
       //   spatial radius centered @ offset

@@ -153,23 +153,25 @@ __global__ void non_local_search_forward_bilin2d_kernel(
 
       // -- possibly reset (frame_anchor <- reference_patch) --
       // reset_centers<scalar_t>(frame_anchor,ref_patch,swap_dir || not(acc_flow));
+      reset_centers<scalar_t>(acc_frame,ref_patch,swap_dir);
       // reset_centers<scalar_t>(acc_frame,ref_patch,swap_dir || not(acc_flow));
       // reset_centers<scalar_t>(frame_anchor,ref_patch,true);
       // frame_anchor[0] = swap_dir ? __float2int_rn(ref_patch[0])-1 : frame_anchor[0];
-      frame_anchor[1] = __int2float_rn(ref_patch[1]);
-      frame_anchor[2] = __int2float_rn(ref_patch[2]);
+      // frame_anchor[1] = __int2float_rn(ref_patch[1]);
+      // frame_anchor[2] = __int2float_rn(ref_patch[2]);
 
       // -- compute offset with optical flow --
       // deltaT = abs(ref_patch[0] - __float2int_rn(acc_frame[0]));
-      deltaT = abs(ref_patch[0] - __float2int_rn(frame_anchor[0]));
-      int acc_index = acc_flow ? 0 : deltaT;
-      deltaT = acc_flow ? deltaT : 1;
-
-
-      update_centers<scalar_t,scalar_t>(frame_anchor[1],frame_anchor[2],
-                                        ref_patch[0],dir,deltaT,H,W,
-                                        fflow[ibatch][acc_index],
-                                        bflow[ibatch][acc_index]);
+      // deltaT = abs(ref_patch[0] - __float2int_rn(frame_anchor[0]));
+      // int acc_index = acc_flow ? 0 : deltaT;
+      deltaT = 0;//acc_flow ? deltaT : 1;
+      update_centers_v0<scalar_t>(frame_anchor[1],frame_anchor[2],dir,H,W,
+                                  fflow[ibatch][prev_ti][deltaT],
+                                  bflow[ibatch][prev_ti][deltaT]);
+      // update_centers<scalar_t,scalar_t>(frame_anchor[1],frame_anchor[2],
+      //                                   ref_patch[0],dir,deltaT,H,W,
+      //                                   fflow[ibatch][acc_index],
+      //                                   bflow[ibatch][acc_index]);
       // update_centers<scalar_t,scalar_t>(acc_frame[1],acc_frame[2],
       //                                   ref_patch[0],dir,deltaT,H,W,
       //                                   fflow[ibatch][acc_index],
