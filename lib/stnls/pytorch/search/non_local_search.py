@@ -275,7 +275,7 @@ class NonLocalSearch(th.nn.Module):
 
     def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
         assert self.ws > 0,"Must have nonzero spatial search window"
-        assert self.wt > 0,"Must have nonzero time search window"
+        assert self.wt >= 0,"Must have nonnegative time search window"
         return NonLocalSearchFunction.apply(vid0,vid1,fflow,bflow,
                                             self.ws,self.wt,self.ps,self.k,
                                             self.nheads,batchsize,

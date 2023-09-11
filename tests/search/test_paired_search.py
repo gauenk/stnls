@@ -41,7 +41,7 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     vid /= vid.max()
     return vid
 
-def run_compare(tensor_gt,tensor_te,mean_tol,max_tol,small_tol=1e-3):
+def run_compare(tensor_gt,tensor_te,mean_tol,max_tol,small_tol=1e-3,verbose=False):
 
     # -- compute diffs --
     cond_a = th.logical_not(th.isinf(tensor_gt))
@@ -64,11 +64,11 @@ def run_compare(tensor_gt,tensor_te,mean_tol,max_tol,small_tol=1e-3):
 
     # -- test --
     error = diff.mean().item()
-    if error > mean_tol: print("error: ",error)
+    if (error > mean_tol) or verbose: print("error: ",error)
     assert error < mean_tol
 
     max_error = diff.max().item()
-    if max_error > max_tol: print("max error: ",max_error)
+    if (max_error > max_tol) or verbose: print("max error: ",max_error)
     assert max_error < max_tol
 
 
@@ -201,7 +201,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- [testing] search --
     dtype = th.float if itype_fwd == "float" else th.int
-    acc_flows = stnls.nn.accumulate_flow(flows,dtype=dtype)
+    acc_flows = stnls.nn.accumulate_flow(flows,dtype=dtype,fwd_mode="stnls")
     # acc_flows.fflow = th.round(acc_flows.fflow,decimals=4)
     # acc_flows.bflow = th.round(acc_flows.bflow,decimals=4)
     dists_te,inds_te = search_te.paired_vids(vid0, vid1, acc_flows, wt)
@@ -319,13 +319,13 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    M = 1
+    M = 2.1
     # flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
     # flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
-    # flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
-    # flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
-    flows.fflow = th.clamp(M*th.ones_like(flows.fflow),-M,M).round()/5.
-    flows.bflow = th.clamp(M*th.ones_like(flows.bflow),-M,M).round()/5.
+    flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
+    flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
+    # flows.fflow = th.clamp(M*th.ones_like(flows.fflow),-M,M).round()/5.
+    # flows.bflow = th.clamp(M*th.ones_like(flows.bflow),-M,M).round()/5.
     # flows.fflow = th.zeros_like(flows.fflow)
     # flows.bflow = th.zeros_like(flows.bflow)
 
@@ -377,18 +377,33 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- [testing] search --
     dtype = th.float
-    acc_flows = stnls.nn.accumulate_flow(fflow_te,bflow_te,dtype=dtype)
+    acc_flows = stnls.nn.accumulate_flow(fflow_te,bflow_te,dtype=dtype,fwd_mode="stnls")
     dists_te,inds_te = search_te.paired_vids(vid0_te, vid1_te, acc_flows, wt)
     # dists_te = dists_te[:,:,256:512]
     # inds_te = inds_te[:,:,256:512]
-
 
     # -- compare --
     mean_tol = 5e-3
     max_tol = 1e-2
     sm_tol = 1e-2
-    run_compare(inds_gt,inds_te,mean_tol,max_tol,sm_tol)
-    run_compare(dists_gt,dists_te,mean_tol,max_tol,sm_tol)
+    # print("[start] fwd.")
+    run_compare(inds_gt,inds_te,mean_tol,max_tol,sm_tol,verbose=False)
+    run_compare(dists_gt,dists_te,mean_tol,max_tol,sm_tol,verbose=False)
+    # print("[end] fwd.")
+
+    # -- backprop vids --
+    dists_grad = th.randn_like(dists_gt)
+    th.autograd.backward(dists_gt,dists_grad,retain_graph=True)
+    th.autograd.backward(dists_te,dists_grad,retain_graph=True)
+
+    # -- vid grads --
+    mean_tol = 5e-3
+    max_tol = 1e-2
+    _grads_gt = [vid0_gt.grad,vid1_gt.grad]
+    _grads_te = [vid0_te.grad,vid1_te.grad]
+    for idx,(grads_gt,grads_te) in enumerate(zip(_grads_gt,_grads_te)):
+        run_compare(grads_gt,grads_te,mean_tol,max_tol)
+
 
     # -- backprop inds --
     inds_grad = th.randn_like(inds_gt)
@@ -409,18 +424,5 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     for idx,(grads_gt,grads_te) in enumerate(zip(_grads_gt,_grads_te)):
         # print(th.any(th.isnan(grads_gt)),th.any(th.isnan(grads_te)))
         run_compare(grads_gt,grads_te,mean_tol,max_tol,sm_tol)
-
-    # -- backprop vids --
-    dists_grad = th.randn_like(dists_gt)
-    th.autograd.backward(dists_gt,dists_grad,retain_graph=True)
-    th.autograd.backward(dists_te,dists_grad,retain_graph=True)
-
-    # -- vid grads --
-    mean_tol = 5e-3
-    max_tol = 1e-2
-    _grads_gt = [vid0_gt.grad,vid1_gt.grad]
-    _grads_te = [vid0_te.grad,vid1_te.grad]
-    for idx,(grads_gt,grads_te) in enumerate(zip(_grads_gt,_grads_te)):
-        run_compare(grads_gt,grads_te,mean_tol,max_tol)
 
 

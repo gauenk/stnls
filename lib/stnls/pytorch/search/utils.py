@@ -54,7 +54,7 @@ def get_ctx_qinds(itype,qinds):
 
 def allocate_grad_flow(itype,f_shape,device):
     if itype == "int":
-        grad_fflow = th.zeros((1,)*6,device=device,dtype=th.float32)
+        grad_fflow = th.zeros((1,)*7,device=device,dtype=th.float32)
     else:
         grad_fflow = th.zeros(f_shape,device=device,dtype=th.float32)
     return grad_fflow
@@ -107,7 +107,8 @@ def filter_k(inds,kr,k=None):
 def ensure_flow_shape(flow):
     if flow.ndim == 5:
         B,T,_,H,W = flow.shape
-        flow = flow.view(B,T,1,2,H,W)
+        # flow = flow.view(B,T,1,2,H,W)
+        flow = flow.view(B,1,T,2,H,W)
     return flow
 #
 #
@@ -139,7 +140,7 @@ def shape_frames(nheads,vids):
             assert c % nheads == 0,"must be multiple of each other."
             shape_str = 'b (HD c) h w -> b HD c h w'
             vid = rearrange(vid,shape_str,HD=nheads).contiguous()
-        assert vid.shape[1] == nheads
+        # assert vid.shape[1] == nheads
         _vids.append(vid)
     return _vids
 

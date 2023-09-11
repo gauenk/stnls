@@ -55,7 +55,8 @@ def dimN_dim2_inds(tensor,dim):
     """
     shape = tensor.shape
     D = tensor.shape[dim]
-    tensor = tensor.transpose(0,dim).reshape(D,-1,3).transpose(0,1)
+    d2or3 = tensor.shape[-1]
+    tensor = tensor.transpose(0,dim).reshape(D,-1,d2or3).transpose(0,1)
     return tensor.contiguous(),list(shape)
 
 def dim2_dimN_inds(tensor,shape,dim):

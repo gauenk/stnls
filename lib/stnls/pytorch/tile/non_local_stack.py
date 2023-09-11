@@ -83,15 +83,28 @@ class non_local_stack(th.autograd.Function):
         q_start=0
         ndim = vid.ndim
         vid = ensure_ndim6(vid,HD)
-        B,HD,T,F,H,W = vid.shape
+        B,HD_v,T,F,H,W = vid.shape
+        HD_i = inds.shape[1]
+        HD = max(HD_v,HD_i)
         stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
-        counts = th.zeros((H,W),device=vid.device,dtype=th.int32)
+        counts = th.zeros((B,HD,H,W),device=vid.device,dtype=th.int32)
 
         # -- non-local stacking --
         vid = vid.contiguous()
         weights = weights.contiguous()
         inds = get_inds(inds,itype_fwd)
         imode = get_imode(itype_fwd)
+        assert inds.shape[-1] == 3
+        # print(vid.shape)
+        # print(inds[0,0,9])
+        # inds_n = rearrange(inds,'b HD (H W) k two -> b (HD k) two H W',H=H,W=W)
+        # print(inds_n[0,0])
+        # for i in range(inds_n.shape[1]):
+        #     print(inds_n[0,i,:,:3,:3])
+        # print(stride0,use_adj,ps)
+
+        assert not th.any(th.isnan(weights)).item()
+
         # print(inds,imode)
         stnls_cuda.non_local_stack_forward(vid, weights, inds,
                                            stack, counts,
@@ -101,7 +114,16 @@ class non_local_stack(th.autograd.Function):
         # print(counts[30:34,30:34])
         # counts = get_counts(vid,stride0,ps,pt,
         #                     dilation,use_adj,reflect_bounds)
-        stack /= counts.view((1,1,1,1,1,H,W))
+        # print(stack[0][0][0])
+        # print(counts)
+        # exit()
+        # print(counts)
+        # assert th.all(counts == vid.shape[0]).item()
+        # counts = counts/(1.*vid.shape[0])
+        eps = 1e-10
+        counts = counts.view((B,HD,1,1,1,H,W))
+        stack /= (counts+eps)
+        assert not th.any(th.isnan(stack)).item()
 
         # -- save for back-prop --
         ctx.save_for_backward(vid,stack,weights,inds,counts)
@@ -139,7 +161,7 @@ class non_local_stack(th.autograd.Function):
         grad_weights = th.zeros_like(weights)
         grad_stack = grad_stack.contiguous()
         if itype_bwd != "int": grad_inds = th.zeros_like(inds)
-        else: grad_inds = th.zeros((1,)*5).to(inds.device)
+        else: grad_inds = th.zeros((1,)*5).to(inds.device).int()
 
         # -- view --
         # print("grad_vid.shape: ",grad_vid.shape)
@@ -175,22 +197,30 @@ class non_local_stack(th.autograd.Function):
         # -- backward --
         # print("non_local_stack")
         # print(counts[30:34,30:34])
-        H,W = counts.shape
+        # H,W = counts.shape
+        # print(grad_stack.abs().mean())
         # print(grad_stack[0,0,0,0,0,30:34,30:34])
-        grad_stack = grad_stack / counts.view((1,1,1,1,1,H,W))
-        # print(grad_stack[0,0,0,0,0,30:34,30:34])
-        # print(grad_inds.dtype()
+        B,HD,T,C,H,W = grad_vid.shape
+        eps = 1e-10
+        grad_stack = grad_stack / (counts+eps)
+        # if imode == 0:
+        #     inds = inds.int()
         stnls_cuda.non_local_stack_backward(
             grad_vid,grad_weights,grad_inds,grad_stack,
             vid,weights,inds,stack,counts,
             ps,pt,dilation,stride0,use_adj,reflect_bounds,
             off_H0,off_W0,off_H1,off_W1, imode)
 
+        # -- info --
+        # print("grad weights.")
+        # print(grad_weights)
+
         # -- ensure original ndim --
         grad_vid = revert_ndim(grad_vid,ndim)
 
         # -- don't propogate "int" --
         if itype_bwd == "int": grad_inds = None
+        # print(grad_stack.abs().mean(),grad_vid.abs().mean(),grad_weights.abs().mean())
 
         return grad_vid,grad_weights,grad_inds,None,None,\
             None,None,None,None,None,None,None,None,None,None

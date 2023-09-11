@@ -31,5 +31,5 @@ def dimN_dim3_dists(tensor):
 
 def dimN_dim3_inds(tensor):
     shape = tensor.shape
-    Q,K,_ = tensor.shape[-3:]
-    return tensor.reshape(-1,Q,K,3).contiguous(),shape
+    Q,K,d2or3 = tensor.shape[-3:]
+    return tensor.reshape(-1,Q,K,d2or3).contiguous(),shape

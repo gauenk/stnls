@@ -52,14 +52,15 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> weights,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> stack,
-    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
+    torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> counts,
     int ps, int pt, int dilation, int stride0, int patch_offset,
     int nW0, int nHW0, bool reflect_bounds, int q_start,
     int off_H0, int off_H1, int off_W0, int off_W1, int ftrs_per_thread){
 
     // -- unpack --
     int nbatch = vid.size(0);
-    int nheads = vid.size(1);
+    int nheads_vid = vid.size(1);
+    int nheads_inds = inds.size(1);
     int nframes = vid.size(2);
     int nftrs = vid.size(3);
     int height = vid.size(4);
@@ -85,7 +86,9 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
     int ki = blockIdx.y*blockDim.y+threadIdx.y;
     int ihead = blockIdx.z/nbatch;
     int ibatch = (blockIdx.z-ihead*nbatch) % nbatch;
-  
+    int ihead_i = ihead % nheads_inds;
+    int ihead_v = ihead % nheads_vid;
+
     // -- feature chunk --
     int ftr_start = threadIdx.z * ftrs_per_thread;
     int ftr_end = min(nftrs,ftr_start + ftrs_per_thread);
@@ -96,6 +99,7 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
       //----------------------------------
       //   Reference & Non-Local Pixel
       //----------------------------------
+
   
       // -- full-resolution video query index --
       qindex = qi + q_start;
@@ -106,19 +110,18 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
       // -- non-local index --
   #pragma unroll
       for (int _idx=0; _idx < 3; _idx++){
-        nl_patch[_idx] = inds[ibatch][ihead][qi][ki][_idx];
+        nl_patch[_idx] = inds[ibatch][ihead_i][qi][ki][_idx];
       }
   
       //----------------------------------
       //      Fill Non-Local Patch
       //----------------------------------
 
-
-
       // scalar_t w = weights[ibatch][ihead][qi][ki];
       fill_non_local_patch_bilin2d<scalar_t>(stack[ibatch][ihead][ki],
-                                            counts,vid[ibatch][ihead],
-                                            weights[ibatch][ihead][qi][ki],
+                                            counts[ibatch][ihead],
+                                             vid[ibatch][ihead_v],
+                                            weights[ibatch][ihead_i][qi][ki],
                                             ps,pt,dilation,reflect_bounds,
                                             ref_patch,nl_patch,ref,nl,nl_i,
                                             valid_ref,valid_nl,valid,
@@ -138,7 +141,9 @@ void non_local_stack_bilin2d_forward_cuda(
 
   // -- sizes --
   int nbatch = vid.size(0);
-  int nheads = vid.size(1);
+  int nheads_vid = vid.size(1);
+  int nheads_inds = inds.size(1);
+  int nheads = max(nheads_vid,nheads_inds);
   int nframes = vid.size(2);
   int nftrs = vid.size(3);
   int height = vid.size(4);
@@ -154,8 +159,8 @@ void non_local_stack_bilin2d_forward_cuda(
   // -- launch parameters --
   int nq = inds.size(2);
   int k = inds.size(3);
-  int ftr_threads = min(15,nftrs);
-  dim3 threadsPerBlock(10,4,ftr_threads);
+  int ftr_threads = min(1,nftrs);
+  dim3 threadsPerBlock(128,4,ftr_threads);
   dim3 blocksPerGrid(1, 1, nheads*nbatch);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
@@ -176,7 +181,7 @@ void non_local_stack_bilin2d_forward_cuda(
            weights.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
            inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
            stack.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
-           counts.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+           counts.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
            ps, pt, dilation, stride0, ps_offset, nW0, nHW0, reflect_bounds,
            q_start, off_H0, off_W0, off_H1, off_W1, ftrs_per_thread);
       }));
@@ -211,7 +216,9 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
 
     // -- unpack --
     int nbatch = vid.size(0);
-    int nheads = vid.size(1);
+    int nheads_vid = vid.size(1);
+    int nheads_inds = inds.size(1);
+    int nheads = max(nheads_vid,nheads_inds);
     int nframes = vid.size(2);
     int nftrs = vid.size(3);
     int height = vid.size(4);
@@ -237,6 +244,8 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
     int ki = blockIdx.y*blockDim.y+threadIdx.y;
     int ihead = blockIdx.z/nbatch;
     int ibatch = (blockIdx.z-ihead*nbatch) % nbatch;
+    int ihead_v = ihead % nheads_vid;
+    int ihead_i = ihead % nheads_inds;
   
     // -- feature chunk --
     int ftr_start = threadIdx.z * ftrs_per_thread;
@@ -258,7 +267,7 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
       // -- non-local index --
   #pragma unroll
       for (int _idx=0; _idx < 3; _idx++){
-        nl_patch[_idx] = inds[ibatch][ihead][qi][ki][_idx];
+        nl_patch[_idx] = inds[ibatch][ihead_i][qi][ki][_idx];
         // nl_patch[_idx] = ref_patch[_idx];//inds[ibatch][ihead][qi][ki][_idx];
       }
   
@@ -267,14 +276,14 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
       //----------------------------------
 
       fill_non_local_patch_bwd_bilin2d
-        <scalar_t>(grad_vid[ibatch][ihead],
-                   grad_weights[ibatch][ihead],
-                   grad_inds[ibatch][ihead],
+        <scalar_t>(grad_vid[ibatch][ihead_v],
+                   grad_weights[ibatch][ihead_i],
+                   grad_inds[ibatch][ihead_i],
                    // counts,
                    grad_stack[ibatch][ihead][ki],
                    // stack[ibatch][ihead][ki],
-                   vid[ibatch][ihead],
-                   weights[ibatch][ihead][qi][ki],
+                   vid[ibatch][ihead_v],
+                   weights[ibatch][ihead_i][qi][ki],
                    ps,pt,dilation,reflect_bounds,
                    ref_patch,nl_patch,ref,nl,nl_i,
                    valid_ref,valid_nl,valid,
@@ -303,7 +312,9 @@ void non_local_stack_bilin2d_backward_cuda(
 
   // -- sizes --
   int nbatch = vid.size(0);
-  int nheads = vid.size(1);
+  int nheads_vid = vid.size(1);
+  int nheads_inds = inds.size(1);
+  int nheads = max(nheads_inds,nheads_vid);
   int nframes = vid.size(2);
   int nftrs = vid.size(3);
   int height = vid.size(4);

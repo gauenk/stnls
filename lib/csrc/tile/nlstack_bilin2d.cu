@@ -24,7 +24,8 @@ template<typename scalar_t>
 __device__ __forceinline__ 
 void fill_non_local_patch_bilin2d(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> stack,
-    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
+    torch::TensorAccessor<int,2,torch::RestrictPtrTraits,int32_t> counts,
+    // torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid,
     scalar_t weight, int ps, int pt, int dilation, bool reflect_bounds,
     int* ref_patch, scalar_t* nl_patch, int* ref, scalar_t* nl, int* nl_i,
@@ -77,7 +78,7 @@ void fill_non_local_patch_bilin2d(
           }
           valid = valid_ref[3] && valid_nl[3];
           if (not valid) { continue; }
-          
+
           // -- add count --
           if ((ki == 0) && (ftr_start == 0) && (valid_ref[3]) && (ref[0] == 0)){
             atomicAdd(&(counts[ref[1]][ref[2]]),1);
@@ -134,6 +135,7 @@ void fill_non_local_patch_bwd_bilin2d(
     int iftr, int ftr_start, int ftr_end,
     int T, int H, int W, scalar_t pix, int qi, int ki){
 
+  int sH,sW; // sign of height,width interpolation
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
@@ -153,6 +155,7 @@ void fill_non_local_patch_bwd_bilin2d(
 
         // -- nl patch --
         nl[1] = (nl_patch[1]-center_offsets[1])+dilation*(pi + patch_offset);
+        sH = check_interval(nl[1],0,H) ? 1 : -1;
         nl[1] = reflect_bounds ? bounds(nl[1],H) : nl[1];
         valid_nl[1] = check_interval(nl[1],0,H);
 
@@ -165,6 +168,7 @@ void fill_non_local_patch_bwd_bilin2d(
 
           // -- nl patch --
           nl[2] = (nl_patch[2]-center_offsets[3])+dilation*(pj + patch_offset);
+          sW = check_interval(nl[2],0,W) ? 1 : -1;
           nl[2] = reflect_bounds ? bounds(nl[2],W) : nl[2];
           valid_nl[2] = check_interval(nl[2],0,W);
 
@@ -191,12 +195,12 @@ void fill_non_local_patch_bwd_bilin2d(
             scalar_t grad_stack_pix = grad_stack[ref[0]][iftr][ref[1]][ref[2]];
 
             // -- handle continuous spatial indices --
-            scalar_t igrad1 = 0;
-            scalar_t igrad2 = 0;
+            scalar_t igradH = 0;
+            scalar_t igradW = 0;
             scalar_t pix = 0;
             scalar_t v = 0;
             scalar_t w = 0;
-            scalar_t g1,g2;
+            scalar_t gH,gW;
             #pragma unroll
             for (int ix=0;ix<2;ix++){
               #pragma unroll
@@ -204,11 +208,17 @@ void fill_non_local_patch_bwd_bilin2d(
 
                 
                 // -- interpolate weight --
-                nl_i[1] = __float2int_rd(nl[1]+ix);
-                nl_i[2] = __float2int_rd(nl[2]+jx);
-                g1 = max(0.,1-fabs(nl[1]-nl_i[1]));
-                g2 = max(0.,1-fabs(nl[2]-nl_i[2]));
-                w = g1 * g2;
+                nl_i[1] = __float2int_rd(floorf(nl[1]+ix));
+                nl_i[2] = __float2int_rd(floorf(nl[2]+jx));
+                gH = max(0.,1-fabs(nl[1]-nl_i[1]));
+                gW = max(0.,1-fabs(nl[2]-nl_i[2]));
+                w = gH * gW;
+
+                // -- check directions --
+                bool leftH = (nl_i[1]-nl[1]) < 0;
+                bool rightH = (nl_i[1]-nl[1]) > 0;
+                bool leftW = (nl_i[2]-nl[2]) < 0;
+                bool rightW = (nl_i[2]-nl[2]) > 0;
 
                 // -- legalize inds --
                 nl_i[1] = bounds(nl_i[1],H);
@@ -221,10 +231,8 @@ void fill_non_local_patch_bwd_bilin2d(
                 pix += w*v;
 
                 // -- index grad --
-                igrad1 += (nl_i[2] - nl[2]) < 0 ? -g2*v :    \
-                  ((nl_i[2] - nl[2]) > 0 ? g2*v : 0);
-                igrad2 += (nl_i[1] - nl[1]) < 0 ? -g1*v :    \
-                  ((nl_i[1] - nl[1]) > 0 ? g1*v : 0);
+                igradW += leftW ? -gH*v : (rightW ? gH*v : 0); // dF[0]/dF[0]; A(0)
+                igradH += leftH ? -gW*v : (rightH ? gW*v : 0); // dF[0]/dF[0]; A(0)
                 
                 // -- video grad --
                 atomicAdd(&(grad_vid[nl_i[0]][iftr][nl_i[1]][nl_i[2]]),
@@ -236,8 +244,8 @@ void fill_non_local_patch_bwd_bilin2d(
             atomicAdd(&(grad_weights[qi][ki]),grad_stack_pix*pix);
 
             // -- update inds --
-            atomicAdd(&(grad_inds[qi][ki][1]),grad_stack_pix*weight*igrad1);
-            atomicAdd(&(grad_inds[qi][ki][2]),grad_stack_pix*weight*igrad2);
+            atomicAdd(&(grad_inds[qi][ki][1]),grad_stack_pix*weight*sW*igradW);
+            atomicAdd(&(grad_inds[qi][ki][2]),grad_stack_pix*weight*sH*igradH);
 
           }
         }

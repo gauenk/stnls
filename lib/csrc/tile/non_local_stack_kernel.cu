@@ -111,7 +111,6 @@ __global__ void non_local_stack_forward_kernel(
       //      Fill Non-Local Patch
       //----------------------------------
 
-
       // scalar_t w = weights[ibatch][ihead][qi][ki];
       fill_non_local_patch<scalar_t>(stack[ibatch][ihead][ki],
                                      counts,vid[ibatch][ihead],
@@ -151,8 +150,8 @@ void non_local_stack_forward_cuda(
   // -- launch parameters --
   int nq = inds.size(2);
   int k = inds.size(3);
-  int ftr_threads = min(15,nftrs);
-  dim3 threadsPerBlock(10,4,ftr_threads);
+  int ftr_threads = min(1,nftrs);
+  dim3 threadsPerBlock(128,4,ftr_threads);
   dim3 blocksPerGrid(1, 1, nheads*nbatch);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
@@ -314,8 +313,8 @@ void non_local_stack_backward_cuda(
   // -- launch parameters --
   int nq = inds.size(2);
   int k = inds.size(3);
-  int ftr_threads = min(15,nftrs);
-  dim3 threadsPerBlock(10,4,ftr_threads);
+  int ftr_threads = min(1,nftrs);
+  dim3 threadsPerBlock(128,4,ftr_threads);
   dim3 blocksPerGrid(1, 1, nheads*nbatch);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));

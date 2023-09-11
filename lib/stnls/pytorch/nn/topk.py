@@ -111,7 +111,7 @@ def unique_topk(dists,inds,K,descending=False):
     # -- sort by dists --
     args = th.argsort(dists,dim=1,descending=descending)
     dists = th.gather(dists,1,args)
-    for i in range(3):
+    for i in range(inds.shape[-1]):
         inds[...,i] = th.gather(inds[...,i],1,args)
 
     # -- run --
@@ -133,11 +133,12 @@ def allocate_topk(dists,inds,K,descending):
     device = dists.device
     dtype = dists.dtype
     itype = inds.dtype
+    d2or3 = inds.shape[-1]
 
     # -- allocate --
     dists_topk = th.zeros((Q,K),device=device,dtype=dtype)
     dists_topk[...] = -th.inf if descending else th.inf
-    inds_topk = th.zeros((Q,K,3),device=device,dtype=itype)
+    inds_topk = th.zeros((Q,K,d2or3),device=device,dtype=itype)
     inds_topk[...] = -1
     return dists_topk,inds_topk
 
@@ -145,6 +146,7 @@ def standard_topk(dists,inds,K,descending):
 
     # -- reshape exh --
     Q,S = dists.shape
+    d2or3 = inds.shape[-1]
 
     # -- order --
     order = th.argsort(dists,dim=1,descending=descending)[:,:K]
@@ -154,7 +156,7 @@ def standard_topk(dists,inds,K,descending):
     dists_k = th.gather(dists,1,order)
 
     # -- topk inds --
-    inds_k = th.zeros((Q,K,3),device=inds.device,dtype=inds.dtype)
+    inds_k = th.zeros((Q,K,d2or3),device=inds.device,dtype=inds.dtype)
     for i in range(inds.shape[-1]):
         inds_k[:,:,i] = th.gather(inds[:,:,i],1,order)
 

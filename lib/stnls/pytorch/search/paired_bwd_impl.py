@@ -30,6 +30,7 @@ def paired_backward(ctx, grad_dists, grad_inds):
     # -- allocate grads --
     grad_vid0 = allocate_vid(ctx.vid_shape,grad_dists.device)
     grad_vid1 = allocate_vid(ctx.vid_shape,grad_dists.device)
+    # return grad_vid0,grad_vid1,grad_flow
 
     # -- restrict to k_agg --
     if ctx.k_agg > 0:
@@ -49,15 +50,17 @@ def paired_backward(ctx, grad_dists, grad_inds):
     # -- allow for repeated exec --
     grad_inds = grad_inds.contiguous()
     bwd_fxn = stnls_cuda.paired_search_backward
-    bwd_fxn(grad_vid0,grad_vid1,grad_flow,vid0,vid1,
+    bwd_fxn(grad_vid0,grad_vid1,grad_flow,
+            vid0,vid1,flow,
             grad_dists,grad_inds,inds,
             qshift,ctx.stride0,nH0,nW0,
             ctx.ps,ctx.dil,ctx.reflect_bounds,ctx.use_adj,
             ctx.off_H0, ctx.off_W0,ctx.off_H1, ctx.off_W1,ctx.dist_type_i)
 
     # -- finalize shape --
-    grad_vid0 = rearrange(grad_vid0,'B H c h w -> B (H c) h w')
-    grad_vid1 = rearrange(grad_vid1,'B H c h w -> B (H c) h w')
+    if ctx.in_ndim == 4:
+        grad_vid0 = rearrange(grad_vid0,'B H c h w -> B (H c) h w')
+        grad_vid1 = rearrange(grad_vid1,'B H c h w -> B (H c) h w')
 
     # -- normz --
     # from torch.nn.functional import fold

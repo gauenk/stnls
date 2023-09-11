@@ -67,32 +67,11 @@ class accumulate_flow_th(th.autograd.Function):
         bflow = bflow.flip(1)
         grad_pbflow = grad_pbflow.flip(1)
         pbflow = pbflow.flip(1)
-        # grad_pbflow = grad_pbflow.flip(2)
         stnls_cuda.accumulate_flow_backward(dev,grad_fflow,grad_bflow,
                                             grad_pfflow, grad_pbflow,
                                             fflow,bflow,pfflow,pbflow,
                                             ctx.stride0)
         grad_bflow = grad_bflow.flip(1)
-
-
-        # -- dev --
-        # print("-="*10 + " dev + " + "-="*10)
-        # # B, Q, patial FLOW dt, partial ACC dt, 2, 2, 4
-        # print(dev[0,0,0,1])
-        # print("-"*10)
-        # print(dev[0,0,1,1])
-        # print("-"*10)
-        # print(dev[0,1,1,1])
-        # print("-"*10)
-        # print(dev[0,2,1,1])
-        # args = th.where(th.logical_or(dev[...,-2]>0.1,dev[...,-1]>0.1))
-        # args_th = th.stack(args)
-        # print(args_th.shape)
-        # print(args_th)
-        # # exit()
-        # print("-="*20)
-        # print("-="*20)
-
 
         return grad_fflow,grad_bflow,None
 

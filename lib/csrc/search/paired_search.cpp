@@ -38,6 +38,7 @@ void paired_search_bilin2d_backward_cuda(
     torch::Tensor grad_frame1,
     torch::Tensor grad_flow,
     const torch::Tensor frame0, const torch::Tensor frame1,
+    const torch::Tensor flow,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds,
     int q_shift, int stride0, int nH0, int nW0,
@@ -98,6 +99,7 @@ void paired_search_backward(
     torch::Tensor grad_frame1,
     torch::Tensor grad_flow,
     const torch::Tensor frame0, const torch::Tensor frame1,
+    const torch::Tensor flow,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds,
     int q_shift, int stride0, int nH0, int nW0,
@@ -109,6 +111,7 @@ void paired_search_backward(
   CHECK_INPUT(grad_flow);
   CHECK_INPUT(frame0);
   CHECK_INPUT(frame1);
+  CHECK_INPUT(flow);
   CHECK_INPUT(grad_dists);
   CHECK_INPUT(grad_inds);
   CHECK_INPUT(inds);
@@ -124,7 +127,7 @@ void paired_search_backward(
   }else{
     paired_search_bilin2d_backward_cuda(
            grad_frame0, grad_frame1, grad_flow,
-           frame0, frame1,
+           frame0, frame1, flow,
            grad_dists, grad_inds, inds,
            q_shift, stride0, nH0, nW0,
            ps, dilation, reflect_bounds,

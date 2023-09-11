@@ -52,6 +52,7 @@ def nls_backward(ctx, grad_dists, grad_inds):
     grad_bflow = grad_bflow.transpose(1,2).contiguous()
     fflow = fflow.transpose(1,2).contiguous()
     bflow = bflow.transpose(1,2).contiguous()
+    grad_inds = grad_inds.contiguous()
 
     # -- debug --
     # vid0[...] = 2.
@@ -67,9 +68,9 @@ def nls_backward(ctx, grad_dists, grad_inds):
     # print(grad_inds)
     # print(th.any(th.isnan(grad_inds)))
     # print(th.any(th.isnan(fflow)),th.any(th.isnan(bflow)))
-
     # print(inds)
     # print(inds.shape)
+
     # -- allow for repeated exec --
     bwd_fxn = stnls_cuda.non_local_search_backward
     # print(fflow.shape,bflow.shape,grad_fflow.shape,grad_bflow.shape)
@@ -95,6 +96,9 @@ def nls_backward(ctx, grad_dists, grad_inds):
     # print("-"*30)
 
     # exit(0)
+
+    # -- backward for optical flow --
+    # nls_bwd_flow(ctx, fflow, bflow, stride0, inds, grad_inds)
 
     # -- transpose (ST,T) -> (T,ST) --
     grad_fflow = grad_fflow.transpose(1,2).contiguous()
@@ -178,6 +182,66 @@ def nls_backward(ctx, grad_dists, grad_inds):
 
 
     return grad_vid0,grad_vid1,grad_fflow,grad_bflow
+
+def nls_bwd_flow(ctx, fflow, bflow, stride0, inds, grad_inds):
+
+    # ********************
+    #  Accumulate Forward
+    # ********************
+
+    # -- get sizes --
+    B,T,_,H,W = bflow.shape
+    nH = (H-1)//stride0+1
+    nW = (W-1)//stride0+1
+    dtype = fflow.dtype
+    device = fflow.device
+
+    # -- init --
+    pfflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
+    pbflow = th.zeros((B,T,T-1,2,nH,nW),device=device,dtype=dtype)
+
+    # -- forward --
+    stnls_cuda.accumulate_flow_forward(fflow,bflow,pfflow,pbflow,stride0)
+
+
+    # ***********************************
+    #  Assign Inds inside grad_pfflow
+    # ***********************************
+
+    grad_pfflow = th.zeros_like(pfflow)
+    grad_bfflow = th.zeros_like(pfflow)
+    stnls_cuda.assign_inds(grad_inds,grad_pfflow,grad_pbflow,stride0)
+
+
+    # ***********************************
+    #     Accumulate Flow Backwards
+    # ***********************************
+
+    # -- init --
+    grad_fflow = th.zeros(ctx.fshape,device=grad_pfflow.device)
+    grad_bflow = th.zeros(ctx.fshape,device=grad_pfflow.device)
+
+    # -- get sizes --
+    stride0 = ctx.stride0
+    dtype = grad_bflow.dtype
+    device = grad_bflow.device
+    B,T,_,H,W = grad_bflow.shape
+    nH = (H-1)//stride0+1
+    nW = (W-1)//stride0+1
+    dev = th.zeros((B,T*nH*nW,T-1,T-1,2,2,6),device=device,dtype=dtype)
+
+    # -- backward --
+    fflow,bflow,pfflow,pbflow = ctx.saved_tensors
+    bflow = bflow.flip(1)
+    grad_pbflow = grad_pbflow.flip(1)
+    pbflow = pbflow.flip(1)
+    stnls_cuda.accumulate_flow_backward(dev,grad_fflow,grad_bflow,
+                                        grad_pfflow, grad_pbflow,
+                                        fflow,bflow,pfflow,pbflow,
+                                        ctx.stride0)
+    grad_bflow = grad_bflow.flip(1)
+
+    return grad_fflow,grad_bflow
 
 def nls_backward_offsets(ctx, grad_dists, grad_inds):
 
