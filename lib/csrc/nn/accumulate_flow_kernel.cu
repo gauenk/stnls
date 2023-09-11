@@ -474,7 +474,8 @@ void accumulate_flow_backward_cuda(
 
   // -- kernel params --
   int locs_per_thread = 1;
-  int _nthreads = 448/T;
+  // int _nthreads = 448/T;
+  int _nthreads = 256/T;
   dim3 nthreads(_nthreads,2,T-1); // forward and backward
   int _nblocks = (nRun-1)/(_nthreads*locs_per_thread)+1;
   dim3 nblocks(_nblocks,B);

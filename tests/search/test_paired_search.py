@@ -147,12 +147,12 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     M = 10
-    # flows.fflow = th.clamp(th.ones_like(flows.fflow),-M,M).round()
-    # flows.bflow = th.clamp(th.ones_like(flows.bflow),-M,M).round()
+    flows.fflow = 0.*th.clamp(th.ones_like(flows.fflow),-M,M).round()
+    flows.bflow = 0.*th.clamp(th.ones_like(flows.bflow),-M,M).round()
     # flows.fflow = th.clamp(M*th.randn_like(flows.fflow),-M,M).round()/M*2
     # flows.bflow = th.clamp(M*th.randn_like(flows.bflow),-M,M).round()/M*2
-    flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M)
-    flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M)
+    # flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M)
+    # flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M)
     # flows.fflow[:,2] = flows.fflow[:,1]
     # flows.bflow[:,1] = flows.fflow[:,1]
     # flows.bflow[:,2] = flows.bflow[:,1]
@@ -166,8 +166,8 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # flows.bflow = th.zeros_like(flows.bflow)
     # flows.fflow = th.round(flows.fflow,decimals=2)
     # flows.bflow = th.round(flows.bflow,decimals=2)
-    flows.fflow[:,-1,...] = 0
-    flows.bflow[:,0,...] = 0
+    # flows.fflow[:,-1,...] = 0
+    # flows.bflow[:,0,...] = 0
 
     # -- unpack image --
     device = vid.device
@@ -208,21 +208,21 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # dists_te = th.round(dists_te,decimals=2)
     # inds_te = th.round(inds_te,decimals=3)
 
-    for t in range(2):
-        print("-"*10 + ("t: %d" % t)  + "-"*10)
-        txt = ["W","H"]
-        for i in range(2):
-            print(txt[i])
-            print(flows.fflow[0,t,i,:3,:3])
+    # for t in range(2):
+    #     print("-"*10 + ("t: %d" % t)  + "-"*10)
+    #     txt = ["W","H"]
+    #     for i in range(2):
+    #         print(txt[i])
+    #         print(flows.fflow[0,t,i,:3,:3])
 
-    for t in range(2):
-        print("-"*10 + ("t: %d" % t)  + "-"*10)
-        txt = ["W","H"]
-        for i in range(2):
-            print(txt[i])
-            print(acc_flows.fflow[0,0,t,i,:3,:3])
-        # print(flows.fflow[0,t,1,:2,:2])
-        # print(acc_flows.fflow[0,0,t,1,:2,:2])
+    # for t in range(2):
+    #     print("-"*10 + ("t: %d" % t)  + "-"*10)
+    #     txt = ["W","H"]
+    #     for i in range(2):
+    #         print(txt[i])
+    #         print(acc_flows.fflow[0,0,t,i,:3,:3])
+    #     # print(flows.fflow[0,t,1,:2,:2])
+    #     # print(acc_flows.fflow[0,0,t,1,:2,:2])
 
     # -- viz --
     K = 27
@@ -253,6 +253,13 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # -- info --
     #
     #
+
+
+    dists_gt = th.round(dists_gt,decimals=2)
+    dists_te = th.round(dists_te,decimals=2)
+    inds_gt = th.round(inds_gt,decimals=2)
+    inds_te = th.round(inds_te,decimals=2)
+
 
     # -- compute diffs --
     tensor_gt = dists_gt
@@ -322,8 +329,10 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     M = 2.1
     # flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
     # flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
-    flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
-    flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
+    # flows.fflow = th.clamp(th.randn_like(flows.fflow),-M,M).round()/2.
+    # flows.bflow = th.clamp(th.randn_like(flows.bflow),-M,M).round()/2.
+    flows.fflow = 0.*th.clamp(th.ones_like(flows.fflow),-M,M).round()
+    flows.bflow = 0.*th.clamp(th.ones_like(flows.bflow),-M,M).round()
     # flows.fflow = th.clamp(M*th.ones_like(flows.fflow),-M,M).round()/5.
     # flows.bflow = th.clamp(M*th.ones_like(flows.bflow),-M,M).round()/5.
     # flows.fflow = th.zeros_like(flows.fflow)

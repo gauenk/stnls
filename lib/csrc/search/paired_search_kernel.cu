@@ -49,8 +49,8 @@ __global__ void paired_search_forward_kernel(
 
   // -- search region offsets --
   // int psHalf = (ps)/2;
-  int wsHalf_h = (ws_h-1)/2;
-  int wsHalf_w = (ws_w-1)/2;
+  int wsHalf_h = (ws_h)/2;
+  int wsHalf_w = (ws_w)/2;
   // int adj = use_adj ? psHalf : 0;
   int wsOff_h,wsOff_w;
   // int wsMax_h = stride1*(ws_h-1-wsHalf_h);
@@ -338,7 +338,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
     frame_anchor[1] = __int2float_rn(ref_patch[1]);
 
     // -- compute frame offsets with flow --
-    // update_centers_flow(frame_anchor[0],frame_anchor[1],H,W,flow[ibatch]);
+    // update_centers_flow(frame_anchor[0],frame_anchor[1],H,W,flow[ibatch][ihead_fl]);
     frame_anchor[0] += flow[ibatch][ihead_fl][1][ref_patch[0]][ref_patch[1]];
     frame_anchor[1] += flow[ibatch][ihead_fl][0][ref_patch[0]][ref_patch[1]];
     frame_anchor[0] = bounds(frame_anchor[0],H);
@@ -573,6 +573,7 @@ void paired_search_backward_cuda(
     int q_shift, int stride0, int nH0, int nW0,
     int ps, int pt, int dilation, bool reflect_bounds, bool use_adj,
     int off_H0, int off_W0, int off_H1, int off_W1, int dist_type) {
+
 
   // -- unpack --
   int B = frame0.size(0);

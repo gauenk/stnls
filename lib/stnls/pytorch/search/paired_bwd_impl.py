@@ -129,8 +129,7 @@ def paired_backward(ctx, grad_dists, grad_inds):
         grad_flow = None
 
     # -- no "ST" dimension if ST == 1 --
-    # grad_fflow = grad_fflow.squeeze(2)
-    # grad_bflow = grad_bflow.squeeze(2)
+    grad_flow = grad_flow.squeeze(1)
 
     return grad_vid0,grad_vid1,grad_flow
 

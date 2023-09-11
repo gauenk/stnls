@@ -173,13 +173,13 @@ def nls_backward(ctx, grad_dists, grad_inds):
         grad_vid1 /= counts
 
     # -- no "ST" dimension if ST == 1 --
-    grad_fflow = grad_fflow.squeeze(2)
-    grad_bflow = grad_bflow.squeeze(2)
+    if ctx.flow_ndim == 5:
+        grad_fflow = grad_fflow.squeeze(1)
+        grad_bflow = grad_bflow.squeeze(1)
 
     # -- no grad if ints --
     if itype_bwd == "int":
         grad_fflow,grad_bflow = None,None
-
 
     return grad_vid0,grad_vid1,grad_fflow,grad_bflow
 

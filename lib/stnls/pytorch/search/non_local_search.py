@@ -166,6 +166,7 @@ class NonLocalSearchFunction(th.autograd.Function):
         B,HD,T,F,H,W = vid0.shape
 
         # -- manage forward shape --
+        flow_ndim = fflow.ndim
         fflow = ensure_flow_shape(fflow)
         bflow = ensure_flow_shape(bflow)
 
@@ -192,7 +193,8 @@ class NonLocalSearchFunction(th.autograd.Function):
                     "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
                     "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
                     "off_H1":off_H1,"off_W1":off_W1,
-                    "dist_type_i":dist_type_i,"itype_bwd":itype_bwd}
+                    "dist_type_i":dist_type_i,"itype_bwd":itype_bwd,
+                    "flow_ndim":flow_ndim}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 
