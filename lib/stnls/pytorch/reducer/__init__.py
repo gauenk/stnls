@@ -16,4 +16,4 @@ iwpsum = iwpsum_f._apply
 # -- class api --
 WeightedPatchSum = wpsum_f.WeightedPatchSum
 FoldedWeightedPatchSum = fwpsum_f.FoldedWeightedPatchSum
-InplaceWeightedPatchSum = iwpsum_f.InplaceWeightedPatchSum
+WeightedSum = iwpsum_f.WeightedSum

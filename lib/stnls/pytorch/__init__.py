@@ -1,6 +1,7 @@
 
 # -- submodules --
 from . import nn
+from . import search_v0
 from . import search
 from . import reducer
 from . import tile

@@ -18,7 +18,6 @@ from .utils import shape_vids,dist_type_select
 from .utils import allocate_pair,allocate_vid
 from .utils import get_ctx_qinds
 from .shared import manage_self
-from .batching_utils import run_batched,batching_info
 # from .nls_bwd_impl import nls_backward
 from .ref_bwd_impl import ref_backward
 
@@ -28,39 +27,16 @@ from .ref_bwd_impl import ref_backward
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def refine_forward(batchsize,*args):
-    vid_idx = 0
-    ws_idx,wt_idx = 3,4
-    stride0_idx = 8
-    ntotal,nbatches,batchsize = batching_info(args[vid_idx],args[stride0_idx],
-                                              args[ws_idx],args[wt_idx],
-                                              batchsize)
-    if nbatches == 1: # shortcut
-        qshift,nqueries = 0,-1
-        return refine_fwd_main(qshift,nqueries,*args)
-    else:
-        return run_batched(refine_fwd_main,batchsize,vid_idx,
-                           stride0_idx,ws_idx,wt_idx,*args)
-
-def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
-                    ws, wr, ps, k, dist_type,
-                    stride0, stride1, dilation, pt,
-                    topk_mode, anchor_self, remove_self,
-                    reflect_bounds, full_ws, use_adj, itype_fwd,
-                    off_H0, off_W0, off_H1, off_W1):
+def refine_forward(vid0, vid1, qinds,
+                   ws, ps, k, wr, stride0, stride1, dilation, pt,
+                   dist_type, restricted_radius, reflect_bounds, full_ws,
+                   topk_mode, self_action, patch_offset, itype_fwd):
 
     # -- fix negative Q --
-    if Q > 0:
-        qinds = qinds[:,:,qshift:qshift+Q].contiguous()
-
-    # -- search space --
-    wr_h,wr_w = wr,wr
-    ws_h,ws_w = ws,ws
-    search_abs = ws == -1
-    if search_abs:
-        nH0 = (H-1)//stride0+1
-        nW0 = (W-1)//stride0+1
-        ws_h,ws_w = nH0,nW0
+    # if Q > 0:
+    #     qinds = qinds[:,:,qshift:qshift+Q].contiguous()
+    B,HD,T,nH,nW,K,_ = qinds.shape
+    Q = T*nH*nW
 
     # -- settings from distance type --
     dist_type_i,descending,idist_val = dist_type_select(dist_type)
@@ -68,14 +44,15 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
     # -- allocate results --
     device = qinds.device
     B,HD,Q,K = qinds.shape[:-1]
-    base_shape = (B,HD,Q,K,wr_h,wr_w)
+    base_shape = (B,HD,Q,K,wr,wr)
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val,itype_fwd)
     imode = 0 if itype_fwd == "int" else 1
+    patch_offset = 0 if use_adj else -(ps//2)
 
     # -- run --
     # print(vid0.shape,qinds.shape)
     if imode == 0:
-        fwd_fxn = stnls_cuda.refinement_forward
+        fwd_fxn = stnls_cuda.refinement_int_forward
     else:
         fwd_fxn = stnls_cuda.refinement_bilin2d_forward
         stride1 = float(stride1)
@@ -91,10 +68,9 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
 
     # -- forward --
     fwd_fxn(vid0, vid1, qinds, dists, inds,
-            ws_h, ws_w, ps, k, dist_type_i,
-            stride0, stride1, dilation, pt, qshift,
-            reflect_bounds, full_ws, use_adj,
-            off_H0, off_W0, off_H1, off_W1)
+            ws, ps, k, stride0, stride1, dilation, pt,
+            reflect_bounds, full_ws, restricted_radius,
+            patch_offset, dist_type_i)
     # print("dists [max,min]: ",th.max(dists).item(),th.min(dists).item())
 
     # -- allow for int fwd when actually float --
@@ -114,6 +90,8 @@ def refine_fwd_main(qshift, Q, vid0, vid1, qinds,
 
     # -- manage self dists --
     H,W = vid0.shape[-2:]
+    anchor_self = self_action == "anchor"
+    remove_self = self_action == "remove"
     dists,inds = manage_self(dists,inds,anchor_self,
                              remove_self,qshift,stride0,H,W)
 
@@ -149,16 +127,12 @@ class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid0, vid1, qinds,
-                ws, ps, k, wr, kr, nheads=1, batchsize=-1,
-                dist_type="prod", stride0=4, stride1=1,
-                dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-                topk_mode="default", anchor_self=True, remove_self=False,
-                use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                normalize_bwd=False, k_agg=-1,
-                itype_fwd="int",itype_bwd="int",
-                rbwd=False, nbwd=1, exact=False,
-                use_atomic=True, queries_per_thread=4,
-                neigh_per_thread=4, channel_groups=-1):
+                ws, ps, k, wr, kr, nheads=1, stride0=4, stride1=1,
+                dilation=1, pt=1, dist_type="l2",
+                restricted_radius=False, reflect_bounds=True,
+                full_ws=False, topk_mode="default", self_action=None,
+                use_adj=False, normalize_bwd=False, k_agg=-1,
+                itype_fwd="int", itype_bwd="int"):
         """
         Run the refinement search
 
@@ -172,21 +146,19 @@ class RefineSearchFunction(th.autograd.Function):
         dtype = vid0.dtype
         device = vid0.device
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
-        # print("vid0.shape: ",vid0.shape,qinds.shape,nheads)
         B,HD,T,F,H,W = vid0.shape
         assert qinds.shape[1] == HD
+        patch_offset = 0 if use_adj else -(ps//2)
 
         # -- filter only to kr --
         qinds = filter_k(qinds,kr)
         qinds = qinds.contiguous()
 
         # -- run fwd pass --
-        dists,inds = refine_forward(batchsize, vid0, vid1, qinds,
-                                    ws, wr, ps, k, dist_type,
-                                    stride0, stride1, dilation, pt,
-                                    topk_mode, anchor_self,remove_self,
-                                    reflect_bounds, full_ws, use_adj,
-                                    itype_fwd, off_H0, off_W0, off_H1, off_W1)
+        dists,inds = refine_forward(vid0, vid1, qinds,
+                                    ws, ps, k, wr, stride0, stride1, dilation, pt,
+                                    dist_type, restricted_radius, reflect_bounds, full_ws,
+                                    topk_mode, self_action, patch_offset, itype_fwd)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -195,7 +167,7 @@ class RefineSearchFunction(th.autograd.Function):
         if itype_bwd == "int":
             ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"stride1":stride1,
+        ctx_vars = {"stride0":stride0,"stride1":stride1,
                     "ps":ps,"pt":pt,"dil":dilation,
                     "reflect_bounds":reflect_bounds,"k_agg":k_agg,
                     "rbwd":rbwd,"exact":exact,"nbwd":nbwd,"use_atomic":use_atomic,
@@ -223,14 +195,11 @@ class RefineSearchFunction(th.autograd.Function):
 class RefineSearch(th.nn.Module):
 
     def __init__(self, ws, ps, k, wr, kr, nheads=1,
-                 dist_type="l2", stride0=4, stride1=1, dilation=1, pt=1,
-                 reflect_bounds=True, full_ws=False,
-                 topk_mode="default", anchor_self=False, remove_self=False,
-                 use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 normalize_bwd=False, k_agg=-1,
-                 itype_fwd="int",itype_bwd="int",
-                 rbwd=True, nbwd=1, exact=False, use_atomic=True,
-                 queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
+                 stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
+                 restricted_radius=False, reflect_bounds=True,
+                 full_ws=False, topk_mode="default", self_action=None,
+                 use_adj=False, normalize_bwd=False, k_agg=-1,
+                 itype_fwd="int", itype_bwd="int"):
         super().__init__()
 
         # -- core search params --
@@ -240,20 +209,20 @@ class RefineSearch(th.nn.Module):
         self.wr = wr
         self.kr = kr
         self.nheads = nheads
-        self.dist_type = dist_type
         self.stride0 = stride0
         self.stride1 = stride1
         self.dilation = dilation
         self.pt = pt
+        self.dist_type = dist_type
 
         # -- manage patch and search boundaries --
+        self.restricted_radius = restricted_radius
         self.reflect_bounds = reflect_bounds
         self.full_ws = full_ws
 
         # -- special mods to "self" search --
         self.topk_mode = topk_mode
-        self.anchor_self = anchor_self
-        self.remove_self = remove_self
+        self.self_action = self_action
 
         # -- with/without grads --
         self.itype_fwd = itype_fwd
@@ -261,41 +230,22 @@ class RefineSearch(th.nn.Module):
 
         # -- searching offsets --
         self.use_adj = use_adj
-        self.off_H0 = off_H0
-        self.off_W0 = off_W0
-        self.off_H1 = off_H1
-        self.off_W1 = off_W1
 
         # -- backprop params --
         self.normalize_bwd = normalize_bwd
         self.k_agg = k_agg
-        self.nbwd = nbwd
-        self.exact = exact
-        self.use_atomic = use_atomic
-        self.rbwd = rbwd
-        self.queries_per_thread = queries_per_thread
-        self.neigh_per_thread = neigh_per_thread
-        self.channel_groups = channel_groups
 
-
-    def forward(self,vid0,vid1,qinds,batchsize=-1):
+    def forward(self,vid0,vid1,qinds):
         return RefineSearchFunction.apply(vid0,vid1,qinds,
                                           self.ws,self.ps,self.k,
-                                          self.wr,self.kr,self.nheads,batchsize,
-                                          self.dist_type,self.stride0,self.stride1,
-                                          self.dilation,self.pt,
+                                          self.wr,self.kr,self.nheads,
+                                          self.stride0,self.stride1,
+                                          self.dilation,self.pt,self.dist_type,
+                                          self.restricted_radius,
                                           self.reflect_bounds,self.full_ws,
-                                          self.topk_mode,self.anchor_self,
-                                          self.remove_self,self.use_adj,
-                                          self.off_H0,self.off_W0,
-                                          self.off_H1,self.off_W1,
-                                          self.normalize_bwd,self.k_agg,
-                                          self.itype_fwd,self.itype_bwd,
-                                          self.rbwd,self.nbwd,
-                                          self.exact,self.use_atomic,
-                                          self.queries_per_thread,
-                                          self.neigh_per_thread,
-                                          self.channel_groups)
+                                          self.topk_mode,self.self_action,
+                                          self.use_adj,self.normalize_bwd,
+                                          self.k_agg,self.itype_fwd,self.itype_bwd)
 
     def flops(self,T,F,H,W):
         return 0
@@ -311,25 +261,20 @@ class RefineSearch(th.nn.Module):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def _apply(vid0, vid1, qinds,
-           ws, ps, k, wr, kr=-1, nheads=1, batchsize=-1,
-           dist_type="l2", stride0=4, stride1=1,
-           dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-           topk_mode="default", anchor_self=True, remove_self=False,
-           use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           normalize_bwd=False, k_agg=-1,rbwd=False, nbwd=1, exact=False, use_atomic=True,
-           queries_per_thread=4, neigh_per_thread=4, channel_groups=-1):
+           ws, ps, k, wr, kr=-1, nheads=1, stride0=4, stride1=1,
+           dilation=1, pt=1, dist_type="l2",
+           restricted_radius=False, reflect_bounds=True, full_ws=False,
+           topk_mode="default", self_action=None, use_adj=False,
+           normalize_bwd=False, k_agg=-1, itype_fwd="int", itype_bwd="int"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
     fxn = RefineSearchFunction.apply
     return fxn(vid0, vid1, qinds,
-               ws, ps, k, wr, kr, nheads, batchsize,
-               dist_type, stride0, stride1,
-               dilation, pt, reflect_bounds,
-               full_ws, topk_mode, anchor_self, remove_self,
-               use_adj, off_H0, off_W0, off_H1, off_W1,
-               normalize_bwd, k_agg, rbwd, nbwd, exact, use_atomic,
-               queries_per_thread, neigh_per_thread, channel_groups)
+               ws, ps, k, wr, kr, nheads, stride0, stride1,
+               dilation, pt, dist_type, restricted_radius, reflect_bounds,
+               full_ws, topk_mode, self_action, use_adj,
+               normalize_bwd, k_agg, itype_fwd, itype_bwd)
 
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -340,34 +285,24 @@ def _apply(vid0, vid1, qinds,
 
 def extract_config(cfg,restrict=True):
     pairs = {"ws":-1,"wt":-1,"ps":7,"k":10,"wr":1,"kr":-1,
-             "nheads":1,"dist_type":"l2",
-             "stride0":4, "stride1":1, "dilation":1, "pt":1,
+             "nheads":1, "stride0":4, "stride1":1, "dilation":1, "pt":1,
+             "dist_type":"l2", "restricted_radius":False,
              "reflect_bounds":True, "full_ws":False,
-             "topk_mode": "default", "anchor_self":True, "remove_self":False,
-             "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "normalize_bwd": False, "k_agg":-1,
-             "itype_fwd":"int", "itype_bwd":"int",
-             "rbwd":False, "nbwd":1, "exact":False, "use_atomic": True,
-             "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
+             "topk_mode": "default", "self_action":None,
+             "use_adj":False, "normalize_bwd": False, "k_agg":-1,
+             "itype_fwd":"int", "itype_bwd":"int"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     search = RefineSearch(cfg.ws, cfg.ps, cfg.k, cfg.wr, cfg.kr,
-                          nheads=cfg.nheads, dist_type=cfg.dist_type,
-                          stride0=cfg.stride0, stride1=cfg.stride1,
-                          dilation=cfg.dilation, pt=cfg.pt,
+                          nheads=cfg.nheads, stride0=cfg.stride0,
+                          stride1=cfg.stride1, dilation=cfg.dilation,
+                          pt=cfg.pt, dist_type=cfg.dist_type,
+                          restricted_radius=cfg.restricted_radius,
                           reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
-                          topk_mode=cfg.topk_mode, anchor_self=cfg.anchor_self,
-                          remove_self=cfg.remove_self, use_adj=cfg.use_adj,
-                          off_H0=cfg.off_H0,off_W0=cfg.off_W0,
-                          off_H1=cfg.off_H1,off_W1=cfg.off_W1,
-                          normalize_bwd=cfg.normalize_bwd, k_agg=cfg.k_agg,
-                          itype_fwd=cfg.itype_fwd,itype_bwd=cfg.itype_bwd,
-                          rbwd=cfg.rbwd, nbwd=cfg.nbwd,
-                          exact=cfg.exact, use_atomic=cfg.use_atomic,
-                          queries_per_thread=cfg.neigh_per_thread,
-                          neigh_per_thread=cfg.neigh_per_thread,
-                          channel_groups=cfg.channel_groups)
+                          topk_mode=cfg.topk_mode, self_action=cfg.self_action,
+                          use_adj=cfg.use_adj, normalize_bwd=cfg.normalize_bwd,
+                          k_agg=cfg.k_agg,itype_fwd=cfg.itype_fwd,itype_bwd=cfg.itype_bwd)
 
     return search
 

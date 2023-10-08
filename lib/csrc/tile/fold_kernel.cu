@@ -267,7 +267,7 @@ __global__ void stnls_fold_backward_kernel(
 
 void stnls_cuda_fold_backward(
   torch::Tensor grad_vid,torch::Tensor patches,
-  int start, int stride, int dilation) {
+  int start, int stride, int adj, int dilation) {
 
   // -- kernel blocks --
   int numQueries = patches.size(0);

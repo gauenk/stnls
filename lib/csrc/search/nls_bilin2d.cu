@@ -20,7 +20,7 @@
 
 using namespace at;
 
-// #include "shared_kernel.cu"
+
 
 template<typename scalar_t, int DIST_TYPE>
 __device__ __forceinline__ 
@@ -30,7 +30,7 @@ void compute_dist_bilin2d(scalar_t& dist,
   int* ref_patch, scalar_t* prop_patch, int* ref, scalar_t* prop, int* prop_i,
   bool* valid_ref, bool* valid_prop,
   int ps, int pt, int dilation, bool reflect_bounds,
-  int patch_offset, int* center_offsets, scalar_t invalid,
+  int patch_offset, scalar_t invalid,
   int T, int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t w){
                   
   scalar_t interp[2];
@@ -47,24 +47,24 @@ void compute_dist_bilin2d(scalar_t& dist,
     for (int pi = 0; pi < ps; pi++){
 
       // -- ref height --
-      ref[1] = (ref_patch[1]-center_offsets[0])+dilation*(pi + patch_offset);
+      ref[1] = ref_patch[1]+dilation*(pi + patch_offset);
       ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
       valid_ref[1] = check_interval(ref[1],0,H);
 
       // -- proposed height --
-      prop[1] = (prop_patch[1]-center_offsets[1])+dilation*(pi + patch_offset);
+      prop[1] = prop_patch[1]+dilation*(pi + patch_offset);
       prop[1] = reflect_bounds ? bounds<scalar_t>(prop[1],H) : prop[1];
       valid_prop[1] = check_interval<scalar_t>(prop[1],0,H);
 
       for (int pj = 0; pj < ps; pj++){
         
         // -- ref width --
-        ref[2] = (ref_patch[2]-center_offsets[2])+dilation*(pj + patch_offset);
+        ref[2] = ref_patch[2]+dilation*(pj + patch_offset);
         ref[2] = reflect_bounds ? bounds(ref[2],W) : ref[2];
         valid_ref[2] = check_interval(ref[2],0,W);
 
         // -- prop width --
-        prop[2] = (prop_patch[2]-center_offsets[3])+dilation*(pj + patch_offset);
+        prop[2] = prop_patch[2]+dilation*(pj + patch_offset);
         prop[2] = reflect_bounds ? bounds<scalar_t>(prop[2],W) : prop[2];
         valid_prop[2] = check_interval<scalar_t>(prop[2],0,W);
 
@@ -108,12 +108,6 @@ void compute_dist_bilin2d(scalar_t& dist,
               pix1 += valid_prop[3] ? w*vid1[prop_i[0]][ci][prop_i[1]][prop_i[2]] : 0;
             }
           }
-          // pix1 = 1;
-
-          // pix1 = 1;
-          // int i1 = __float2int_rn(round(prop[1]));
-          // int i2 = __float2int_rn(round(prop[2]));
-          // pix1 = vid1[prop_i[0]][ci][i1][i2];
 
           // -- compute dist --
           if(DIST_TYPE == 0){ // product
@@ -142,7 +136,7 @@ void update_bwd_patch_bilin2d(
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     scalar_t weight, int* ref_patch, scalar_t* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
-    int* center_offsets, int patch_offset,
+    int patch_offset,
     int iftr, int ftr_start, int ftr_end,
     int* ref, scalar_t* prop, int* prop_i,
     bool* valid_ref, bool* valid_prop, bool valid,
@@ -163,24 +157,24 @@ void update_bwd_patch_bilin2d(
       for (int pi = 0; pi < ps; pi++){
 
         // -- ref patch --
-        ref[1] = (ref_patch[1]-center_offsets[0])+dilation*(pi + patch_offset);
+        ref[1] = ref_patch[1]+dilation*(pi + patch_offset);
         ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
         valid_ref[1] = check_interval(ref[1],0,H);
 
         // -- prop patch --
-        prop[1] = (prop_patch[1]-center_offsets[1])+dilation*(pi + patch_offset);
+        prop[1] = prop_patch[1]+dilation*(pi + patch_offset);
         prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
         valid_prop[1] = check_interval(prop[1],0,H);
 
         for (int pj = 0; pj < ps; pj++){
           
           // -- ref patch --
-          ref[2] = (ref_patch[2]-center_offsets[2])+dilation*(pj + patch_offset);
+          ref[2] = ref_patch[2]+dilation*(pj + patch_offset);
           ref[2] = reflect_bounds ? bounds(ref[2],W) : ref[2];
           valid_ref[2] = check_interval(ref[2],0,W);
 
           // -- prop patch --
-          prop[2] = (prop_patch[2]-center_offsets[3])+dilation*(pj + patch_offset);
+          prop[2] = prop_patch[2]+dilation*(pj + patch_offset);
           prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
           valid_prop[2] = check_interval(prop[2],0,W);
 
@@ -262,6 +256,36 @@ void update_bwd_patch_bilin2d(
                 }
               }
             }
+
+            // //
+            // // -- update flows --
+            // //
+            // scalar_t wpix0 = weight*pix0;
+            // #pragma unroll
+            // for (int ix=0;ix<2;ix++){
+            //   #pragma unroll
+            //   for (int jx=0;jx<2;jx++){
+
+            //     // -- interpolation weighting --
+            //     prop_i[1] = __float2int_rd(prop[1]+ix);
+            //     interp[0] = max(0.,1-fabs(prop[1]-prop_i[1]));
+            //     prop_i[2] = __float2int_rd(prop[2]+jx);
+            //     interp[1] = max(0.,1-fabs(prop[2]-prop_i[2]));
+            //     w = interp[0] * interp[1];
+
+            //     // -- ensure legal bounds --
+            //     prop_i[1] = bounds(prop_i[1],H);
+            //     prop_i[2] = bounds(prop_i[2],W);
+
+            //     if (DIST_TYPE == 0){ // prod
+            //       atomicAdd(&(grad_flows[prop_i[0]][iftr][prop_i[1]][prop_i[2]]),
+            //                 w*wpix0);
+            //     }else if(DIST_TYPE == 1){ // l2 norm
+            //       atomicAdd(&grad_flows[prop_i[0]][iftr][prop_i[1]][prop_i[2]],-w*pix);
+            //     }
+            //   }
+            // }
+
 
           }
         }
@@ -382,6 +406,26 @@ void update_bwd_patch_bilin2d(
 
 // }
 
+
+template<typename scalar_t>
+__device__ __forceinline__ 
+void compute_bwd_flows(
+    const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
+    const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
+    const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> flow,
+    const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> bflow,
+    scalar_t prop_time, scalar_t* iweight, int* ref, int* prop_i,
+    int T, int H, int W){
+
+    // compute_bwd_flows<scalar_t,DIST_TYPE>(dist,
+    //              vid0[ibatch][ihead],vid1[ibatch][ihead],
+    //              ref_patch, prop_patch, 
+    //              ref_pix, prop_pix, prop_i, valid_ref, valid_prop,
+    //              ps,pt,dilation,reflect_bounds,
+    //              patch_offset,invalid,
+    //              T,C,H,W,pix0,pix1,_dist);
+
+}
 
 template<typename scalar_t>
 __device__ __forceinline__ 

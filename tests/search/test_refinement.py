@@ -79,6 +79,7 @@ def test_fwd(ws,wt,k,wr,kr,ps,stride0,stride1,dilation,nheads,exact,seed):
     use_self = anchor_self
     rbwd = True
     nbwd = 1
+    self_action = None
 
     # -- load data --
     vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
@@ -96,13 +97,11 @@ def test_fwd(ws,wt,k,wr,kr,ps,stride0,stride1,dilation,nheads,exact,seed):
     search_gt = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,dist_type="l2",
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
-                                 anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+                                 self_action=self_action,use_adj=use_adj)
     search_te = stnls.search.RefineSearch(ws, ps, k, wr, kr, nheads,dist_type="l2",
                                  dilation=dil,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=False,
-                                 anchor_self=anchor_self,remove_self=False,
-                                 use_adj=use_adj,rbwd=rbwd,nbwd=nbwd,exact=exact)
+                                 self_action=self_action,use_adj=use_adj)
     print(ws,ps,k,wr,kr,use_adj)
 
     # -- test api --

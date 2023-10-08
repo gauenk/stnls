@@ -35,12 +35,11 @@ def ensure_flow_dim(flow):
         flow = flow[:,None] # add nheads
     return flow
 
-def paired_fwd_main(qshift, Q, frame0, frame1, flow,
+def paired_forward(frame0, frame1, flow,
                     ws, ps, k, dist_type,
                     stride0, stride1, dilation, pt,
-                    topk_mode, anchor_self, remove_self, reflect_bounds,
-                    full_ws, full_ws_time, use_adj,
-                    fwd_version, itype, off_H0, off_W0, off_H1, off_W1):
+                    topk_mode, self_action, reflect_bounds,
+                    full_ws, use_adj, itype):
 
     # -- unpack --
     # itype = "int"
@@ -50,11 +49,12 @@ def paired_fwd_main(qshift, Q, frame0, frame1, flow,
     # print(frame0.shape,flow.shape)
     assert flow.ndim == 5
     HD = max(HD_flow,HD_fr)
+    patch_offset = 0 if use_adj else -(ps//2)
 
     # -- derived shapes --
     nH0 = (H-1)//stride0+1
     nW0 = (W-1)//stride0+1
-    Q = nH0*nW0 if Q <= 0 else Q
+    Q = nH0*nW0
 
     # -- search space --
     ws_h,ws_w = ws,ws
@@ -68,21 +68,16 @@ def paired_fwd_main(qshift, Q, frame0, frame1, flow,
     # print("inds.shape: ",inds.shape)
 
     # -- forward --
-    fwd_version = "v1"
-    if fwd_version == "v1":
-        if itype == "int":
-            fwd_fxn = stnls_cuda.paired_search_forward
-        else:
-            fwd_fxn = stnls_cuda.paired_search_bilin2d_forward
-            stride1 = float(stride1)
+    if itype == "int":
+        fwd_fxn = stnls_cuda.paired_search_forward
+        stride1 = max(1,int(stride1))
     else:
-        raise ValueError(f"Uknown version [{version}]")
+        fwd_fxn = stnls_cuda.paired_search_bilin2d_forward
+        stride1 = float(stride1)
     # print(frame0.shape,flow.shape,dists.shape,inds.shape)
     fwd_fxn(frame0, frame1, flow, dists, inds,
-            ps, k, dist_type_i, stride0,
-            stride1, dilation, qshift,
-            reflect_bounds, full_ws, full_ws_time,
-            use_adj, off_H0, off_W0, off_H1, off_W1)
+            ps, k, stride0, stride1, dilation,
+            reflect_bounds, full_ws, patch_offset, dist_type_i)
 
     # print(frame0.shape,frame1.shape,flow.shape,inds.shape)
     # -- compress search region --
@@ -95,9 +90,11 @@ def paired_fwd_main(qshift, Q, frame0, frame1, flow,
     dists = th.nan_to_num(dists,fill_val)
 
     # -- manage self dists --
+    anchor_self = self_action == "anchor"
+    remove_self = self_action == "remove"
     inds = th.cat([th.zeros_like(inds[...,[0]]),inds],-1)
     dists,inds = manage_self(dists,inds,anchor_self,
-                             remove_self,qshift,stride0,H,W)
+                             remove_self,0,stride0,H,W)
     inds = inds[...,1:]
     # print(inds.shape)
     # print(inds[0,0,:,0])
@@ -116,6 +113,9 @@ def paired_fwd_main(qshift, Q, frame0, frame1, flow,
     else:
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
 
+    # -- reshape --
+    dists=dists.reshape(B,HD,1,nH0,nW0,-1)
+    inds=inds.reshape(B,HD,1,nH0,nW0,-1,2)
 
     return dists,inds
 
@@ -127,18 +127,15 @@ def paired_fwd_main(qshift, Q, frame0, frame1, flow,
 
 class PairedSearchFunction(th.autograd.Function):
 
+
     @staticmethod
     def forward(ctx, frame0, frame1, flow,
-                ws, ps, k, nheads=1, batchsize=-1,
+                ws, ps, k, nheads=1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True,
-                full_ws=True, full_ws_time=True,
-                topk_mode="default",anchor_self=False, remove_self=False,
-                use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-                normalize_bwd=False, k_agg=-1,
-                fwd_version="v1", itype_fwd="int", itype_bwd="int",
-                rbwd=True, nbwd=1, exact=False, use_atomic=True,
-                queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
+                full_ws=True, topk_mode="default",self_action=None,
+                use_adj=False, normalize_bwd=False, k_agg=-1,
+                itype_fwd="int", itype_bwd="int"):
 
         """
         Run the non-local search
@@ -159,28 +156,25 @@ class PairedSearchFunction(th.autograd.Function):
         flow = flow.contiguous()
 
         # -- run [optionally batched] forward function --
-        dists,inds = paired_forward(batchsize, frame0, frame1, flow,
+        dists,inds = paired_forward(frame0, frame1, flow,
                                     ws, ps, k, dist_type,
                                     stride0, stride1, dilation, pt,
-                                    topk_mode, anchor_self, remove_self,
-                                    reflect_bounds, full_ws, full_ws_time,
-                                    use_adj, fwd_version, itype_fwd,
-                                    off_H0, off_W0, off_H1, off_W1)
+                                    topk_mode, self_action,
+                                    reflect_bounds, full_ws,
+                                    use_adj, itype_fwd)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
-        flow,_ = get_ctx_flows(itype_bwd,flow,flow)
+        flow = get_ctx_flows(itype_bwd,flow)
         ctx.save_for_backward(inds,frame0,frame1,flow)
         if itype_bwd == "int":
             ctx.mark_non_differentiable(inds)
         ctx.vid_shape = frame0.shape
-        ctx_vars = {"batchsize":batchsize,"stride0":stride0,"stride1":stride1,
+        ctx_vars = {"stride0":stride0,"stride1":stride1,
                     "ps":ps,"pt":pt,"ws":ws,"dil":dilation,
                     "reflect_bounds":reflect_bounds,
-                    "fwd_version":fwd_version,"normalize_bwd":normalize_bwd,
-                    "k_agg":k_agg,"rbwd":rbwd,"exact":exact,"nbwd":nbwd,
-                    "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
-                    "off_H1":off_H1,"off_W1":off_W1,
+                    "normalize_bwd":normalize_bwd,
+                    "k_agg":k_agg,"use_adj":use_adj,
                     "dist_type_i":dist_type_i,"itype_bwd":itype_bwd}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
@@ -207,13 +201,10 @@ class PairedSearch(th.nn.Module):
     def __init__(self, ws, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
-                 topk_mode="default", full_ws=True, full_ws_time=True,
-                 anchor_self=True, remove_self=False,
-                 use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
+                 topk_mode="default", full_ws=True,
+                 self_action=None, use_adj=False,
                  normalize_bwd=False,k_agg=-1,
-                 fwd_version="v1", itype_fwd="int", itype_bwd="int",
-                 rbwd=True, nbwd=1, exact=False, use_atomic=True,
-                 queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
+                 itype_fwd="int", itype_bwd="int"):
         super().__init__()
 
         # -- core search params --
@@ -228,37 +219,21 @@ class PairedSearch(th.nn.Module):
         self.pt = pt
 
         # -- forward --
-        self.fwd_version = fwd_version
         self.itype_fwd = itype_fwd
         self.itype_bwd = itype_bwd
 
         # -- manage patch and search boundaries --
         self.reflect_bounds = reflect_bounds
         self.full_ws = full_ws
-        self.full_ws_time = full_ws_time
+        self.use_adj = use_adj
 
         # -- special mods to "self" search --
         self.topk_mode = topk_mode
-        self.anchor_self = anchor_self
-        self.remove_self = remove_self
-
-        # -- searching offsets --
-        self.use_adj = use_adj
-        self.off_H0 = off_H0
-        self.off_W0 = off_W0
-        self.off_H1 = off_H1
-        self.off_W1 = off_W1
+        self.self_action = self_action
 
         # -- backprop params --
         self.normalize_bwd = normalize_bwd
         self.k_agg = k_agg
-        self.rbwd = rbwd
-        self.nbwd = nbwd
-        self.exact = exact
-        self.use_atomic = use_atomic
-        self.queries_per_thread = queries_per_thread
-        self.neigh_per_thread = neigh_per_thread
-        self.channel_groups = channel_groups
 
 
     def paired_vids(self, vid0, vid1, acc_flows, wt, skip_self=False):
@@ -309,12 +284,14 @@ class PairedSearch(th.nn.Module):
                 # print("inds_ij.shape: ",inds_ij.shape,inds_t.shape)
                 dists_i.append(dists_ij)
                 inds_i.append(inds_ij)
+            # -- stack across K --
             dists_i = th.cat(dists_i,-1)
             inds_i = th.cat(inds_i,-2)
             dists.append(dists_i)
             inds.append(inds_i)
-        dists = th.cat(dists,-2)
-        inds = th.cat(inds,-3)
+        # -- stack across time --
+        dists = th.cat(dists,-4)
+        inds = th.cat(inds,-5)
         # print("inds.shape: ",inds.shape)
         return dists,inds
 
@@ -372,27 +349,16 @@ class PairedSearch(th.nn.Module):
         inds = th.cat(inds,-3)
         return dists,inds
 
-    def forward(self, frame0, frame1, flow, batchsize=-1):
+    def forward(self, frame0, frame1, flow):
         assert self.ws > 0,"Must have nonzero spatial search window"
         return PairedSearchFunction.apply(frame0,frame1,flow,
                                           self.ws,self.ps,self.k,
-                                          self.nheads,batchsize,
-                                          self.dist_type,self.stride0,
+                                          self.nheads,self.dist_type,self.stride0,
                                           self.stride1,self.dilation,self.pt,
-                                          self.reflect_bounds,
-                                          self.full_ws,self.full_ws_time,
-                                          self.topk_mode,self.anchor_self,
-                                          self.remove_self,self.use_adj,
-                                          self.off_H0,self.off_W0,
-                                          self.off_H1,self.off_W1,
-                                          self.normalize_bwd,self.k_agg,
-                                          self.fwd_version,
-                                          self.itype_fwd,self.itype_bwd,
-                                          self.rbwd,self.nbwd,self.exact,
-                                          self.use_atomic,
-                                          self.queries_per_thread,
-                                          self.neigh_per_thread,
-                                          self.channel_groups)
+                                          self.reflect_bounds,self.full_ws,
+                                          self.topk_mode,self.self_action,
+                                          self.use_adj,self.normalize_bwd,self.k_agg,
+                                          self.itype_fwd,self.itype_bwd)
 
     def flops(self,T,F,H,W):
         print("hi.")
@@ -429,13 +395,9 @@ def _apply(frame0, frame1, flow,
            ws, ps, k, nheads=1, batchsize=-1,
            dist_type="l2", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True,
-           full_ws=True, full_ws_time=True,
-           anchor_self=True, remove_self=False,
-           use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0,
-           normalize_bwd=False, k_agg=-1,
-           fwd_version="v1", itype_fwd="int",itype_bwd="int",
-           rbwd=False, nbwd=1, exact=False, use_atomic=True,
-           queries_per_thread=2, neigh_per_thread=2, channel_groups=-1):
+           full_ws=True,self_action=None,
+           use_adj=False, normalize_bwd=False, k_agg=-1,
+           itype_fwd="int",itype_bwd="int"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -443,12 +405,8 @@ def _apply(frame0, frame1, flow,
     return fxn(frame0,frame1,flow,ws,ps,k,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
-               full_ws,full_ws_time,anchor_self,remove_self,
-               use_adj,off_H0,off_W0,off_H1,off_W1,
-               normalize_bwd,k_agg,fwd_version,
-               itype_fwd,itype_bwd,
-               rbwd,nbwd,exact,use_atomic,
-               queries_per_thread,neigh_per_thread,channel_groups)
+               full_ws,self_action,use_adj,normalize_bwd,k_agg,
+               itype_fwd,itype_bwd)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -460,13 +418,11 @@ def extract_config(cfg,restrict=True):
     pairs = {"ws":-1,"ps":7,"k":10,
              "nheads":1,"dist_type":"l2",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
-             "reflect_bounds":True, "full_ws":True, "full_ws_time":True,
-             "anchor_self":True, "remove_self":False,"fwd_version":"v1",
-             "use_adj":False, "off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "normalize_bwd": False, "k_agg":-1,"rbwd":False, "nbwd":1,
+             "reflect_bounds":True, "full_ws":True,
+             "self_action":None,"use_adj":False,
+             "normalize_bwd": False, "k_agg":-1,
              "itype_fwd":"int","itype_bwd":"int",
-             "exact":False, "use_atomic": True, "topk_mode":"default",
-             "queries_per_thread":2,"neigh_per_thread":2,"channel_groups":-1}
+             "topk_mode":"default"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
@@ -475,17 +431,8 @@ def init(cfg):
                           dist_type=cfg.dist_type, stride0=cfg.stride0,
                           stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
                           reflect_bounds=cfg.reflect_bounds, topk_mode=cfg.topk_mode,
-                          full_ws=cfg.full_ws, full_ws_time=cfg.full_ws_time,
-                          anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
-                          use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
-                          off_H1=cfg.off_H1,off_W1=cfg.off_W1,
-                          normalize_bwd=cfg.normalize_bwd,k_agg=cfg.k_agg,
-                          fwd_version=cfg.fwd_version,
-                          itype_fwd=cfg.itype_fwd,itype_bwd=cfg.itype_bwd,
-                          rbwd=cfg.rbwd, nbwd=cfg.nbwd, exact=cfg.exact,
-                          use_atomic=cfg.use_atomic,
-                          queries_per_thread=cfg.queries_per_thread,
-                          neigh_per_thread=cfg.neigh_per_thread,
-                          channel_groups=cfg.channel_groups)
+                          full_ws=cfg.full_ws, self_action=cfg.self_action,
+                          use_adj=cfg.use_adj,normalize_bwd=cfg.normalize_bwd,
+                          k_agg=cfg.k_agg,itype_fwd=cfg.itype_fwd,itype_bwd=cfg.itype_bwd)
     return search
 

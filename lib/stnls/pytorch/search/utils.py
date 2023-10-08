@@ -33,7 +33,17 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def get_ctx_flows(itype,fflow,bflow):
+def get_ctx_flows(itype,flows):
+    if itype == "int":
+        device = flows.device
+        dtype = flows.dtype
+        flows = th.zeros((1,)*7,device=device,dtype=dtype)
+        return flows
+    else:
+        return flows
+
+
+def get_ctx_flows_v0(itype,fflow,bflow):
     if itype == "int":
         device = fflow.device
         dtype = fflow.dtype
@@ -115,6 +125,18 @@ def ensure_flow_shape(flow):
 # -- Shaping input videos with Heads --
 #
 #
+
+def shape_flows(nheads,flows):
+    # B,T,W_t,2,H,W = flows.shape
+    # B,HD,T,W_t,2,H,W = flows.shape
+    ndim = flows.ndim
+    if flows.ndim == 7:
+        return flows
+    elif flows.ndim == 6:
+        return flows[:,None] # 1 head
+    else:
+        msg = f"Input flows are wrong dimension. Must be 6 or 7 but is [{ndim}]"
+        raise ValueError(msg)
 
 def shape_vids(nheads,vids):
     _vids = []

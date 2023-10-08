@@ -231,7 +231,7 @@ template<typename scalar_t>
 __device__ __forceinline__ 
 void fill_non_local_patch(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> stack,
-    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
+    torch::TensorAccessor<int,2,torch::RestrictPtrTraits,int32_t> counts,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid,
     scalar_t weight, int ps, int pt, int dilation, bool reflect_bounds,
     int* ref_patch, int* nl_patch, int* ref, int* nl, 
@@ -289,7 +289,6 @@ void fill_non_local_patch(
           if ((ki == 0) && (ftr_start == 0) && (valid_ref[3]) && (ref[0] == 0)){
             atomicAdd(&(counts[ref[1]][ref[2]]),1);
           }
-          // atomicAdd(&(counts[ref[1]][ref[2]]),2);
 
           // -- fill each channel --
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
@@ -310,7 +309,8 @@ __device__ __forceinline__
 void fill_non_local_patch_bwd(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid,
     torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> grad_weights,
-    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
+    torch::TensorAccessor<int,2,torch::RestrictPtrTraits,int32_t> counts,
+    // torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_stack,
     // const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> stack,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid,

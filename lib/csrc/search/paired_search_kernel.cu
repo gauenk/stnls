@@ -17,18 +17,15 @@ using namespace at;
 ****************************/
 
 template <typename scalar_t, int DIST_TYPE>
-__global__ void paired_search_forward_kernel(
+__global__ void paired_search_int_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> frame0,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> frame1,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> flow,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> inds,
-    int ws_h, int ws_w, int ps,
-    int stride0, int stride1, int dilation,
-    int q_shift, int nH0, int nW0,
-    bool reflect_bounds, bool full_ws, bool full_ws_time,
-    int patch_offset, int off_H0, int off_W0, int off_H1, int off_W1,
-    int q_per_thread, int ws_h_per_thread, int ws_w_per_thread){
+    int ws, int ps, int stride0, int stride1, int dilation,
+    bool reflect_bounds, bool full_ws, int patch_offset,
+    int nW0, int q_per_thread, int ws_per_thread){
 
   // -- unpack shape --
   int B = frame0.size(0);
@@ -49,8 +46,8 @@ __global__ void paired_search_forward_kernel(
 
   // -- search region offsets --
   // int psHalf = (ps)/2;
-  int wsHalf_h = (ws_h)/2;
-  int wsHalf_w = (ws_w)/2;
+  int wsHalf = (ws-1)/2;
+  // int wsHalf_w = (ws_w)/2;
   // int adj = use_adj ? psHalf : 0;
   int wsOff_h,wsOff_w;
   // int wsMax_h = stride1*(ws_h-1-wsHalf_h);
@@ -76,7 +73,7 @@ __global__ void paired_search_forward_kernel(
   bool valid_prop[3];
 
   // -- cleaner code --
-  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
+  // int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
 
   // -- indexing --
   int qindex,qindex_tmp;
@@ -92,7 +89,7 @@ __global__ void paired_search_forward_kernel(
     // -- block start --
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
-    qindex = qi + q_shift;
+    qindex = qi;// + q_shift;
 
     // -- pixel location from query index --
     get_pixel_loc_2d(ref_patch,qindex,qindex_tmp,stride0,nW0,H,W);
@@ -106,22 +103,21 @@ __global__ void paired_search_forward_kernel(
     update_centers_flow(frame_anchor[0],frame_anchor[1],H,W,flow[ibatch][ihead_fl]);
 
     // -- search region offsets --
-    // wsOff_h = ws_h/2;
-    // wsOff_h = ws_h/2;
-    set_search_offsets(wsOff_h, wsOff_w, frame_anchor[0], frame_anchor[1], stride1,
-                       wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws_time);
+    set_search_offsets(wsOff_h, wsOff_w,
+                       frame_anchor[0], frame_anchor[1], stride1,
+                       wsHalf, ws, H, W, full_ws);
 
     // ---------------------------------------
     //          spatial searching
     // ---------------------------------------
 
     // -- search across space --
-    for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
+    for (int _xi = 0; _xi < ws_per_thread; _xi++){
       ws_i = threadIdx.x + blockDim.x*_xi;
-      if (ws_i >= ws_h){ continue; }
-      for (int _yi = 0; _yi < ws_w_per_thread; _yi++){
+      if (ws_i >= ws){ continue; }
+      for (int _yi = 0; _yi < ws_per_thread; _yi++){
         ws_j = threadIdx.y + blockDim.y*_yi;
-        if (ws_j >= ws_w){ continue; }
+        if (ws_j >= ws){ continue; }
 
         // -- compute proposed location --
         prop_patch[0] = frame_anchor[0] + stride1 * (ws_i - wsOff_h);
@@ -140,7 +136,7 @@ __global__ void paired_search_forward_kernel(
                        ref_patch, prop_patch, 
                        ref_pix, prop_pix, valid_ref, valid_prop,
                        ps,dilation,reflect_bounds,
-                       patch_offset,center_offsets,invalid,
+                       patch_offset,invalid,
                        C,H,W,pix0,pix1,_dist);
 
         }
@@ -156,13 +152,11 @@ __global__ void paired_search_forward_kernel(
   }
 }
 
-void paired_search_forward_cuda(
+void paired_search_int_forward_cuda(
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
-    int ps, int k, int dist_type,
-    int stride0, int stride1, int dilation, int q_shift,
-    bool reflect_bounds, bool full_ws, bool full_ws_time,
-    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1){
+    int ps, int k, int stride0, int stride1, int dilation,
+    bool reflect_bounds, bool full_ws, int patch_offset, int dist_type){
 
    // -- derived quantities --
    int B = frame0.size(0);
@@ -170,19 +164,16 @@ void paired_search_forward_cuda(
    int HD_flow = flow.size(1);
    int H = frame0.size(3);
    int W = frame0.size(4);
-   int nH0 = (H-1)/stride0+1;
+   // int nH0 = (H-1)/stride0+1;
    int nW0 = (W-1)/stride0+1;
    int HD = max(HD_frame,HD_flow);
 
    // -- threads --
    int nqueries = dists.size(2);
-   int ws_h = dists.size(3);
-   int ws_w = dists.size(4);
-   int ws_h_threads = std::min(ws_h,25);
-   int ws_w_threads = std::min(ws_w,25);
-   int ws_h_per_thread = ((ws_h-1)/ws_h_threads) + 1;
-   int ws_w_per_thread = ((ws_w-1)/ws_w_threads) + 1;
-   dim3 nthreads(ws_h_threads,ws_w_threads);
+   int ws = dists.size(3);
+   int ws_threads = std::min(ws,25);
+   int ws_per_thread = ((ws-1)/ws_threads) + 1;
+   dim3 nthreads(ws_threads,ws_threads);
 
    // -- nblocks --
    int q_per_thread = 2;
@@ -190,10 +181,10 @@ void paired_search_forward_cuda(
    dim3 nblocks(nquery_blocks,B,HD);
 
    // -- share --
-   int psHalf = ps/2;
-   int adj = use_adj ? psHalf : 0;
+   // int psHalf = ps/2;
+   // int adj = use_adj ? psHalf : 0;
+   // // int patch_offset = adj - psHalf;
    // int patch_offset = adj - psHalf;
-   int patch_offset = adj - psHalf;
 
    // -- viz --
    // fprintf(stdout,"ws_h,ws_w: %d,%d,%d,%d\n",ws_h,ws_w,ws_h_threads,ws_h_per_thread);
@@ -202,30 +193,26 @@ void paired_search_forward_cuda(
 
    // launch kernel
    if (dist_type == 0){
-       AT_DISPATCH_FLOATING_TYPES(frame0.type(),"paired_search_forward_kernel", ([&] {
-       paired_search_forward_kernel<scalar_t,0><<<nblocks, nthreads>>>(
+       AT_DISPATCH_FLOATING_TYPES(frame0.type(),"paired_search_int_forward_kernel", ([&] {
+       paired_search_int_forward_kernel<scalar_t,0><<<nblocks, nthreads>>>(
             frame0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             frame1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             flow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
-            ws_h, ws_w, ps, stride0, stride1, dilation, 
-            q_shift, nH0, nW0, reflect_bounds, full_ws, full_ws_time,
-            patch_offset, off_H0, off_W0, off_H1, off_W1,
-            q_per_thread, ws_h_per_thread, ws_w_per_thread);
+            ws, ps, stride0, stride1, dilation, reflect_bounds, full_ws,
+            patch_offset, nW0, q_per_thread, ws_per_thread);
           }));
    }else if(dist_type == 1){
-       AT_DISPATCH_FLOATING_TYPES(frame0.type(),"paired_search_forward_kernel", ([&] {
-       paired_search_forward_kernel<scalar_t,1><<<nblocks, nthreads>>>(
+       AT_DISPATCH_FLOATING_TYPES(frame0.type(),"paired_search_int_forward_kernel", ([&] {
+       paired_search_int_forward_kernel<scalar_t,1><<<nblocks, nthreads>>>(
             frame0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             frame1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             flow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
-            ws_h, ws_w, ps, stride0, stride1, dilation, 
-            q_shift, nH0, nW0, reflect_bounds, full_ws, full_ws_time,
-            patch_offset, off_H0, off_W0, off_H1, off_W1,
-            q_per_thread, ws_h_per_thread, ws_w_per_thread);
+            ws, ps, stride0, stride1, dilation, reflect_bounds, full_ws,
+            patch_offset, nW0, q_per_thread, ws_per_thread);
           }));
    }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");
@@ -246,12 +233,9 @@ __global__ void paired_search_bilin2d_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> flow,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> inds,
-    int ws_h, int ws_w, int ps,
-    int stride0, float _stride1, int dilation,
-    int q_shift, int nH0, int nW0,
-    bool reflect_bounds, bool full_ws, bool full_ws_time,
-    int patch_offset, int off_H0, int off_W0, int off_H1, int off_W1,
-    int q_per_thread, int ws_h_per_thread, int ws_w_per_thread){
+    int ws, int ps, int stride0, float _stride1, int dilation,
+    bool reflect_bounds, bool full_ws, int patch_offset,
+    int nW0, int q_per_thread, int ws_per_thread){
 
   // -- unpack shape --
   int B = frame0.size(0);
@@ -283,9 +267,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
   // int wsHalf_h = (ws_h-1)/2;
   // int wsHalf_w = (ws_w-1)/2;
   // int wsOff_h,wsOff_w;
-
-  scalar_t wsHalf_h = trunc((ws_h)/2);
-  scalar_t wsHalf_w = trunc((ws_w)/2);
+  scalar_t wsHalf = trunc((ws-1)/2);
   scalar_t wsOff_h,wsOff_w;
 
   // -- cuda index --
@@ -310,8 +292,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
   bool valid_prop[3];
 
   // -- cleaner code --
-  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
-
+  // int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
 
   // -- indexing --
   int qindex,qindex_tmp;
@@ -327,7 +308,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
     // -- block start --
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
-    qindex = qi + q_shift;
+    qindex = qi;// + q_shift;
 
     // -- pixel location from query index --
     get_pixel_loc_2d(ref_patch,qindex,qindex_tmp,stride0,nW0,H,W);
@@ -347,22 +328,21 @@ __global__ void paired_search_bilin2d_forward_kernel(
     // frame_anchor[1] = floorf(frame_anchor[1]*1000)/(float)1000;
 
     // -- search region offsets --
-    set_search_offsets<scalar_t>(wsOff_h, wsOff_w,
-                                 frame_anchor[0], frame_anchor[1],
-                                 stride1, wsHalf_h, wsHalf_w,
-                                 ws_h, ws_w, H, W, full_ws);
+    set_search_offsets(wsOff_h, wsOff_w,
+                       frame_anchor[0], frame_anchor[1], stride1,
+                       wsHalf, ws, H, W, full_ws);
 
     // ---------------------------------------
     //          spatial searching
     // ---------------------------------------
 
     // -- search across space --
-    for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
+    for (int _xi = 0; _xi < ws_per_thread; _xi++){
       ws_i = threadIdx.x + blockDim.x*_xi;
-      if (ws_i >= ws_h){ continue; }
-      for (int _yi = 0; _yi < ws_w_per_thread; _yi++){
+      if (ws_i >= ws){ continue; }
+      for (int _yi = 0; _yi < ws_per_thread; _yi++){
         ws_j = threadIdx.y + blockDim.y*_yi;
-        if (ws_j >= ws_w){ continue; }
+        if (ws_j >= ws){ continue; }
 
 
         // -- compute proposed location --
@@ -384,7 +364,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
                        ref_pix, prop_pix, prop_i,
                        valid_ref, valid_prop,
                        ps,dilation,reflect_bounds,
-                       patch_offset,center_offsets,invalid,
+                       patch_offset,invalid,
                        C,H,W,pix0,pix1,_dist);
         }
 
@@ -405,10 +385,8 @@ __global__ void paired_search_bilin2d_forward_kernel(
 void paired_search_bilin2d_forward_cuda(
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
-    int ps, int k, int dist_type,
-    int stride0, float stride1, int dilation, int q_shift,
-    bool reflect_bounds, bool full_ws, bool full_ws_time,
-    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1){
+    int ps, int k, int stride0, float stride1, int dilation,
+    bool reflect_bounds, bool full_ws, int patch_offset, int dist_type){
 
    // -- derived quantities --
    int B = frame0.size(0);
@@ -416,19 +394,16 @@ void paired_search_bilin2d_forward_cuda(
    int HD_flow = flow.size(1);
    int H = frame0.size(3);
    int W = frame0.size(4);
-   int nH0 = (H-1)/stride0+1;
+   // int nH0 = (H-1)/stride0+1;
    int nW0 = (W-1)/stride0+1;
    int HD = max(HD_frame,HD_flow);
 
    // -- threads --
    int nqueries = dists.size(2);
-   int ws_h = dists.size(3);
-   int ws_w = dists.size(4);
-   int ws_h_threads = std::min(ws_h,25);
-   int ws_w_threads = std::min(ws_w,25);
-   int ws_h_per_thread = ((ws_h-1)/ws_h_threads) + 1;
-   int ws_w_per_thread = ((ws_w-1)/ws_w_threads) + 1;
-   dim3 nthreads(ws_h_threads,ws_w_threads);
+   int ws = dists.size(3);
+   int ws_threads = std::min(ws,25);
+   int ws_per_thread = ((ws-1)/ws_threads) + 1;
+   dim3 nthreads(ws_threads,ws_threads);
 
    // -- nblocks --
    int q_per_thread = 2;
@@ -436,10 +411,10 @@ void paired_search_bilin2d_forward_cuda(
    dim3 nblocks(nquery_blocks,B,HD);
 
    // -- share --
-   int psHalf = ps/2;
-   int adj = use_adj ? psHalf : 0;
+   // int psHalf = ps/2;
+   // int adj = use_adj ? psHalf : 0;
+   // // int patch_offset = adj - psHalf;
    // int patch_offset = adj - psHalf;
-   int patch_offset = adj - psHalf;
 
    // -- viz --
    // fprintf(stdout,"ws_h,ws_w: %d,%d\n",ws_h,ws_w);
@@ -455,10 +430,8 @@ void paired_search_bilin2d_forward_cuda(
             flow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            ws_h, ws_w, ps, stride0, stride1, dilation, 
-            q_shift, nH0, nW0, reflect_bounds, full_ws, full_ws_time,
-            patch_offset, off_H0, off_W0, off_H1, off_W1,
-            q_per_thread, ws_h_per_thread, ws_w_per_thread);
+            ws, ps, stride0, stride1, dilation, reflect_bounds, full_ws,
+            patch_offset, nW0, q_per_thread, ws_per_thread);
           }));
    }else if(dist_type == 1){
        AT_DISPATCH_FLOATING_TYPES(frame0.type(),
@@ -469,10 +442,8 @@ void paired_search_bilin2d_forward_cuda(
             flow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-            ws_h, ws_w, ps, stride0, stride1, dilation, 
-            q_shift, nH0, nW0, reflect_bounds, full_ws, full_ws_time,
-            patch_offset, off_H0, off_W0, off_H1, off_W1,
-            q_per_thread, ws_h_per_thread, ws_w_per_thread);
+            ws, ps, stride0, stride1, dilation, reflect_bounds, full_ws,
+            patch_offset, nW0, q_per_thread, ws_per_thread);
           }));
    }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");
@@ -494,10 +465,8 @@ __global__ void paired_search_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> frame1,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_dists,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
-    int q_shift, int stride0, int nH0, int nW0,
-    int off_H0, int off_W0, int off_H1, int off_W1,
-    int ps, int pt, int dilation, int patch_offset,
-    bool reflect_bounds, int ftrs_per_thread) {
+    int stride0, int ps, int pt, int dilation, int patch_offset,
+    bool reflect_bounds, int nW0, int ftrs_per_thread) {
 
   // -- shape --
   int nbatch = grad_dists.size(0);
@@ -521,7 +490,7 @@ __global__ void paired_search_backward_kernel(
   bool valid;
   scalar_t weight,pix0,pix1,pix;
   int iftr;
-  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
+  // int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -539,7 +508,7 @@ __global__ void paired_search_backward_kernel(
   if ((i0 < Q) && (i1 < K)){
 
     // -- full-resolution video query index --
-    qindex = i0 + q_shift;
+    qindex = i0;// + q_shift;
 
     // -- pixel location from query index --
     get_pixel_loc_2d(ref_patch,qindex,qindex_tmp,stride0,nW0,H,W);
@@ -558,8 +527,7 @@ __global__ void paired_search_backward_kernel(
                      frame1[ibatch][ihead_fr],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,
-                     center_offsets,patch_offset,
-                     iftr,ftr_start,ftr_end,
+                     patch_offset,iftr,ftr_start,ftr_end,
                      ref,prop,valid_ref,valid_prop,valid,
                      H,W,pix0,pix1,pix,i1);
 
@@ -570,9 +538,8 @@ void paired_search_backward_cuda(
     torch::Tensor grad_frame0, torch::Tensor grad_frame1,
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
-    int q_shift, int stride0, int nH0, int nW0,
-    int ps, int pt, int dilation, bool reflect_bounds, bool use_adj,
-    int off_H0, int off_W0, int off_H1, int off_W1, int dist_type) {
+    int stride0, int ps, int pt, int dilation, bool reflect_bounds,
+    int patch_offset, int dist_type) {
 
 
   // -- unpack --
@@ -600,9 +567,10 @@ void paired_search_backward_cuda(
   int ftrs_per_thread = (F-1)/ftr_threads+1;
 
   // -- shared --
-  int psHalf = ps/2;
-  int adj = use_adj ? psHalf : 0;
-  int patch_offset = adj - psHalf;
+  int nW0 = (W-1)/stride0+1;
+  // int psHalf = ps/2;
+  // int adj = use_adj ? psHalf : 0;
+  // int patch_offset = adj - psHalf;
   // int patch_offset = psHalf - adj;
 
   // -- launch kernel --
@@ -615,8 +583,8 @@ void paired_search_backward_cuda(
           frame1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          q_shift, stride0, nH0, nW0, off_H0, off_W0, off_H1, off_W1,
-          ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+          stride0, ps, pt, dilation, patch_offset, reflect_bounds,
+          nW0, ftrs_per_thread);
     }));
   }else if (dist_type == 1){ // l2
     AT_DISPATCH_FLOATING_TYPES(frame0.type(),"paired_search_backward_kernel", ([&] {
@@ -627,8 +595,8 @@ void paired_search_backward_cuda(
           frame1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          q_shift, stride0, nH0, nW0, off_H0, off_W0, off_H1, off_W1,
-          ps, pt, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+          stride0, ps, pt, dilation, patch_offset, reflect_bounds,
+          nW0, ftrs_per_thread);
     }));
   }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }
@@ -655,10 +623,8 @@ __global__ void paired_search_bilin2d_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_dists,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_inds,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> inds,
-    int q_shift, int stride0, int nH0, int nW0,
-    int off_H0, int off_W0, int off_H1, int off_W1,
-    int ps, int dilation, int patch_offset,
-    bool reflect_bounds, int ftrs_per_thread) {
+    int stride0, int ps, int dilation, int patch_offset, bool reflect_bounds,
+    int nW0, int ftrs_per_thread) {
 
   // -- shape --
   int nbatch = grad_dists.size(0);
@@ -685,7 +651,7 @@ __global__ void paired_search_bilin2d_backward_kernel(
   scalar_t weight,pix0,pix1,pix;
   scalar_t iweight[2];
   int iftr;
-  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
+  // int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -704,7 +670,7 @@ __global__ void paired_search_bilin2d_backward_kernel(
   if ((i0 < Q) && (i1 < K)){
 
     // -- full-resolution video query index --
-    qindex = i0 + q_shift;
+    qindex = i0;// + q_shift;
 
     // -- pixel location from query index --
     get_pixel_loc_2d(ref_patch,qindex,qindex_tmp,stride0,nW0,H,W);
@@ -725,8 +691,7 @@ __global__ void paired_search_bilin2d_backward_kernel(
                      frame1[ibatch][ihead_fr],
                      weight,ref_patch,prop_patch,
                      ps,dilation,reflect_bounds,
-                     center_offsets,patch_offset,
-                     iftr,ftr_start,ftr_end,
+                     patch_offset,iftr,ftr_start,ftr_end,
                      ref,prop,prop_i,
                      valid_ref,valid_prop,valid,
                      H,W,pix0,pix1,pix,i1);
@@ -735,8 +700,10 @@ __global__ void paired_search_bilin2d_backward_kernel(
     if (ftr_start == 0){
       scalar_t wi = ref[1] + flow[ibatch][ihead_fl][0][ref[0]][ref[1]];
       scalar_t hi = ref[0] + flow[ibatch][ihead_fl][1][ref[0]][ref[1]];
-      int sW = ((wi >= 0) and (wi < W-1)) ? 1 : -1;
-      int sH = ((hi >= 0) and (hi < H-1)) ? 1 : -1;
+      // int sW = ((wi >= 0) and (wi < W-1)) ? 1 : -1;
+      // int sH = ((hi >= 0) and (hi < H-1)) ? 1 : -1;
+      int sW = ((wi >= 0) and (wi < W)) ? 1 : -1; // untested move from "W-1" to "W"
+      int sH = ((hi >= 0) and (hi < H)) ? 1 : -1;
       atomicAdd(&(grad_flow[ibatch][ihead_fl][0][ref[0]][ref[1]]),sW*iweight[1]);
       atomicAdd(&(grad_flow[ibatch][ihead_fl][1][ref[0]][ref[1]]),sH*iweight[0]);
     }
@@ -745,16 +712,14 @@ __global__ void paired_search_bilin2d_backward_kernel(
 }
 
 void paired_search_bilin2d_backward_cuda(
-    torch::Tensor grad_frame0,
-    torch::Tensor grad_frame1,
+    torch::Tensor grad_frame0, torch::Tensor grad_frame1,
     torch::Tensor grad_flow,
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds,
-    int q_shift, int stride0, int nH0, int nW0,
-    int ps, int dilation, bool reflect_bounds, bool use_adj,
-    int off_H0, int off_W0, int off_H1, int off_W1, int dist_type) {
+    int stride0, int ps, int dilation, bool reflect_bounds,
+    int patch_offset, int dist_type) {
 
   // -- unpack --
   int B = frame0.size(0);
@@ -778,11 +743,12 @@ void paired_search_bilin2d_backward_cuda(
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
   int ftrs_per_thread = (F-1)/ftr_threads+1;
+  int nW0 = (W-1)/stride0+1;
 
   // -- shared --
-  int psHalf = ps/2;
-  int adj = use_adj ? psHalf : 0;
-  int patch_offset = adj - psHalf;
+  // int psHalf = ps/2;
+  // int adj = use_adj ? psHalf : 0;
+  // int patch_offset = adj - psHalf;
   // int patch_offset = psHalf - adj;
 
   // -- launch kernel --
@@ -799,8 +765,7 @@ void paired_search_bilin2d_backward_cuda(
           grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
           grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          q_shift, stride0, nH0, nW0, off_H0, off_W0, off_H1, off_W1,
-          ps, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+          stride0, ps, dilation, patch_offset, reflect_bounds, nW0, ftrs_per_thread);
     }));
   }else if (dist_type == 1){ // l2
     AT_DISPATCH_FLOATING_TYPES(frame0.type(),
@@ -815,8 +780,7 @@ void paired_search_bilin2d_backward_cuda(
           grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
           grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          q_shift, stride0, nH0, nW0, off_H0, off_W0, off_H1, off_W1,
-          ps, dilation, patch_offset, reflect_bounds, ftrs_per_thread);
+          stride0, ps, dilation, patch_offset, reflect_bounds, nW0, ftrs_per_thread);
     }));
   }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }

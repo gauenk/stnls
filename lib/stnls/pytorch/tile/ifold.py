@@ -71,7 +71,7 @@ class ifold(th.autograd.Function):
                                   top, left, btm, right,
                                   qStart,stride,dilation,adj,
                                   only_full, reflect_bounds)
-        print(grad_patches.shape)
+        # print(grad_patches.shape)
         return grad_patches,None,None,None,None,None,None,None,None
 
 class iFold(th.nn.Module):

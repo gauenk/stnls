@@ -58,7 +58,7 @@ __global__ void non_local_inds_kernel(
     const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> bflow,
     int ws, int wt, int nH, int nW, int nHW,
     int stride0, int stride1, bool full_ws, bool full_ws_time,
-    int q_per_thread, int ws_h_per_thread, int ws_w_per_thread){
+    int q_per_thread, int ws_per_thread){
 
   // -- unpack --
   int ibatch = blockIdx.y;
@@ -80,10 +80,8 @@ __global__ void non_local_inds_kernel(
   int tmp;
 
   // -- search space offset --
-  int wsHalf_h = (ws)/2;
-  int wsHalf_w = (ws)/2;
-  int wsMax_h = stride1*(ws-1-wsHalf_h);
-  int wsMax_w = stride1*(ws-1-wsHalf_w);
+  int wsHalf = (ws-1)/2;
+  int wsMax = stride1*(ws-1-wsHalf);
   int wsOff_h,wsOff_w;
   int ws_i,ws_j;
 
@@ -119,15 +117,15 @@ __global__ void non_local_inds_kernel(
   
     // -- search region offsets --
     set_search_offsets(wsOff_h,wsOff_w, ref[1], ref[2], stride1,
-                       wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws);
+                       wsHalf, wsMax, H, W, full_ws);
 
     // -- search across space --
     hj = ref[1];
     wj = ref[2];
-    for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
+    for (int _xi = 0; _xi < ws_per_thread; _xi++){
       ws_i = threadIdx.x + blockDim.x*_xi;
       if (ws_i >= ws){ continue; }
-      for (int _yi = 0; _yi < ws_w_per_thread; _yi++){
+      for (int _yi = 0; _yi < ws_per_thread; _yi++){
 	ws_j = threadIdx.y + blockDim.y*_yi;
 	if (ws_j >= ws){ continue; }
   
@@ -168,13 +166,13 @@ __global__ void non_local_inds_kernel(
 
       // -- search region offsets --
       set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
-			 wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws_time);
+                         wsHalf, wsMax, H, W, full_ws_time);
 
       // -- search across space --
-      for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
+      for (int _xi = 0; _xi < ws_per_thread; _xi++){
 	ws_i = threadIdx.x + blockDim.x*_xi;
 	if (ws_i >= ws){ continue; }
-	for (int _yi = 0; _yi < ws_w_per_thread; _yi++){
+	for (int _yi = 0; _yi < ws_per_thread; _yi++){
 	  ws_j = threadIdx.y + blockDim.y*_yi;
 	  if (ws_j >= ws){ continue; }
 
@@ -221,13 +219,13 @@ __global__ void non_local_inds_kernel(
   
       // -- search region offsets --
       set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
-			 wsHalf_h, wsHalf_w, wsMax_h, wsMax_w, H, W, full_ws_time);
+                         wsHalf, wsMax, H, W, full_ws_time);
 
       // -- search across space --
-      for (int _xi = 0; _xi < ws_h_per_thread; _xi++){
+      for (int _xi = 0; _xi < ws_per_thread; _xi++){
 	ws_i = threadIdx.x + blockDim.x*_xi;
 	if (ws_i >= ws){ continue; }
-	for (int _yi = 0; _yi < ws_w_per_thread; _yi++){
+	for (int _yi = 0; _yi < ws_per_thread; _yi++){
 	  ws_j = threadIdx.y + blockDim.y*_yi;
 	  if (ws_j >= ws){ continue; }
 
@@ -262,12 +260,12 @@ void non_local_inds_cuda(
   int B = inds.size(0);
   int Q = inds.size(1);
   int St = inds.size(2);
-  int Ss_h = inds.size(3);
-  int Ss_w = inds.size(4);
+  // int Ss_h = inds.size(3);
+  // int Ss_w = inds.size(4);
   int H = fflow.size(3);
   int W = fflow.size(4);
-  assert(Ss_h == ws);
-  assert(Ss_w == ws);
+  // assert(Ss_h == ws);
+  // assert(Ss_w == ws);
 
   // -- derivative --
   int nH = (H-1)/stride0 + 1;
@@ -275,11 +273,11 @@ void non_local_inds_cuda(
   int nHW = nH*nW;
 
   // -- one thread per search region --
-  int ws_h_threads = std::min(Ss_h,27);
-  int ws_w_threads = std::min(Ss_w,27);
-  int ws_h_per_thread = ((Ss_h-1)/ws_h_threads) + 1;
-  int ws_w_per_thread = ((Ss_w-1)/ws_w_threads) + 1;
-  dim3 nthreads(ws_h_threads,ws_w_threads);
+  int ws_threads = std::min(ws,27);
+  // int ws_w_threads = std::min(Ss_w,27);
+  int ws_per_thread = ((ws-1)/ws_threads) + 1;
+  // int ws_w_per_thread = ((Ss_w-1)/ws_w_threads) + 1;
+  dim3 nthreads(ws_threads,ws_threads);
 
   // -- chunking the blocks --
   int q_per_thread = 2;
@@ -298,7 +296,7 @@ void non_local_inds_cuda(
        fflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
        bflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
        ws, wt, nH, nW, nHW, stride0, stride1, full_ws, full_ws_time,
-       q_per_thread, ws_h_per_thread, ws_w_per_thread);
+       q_per_thread, ws_per_thread);
       }));
 
 }

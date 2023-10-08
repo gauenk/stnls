@@ -115,6 +115,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     use_adj = False
     adj = 0
     off_H0,off_W0,off_H1,off_W1 = 0,0,0,0
+    self_action = None
 
     def make_igrid(x):
         b,t,_,h,w = x.shape
@@ -181,23 +182,22 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     sch = stnls.search
     search_te = sch.PairedSearch(ws, ps, k, nheads, dist_type=dist_type,
                                  dilation=dil,stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,
-                                 full_ws=True,full_ws_time=True,
-                                 anchor_self=anchor_self,use_adj=use_adj,
+                                 reflect_bounds=reflect_bounds,full_ws=True,
+                                 self_action=self_action,use_adj=use_adj,
                                  itype_fwd=itype_fwd,itype_bwd=itype_bwd)
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
-                                   reflect_bounds=reflect_bounds,
-                                   full_ws=True,full_ws_time=True,
-                                   anchor_self=anchor_self,use_adj=use_adj,
-                                   itype_fwd=itype_fwd,itype_bwd=itype_bwd)
+                                   reflect_bounds=reflect_bounds,full_ws=True,
+                                   self_action=self_action,use_adj=use_adj,
+                                   itype=itype_fwd)
 
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid0,vid1,flows.fflow,flows.bflow)
     # dists_gt = th.round(dists_gt,decimals=2)
     # inds_gt = th.round(inds_gt,decimals=3)
     th.cuda.synchronize()
+    # print(dists_gt.shape,inds_gt.shape)
 
     # -- [testing] search --
     dtype = th.float if itype_fwd == "float" else th.int
@@ -205,9 +205,15 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # acc_flows.fflow = th.round(acc_flows.fflow,decimals=4)
     # acc_flows.bflow = th.round(acc_flows.bflow,decimals=4)
     dists_te,inds_te = search_te.paired_vids(vid0, vid1, acc_flows, wt)
+    # print(dists_te.shape,inds_te.shape)
     # dists_te = th.round(dists_te,decimals=2)
     # inds_te = th.round(inds_te,decimals=3)
 
+    print(inds_gt[0,0,:3,:3,:3,:3])
+    # print(inds_te[0,0,:,:3,:3])
+    print("inds_gt.shape: ",inds_gt.shape)
+    # print(inds_gt[0,0])
+    # print(inds_te[0,0])
     # for t in range(2):
     #     print("-"*10 + ("t: %d" % t)  + "-"*10)
     #     txt = ["W","H"]
@@ -225,20 +231,20 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     #     # print(acc_flows.fflow[0,0,t,1,:2,:2])
 
     # -- viz --
-    K = 27
-    print(inds_te.shape)
-    diff = th.mean(1.*(inds_te[0,0] - inds_gt[0,0])**2,dim=(-1,))
-    args = th.where(diff>1e-13)
-    diff = rearrange(diff,'(t h w) k -> k t h w',h=16,w=16)
-    qi = -256+64
+    # K = 27
+    # print(inds_te.shape)
+    # diff = th.mean(1.*(inds_te[0,0] - inds_gt[0,0])**2,dim=(-1,))
+    # args = th.where(diff>1e-13)
+    # diff = rearrange(diff,'(t h w) k -> k t h w',h=16,w=16)
+    # qi = -256+64
 
-    dinds = []
-    for i in range(3):
-        cat_inds = th.stack([inds_gt[0,0,...,i][args],inds_te[0,0,...,i][args]],-1)
-        dinds.append(cat_inds)
-    dinds = th.cat(dinds,-1)
-    print(dinds)
-    print(dinds[:10])
+    # dinds = []
+    # for i in range(3):
+    #     cat_inds = th.stack([inds_gt[0,0,...,i][args],inds_te[0,0,...,i][args]],-1)
+    #     dinds.append(cat_inds)
+    # dinds = th.cat(dinds,-1)
+    # print(dinds)
+    # print(dinds[:10])
     # for j in range(4):
     #     print(dinds[0,j+2].item())
 
@@ -318,6 +324,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     use_adj = False
     adj = 0
     off_H0,off_W0,off_H1,off_W1 = 0,0,0,0
+    self_action = None
 
     # -- load data --
     vid = get_data(dnames,ext)
@@ -364,19 +371,15 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     sch = stnls.search
     search_te = sch.PairedSearch(ws, ps, k, nheads, dist_type=dist_type,
                                  dilation=dil,stride0=stride0, stride1=stride1,
-                                 reflect_bounds=reflect_bounds,
-                                 full_ws=True,full_ws_time=True,
-                                 anchor_self=anchor_self,use_adj=use_adj,
+                                 reflect_bounds=reflect_bounds,full_ws=True,
+                                 self_action=self_action,use_adj=use_adj,
                                  itype_fwd=itype_fwd,itype_bwd=itype_bwd,
                                  normalize_bwd=False)
-    search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                   dist_type=dist_type,
+    search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
-                                   reflect_bounds=reflect_bounds,
-                                   full_ws=True,full_ws_time=True,
-                                   anchor_self=anchor_self,use_adj=use_adj,
-                                   itype_fwd=itype_fwd,itype_bwd=itype_bwd,
-                                   normalize_bwd=False)
+                                   reflect_bounds=reflect_bounds,full_ws=True,
+                                   self_action=self_action,use_adj=use_adj,
+                                   itype=itype_fwd,normalize_bwd=False)
 
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid0_gt,vid1_gt,fflow_gt,bflow_gt)

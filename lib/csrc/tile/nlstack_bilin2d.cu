@@ -77,13 +77,13 @@ void fill_non_local_patch_bilin2d(
             valid_nl[3] = valid_nl[3] && valid_nl[bool_idx];
           }
           valid = valid_ref[3] && valid_nl[3];
-          if (not valid) { continue; }
 
           // -- add count --
           if ((ki == 0) && (ftr_start == 0) && (valid_ref[3]) && (ref[0] == 0)){
             atomicAdd(&(counts[ref[1]][ref[2]]),1);
           }
 
+          if (not valid) { continue; }
           // -- fill each channel --
           nl_i[0] = __float2int_rn(round(nl[0]));
           for (iftr = ftr_start; iftr < ftr_end; iftr++){

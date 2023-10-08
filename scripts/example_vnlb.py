@@ -159,8 +159,8 @@ def run_denoiser(npatches,bpatches,dists,step):
 rgb2yuv(noisy)
 
 # -- init iunfold and ifold --
-search = stnls.search.init("l2_with_index",None,None,k,ps_s,pt,ws,wt,chnls=chnls,
-                          stride0=stride0,stride1=stride1,dilation=dilation)
+search = stnls.search.NonLocalSearch(ws,wt,ps_s,K,pt=pt,chnls=chnls,
+                                     stride0=stride0,stride1=stride1,dilation=dilation)
 unfold = stnls.UnfoldK(ps_d,pt,dilation=dilation,device=device)
 fold = stnls.FoldK(clean.shape,use_rand=use_rand,nreps=nreps_1,device=device)
 

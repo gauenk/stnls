@@ -3,8 +3,7 @@
   Stack non-local patches into a video
 
 
- */
-
+*/
 
 // #include <torch/extension.h>
 #include <torch/types.h>
@@ -51,7 +50,7 @@ __global__ void non_local_stack_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> weights,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> stack,
-    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
+    torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> counts,
     int ps, int pt, int dilation, int stride0, int patch_offset,
     int nW0, int nHW0, bool reflect_bounds, int q_start,
     int off_H0, int off_H1, int off_W0, int off_W1, int ftrs_per_thread){
@@ -107,13 +106,15 @@ __global__ void non_local_stack_forward_kernel(
         nl_patch[_idx] = inds[ibatch][ihead][qi][ki][_idx];
       }
   
+
       //----------------------------------
       //      Fill Non-Local Patch
       //----------------------------------
 
+
       // scalar_t w = weights[ibatch][ihead][qi][ki];
       fill_non_local_patch<scalar_t>(stack[ibatch][ihead][ki],
-                                     counts,vid[ibatch][ihead],
+                                     counts[ibatch][ihead],vid[ibatch][ihead],
                                      weights[ibatch][ihead][qi][ki],
                                      ps,pt,dilation,reflect_bounds,
                                      ref_patch,nl_patch,ref,nl,
@@ -144,7 +145,7 @@ void non_local_stack_forward_cuda(
   int nH0 = (height-1)/stride0+1;
   int nW0 = (width-1)/stride0+1;
   int nHW0 = nH0*nW0;
-  int ps_offset = dilation*(ps/2);
+  int ps_offset = dilation*((ps-1)/2);
   ps_offset = use_adj ? 0 : -ps_offset;
 
   // -- launch parameters --
@@ -171,7 +172,7 @@ void non_local_stack_forward_cuda(
            weights.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
            inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
            stack.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
-           counts.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+           counts.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
            ps, pt, dilation, stride0, ps_offset, nW0, nHW0, reflect_bounds,
            q_start, off_H0, off_W0, off_H1, off_W1, ftrs_per_thread);
       }));
@@ -199,7 +200,7 @@ __global__ void non_local_stack_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> weights,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     // const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> stack,
-    const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
+    const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> counts,
     int ps, int pt, int dilation, int stride0, int patch_offset,
     int nW0, int nHW0, bool reflect_bounds, int q_start,
     int off_H0, int off_H1, int off_W0, int off_W1, int ftrs_per_thread){
@@ -264,7 +265,7 @@ __global__ void non_local_stack_backward_kernel(
 
       fill_non_local_patch_bwd<scalar_t>(grad_vid[ibatch][ihead],
                                          grad_weights[ibatch][ihead],
-                                         counts,
+                                         counts[ibatch][ihead],
                                          grad_stack[ibatch][ihead][ki],
                                          // stack[ibatch][ihead][ki],
                                          vid[ibatch][ihead],
@@ -331,7 +332,7 @@ void non_local_stack_backward_cuda(
            weights.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
            inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
            // stack.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
-           counts.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+           counts.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
            ps, pt, dilation, stride0, ps_offset, nW0, nHW0, reflect_bounds,
            q_start, off_H0, off_W0, off_H1, off_W1, ftrs_per_thread);
       }));

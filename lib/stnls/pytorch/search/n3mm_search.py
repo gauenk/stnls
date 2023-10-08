@@ -49,6 +49,11 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # -- compute indices --
     inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,
                                    stride0,stride1,True,True)
+
+    # -- boundary --
+    inds = th.where(inds<0,-inds,inds)
+    inds[...,1] = th.where(inds[...,1]>=H,2*(H-1)-inds[...,1],inds[...,1])
+    inds[...,2] = th.where(inds[...,2]>=W,2*(W-1)-inds[...,2],inds[...,2])
     # th.cuda.synchronize()
     # assert not(th.any(inds == -1).item()),"No invalid indices."
     # print("inds.min(),inds_r.max(): ",inds.min(),inds.max())
@@ -62,6 +67,7 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # -- compute database --
     pat0 = vid2patches(vid0,nheads,stride0,ps,pt,dilation,reflect_bounds)
     pat1 = vid2patches(vid1,nheads,stride1,ps,pt,dilation,reflect_bounds)
+    print("pat0.shape,pat1.shape: ",pat0.shape,pat1.shape)
 
     # -- forward --
     # print("inds.min(),inds_r.max(): ",inds.min(),inds.max())
@@ -75,8 +81,12 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
 
     # -- forward [v2] --
     inds_r = raster_indices(inds,H,W,stride1)
+    th.cuda.synchronize()
     # print("inds_r.min(),inds_r.max(): ",inds_r.min(),inds_r.max(),inds_r.shape)
+    # print(pat0.shape,pat1.shape)
     prods = matmult_fwd(pat1,pat0,inds_r)
+    th.cuda.synchronize()
+    # print("post.")
 
     # th.cuda.synchronize()
     if dist_type == "prod":

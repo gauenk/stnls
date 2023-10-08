@@ -8,6 +8,7 @@ void init_paired_search(py::module &);
 // -- nn --
 void init_pfc(py::module &);
 void init_accumulate_flow(py::module &);
+void init_search_flow(py::module &);
 void init_temporal_inds(py::module &);
 void init_non_local_inds(py::module &);
 void init_unique_topk(py::module &);
@@ -63,6 +64,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   // -- nn --
   init_pfc(m);
   init_accumulate_flow(m);
+  init_search_flow(m);
   init_temporal_inds(m);
   init_non_local_inds(m);
   init_unique_topk(m);

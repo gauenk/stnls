@@ -7,6 +7,7 @@ from . import anchor_self as anchor_self_f
 from . import temporal_inds as temporal_inds_f
 from . import non_local_inds as non_local_inds_f
 from . import accumulate_flow as accumulate_flow_f
+from . import search_flow as search_flow_f
 from . import interpolate_inds as interpolate_inds_f
 from . import jitter_unique_inds as jitter_unique_inds_f
 from . import compare_inds as compare_inds_f
@@ -23,6 +24,8 @@ anchor_self = anchor_self_f.run
 temporal_inds = temporal_inds_f.run
 non_local_inds = non_local_inds_f.run
 accumulate_flow = accumulate_flow_f.run
+extract_search_from_accumulated = accumulate_flow_f.extract_search_from_accumulated
+search_flow = search_flow_f.run
 interpolate_inds = interpolate_inds_f.run
 jitter_unique_inds = jitter_unique_inds_f.run
 compare_inds = compare_inds_f.run
@@ -39,6 +42,8 @@ def init(version,*args,**kwargs):
         return pfc.PatchFC(*args,**kwargs)
     elif version in ["accumulate_flow"]:
         return accumulate_flow_f.init(*args)
+    elif version in ["search_flow"]:
+        return search_flow_f.init(*args)
     elif version == "interpolate_inds":
         return interpolate_inds_f.init(*args)
     else:

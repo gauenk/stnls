@@ -116,6 +116,28 @@ def run_pair(fflow,bflow,stride0=1,dtype=None,
 
     return flows
 
+def extract_search_from_accumulated(fflow,bflow,wt,stride0):
+    # -- setup --
+    T = fflow.shape[1]
+    W_t = 2*wt+1
+    flows = []
+    for ti in range(T):
+        # -- bounds for ti --
+        t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1))
+        t_max = min(T-1,ti + wt - t_shift)
+        flows_t = []
+        for si in range(1,W_t):
+            # -- select adjacent frame --
+            tj = ti + si
+            tj = t_max - si if (tj > t_max) else tj
+            dt = tj - ti
+            flow_gt = fflow[:,ti,dt-1] if (ti < tj) else bflow[:,ti,-dt-1]
+            flows_t.append(flow_gt[...,::stride0,::stride0])
+        flows_t = th.stack(flows_t,1)
+        flows.append(flows_t)
+    flows = th.stack(flows,1)
+    return flows
+
 def run_accumulate_flow(fflow,bflow,pfflow,pbflow,stride0,imode):
     assert stride0 == 1
     B,T,_,H,W = fflow.shape

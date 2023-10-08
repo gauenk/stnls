@@ -85,19 +85,30 @@ def test_fwd_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- load data --
     vid = get_data(dnames,ext)
+    B,T,F,H,W = vid.shape
+    HD = nheads
+    nH = (H-1)//stride0+1
+    nW = (W-1)//stride0+1
+    Q = T*nH*nW
+    K = k
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     # flows.fflow = 10*th.ones_like(flows.fflow)
     # flows.bflow = 10*th.ones_like(flows.bflow)
-    flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
-    flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
+    flows.fflow = th.clamp(10*th.zeros_like(flows.fflow),-10,10)
+    flows.bflow = th.clamp(10*th.zeros_like(flows.bflow),-10,10)
+    # flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
+    # flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
     # flows.fflow = th.clamp((10*th.randn_like(flows.fflow))//2,-10,10)
     # flows.bflow = th.clamp((10*th.randn_like(flows.bflow))//2,-10,10)
     # flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
     # flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
     # flows.fflow = 10*th.randn_like(flows.fflow)
     # flows.bflow = 10*th.randn_like(flows.bflow)
+    W_t = 2*wt
+    flows_s = th.zeros((B,1,T,W_t,2,H,W),device="cuda")
+    flows_s = flows_s[...,::stride0,::stride0].contiguous().int()
 
     # -- unpack image --
     device = vid.device
@@ -108,12 +119,12 @@ def test_fwd_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- exec fold fxns --
     sch = stnls.search
+    self_action = "anchor" if anchor_self else None
     search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
-                                   reflect_bounds=reflect_bounds,
-                                   full_ws=False,full_ws_time=False,
-                                   anchor_self=anchor_self,use_adj=use_adj)
+                                   reflect_bounds=reflect_bounds,full_ws=False,
+                                   self_action=self_action,use_adj=use_adj)
     search_gt = stnls.search_dev.init("%s_search_with_heads" % dist_type,
                                       flows.fflow, flows.bflow,
                                       k, ps, pt, ws, wt, nheads,
@@ -121,18 +132,22 @@ def test_fwd_dev(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
                                       stride0=stride0, stride1=stride1,
                                       reflect_bounds=reflect_bounds,use_k=use_k,
                                       use_adj=use_adj,anchor_self=anchor_self,exact=True)
-
     # -- test api --
     # print(stnls.search.nls(vid,vid,flows.fflow,flows.bflow,
     #                                ws, wt, ps, k))
 
     # -- [testing] search --
-    dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
+    dists_te,inds_te = search_te(vid,vid,flows_s)
+    dists_te = dists_te.reshape(B,HD,Q,K)
+    inds_te = inds_te.reshape(B,HD,Q,K,3)
     th.cuda.synchronize()
 
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid,vid)
     th.cuda.synchronize()
+
+    print(dists_te)
+
 
     # -- viz --
     # print(dists_te[0,0,-1])

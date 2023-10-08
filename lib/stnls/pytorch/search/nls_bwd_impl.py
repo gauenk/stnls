@@ -18,11 +18,10 @@ from .shared import manage_self
 def nls_backward(ctx, grad_dists, grad_inds):
 
     # -- populate names --
-    inds,vid0,vid1,fflow,bflow = ctx.saved_tensors
+    inds,vid0,vid1,flows = ctx.saved_tensors
     itype_bwd = ctx.itype_bwd
     inds = get_inds(inds,itype_bwd)
-    grad_fflow = allocate_grad_flow(itype_bwd,fflow.shape,fflow.device)
-    grad_bflow = allocate_grad_flow(itype_bwd,fflow.shape,fflow.device)
+    grad_flows = allocate_grad_flow(itype_bwd,flows.shape,flows.device)
 
     # print("inds.shape: ",inds.shape,vid0.shape,vid1.shape)
     # assert not(th.any(inds==-1).item()),"No -1 indices"
@@ -48,10 +47,7 @@ def nls_backward(ctx, grad_dists, grad_inds):
     qshift = 0 # no batching backward.
 
     # -- transpose (T,ST) -> (ST,T) --
-    grad_fflow = grad_fflow.transpose(1,2).contiguous()
-    grad_bflow = grad_bflow.transpose(1,2).contiguous()
-    fflow = fflow.transpose(1,2).contiguous()
-    bflow = bflow.transpose(1,2).contiguous()
+    # grad_flows = grad_flows.transpose(1,2).contiguous()
     grad_inds = grad_inds.contiguous()
 
     # -- debug --
@@ -67,18 +63,18 @@ def nls_backward(ctx, grad_dists, grad_inds):
 
     # print(grad_inds)
     # print(th.any(th.isnan(grad_inds)))
-    # print(th.any(th.isnan(fflow)),th.any(th.isnan(bflow)))
+    # print(th.any(th.isnan(flows)),th.any(th.isnan(bflow)))
     # print(inds)
     # print(inds.shape)
 
     # -- allow for repeated exec --
     bwd_fxn = stnls_cuda.non_local_search_backward
-    # print(fflow.shape,bflow.shape,grad_fflow.shape,grad_bflow.shape)
+    # print(flows.shape,bflow.shape,grad_flows.shape,grad_bflow.shape)
     # print("hi 1")
     # th.cuda.synchronize()
     # print("hi 2")
-    bwd_fxn(grad_vid0,grad_vid1,grad_fflow,grad_bflow,
-            vid0,vid1,fflow,bflow,
+    bwd_fxn(grad_vid0,grad_vid1,grad_flows,
+            vid0,vid1,flows,bflow,
             grad_dists,grad_inds,inds,
             qshift,ctx.stride0,nH0,nW0,
             ctx.ps,ctx.pt,ctx.wt,ctx.dil,ctx.reflect_bounds,ctx.use_adj,
@@ -88,8 +84,8 @@ def nls_backward(ctx, grad_dists, grad_inds):
     # print(vid0.shape)
     # print("-"*30)
     # print("-"*30)
-    # print("fflow")
-    # print(grad_fflow)
+    # print("flows")
+    # print(grad_flows)
     # print("bflow")
     # print(grad_bflow)
     # print("-"*30)
@@ -98,13 +94,13 @@ def nls_backward(ctx, grad_dists, grad_inds):
     # exit(0)
 
     # -- backward for optical flow --
-    # nls_bwd_flow(ctx, fflow, bflow, stride0, inds, grad_inds)
+    # nls_bwd_flow(ctx, flows, bflow, stride0, inds, grad_inds)
 
     # -- transpose (ST,T) -> (T,ST) --
-    grad_fflow = grad_fflow.transpose(1,2).contiguous()
-    grad_bflow = grad_bflow.transpose(1,2).contiguous()
-    fflow = fflow.transpose(1,2).contiguous()
-    bflow = bflow.transpose(1,2).contiguous()
+    # grad_flows = grad_flows.transpose(1,2).contiguous()
+    # grad_bflow = grad_bflow.transpose(1,2).contiguous()
+    # fflow = fflow.transpose(1,2).contiguous()
+    # bflow = bflow.transpose(1,2).contiguous()
 
     # -- finalize shape --
     grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')

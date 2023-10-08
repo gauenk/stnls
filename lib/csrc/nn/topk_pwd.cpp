@@ -7,8 +7,7 @@
 void topk_pwd_forward_cuda(const torch::Tensor vid,
     const torch::Tensor inds0, const torch::Tensor inds1,
     torch::Tensor dists, int ps, int pt,
-    int dilation, bool reflect_bounds, bool use_adj,
-    int off_H0, int off_W0, int off_H1, int off_W1);
+    int dilation, bool reflect_bounds, int patch_offset);
 
 // C++ interface
 
@@ -18,15 +17,14 @@ void topk_pwd_forward_cuda(const torch::Tensor vid,
 
 void topk_pwd_forward(const torch::Tensor vid,
                       const torch::Tensor inds0, const torch::Tensor inds1,
-                      torch::Tensor dists, int ps, int pt,
-                      int dilation, bool reflect_bounds, bool use_adj,
-                      int off_H0, int off_W0, int off_H1, int off_W1){
+                      torch::Tensor dists, int ps, int pt, int dilation,
+                      bool reflect_bounds, int patch_offset){
   CHECK_INPUT(vid);
   CHECK_INPUT(inds0);
   CHECK_INPUT(inds1);
   CHECK_INPUT(dists);
-  topk_pwd_forward_cuda(vid,inds0,inds1,dists,ps,pt,dilation,reflect_bounds,
-                        use_adj,off_H0,off_W0,off_H1,off_W1);
+  topk_pwd_forward_cuda(vid,inds0,inds1,dists,ps,pt,dilation,
+                        reflect_bounds,patch_offset);
 }
 
 // python bindings

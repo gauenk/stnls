@@ -79,7 +79,7 @@ class non_local_stack(th.autograd.Function):
 
         # -- init --
         HD = inds.shape[1]
-        K = inds.shape[3]
+        K = inds.shape[-2]
         q_start=0
         ndim = vid.ndim
         vid = ensure_ndim6(vid,HD)
@@ -88,6 +88,14 @@ class non_local_stack(th.autograd.Function):
         HD = max(HD_v,HD_i)
         stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
         counts = th.zeros((B,HD,H,W),device=vid.device,dtype=th.int32)
+        # print("B,HD,K,T,F,H,W: ",B,HD,K,T,F,H,W)
+        # print("stack [weights.shape,inds.shape]: ",weights.shape,inds.shape)
+
+        # -- reshape --
+        # nH = (H-1)//stride0+1
+        # nW = (W-1)//stride0+1
+        weights = weights.reshape(B,HD,-1,K)
+        inds = inds.reshape(B,HD,-1,K,3)
 
         # -- non-local stacking --
         vid = vid.contiguous()
@@ -102,7 +110,6 @@ class non_local_stack(th.autograd.Function):
         # for i in range(inds_n.shape[1]):
         #     print(inds_n[0,i,:,:3,:3])
         # print(stride0,use_adj,ps)
-
         assert not th.any(th.isnan(weights)).item()
 
         # print(inds,imode)
@@ -120,6 +127,13 @@ class non_local_stack(th.autograd.Function):
         # print(counts)
         # assert th.all(counts == vid.shape[0]).item()
         # counts = counts/(1.*vid.shape[0])
+        # print(K)
+        # print(inds[0,0,12*W+23-1])
+        # print(inds[0,0,12*W+23])
+        # print(inds[0,0,12*W+23+1])
+        # print(counts)
+        # print(th.where(counts==0))
+        assert th.all(counts > 0).item()
         eps = 1e-10
         counts = counts.view((B,HD,1,1,1,H,W))
         stack /= (counts+eps)
@@ -222,6 +236,7 @@ class non_local_stack(th.autograd.Function):
         if itype_bwd == "int": grad_inds = None
         # print(grad_stack.abs().mean(),grad_vid.abs().mean(),grad_weights.abs().mean())
 
+        # print("stack [grad_weights.shape,grad_inds.shape]: ",grad_weights.shape)
         return grad_vid,grad_weights,grad_inds,None,None,\
             None,None,None,None,None,None,None,None,None,None
 

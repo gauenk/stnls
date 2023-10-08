@@ -37,8 +37,8 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
 
 template <typename scalar_t>
 __global__ void stnls_iunfold_forward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> vid,
-    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> patches,
+    torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> vid,
+    torch::PackedTensorAccessor64<scalar_t,7,torch::RestrictPtrTraits> patches,
     int top, int left, int btm, int right,
     int start, int stride, int dilation, int patch_offset,
     bool only_full, bool use_reflect, int qpt, int kpt) {
@@ -178,8 +178,8 @@ void stnls_cuda_iunfold_forward(
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(patches.type(), "stnls_iunfold_forward_kernel", ([&] {
     stnls_iunfold_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
-        vid.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-        patches.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+        vid.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
+        patches.packed_accessor64<scalar_t,7,torch::RestrictPtrTraits>(),
         top, left, btm, right, start, stride, dilation,
         patch_offset, only_full, use_reflect, qpt, kpt);
       }));

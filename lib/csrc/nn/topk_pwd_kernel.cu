@@ -5,7 +5,9 @@
 #include <vector>
 #include <assert.h>
 // #include "shared_nn_utils.cu"
-#include "../search/shared_kernel.cu"
+// #include "../search/shared_kernel.cu"
+#include "../search/nls_int.cu"
+// #include "../search/shared_kernel.cu"
 
 
 template <typename scalar_t>
@@ -14,8 +16,7 @@ __global__ void topk_pwd_kernel(
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds0,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds1,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
-    int ps, int pt, int dilation, bool reflect_bounds, 
-    bool use_adj, int off_H0, int off_W0, int off_H1, int off_W1,
+    int ps, int pt, int dilation, bool reflect_bounds, int patch_offset,
     int q_per_thread, int pwd_per_thread, int nblocks_q, int nblocks_pwd){
 
   // -- unpack shape --
@@ -33,8 +34,8 @@ __global__ void topk_pwd_kernel(
   float invalid = __int_as_float(0x7f800000);
 
   // -- search region offsets --
-  int psHalf = (ps)/2;
-  int adj = use_adj ? psHalf : 0;
+  // int psHalf = (ps)/2;
+  // int adj = use_adj ? psHalf : 0;
 
   // -- cuda index --
   int ibatch = blockIdx.x;
@@ -67,8 +68,8 @@ __global__ void topk_pwd_kernel(
   bool xform_bool;
 
   // -- cleaner code --
-  int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
-  int patch_offset = psHalf + adj;
+  // int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
+  // int patch_offset = psHalf + adj;
 
   // -- for each location --
   for (int qi = qi_start; qi < qi_end; qi++){
@@ -98,12 +99,11 @@ __global__ void topk_pwd_kernel(
 
       // -- compute dist --
       dist = 0;
-      compute_dist<scalar_t,1>(dist,
+      compute_dist_int<scalar_t,1>(dist,
                    vid[ibatch][ihead],vid[ibatch][ihead],
                    patch0, patch1, pix0, pix1, valid0, valid1,
-                   ps,pt,dilation,reflect_bounds,
-                   patch_offset,center_offsets,invalid,
-                   T,C,H,W,_pix0,_pix1,_dist);
+                   ps,pt,dilation,reflect_bounds,patch_offset,
+                   invalid,T,C,H,W,_pix0,_pix1,_dist);
 
       // -- assign --
       dists[ibatch][ihead][qi][pwd_i] = dist;
@@ -116,8 +116,7 @@ __global__ void topk_pwd_kernel(
 void topk_pwd_forward_cuda(const torch::Tensor vid,
     const torch::Tensor inds0, const torch::Tensor inds1,
     torch::Tensor dists, int ps, int pt,
-    int dilation, bool reflect_bounds, bool use_adj,
-    int off_H0, int off_W0, int off_H1, int off_W1){
+    int dilation, bool reflect_bounds, int patch_offset){
 
   // -- unpack --
   int B = inds0.size(0);
@@ -147,8 +146,7 @@ void topk_pwd_forward_cuda(const torch::Tensor vid,
           inds0.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
           inds1.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
           dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-          ps, pt, dilation, reflect_bounds, use_adj,
-          off_H0, off_W0, off_H1, off_W1,
+          ps, pt, dilation, reflect_bounds, patch_offset,
           q_per_thread, pwd_per_thread, nblocks_q, nblocks_pwd);
       }));
 }

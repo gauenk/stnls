@@ -361,9 +361,14 @@ class NonLocalAttentionStack(nn.Module):
         state[0] = self.inds_rs0(inds.detach(),nH,nW)
 
     def inds_rs0(self,inds,nH,nW):
-        if not(inds.ndim == 5): return inds
-        rshape = 'b h (T nH nW) k tr -> T nH nW b h k tr'
-        inds = rearrange(inds,rshape,nH=nH,nW=nW)
+        if inds.ndim == 5:
+            rshape = 'b h (T nH nW) k tr -> T nH nW b h k tr'
+            inds = rearrange(inds,rshape,nH=nH,nW=nW)
+        elif inds.ndim == 7:
+            rshape = 'b hd T nH nW k tr -> T nH nW b hd k tr'
+            inds = rearrange(inds,rshape,nH=nH,nW=nW)
+        else:
+            return inds
         return inds
 
     def inds_rs1(self,inds):

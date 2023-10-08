@@ -113,7 +113,7 @@ __global__ void non_local_search_forward_kernel(
     check_bounds(valid_ref_patch,ref_patch,T,H,W);
 
     // -- search region offsets --
-    // set_search_offsets(wsOff_h, wsOff_w, ref_patch[1], ref_patch[2], stride1,
+    // set_search_offset_v1(wsOff_h, wsOff_w, ref_patch[1], ref_patch[2], stride1,
     //                    wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws);
 
     // -- temporal search bounds --
@@ -148,7 +148,7 @@ __global__ void non_local_search_forward_kernel(
                                   bflow[ibatch][prev_ti][delta_ti]);
 
       // -- search region offsets --
-      set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
+      set_search_offset_v1(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
                          wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws_time);
 
 
@@ -389,7 +389,7 @@ __global__ void non_local_search_forward_v2_kernel(
     check_bounds(valid_ref_patch,ref_patch,T,H,W);
 
     // -- search region offsets --
-    // set_search_offsets(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
+    // set_search_offset_v1(wsOff_h,wsOff_w, ref_patch[1], ref_patch[2], stride1,
     //                    wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws);
 
     // -- temporal search bounds --
@@ -427,7 +427,7 @@ __global__ void non_local_search_forward_v2_kernel(
       //                          fflow[ibatch][prev_ti][delta_ti],
       //                          bflow[ibatch][prev_ti][delta_ti]);
       // -- search region offsets --
-      set_search_offsets(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
+      set_search_offset_v1(wsOff_h, wsOff_w, frame_anchor[1], frame_anchor[2], stride1,
                          wsHalf_h, wsHalf_w, ws_h, ws_w, H, W, full_ws_time);
 
 

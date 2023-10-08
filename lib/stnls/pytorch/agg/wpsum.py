@@ -3,42 +3,44 @@ import torch.nn as nn
 from einops import rearrange
 import stnls
 
-def init(cfg):
+# def init(cfg):
 
-    # -- unpack params --
-    ps      = cfg.ps
-    pt      = cfg.pt
-    dil     = cfg.dilation
-    reflect_bounds = cfg.reflect_bounds
-    use_adj = False
+#     # -- unpack params --
+#     ps      = cfg.ps
+#     pt      = cfg.pt
+#     dil     = cfg.dilation
+#     reflect_bounds = cfg.reflect_bounds
+#     use_adj = False
 
-    # -- init --
-    wpsum = stnls.reducer.WeightedPatchSum(ps, pt,
-                                           dilation=dil,
-                                           reflect_bounds=reflect_bounds,
-                                           use_adj=use_adj,use_atomic=True)
+#     # -- init --
+#     wpsum = stnls.reducer.WeightedPatchSum(ps, pt,
+#                                            dilation=dil,
+#                                            reflect_bounds=reflect_bounds,
+#                                            use_adj=use_adj,use_atomic=True)
 
-    return WpSumAgg(wpsum)
+#     return WpSumAgg(wpsum)
 
-class WpSumAgg(nn.Module):
+class WeightedSum(nn.Module):
 
-    def __init__(self,wpsum):
+    def __init__(self,ps,pt=1,dilation=1,reflect_bounds=True,use_adj=True):
         super().__init__()
-        self.wpsum = wpsum
+        self.wpsum = stnls.reducer.WeightedSum(ps, pt,dilation=dilation,
+                                               reflect_bounds=reflect_bounds,
+                                               use_adj=use_adj)
 
-    def __call__(self,vid,dists,inds):
+
+    def __call__(self,vid_in,dists,inds):
 
         # -- contiguous --
+        # print("dists.shape: ",dists.shape)
+        B,HD,T,nH,nW,K = dists.shape
+        # dists = dists.reshape(B,HD,T*nH*nW,K)
+        # inds = inds.reshape(B,HD,T*nH*nW,K,3)
         dists = dists.contiguous()
         inds = inds.contiguous()
 
+
         # -- aggregate --
-        patches = self.wpsum(vid,dists,inds)
+        vid_out = self.wpsum(vid_in,dists,inds)
 
-        # -- reshape --
-        ps = patches.shape[-1]
-        ntotal = dists.shape[-2]
-        shape_str = 'b h q 1 c ph pw -> (b q 1 ph pw) (h c)'
-        patches = rearrange(patches,shape_str)
-
-        return patches
+        return vid_out
