@@ -48,6 +48,7 @@ __global__ void accumulate_flow_forward_kernel(
     int wn = ref[1];
     int hn = ref[2];
 
+
     // -- ??? -- maybe "/stride0"?
     itype hi_a,wi_a;
     if (is_same_v<itype,int>){
@@ -89,8 +90,6 @@ __global__ void accumulate_flow_forward_kernel(
       update_centers_flow_acc(h_center,w_center,H,W,flow[bi][tj]);
 
       // -- assignment  --
-      // pflow[bi][ti][ta][1][hn][wn] = h_center - hi_a;
-      // pflow[bi][ti][ta][0][hn][wn] = w_center - wi_a;
       pflow[bi][ti][ta][1][hn][wn] = h_center - hi_a;
       pflow[bi][ti][ta][0][hn][wn] = w_center - wi_a;
 
@@ -203,6 +202,8 @@ __global__ void accumulate_flow_backward_kernel(
   // -- get location --
   for (int loc = 0; loc < locs_per_thread; loc++){
 
+
+
     // -- get reference location --
     qi = raster_index + loc;
     if (qi >= TnHW){ break; } 
@@ -220,22 +221,26 @@ __global__ void accumulate_flow_backward_kernel(
     int t_end = (T-1)-t_flow;
     if (Acc_time_start < 0) { return; }
 
+    // -- accumulated index --
+    int nh = ref[1]/stride0;
+    int nw = ref[2]/stride0;
+
     // -- write location --
     refs[0] = __int2float_rn(ref[0]);
     if (Acc_time_start == 0){
       refs[1] = __int2float_rn(ref[1]);
       refs[2] = __int2float_rn(ref[2]);
     }else{
-      refs[1] = ref[1] + pflow[ref[0]][Acc_time_start-1][1][ref[1]][ref[2]];
-      refs[2] = ref[2] + pflow[ref[0]][Acc_time_start-1][0][ref[1]][ref[2]];
+      refs[1] = ref[1] + pflow[ref[0]][Acc_time_start-1][1][nh][nw];
+      refs[2] = ref[2] + pflow[ref[0]][Acc_time_start-1][0][nh][nw];
     }
 
     // -- iterate across accumulated flows --
     for(int tx=0; tx < t_end; tx++){
 
       // -- read gradient --
-      gv0 = g_pflow[ref[0]][Acc_time_start+tx][0][ref[1]][ref[2]];
-      gv1 = g_pflow[ref[0]][Acc_time_start+tx][1][ref[1]][ref[2]];
+      gv0 = g_pflow[ref[0]][Acc_time_start+tx][0][nh][nw];
+      gv1 = g_pflow[ref[0]][Acc_time_start+tx][1][nh][nw];
 
       // -- update dA[i]dF[j] as dAdFj[i] --
       if (tx==0){
@@ -247,9 +252,9 @@ __global__ void accumulate_flow_backward_kernel(
 
         // -- update proposed location --
         prop[1] = __int2float_rn(ref[1]) +                      \
-          pflow[ref[0]][Acc_time_start+tx-1][1][ref[1]][ref[2]];
+          pflow[ref[0]][Acc_time_start+tx-1][1][nh][nw];
         prop[2] = __int2float_rn(ref[2]) +                      \
-          pflow[ref[0]][Acc_time_start+tx-1][0][ref[1]][ref[2]];
+          pflow[ref[0]][Acc_time_start+tx-1][0][nh][nw];
 
         // -- update weights --
         update_weights(dAdF0,dAdF1,prop,H,W,tx,flow[t_flow+t_inc*tx]);

@@ -120,6 +120,7 @@ def extract_search_from_accumulated(fflow,bflow,wt,stride0):
     # -- setup --
     T = fflow.shape[1]
     W_t = 2*wt+1
+    assert W_t <= T,"Search Window Must be at most half the number of frames."
     flows = []
     for ti in range(T):
         # -- bounds for ti --
@@ -196,7 +197,8 @@ def flow_warp(x, flow, interp_mode='bilinear',
 
     # -- resample --
     output = F.grid_sample(x, vgrid_scaled, mode=interp_mode,
-                           padding_mode="reflection", align_corners=align_corners)
+                           padding_mode="reflection", align_corners=align_corners,
+    )
 
     return output
 

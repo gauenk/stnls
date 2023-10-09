@@ -74,6 +74,11 @@ void assign_bilin2d(scalar_t dAdF0[2], scalar_t dAdF1[2],
       prop_i[0] = bounds(prop_i[0],H);
       prop_i[1] = bounds(prop_i[1],W);
 
+      // -- check bounds --
+      // if ((not check_interval(prop_i[0],0,H)) or (not check_interval(prop_i[1],0,W))){
+      //   continue;
+      // }
+
       // -- write --
       atomicAdd(&(g_flow[0][prop_i[0]][prop_i[1]]),w*(dAdF0[0]*gv0+ dAdF0[1]*gv1));
       atomicAdd(&(g_flow[1][prop_i[0]][prop_i[1]]),w*(dAdF1[0]*gv0+ dAdF1[1]*gv1));
@@ -117,15 +122,21 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
   // any_zero[1] = false;
 
   // -- check bounds --
-  // scalar_t eps = 1e-7;
-  // prop[1] = prop[1]-eps;
-  // prop[2] = prop[2]-eps;
   int sH = check_interval(prop[1],0,H) ? 1 : -1;
   int sW = check_interval(prop[2],0,W) ? 1 : -1;
 
   // -- init wrap --
   prop[1] = bounds(prop[1],H);
   prop[2] = bounds(prop[2],W);
+
+  // -- update if int --
+  // scalar_t eps1 = ((ceilf(prop[1]) - floorf(prop[1])) < 0.5) ? 1e-3 : 0.;
+  // scalar_t eps2 = ((ceilf(prop[2]) - floorf(prop[2])) < 0.5) ? 1e-3 : 0.;
+  // prop[1] = prop[1]-eps1;
+  // prop[2] = prop[2]-eps2;
+  // prop[1] = bounds(prop[1],H);
+  // prop[2] = bounds(prop[2],W);
+
 
   scalar_t gH,gW,vW,vH;
 #pragma unroll
@@ -134,27 +145,46 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
     for (int jx=0;jx<2;jx++){
 
       // -- interpolation weights --
-      prop_i[0] = __float2int_rz(ix ==0 ? floorf(prop[1]) : ceilf(prop[1]));
-      // prop_i[0] = __float2int_rz(ix ==0 ? floorf(prop[1]) : (floorf(prop[1])+1));
+      // prop_i[0] = __float2int_rz(ix ==0 ? (ceilf(prop[1])-1) : ceilf(prop[1]));
+      prop_i[0] = __float2int_rz(ix ==0 ? floorf(prop[1]) : (floorf(prop[1])+1));
       gH = max(0.,1-fabs(prop_i[0]-prop[1]));
       // gH = (ix == 0) ? 1 - (prop[1] - prop_i[0]) : 1 - (prop_i[0] - prop[1]);
       // gH = (ix == 0) ? prop_i[0] - prop[1]: prop[1] - prop_i[0];
 
-      prop_i[1] = __float2int_rz(jx ==0 ? floorf(prop[2]) : ceilf(prop[2]));
-      // prop_i[1] = __float2int_rz(jx ==0 ? floorf(prop[2]) : (floorf(prop[2])+1));
+      // prop_i[1] = __float2int_rz(jx ==0 ? (ceilf(prop[2])-1) : ceilf(prop[2]));
+      prop_i[1] = __float2int_rz(jx == 0 ? floorf(prop[2]) : (floorf(prop[2])+1));
       gW = max(0.,1-fabs(prop_i[1]-prop[2]));
       // gW = (jx == 0) ? 1 - (prop[2] - prop_i[1]) : 1 - (prop_i[1] - prop[2]);
       // gW = (jx == 0) ? prop_i[1] - prop[2] : prop[2] - prop_i[1];
 
       // -- compute direction --
-      bool left0 = (prop_i[0]-prop[1]) < 0;
-      bool right0 = (prop_i[0]-prop[1]) > 0;
-      bool left1 = (prop_i[1]-prop[2]) < 0;
-      bool right1 = (prop_i[1]-prop[2]) > 0;
-      // bool left0 = ix == 0;
-      // bool right0 = ix == 1;
-      // bool left1 = jx == 0;
-      // bool right1 = jx == 1;
+      // bool left0 = (prop_i[0]-prop[1]) < 0;
+      // bool right0 = (prop_i[0]-prop[1]) > 0;
+      // bool left1 = (prop_i[1]-prop[2]) < 0;
+      // bool right1 = (prop_i[1]-prop[2]) > 0;
+      bool left0 = ix == 0;
+      bool right0 = ix == 1;
+      bool left1 = jx == 0;
+      bool right1 = jx == 1;
+
+      // -- check bounds --
+      if ((not check_interval(prop_i[0],0,H)) or (not check_interval(prop_i[1],0,W))){
+        continue;
+      }
+      // prop_i[1] = bounds(prop_i[1],H);
+      // prop_i[2] = bounds(prop_i[2],W);
+
+      // // -- check bounds --
+      // int sH_i = check_interval(prop_i[0],0,H) ? 1 : -1;
+      // int sW_i = check_interval(prop_i[1],0,W) ? 1 : -1;
+
+      // // -- init wrap --
+      // prop_i[0] = bounds(prop_i[0],H);
+      // prop_i[1] = bounds(prop_i[1],W);
+      
+      // // -- read --
+      // vW = sW_i*flow[0][prop_i[0]][prop_i[1]];
+      // vH = sH_i*flow[1][prop_i[0]][prop_i[1]];
 
       // -- zero out edge --
       // any_zero[0] = (not(left0) && not(right0)) or any_zero[0];
@@ -185,7 +215,10 @@ void update_weights(scalar_t dAdF0[2], scalar_t dAdF1[2],
   // }
 
   // -- reset or accumulate --
+  // prop[1] = prop[1]+eps1;
+  // prop[2] = prop[2]+eps2;
     
+
   // -- assign --
   scalar_t _dAdF0[2];
   scalar_t _dAdF1[2];

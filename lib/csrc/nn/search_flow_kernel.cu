@@ -229,7 +229,11 @@ __global__ void search_flow_backward_kernel(
         dAdF0[1] = 0;
         dAdF1[0] = 0;
         dAdF1[1] = 1;
+
       }else{
+
+
+
 
         // -- update proposed location --
         prop[1] = __int2float_rn(ref[1]) + \
@@ -239,6 +243,7 @@ __global__ void search_flow_backward_kernel(
 
         // -- update weights --
         update_weights(dAdF0,dAdF1,prop,H,W,tx,flow[t_flow+t_inc*tx]);
+
       }
 
       // -- assign to each of the 4 interpolated flow values --
