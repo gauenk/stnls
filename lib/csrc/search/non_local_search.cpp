@@ -20,18 +20,25 @@ void non_local_search_bilin2d_forward_cuda(
     int dilation, int pt, bool reflect_bounds,
     bool full_ws, int patch_offset, int dist_type);
 
-void non_local_search_int_backward_cuda(
+void non_local_search_int_vid_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
     int ps, int pt, int stride0, int dilation,
     bool reflect_bounds, int patch_offset, int dist_type);
 
-void non_local_search_bilin2d_backward_cuda(
-    torch::Tensor grad_vid0, torch::Tensor grad_vid1,// torch::Tensor grad_flows,
-    const torch::Tensor vid0, const torch::Tensor vid1,// const torch::Tensor flows,
+void non_local_search_bilin2d_vid_backward_cuda(
+    torch::Tensor grad_vid0, torch::Tensor grad_vid1,
+    const torch::Tensor vid0, const torch::Tensor vid1,
+    const torch::Tensor grad_dists, const torch::Tensor inds,
+    int wt, int ps, int pt, int stride0, int dilation,
+    bool reflect_bounds, int patch_offset, int dist_type);
+
+void non_local_search_bilin2d_vidflows_backward_cuda(
+    torch::Tensor grad_vid0, torch::Tensor grad_vid1, torch::Tensor grad_flows,
+    const torch::Tensor vid0, const torch::Tensor vid1, const torch::Tensor flows,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
-    const torch::Tensor inds,
+    const torch::Tensor dists, const torch::Tensor inds,
     int wt, int ps, int pt, int stride0, int dilation,
     bool reflect_bounds, int patch_offset, int dist_type);
 
@@ -73,7 +80,7 @@ void non_local_search_bilin2d_forward(
                                         reflect_bounds, full_ws, patch_offset, dist_type);
 }
 
-void non_local_search_int_backward(
+void non_local_search_int_vid_backward(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
@@ -86,17 +93,16 @@ void non_local_search_int_backward(
   CHECK_INPUT(vid1);
   CHECK_INPUT(grad_dists);
   CHECK_INPUT(inds);
-  non_local_search_int_backward_cuda(grad_vid0, grad_vid1, vid0, vid1,
-                                     grad_dists, inds, ps, pt, stride0, dilation,
-                                     reflect_bounds, patch_offset, dist_type);
+  non_local_search_int_vid_backward_cuda(grad_vid0, grad_vid1, vid0, vid1,
+                                         grad_dists, inds, ps, pt, stride0, dilation,
+                                         reflect_bounds, patch_offset, dist_type);
 
 }
 
-void non_local_search_bilin2d_backward(
+void non_local_search_bilin2d_vid_backward(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     const torch::Tensor vid0, const torch::Tensor vid1,
-    const torch::Tensor grad_dists, const torch::Tensor grad_inds,
-    const torch::Tensor inds,
+    const torch::Tensor grad_dists, const torch::Tensor inds,
     int wt, int ps, int pt, int stride0, int dilation,
     bool reflect_bounds, int patch_offset, int dist_type) {
   CHECK_INPUT(grad_vid0);
@@ -104,33 +110,39 @@ void non_local_search_bilin2d_backward(
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
   CHECK_INPUT(grad_dists);
-  CHECK_INPUT(grad_inds);
   CHECK_INPUT(inds);
-  non_local_search_bilin2d_backward_cuda(grad_vid0, grad_vid1,
-                                         vid0, vid1, grad_dists, grad_inds, inds,
-                                         wt, ps, pt, stride0, dilation,
-                                         reflect_bounds, patch_offset, dist_type);
+  non_local_search_bilin2d_vid_backward_cuda(grad_vid0, grad_vid1,
+                                             vid0, vid1, grad_dists, inds,
+                                             wt, ps, pt, stride0, dilation,
+                                             reflect_bounds, patch_offset, dist_type);
 }
 
-// void non_local_search_flow_backward(
-//     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
-//     const torch::Tensor vid0, const torch::Tensor vid1,
-//     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
-//     const torch::Tensor inds,
-//     int wt, int ps, int pt, int stride0, int dilation,
-//     bool reflect_bounds, int patch_offset, int dist_type) {
-//   CHECK_INPUT(grad_vid0);
-//   CHECK_INPUT(grad_vid1);
-//   CHECK_INPUT(vid0);
-//   CHECK_INPUT(vid1);
-//   CHECK_INPUT(grad_dists);
-//   CHECK_INPUT(grad_inds);
-//   CHECK_INPUT(inds);
-//   non_local_search_flow_backward_cuda(grad_vid0, grad_vid1,
-//                                       vid0, vid1, grad_dists, grad_inds, inds,
-//                                       wt, ps, pt, stride0, dilation,
-//                                       reflect_bounds, patch_offset, dist_type);
-// }
+void non_local_search_bilin2d_vidflows_backward(
+    torch::Tensor grad_vid0, torch::Tensor grad_vid1, torch::Tensor grad_flows,
+    const torch::Tensor vid0, const torch::Tensor vid1, const torch::Tensor flows,
+    const torch::Tensor grad_dists, const torch::Tensor grad_inds,
+    const torch::Tensor dists, const torch::Tensor inds,
+    int wt, int ps, int pt, int stride0, int dilation,
+    bool reflect_bounds, int patch_offset, int dist_type) {
+  CHECK_INPUT(grad_vid0);
+  CHECK_INPUT(grad_vid1);
+  CHECK_INPUT(grad_flows);
+  CHECK_INPUT(vid0);
+  CHECK_INPUT(vid1);
+  CHECK_INPUT(flows);
+  CHECK_INPUT(grad_dists);
+  CHECK_INPUT(grad_inds);
+  CHECK_INPUT(dists);
+  CHECK_INPUT(inds);
+  non_local_search_bilin2d_vidflows_backward_cuda(grad_vid0, grad_vid1, grad_flows,
+                                                  vid0, vid1, flows,
+                                                  grad_dists, grad_inds, dists, inds,
+                                                  wt, ps, pt, stride0, dilation,
+                                                  reflect_bounds, patch_offset,
+                                                  dist_type);
+}
+
+
 
 
 // python bindings
@@ -139,10 +151,15 @@ void init_non_local_search(py::module &m){
         "Search Forward with Heads (CUDA)");
   m.def("non_local_search_bilin2d_forward", &non_local_search_bilin2d_forward,
         "Search Forward with Heads (CUDA)");
-  m.def("non_local_search_int_backward", &non_local_search_int_backward,
-        "Search Backward (Vid0,Vid1 with int indexing)");
-  m.def("non_local_search_bilin2d_backward", &non_local_search_bilin2d_backward,
-        "Search Backward (Vid0,Vid1 with float indexing)");
+  m.def("non_local_search_int_vid_backward",
+        &non_local_search_int_vid_backward,
+        "Search Backward (Vid0,Vid1)");
+  m.def("non_local_search_bilin2d_vid_backward",
+        &non_local_search_bilin2d_vid_backward,
+        "Search Backward (Vid0,Vid1)");
+  m.def("non_local_search_bilin2d_vidflows_backward",
+        &non_local_search_bilin2d_vidflows_backward,
+        "Search Backward (Vid0,Vid1,Flow)");
   // m.def("non_local_search_flow_backward", &non_local_search_flow_backward,
   //       "Search Backward (Flows)");
 

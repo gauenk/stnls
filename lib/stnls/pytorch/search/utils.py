@@ -33,14 +33,14 @@ def allocate_vid(vid_shape,device):
     vid = th.zeros(vid_shape,device=device,dtype=th.float32)
     return vid
 
-def get_ctx_flows(itype,flows):
-    if itype == "int":
-        device = flows.device
-        dtype = flows.dtype
-        flows = th.zeros((1,)*7,device=device,dtype=dtype)
-        return flows
+def get_ctx_shell(tensor,use_shell):
+    if use_shell:
+        device = tensor.device
+        dtype = tensor.dtype
+        tensor = th.zeros((1,)*tensor.ndim,device=device,dtype=dtype)
+        return tensor
     else:
-        return flows
+        return tensor
 
 
 def get_ctx_flows_v0(itype,fflow,bflow):
@@ -87,6 +87,15 @@ def get_itype(itype_str):
         raise ValueError(f"Uknown itype [{itype_str}]")
 
 def get_inds(inds,itype):
+    inds = inds.contiguous()
+    if itype == "int" and th.is_floating_point(inds):
+        return inds.round().int()
+    elif itype == "float" and not(th.is_floating_point(inds)):
+        return inds.float()
+    else:
+        return inds
+
+def get_dists(inds,itype):
     inds = inds.contiguous()
     if itype == "int" and th.is_floating_point(inds):
         return inds.round().int()

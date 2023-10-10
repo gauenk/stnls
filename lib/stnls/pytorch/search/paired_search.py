@@ -15,7 +15,7 @@ from stnls.utils import extract_pairs
 
 # -- local --
 from .utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
-from .utils import get_ctx_flows,ensure_flow_shape
+from .utils import get_ctx_shell,ensure_flow_shape
 from .shared import manage_self
 from .paired_bwd_impl import paired_backward
 from .batching_utils import run_batched,batching_info
@@ -165,7 +165,7 @@ class PairedSearchFunction(th.autograd.Function):
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
-        flow = get_ctx_flows(itype_bwd,flow)
+        flow = get_ctx_shell(flows,itype_bwd=="int")
         ctx.save_for_backward(inds,frame0,frame1,flow)
         if itype_bwd == "int":
             ctx.mark_non_differentiable(inds)

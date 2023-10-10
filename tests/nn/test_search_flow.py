@@ -30,8 +30,8 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"b":[1],"t":[7],"h":[128],"w":[128],"seed":[123],
-                  "wt":[3],"stride0":[1]}
+    test_lists = {"b":[1],"t":[10],"h":[128],"w":[128],"seed":[123],
+                  "wt":[4],"stride0":[1]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -160,8 +160,11 @@ def test_bwd(seed,b,t,h,w,wt,stride0):
     # fflow[0,1,0,1,1] = .1
     # fflow = th.round(th.clamp(th.randn_like(zflow),1e-3,1e-2),decimals=4)
     # bflow = th.round(th.clamp(th.randn_like(zflow),1e-3,1e-2),decimals=4)
-    fflow = -th.round(th.clamp(th.randn_like(zflow),1e-3,1e-2),decimals=4)
-    bflow = -th.round(th.clamp(th.randn_like(zflow),1e-3,1e-2),decimals=4)
+    fflow = th.round(th.clamp(th.rand_like(zflow)*1e-2,1e-4,1e-2),decimals=6)
+    bflow = th.round(th.clamp(th.rand_like(zflow)*1e-2,1e-4,1e-2),decimals=6)
+
+    # fflow = -th.round(th.clamp(th.randn_like(zflow),1e-3,1e-2),decimals=4)
+    # bflow = -th.round(th.clamp(th.randn_like(zflow),1e-3,1e-2),decimals=4)
 
     # # fflow = th.ones_like(fflow)
     # # fflow[...,:5,:5] = .1
@@ -186,7 +189,7 @@ def test_bwd(seed,b,t,h,w,wt,stride0):
     bflow_te = bflow.clone().requires_grad_(True)
 
     # -- accumulate --
-    aflows_gt = stnls.nn.accumulate_flow(fflow_gt,bflow_gt,fwd_mode="stnls")
+    aflows_gt = stnls.nn.accumulate_flow(fflow_gt,bflow_gt,fwd_mode="pytorch")
     extract = stnls.nn.extract_search_from_accumulated
     flows_gt = extract(aflows_gt.fflow,aflows_gt.bflow,wt,stride0)
     # aflows_gt = stnls.nn.accumulate_flow(fflow_gt,bflow_gt,fwd_mode="pytorch")

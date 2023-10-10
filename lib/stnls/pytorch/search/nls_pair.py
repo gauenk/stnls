@@ -22,7 +22,7 @@ from stnls.utils import extract_pairs
 
 # -- local --
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
-from .utils import get_ctx_flows
+from .utils import get_ctx_shell
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
 from .batching_utils import run_batched,batching_info
@@ -170,7 +170,8 @@ class NLSPairFunction(th.autograd.Function):
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
-        fflow,bflow = get_ctx_flows(itype_bwd,fflow,bflow)
+        fflow = get_ctx_shell(fflow,itype_bwd=="int")
+        bflow = get_ctx_shell(bflow,itype_bwd=="int")
         ctx.save_for_backward(inds,vid0,vid1,fflow,bflow)
         if itype_bwd == "int":
             ctx.mark_non_differentiable(inds)

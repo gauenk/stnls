@@ -15,7 +15,7 @@ from stnls.utils import extract_pairs
 
 # -- local --
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
-from .utils import get_ctx_flows,ensure_flow_shape,shape_flows
+from .utils import get_ctx_shell,ensure_flow_shape,shape_flows
 from .shared import manage_self
 from .nls_bwd_impl import nls_backward
 
@@ -57,6 +57,7 @@ def nls_forward(vid0, vid1, flows,
 
     # -- forward --
     if itype == "int":
+        flows = flows.int()
         fwd_fxn = stnls_cuda.non_local_search_int_forward
         stride1 = max(1,int(stride1))
         # flows = flows.int()
@@ -151,8 +152,9 @@ class NonLocalSearchFunction(th.autograd.Function):
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
-        flows = get_ctx_flows(itype,flows)
-        ctx.save_for_backward(inds,vid0,vid1,flows)
+        flows =  get_ctx_shell(flows,itype=="int")
+        dists_ctx = get_ctx_shell(dists,itype=="int")
+        ctx.save_for_backward(dists_ctx,inds,vid0,vid1,flows)
         if itype == "int":
             ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape

@@ -118,9 +118,6 @@ __global__ void non_local_search_int_forward_kernel(
         auto flows_t = flows[ibatch][ihead_f][ref_patch[0]][st_i-st_offset];
         frame_anchor[0] = ref_patch[1] + flows_t[1][n_hi][n_wi];
         frame_anchor[1] = ref_patch[2] + flows_t[0][n_hi][n_wi];
-        // auto flows_t = flows[ibatch][ihead_f][ref_patch[0]][0];
-        // frame_anchor[0] = ref_patch[1] + flows_t[1][0][0];
-        // frame_anchor[1] = ref_patch[2] + flows_t[0][0][0];
       }else{
         frame_anchor[0] = ref_patch[1];
         frame_anchor[1] = ref_patch[2];
@@ -262,25 +259,28 @@ void non_local_search_int_forward_cuda(
 ****************************/
 
 template <typename scalar_t, int DIST_TYPE>
-__global__ void non_local_search_int_backward_kernel(
+__global__ void non_local_search_int_vid_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid0,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid1,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_dists,
-    const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_dists,
+    const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
     int ps, int pt, int stride0, int dilation, bool reflect_bounds,
-    int patch_offset, int nH0, int nW0, int nHW0, int ftrs_per_thread) {
+    int patch_offset, int ftrs_per_thread) {
 
   // -- shape --
-  int nbatch = grad_dists.size(0);
-  int Q = grad_dists.size(2);
-  int K =  grad_dists.size(3);
+  int nbatch = vid0.size(0);
   int HD = vid0.size(1);
   int T = vid0.size(2);
   int F = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
+  int nH0 = inds.size(3);
+  int nW0 = inds.size(4);
+  int nHW0 = nH0*nW0;
+  int K =  inds.size(5);
+  int Q = T*nH0*nW0;
 
   // -- fwd decl registers --
   int ref_patch[3];
@@ -291,7 +291,7 @@ __global__ void non_local_search_int_backward_kernel(
   bool valid_prop[4];
   int qindex,qindex_tmp;
   bool valid;
-  scalar_t weight,pix0,pix1,pix;
+  scalar_t dist,weight,pix0,pix1,pix;
   int iftr;
 
   // -- location to fill --
@@ -312,12 +312,15 @@ __global__ void non_local_search_int_backward_kernel(
 
     // -- pixel location from query index --
     get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
+    int ti = ref_patch[0];
+    int nh = ref_patch[1]/stride0;
+    int nw = ref_patch[2]/stride0;
 
     // -- proposed location --
-    prop_patch[0] = inds[ibatch][ihead][i0][i1][0];
-    prop_patch[1] = inds[ibatch][ihead][i0][i1][1];
-    prop_patch[2] = inds[ibatch][ihead][i0][i1][2];
-    weight = grad_dists[ibatch][ihead][i0][i1];
+    prop_patch[0] = inds[ibatch][ihead][ti][nh][nw][i1][0];
+    prop_patch[1] = inds[ibatch][ihead][ti][nh][nw][i1][1];
+    prop_patch[2] = inds[ibatch][ihead][ti][nh][nw][i1][2];
+    weight = grad_dists[ibatch][ihead][ti][nh][nw][i1];
 
     // -- update patch --
     update_bwd_patch_int<scalar_t,DIST_TYPE>(
@@ -332,7 +335,7 @@ __global__ void non_local_search_int_backward_kernel(
   }
 }
 
-void non_local_search_int_backward_cuda(
+void non_local_search_int_vid_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
@@ -346,27 +349,22 @@ void non_local_search_int_backward_cuda(
   int F = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
-  int nqueries = inds.size(2);
-  int K = inds.size(3);
   int BHD = B*HD;
 
   // -- num --
-  int nH = (H-1)/stride0+1;
-  int nW = (W-1)/stride0+1;
-  int nHW = nH * nW;
+  int nH = inds.size(3);
+  int nW = inds.size(4);
+  int Q = T*nH*nW;
   assert(pt == 1);
+  int K = inds.size(5);
 
   // -- launch parameters --
-  int nbatch = grad_dists.size(0);
-  int nheads = grad_dists.size(1);
-  int nq = grad_dists.size(2);
-  int k = grad_dists.size(3);
-  int ftr_threads = min(15,F);
-  dim3 threadsPerBlock(10,4,ftr_threads);
-  dim3 blocksPerGrid(1, 1, nheads*nbatch);
-  blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
-  blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
+  int ftr_threads = min(1,F);
   int ftrs_per_thread = (F-1)/ftr_threads+1;
+  dim3 threadsPerBlock(10,4,ftr_threads);
+  dim3 blocksPerGrid(1, 1, B*HD);
+  blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
+  blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));
 
   // -- shared --
   // int psHalf = ps/2;
@@ -387,31 +385,32 @@ void non_local_search_int_backward_cuda(
   // fprintf(stdout,"query_nthreads,neigh_nthreads: %d,%d\n",
   //         query_nthreads,neigh_nthreads);
 
-
   // -- launch kernel --
   if (dist_type == 0){ // prod
     AT_DISPATCH_FLOATING_TYPES(vid0.type(),"non_local_search_int_backward_kernel", ([&] {
-    non_local_search_int_backward_kernel<scalar_t,0><<<blocksPerGrid, threadsPerBlock>>>(
+    non_local_search_int_vid_backward_kernel<scalar_t,0>\
+      <<<blocksPerGrid, threadsPerBlock>>>(
           grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
           ps, pt, stride0, dilation, reflect_bounds, patch_offset,
-          nH, nW, nHW, ftrs_per_thread);
+          ftrs_per_thread);
     }));
   }else if (dist_type == 1){ // l2
     AT_DISPATCH_FLOATING_TYPES(vid0.type(),"non_local_search_int_backward_kernel", ([&] {
-    non_local_search_int_backward_kernel<scalar_t,1><<<blocksPerGrid, threadsPerBlock>>>(
+    non_local_search_int_vid_backward_kernel<scalar_t,1>\
+      <<<blocksPerGrid, threadsPerBlock>>>(
           grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          grad_dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+          grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
           ps, pt, stride0, dilation, reflect_bounds, patch_offset,
-          nH, nW, nHW, ftrs_per_thread);
+          ftrs_per_thread);
     }));
   }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }

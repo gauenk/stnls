@@ -1,6 +1,7 @@
 
 # -- python --
 import sys
+from dev_basics.utils import vid_io
 
 # -- data mgnmt --
 from pathlib import Path
@@ -41,22 +42,22 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[7],"stride0":[4],"stride1":[1],
-                  "dilation":[1],"wt":[0],"ws":[3],
-                  "k":[-1],"exact":[False],"nheads":[1],
-                  "anchor_self":[False],"seed":[0],"dist_type":["prod"],
-                  "k_agg":[-1]}
+    test_lists = {"ps":[1],"stride0":[4],"stride1":[1],
+                  "dilation":[1],"wt":[1],"ws":[3],
+                  "k":[-1],"nheads":[1],
+                  "self_action":[None],"seed":[0],"dist_type":["prod"],
+                  "k_agg":[-1],}
     # test_lists = {"ps":[7,11],"stride0":[4],"stride1":[1,8],
     #               "dilation":[1,2],"wt":[2],"ws":[3,7],
-    #               "k":[-1,10],"exact":[True],"nheads":[2],
-    #               "seed":[0,1,3],"anchor_self":[False],"dist_type":["prod"]}
+    #               "k":[-1,10],"nheads":[2],
+    #               "seed":[0,1,3],"dist_type":["prod"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
 
 def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
-                    nheads,anchor_self,exact,dist_type,seed):
+                    nheads,self_action,dist_type,seed):
     """
 
     Test the CUDA code with torch code
@@ -83,7 +84,6 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     use_k = k > 0
     use_adj = False
     adj = 0
-    off_H0,off_W0,off_H1,off_W1 = 0,0,0,0
     full_ws = True
 
     # -- load data --
@@ -117,16 +117,16 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,anchor_self=anchor_self,
-                                   use_adj=use_adj,normalize_bwd=False,
-                                   itype_fwd="float")
+                                   full_ws=full_ws,use_adj=use_adj,
+                                   self_action=self_action,
+                                   normalize_bwd=False,itype="float")
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,anchor_self=anchor_self,
-                                   use_adj=use_adj,normalize_bwd=False,
-                                   itype_fwd="int")
+                                   full_ws=full_ws,use_adj=use_adj,
+                                   self_action=self_action,
+                                   normalize_bwd=False,itype="int")
 
     # -- test api --
     # print(stnls.search.nls(vid,vid,flows.fflow,flows.bflow,
@@ -140,19 +140,21 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     dists_gt,inds_gt = search_gt(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
 
+    # print(th.stack([dists_te.reshape(-1),dists_gt.reshape(-1)],-1))
+
     # -- viz --
     # print(th.where(dists_te < -1000))
     # print(dists_te[th.where(dists_te < -1000)])
     # print(th.where(dists_gt < -1000))
     # print(dists_te[th.where(dists_gt < -1000)])
-    print(flows.fflow[0,0,:,31,0])
-    print(flows.fflow[0,0,:,0,31])
     # print(flows.fflow[0,0,:,31,0])
-    print("-"*30)
-    print(dists_te[1,0,188])
-    print(dists_gt[1,0,188])
-    print(inds_te[1,0,188])
-    print(inds_gt[1,0,188])
+    # print(flows.fflow[0,0,:,0,31])
+    # # print(flows.fflow[0,0,:,31,0])
+    # print("-"*30)
+    # print(dists_te[1,0,188])
+    # print(dists_gt[1,0,188])
+    # print(inds_te[1,0,188])
+    # print(inds_gt[1,0,188])
     # print("-"*30)
     # print("-"*30)
     # print(dists_te[0,0,-1])
@@ -197,7 +199,7 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
 
     # -- compare --
-    args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
+    args0 = th.where(th.logical_not((dists_gt.abs()>1e30))) # remove all inf
     diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
     args1 = th.where(diff > 1e-3)
     print(th.where(th.isnan(diff)))
@@ -207,7 +209,6 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     for i in range(3):
         inds.append(inds_gt[...,i][th.where(th.isnan(diff))])
     inds = th.stack(inds,-1)
-    print(inds)
     diff = diff[args0]
 
     # -- viz --
@@ -230,8 +231,8 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     assert max_error < tol
 
 
-def test_bwd_vs_int(ws,wt,k,ps,stride0,stride1,k_agg,
-                    dilation,nheads,exact,dist_type,seed):
+def test_bwd_vid(ws,wt,k,ps,stride0,stride1,k_agg,
+                 dilation,nheads,self_action,dist_type,seed):
     """
 
     Test the CUDA code with torch code
@@ -255,7 +256,7 @@ def test_bwd_vs_int(ws,wt,k,ps,stride0,stride1,k_agg,
     reflect_bounds = True
     use_k = k > 0
     use_adj = False
-    anchor_self = False
+    full_ws = True
 
     # -- load data --
     vid = get_data(dnames,ext)
@@ -283,16 +284,14 @@ def test_bwd_vs_int(ws,wt,k,ps,stride0,stride1,k_agg,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=False,full_ws_time=False,
-                                   use_adj=use_adj,anchor_self=anchor_self,
-                                   itype_fwd="float",itype_bwd="float")
+                                   full_ws=full_ws,use_adj=use_adj,
+                                   self_action=self_action,itype="float")
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=False,full_ws_time=False,
-                                   use_adj=use_adj,anchor_self=anchor_self,
-                                   itype_fwd="int",itype_bwd="int")
+                                   full_ws=full_ws,use_adj=use_adj,
+                                   self_action=self_action,itype="int")
 
     # -- [testing] search --
     # print("vid.shape: ",vid.shape)
@@ -346,6 +345,7 @@ def test_bwd_vs_int(ws,wt,k,ps,stride0,stride1,k_agg,
     th.autograd.backward(dists_gt,dists_grad)
 
     # -- view --
+    # print(vid_gt0.grad[0,0,:3,:3])
     # print(vid_te0.grad[0,0,:3,:3])
     # print(vid_te1.grad[0,0,:3,:3])
 
@@ -354,7 +354,7 @@ def test_bwd_vs_int(ws,wt,k,ps,stride0,stride1,k_agg,
     _grads_gt = [vid_gt0.grad,vid_gt1.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
 
-        # # -- viz --
+        # -- viz --
         # print(grads_gt[0,0,0,:3,:3])
         # print(grads_te[0,0,0,:3,:3])
         # print((grads_gt/grads_te)[0,0,0,:3,:3])
@@ -411,8 +411,29 @@ def test_bwd_vs_int(ws,wt,k,ps,stride0,stride1,k_agg,
         assert error < tol
 
 
+    # -- prep gradient check --
+    # print("Running grad check.")
+    vid = vid[...,:3,::2,::2]
+    B,T,F,H,W = vid.shape
+    vid0 = th.rand_like(vid).requires_grad_(True)
+    vid1 = th.rand_like(vid).requires_grad_(True)
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    W_t = 2*wt
+    flows = th.ones((B,1,T,W_t,2,nH,nW)).cuda()/2.
+    flows = th.rand_like(flows)/2.+0.1 # away from ints
+
+    # -- run gradient check
+    search_gt_vid0 = lambda vid0: search_gt(vid0,vid1,flows)[0]
+    th.autograd.gradcheck(search_gt_vid0, vid0, eps=1e-4,
+                          atol=1e-2, nondet_tol=1e-7, raise_exception=True)
+    search_gt_vid1 = lambda vid1: search_gt(vid0,vid1,flows)[0]
+    th.autograd.gradcheck(search_gt_vid1, vid1, eps=1e-4,
+                          atol=1e-2, nondet_tol=1e-7, raise_exception=True)
+
+
+
 def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
-                   dilation,nheads,exact,dist_type,seed):
+                   dilation,nheads,self_action,dist_type,seed):
     """
 
     Test the CUDA code with torch code
@@ -428,6 +449,7 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
     wt = 1 if wt == 0 else wt # skip 0
+    set_seed(seed)
 
     # -- init vars --
     device = "cuda:0"
@@ -436,172 +458,70 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
     reflect_bounds = True
     use_k = k > 0
     use_adj = False
-    anchor_self = False
 
-    # -- load data --
-    vid = get_data(dnames,ext)
+    # -- load video --
+    vid = get_data(dnames,ext)[...,:1,::2,::2]
+    vid0,vid1 = vid.clone(),vid.flip(-1).clone()
+    vid0 = th.rand_like(vid)-0.5
+    vid1 = th.rand_like(vid)-0.5
+    # vid0 = th.ones_like(vid)
+    # vid0 = th.zeros_like(vid)
+    # vid1 = th.ones_like(vid)
+    # vid1 = th.zeros_like(vid)
+    vid0 = vid0.round(decimals=3)
+    vid1 = vid1.round(decimals=3)
+    B,T,F,H,W = vid0.shape
 
-    # -- compute flow --
-    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    # flows.fflow = 10*th.zeros_like(flows.fflow)
-    # flows.bflow = 10*th.zeros_like(flows.bflow)
-    # flows.fflow = 10*th.ones_like(flows.fflow)
-    # flows.bflow = 10*th.ones_like(flows.bflow)
-    flows.fflow = 10*th.randn_like(flows.fflow)
-    flows.bflow = 10*th.randn_like(flows.bflow)
-
-    # -- allow grads --
-    vid_te0,vid_te1 = vid.clone(),vid.clone()
-    fflow_te = flows.fflow.clone()
-    bflow_te = flows.bflow.clone()
-    fflow_te.requires_grad_(True)
-    bflow_te.requires_grad_(True)
-    vid_te0.requires_grad_(True)
-    vid_te1.requires_grad_(True)
-    vid_gt0,vid_gt1 = vid.clone(),vid.clone()
-    fflow_gt = flows.fflow.clone()
-    bflow_gt = flows.bflow.clone()
-    fflow_gt.requires_grad_(True)
-    bflow_gt.requires_grad_(True)
-    vid_gt0.requires_grad_(True)
-    vid_gt1.requires_grad_(True)
+    # -- load flows --
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    W_t = 2*wt
+    flows = th.ones((B,1,T,W_t,2,nH,nW)).cuda()/2.
+    # flows = th.rand_like(flows)/2.+0.2 # away from ints
+    flows = th.rand_like(flows)/2.+0.2 # away from ints
+    flows = flows.round(decimals=3)
+    # print("flows[min,max]: ",flows.min().item(),flows.max().item())
+    flows.requires_grad_(True)
 
     # -- exec fold fxns --
     sch = stnls.search
-    search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                   dist_type=dist_type,
-                                   dilation=dil,stride0=stride0, stride1=stride1,
-                                   reflect_bounds=reflect_bounds,
-                                   full_ws=False,full_ws_time=False,
-                                   use_adj=use_adj,anchor_self=anchor_self,
-                                   itype_fwd="float",itype_bwd="float")
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=False,full_ws_time=False,
-                                   use_adj=use_adj,anchor_self=anchor_self,
-                                   itype_fwd="int",itype_bwd="int")
+                                   full_ws=False,use_adj=use_adj,
+                                   self_action=self_action,itype="float")
 
-    # -- [testing] search --
-    # print("vid.shape: ",vid.shape)
-    dists_te,inds_te = search_te(vid_te0,vid_te1,fflow_te,bflow_te)
-    th.cuda.synchronize()
+    # -- gradient check --
+    search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[0]
+    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-3,
+                          atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
-    # -- [groundtruth] search --
-    dists_gt,inds_gt = search_gt(vid_gt0,vid_gt1,flows.fflow,flows.bflow)
-    th.cuda.synchronize()
-    # th.autograd.gradcheck
+    # -- gradient check --
+    # from torch.autograd.gradcheck import get_numerical_jacobian,get_analytical_jacobian
+    # from torch.autograd.gradcheck import _get_numerical_jacobian
+    # from torch.autograd.gradcheck import _check_analytical_jacobian_attributes
+    # num = _get_numerical_jacobian(search_gt_flows, (flows,),
+    #                               eps=1e-3, is_forward_ad=False)[0][0]
+    # out = search_gt_flows(flows)
+    # ana = _check_analytical_jacobian_attributes((flows,), out, 1e-7, False)[0]
+    # print(num.shape,ana.shape)
 
-    # -- viz --
-    # print(dists_te)
-    # print(dists_gt)
-    # print(dists_te[0,0,0])
-    # print(dists_gt[0,0,0])
-    # print(inds_te[0,0,0])
-    # print(inds_gt[0,0,0])
-    # print(dists_te.shape)
-    # print(dists_gt.shape)
-
-    # -- viz --
-    # diff = th.abs(dists_te - dists_gt).mean((-1,-2))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff")
-
-    # diff = th.abs(dists_te - dists_gt).mean((0,1))
-    # if diff.max() > 1e-5: diff /= diff.max()
-    # diff = repeat(diff,'h w -> 1 c h w',c=3)
-    # stnls.testing.data.save_burst(diff,SAVE_DIR,"nn2_diff_t")
-
-    # -- compare --
-    # args0 = th.where(th.logical_not(th.isinf(dists_gt))) # remove all inf
-    # diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
-    # args1 = th.where(diff>1-3)
-
-    # tol = 1e-5
-    # error = diff[args0].mean().item()
-    # if error > tol: print("error: ",error)
-    # assert error < tol
-
-    # tol = 1e-4
-    # max_error = diff[args0].max().item()
-    # if max_error > tol: print("max error: ",max_error)
-    # assert max_error < tol
-
-    # -- compute bwd --
-    # grad_dists = th.randn_like(dists_te)
-    # th.autograd.backward(dists_te,grad_dists)
-    # th.autograd.backward(dists_gt,grad_dists)
-    grad_inds = th.randn_like(inds_te)
-    th.autograd.backward(inds_te,grad_inds)
-
-    # -- view --
-    # print(vid_te0.grad[0,0,:3,:3])
-    # print(vid_te1.grad[0,0,:3,:3])
-
-    # -- for both grads --
-    _grads_te = [fflow_te.grad,bflow_te.grad]
-    _grads_gt = [fflow_gt.grad,bflow_gt.grad]
-    _grads_gt = [None,None]
-    for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
-
-        print(grads_te)
-        exit()
-        # # -- viz --
-        # print(grads_gt[0,0,0,:3,:3])
-        # print(grads_te[0,0,0,:3,:3])
-        # print((grads_gt/grads_te)[0,0,0,:3,:3])
-        # print("-"*30)
-        # print(grads_gt[0,0,0,-3:,-3:])
-        # print(grads_te[0,0,0,-3:,-3:])
-        # print((grads_gt/grads_te)[0,0,0,-3:,-3:])
-
-        # -- viz [the error map may look weird] --
-        # print(grads_te.shape,grads_gt.shape)
-        # print("-"*20)
-        # print(grads_te[0,0,-1,:10,:10])
-        # print(grads_gt[0,0,-1,:10,:10])
-        # print((grads_te/grads_gt)[0,0,-1,:10,:10])
-        # print("-"*20)
-        # print(grads_te[0,0,-1,-10:,-10:])
-        # print(grads_gt[0,0,-1,-10:,-10:])
-        # print((grads_te/grads_gt)[0,0,-1,-10:,-10:])
-        # print(grads_te[0,0,-1,-3:,-3:])
-        # print(grads_gt[0,0,-1,-3:,-3:])
-        # print("-"*20)
-        # print(grads_te[0,0,-3:,-3:])
-        # print(grads_gt[0,0,-3:,-3:])
-        # print("-"*20)
-        # print(grads_te[0,0,10:13,10:13])
-        # print(grads_gt[0,0,10:13,10:13])
-        # print("-"*20)
-        # print(grads_te[0,0,:3,:3])
-        # print(grads_gt[0,0,:3,:3])
-        # print("-"*20)
-
-        # diff = th.abs(grads_te -grads_gt)/(th.abs(grads_gt)+1e-10)
-        # print(diff.max())
-        # diff /= diff.max()
-        # stnls.testing.data.save_burst(diff[:,[0],0],SAVE_DIR,"grad_diff_0_%d" % exact)
-        # stnls.testing.data.save_burst(diff[:,[1],0],SAVE_DIR,"grad_diff_1_%d" % exact)
-        # stnls.testing.data.save_burst(diff[:,[2],0],SAVE_DIR,"grad_diff_2_%d" % exact)
-
-        # -- compare grads --
-        rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
-        rel_error_nz  = rel_error
-        args = th.where(th.abs(grads_gt)>1e-3)
-
-        tol = 1e-2
-        error = th.max(rel_error_nz[args]).item()
-        if error > tol: print("Max Error: ",error)
-        # print("Max Error: ",error)
-        assert error < tol
-
-        tol = 1e-3
-        error = th.mean(rel_error_nz[args]).item()
-        if error > tol: print("Mean Error: ",error)
-        # print("Mean Error: ",error)
-        assert error < tol
+    # diff = th.abs(num - ana)
+    # print(th.mean(diff))
+    # print(th.max(diff))
+    # print(th.min(diff))
+    # print(th.sum(1.*(diff > 1e-3)))
+    # print(num[0,7:20])
+    # print(ana[0,7:20])
+    # print(th.where(diff > 1e-3))
+    # print(num[th.where(diff > 1e-3)][100:110])
+    # print(ana[th.where(diff > 1e-3)][100:110])
+    # print(th.all(num[th.where(diff > 1e-2)] == 0))
+    # for i in range(100):
+    #     print("Num NZ @ row0: ",
+    #           th.sum(1.*(num[i].abs() > 0)).item(),
+    #           th.sum(1.*(ana[i].abs() > 0)).item())
+    # #     print("Num NZ @ col0: ",th.sum(1.*(num[:,i].abs() > 0)))
+    # print("[in/out]: ",flows.numel(),out.numel())
 
 

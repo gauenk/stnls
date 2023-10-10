@@ -737,3 +737,131 @@ void bilin2d_interpolate(scalar_t& pix, scalar_t hi, scalar_t wi, int H, int W,
   }
 
 }
+
+template<typename scalar_t>
+__device__ __forceinline__ 
+void bilin2d_assign(scalar_t val, scalar_t hi, scalar_t wi, int H, int W,
+     torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> tensor){
+
+  // -- init --
+  int h_interp,w_interp;
+  scalar_t w;
+
+  // -- interpolated assignment --
+  #pragma unroll
+  for (int ix=0;ix<2;ix++){
+    #pragma unroll
+    for (int jx=0;jx<2;jx++){
+
+      // -- interpolation weight --
+      h_interp = __float2int_rz(hi+ix);
+      w = max(0.,1-fabs(h_interp-hi));
+      w_interp = __float2int_rz(wi+jx);
+      w = w*max(0.,1-fabs(w_interp-wi));
+
+      // -- ensure legal bounds --
+      h_interp = bounds(h_interp,H);
+      w_interp = bounds(w_interp,W);
+
+      atomicAdd(&tensor[h_interp][w_interp],w*val);
+    }
+  }
+
+}
+
+
+            
+template<typename scalar_t>
+__device__ __forceinline__ 
+void update_dFlows(scalar_t* dFlows, scalar_t dDists,
+                   scalar_t hi, scalar_t wi, int H, int W,
+     const torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> vid1){
+
+  // -- init --
+  int h_interp,w_interp;
+  scalar_t gH,gW,pix;
+  int kx;
+
+  // -- interpolated assignment --
+  #pragma unroll
+  for (int ix=0;ix<2;ix++){
+    #pragma unroll
+    for (int jx=0;jx<2;jx++){
+
+      // -- interpolation weight --
+      h_interp = __float2int_rz(hi+ix);
+      gH = max(0.,1-fabs(h_interp-hi));
+      w_interp = __float2int_rz(wi+jx);
+      gW = max(0.,1-fabs(w_interp-wi));
+
+      // -- left or right --
+      bool left_H = ix == 0;
+      bool left_W = jx == 0;
+
+      // -- derived quantities --
+      gH = left_W ? -gH : gH;
+      gW = left_H ? -gW : gW;
+
+      // -- ensure legal bounds --
+      h_interp = bounds(h_interp,H);
+      w_interp = bounds(w_interp,W);
+
+      // -- read pixel --
+      pix = vid1[h_interp][w_interp];
+
+      // -- update --
+      kx = ix * 4 + jx * 2;
+      dFlows[kx] += gH*pix*dDists;
+      dFlows[kx+1] += gW*pix*dDists;
+
+    }
+  }
+
+}
+
+
+template<typename scalar_t>
+__device__ __forceinline__ 
+void bwd_flow_assign(scalar_t* acc_dFlows, int nh, int nw, int signW, int signH,
+     torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> gflows){
+
+  // -- init --
+  int h_interp,w_interp,kx;
+  scalar_t gH,gW;
+  scalar_t val0,val1;
+
+  // -- interpolated assignment --
+  #pragma unroll
+  for (int ix=0;ix<2;ix++){
+    #pragma unroll
+    for (int jx=0;jx<2;jx++){
+
+      // // -- interpolation weight --
+      // h_interp = __float2int_rz(hi+ix);
+      // gH = max(0.,1-fabs(h_interp-hi));
+      // w_interp = __float2int_rz(wi+jx);
+      // gW = max(0.,1-fabs(w_interp-wi));
+
+      // -- read --
+      kx = ix * 4 + jx * 2;
+      val0 = acc_dFlows[kx];
+      val1 = acc_dFlows[kx+1];
+
+      // // -- left or right --
+      // bool left_H = ix == 0;
+      // bool left_W = jx == 0;
+
+      // // -- derived quantities --
+      // gH = left_W ? -gH : gH;
+      // gW = left_H ? -gW : gW;
+
+      // -- update --
+      atomicAdd(&(gflows[0][nh][nw]),signW*val0);
+      atomicAdd(&(gflows[1][nh][nw]),signH*val1);
+      // atomicAdd(&(gflows[0][nh][nw]),gH*signW*val);
+      // atomicAdd(&(gflows[1][nh][nw]),gW*signH*val);
+
+    }
+  }
+
+}
