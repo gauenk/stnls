@@ -121,6 +121,8 @@ __global__ void non_local_search_bilin2d_forward_kernel(
         auto flows_t = flows[ibatch][ihead][ref_patch[0]][st_i-st_offset];
         frame_anchor[0] = ref_patch[1] + flows_t[1][n_hi][n_wi];
         frame_anchor[1] = ref_patch[2] + flows_t[0][n_hi][n_wi];
+        frame_anchor[0] = bounds(frame_anchor[0],H);
+        frame_anchor[1] = bounds(frame_anchor[1],W);
       }else{
         frame_anchor[0] = 1.*ref_patch[1];
         frame_anchor[1] = 1.*ref_patch[2];
@@ -509,9 +511,7 @@ __global__ void nls_bwd_vidflows_kernel(
       prop_patch[_idx] = inds[ibatch][ihead][ti][nh][nw][i1][_idx];
     }
     check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
-    // valid = valid_ref_patch && valid_prop_patch;
     if (not valid_prop_patch){ return; }
-
 
     // -- temporal index from frame difference --
     int t_max;
@@ -528,7 +528,6 @@ __global__ void nls_bwd_vidflows_kernel(
       acc_dFlows[_idx] = static_cast<scalar_t>(0);
     }
 
-
     // -- update vid0,vid1,flows --
     update_bwd_bilin2d_vidflows<scalar_t,DIST_TYPE>(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
@@ -541,14 +540,15 @@ __global__ void nls_bwd_vidflows_kernel(
                      valid_ref,valid_prop,valid,
                      T,H,W,pix0,pix1);
 
+
+
     // -- update grad_flows from grad_dists --
-    scalar_t hi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
-    scalar_t wi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
+    scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
+    scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
     int sH = ((hi >= 0) and (hi < H)) ? 1 : -1;
     int sW = ((wi >= 0) and (wi < W)) ? 1 : -1;
     bwd_flow_assign(acc_dFlows,nh,nw,sH,sW,
                     grad_flows[ibatch][ihead_f][ref_patch[0]][si]);
-
 
     // -- update grad_flows from grad_inds --
     if (ftr_start == 0){

@@ -431,7 +431,6 @@ def test_bwd_vid(ws,wt,k,ps,stride0,stride1,k_agg,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 
-
 def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
                    dilation,nheads,self_action,dist_type,seed):
     """
@@ -453,11 +452,9 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
 
     # -- init vars --
     device = "cuda:0"
-    clean_flow = True
-    comp_flow = False
-    reflect_bounds = True
-    use_k = k > 0
+    reflect_bounds = False
     use_adj = False
+    full_ws = True
 
     # -- load video --
     vid = get_data(dnames,ext)[...,:1,::2,::2]
@@ -476,9 +473,11 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = 2*wt
     flows = th.ones((B,1,T,W_t,2,nH,nW)).cuda()/2.
+    flows = th.rand_like(flows)-0.5
     # flows = th.rand_like(flows)/2.+0.2 # away from ints
-    flows = th.rand_like(flows)/2.+0.2 # away from ints
-    flows = flows.round(decimals=3)
+    # flows = -flows.round(decimals=4)
+    # flows = th.rand_like(flows)/2.+4.2 # away from ints
+    # print(th.any(flows.abs()<1e-3))
     # print("flows[min,max]: ",flows.min().item(),flows.max().item())
     flows.requires_grad_(True)
 
@@ -488,7 +487,7 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=False,use_adj=use_adj,
+                                   full_ws=full_ws,use_adj=use_adj,
                                    self_action=self_action,itype="float")
 
     # -- gradient check --
@@ -496,7 +495,11 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
     th.autograd.gradcheck(search_gt_flows, flows, eps=1e-3,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
-    # -- gradient check --
+    search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[1]
+    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-3,
+                          atol=1e-2, nondet_tol=1e-7, raise_exception=True)
+
+    # # -- gradient check --
     # from torch.autograd.gradcheck import get_numerical_jacobian,get_analytical_jacobian
     # from torch.autograd.gradcheck import _get_numerical_jacobian
     # from torch.autograd.gradcheck import _check_analytical_jacobian_attributes
@@ -506,22 +509,24 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
     # ana = _check_analytical_jacobian_attributes((flows,), out, 1e-7, False)[0]
     # print(num.shape,ana.shape)
 
+    # args = th.where(num.abs()>0)
+    # print(num[args][:10])
+    # print(ana[args][:10])
+
     # diff = th.abs(num - ana)
     # print(th.mean(diff))
     # print(th.max(diff))
     # print(th.min(diff))
-    # print(th.sum(1.*(diff > 1e-3)))
-    # print(num[0,7:20])
-    # print(ana[0,7:20])
-    # print(th.where(diff > 1e-3))
-    # print(num[th.where(diff > 1e-3)][100:110])
-    # print(ana[th.where(diff > 1e-3)][100:110])
+    # print(th.sum(1.*(diff > 1e-2)))
+    # print(th.where(diff > 1e-2))
+    # print(num[th.where(diff > 1e-2)][100:110])
+    # print(ana[th.where(diff > 1e-2)][100:110])
     # print(th.all(num[th.where(diff > 1e-2)] == 0))
-    # for i in range(100):
-    #     print("Num NZ @ row0: ",
-    #           th.sum(1.*(num[i].abs() > 0)).item(),
-    #           th.sum(1.*(ana[i].abs() > 0)).item())
-    # #     print("Num NZ @ col0: ",th.sum(1.*(num[:,i].abs() > 0)))
-    # print("[in/out]: ",flows.numel(),out.numel())
+    # # for i in range(100):
+    # #     print("Num NZ @ row0: ",
+    # #           th.sum(1.*(num[i].abs() > 0)).item(),
+    # #           th.sum(1.*(ana[i].abs() > 0)).item())
+    # # #     print("Num NZ @ col0: ",th.sum(1.*(num[:,i].abs() > 0)))
+    # # print("[in/out]: ",flows.numel(),out.numel())
 
 

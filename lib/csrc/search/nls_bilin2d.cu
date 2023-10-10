@@ -299,7 +299,7 @@ void update_bwd_bilin2d_vidflows(
             if (DIST_TYPE == 0){ // prod
               dDists = weight * pix0;
             }else if(DIST_TYPE == 1){ // l2 norm
-              dDists = - dDists;
+              dDists = -dDists;
             }
             bilin2d_assign(dDists,prop[1],prop[2],H,W,grad_vid1[prop_i[0]][iftr]);
 
