@@ -21,22 +21,22 @@ def init(K,dim=1,anchor=False,descending=True,unqiue=False):
         return run(dists,inds,K,dim)
     return wrap
 
-def apply_topk(tensor,order):
+def apply_topk(tensor,order,dim):
 
     # -- squash --
     shape = list(tensor.shape)
-    tensor = dimN_dim2_dists(tensor,dim)
-    order = dimN_dim2_dists(order,dim)
+    tensor = dimN_dim2_dists(tensor,dim)[0]
+    order = dimN_dim2_dists(order,dim)[0]
 
     # -- exec --
     tensor_k = th.gather(tensor,1,order)
 
     # -- shape back --
-    shape[dim] = K
+    shape[dim] = order.shape[1]
     tensor = dim2_dimN_dists(tensor_k,shape,dim)
     return tensor
 
-def apply_topk_3d(tensor,order):
+def apply_topk_3d(tensor,order,dim):
 
     # -- squash --
     shape = list(tensor.shape)

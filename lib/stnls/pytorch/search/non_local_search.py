@@ -78,12 +78,12 @@ def nls_forward(vid0, vid1, flows,
     # -- fill nan --
     # fill_val = -th.inf if dist_type == "prod" else th.inf
     # dists = th.nan_to_num(dists,fill_val)
-    print(dists.shape)
+    # print(dists.shape)
 
     # -- manage self dists --
     anchor_self = self_action == "anchor"
     remove_self = self_action == "remove"
-    assert remove_self == False
+    # assert remove_self == False
     dists,inds = manage_self(dists,inds,anchor_self,
                              remove_self,0,stride0,H,W)
 

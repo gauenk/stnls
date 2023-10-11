@@ -413,11 +413,16 @@ __global__ void refinement_vidflows_backward_kernel(
     for (int _idx=0; _idx < 3; _idx++){
       prop_patch[_idx] = inds[ibatch][ihead][ti][nh][nw][ki][_idx];
     }
-    check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
-    if (not valid_prop_patch){ return; }
 
     // -- get kj from ki--
     int kj = kselect[ibatch][ihead][ti][nh][nw][ki];
+
+    // -- update grad_flows from grad_inds --
+    if (ftr_start == 0){
+      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][2]),iweight[1]);
+      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][1]),iweight[0]);
+    }
+
 
     // -- accumulate optical flow update --
     scalar_t acc_dFlows[8];
@@ -425,6 +430,10 @@ __global__ void refinement_vidflows_backward_kernel(
     for (int _idx=0; _idx < 8; _idx++){
       acc_dFlows[_idx] = static_cast<scalar_t>(0);
     }
+
+    // -- optionally skip if invalid --
+    check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
+    if (not valid_prop_patch){ return; }
 
     // -- update vid0,vid1,flows --
     update_bwd_bilin2d_vidflows<scalar_t,DIST_TYPE>(
@@ -437,13 +446,6 @@ __global__ void refinement_vidflows_backward_kernel(
 
     // -- update grad_flows from grad_dists --
     bwd_flow_assign_v2(acc_dFlows,grad_flows[ibatch][ihead_f][ti][nh][nw][kj]);
-
-    // -- update grad_flows from grad_inds --
-    if (ftr_start == 0){
-      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][2]),iweight[1]);
-      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][1]),iweight[0]);
-    }
-
 
   }
 }

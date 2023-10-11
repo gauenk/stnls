@@ -45,12 +45,9 @@ def pytest_generate_tests(metafunc):
     test_lists = {"ps":[1],"stride0":[4],"stride1":[1],
                   "dilation":[1],"wt":[1],"ws":[3],
                   "k":[-1],"nheads":[1],
-                  "self_action":[None],"seed":[0],"dist_type":["prod"],
+                  "self_action":[None],"seed":[0],
+                  "dist_type":["prod"],
                   "k_agg":[-1],}
-    # test_lists = {"ps":[7,11],"stride0":[4],"stride1":[1,8],
-    #               "dilation":[1,2],"wt":[2],"ws":[3,7],
-    #               "k":[-1,10],"nheads":[2],
-    #               "seed":[0,1,3],"dist_type":["prod"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)

@@ -87,7 +87,7 @@ def refine_forward(vid0, vid1, flows,
     # assert anchor_self is False
     # assert remove_self is False
     # return_order = not(kselect is None)
-    # # dists,inds = manage_self(dists,inds,self_action,stride0,H,W)
+    # dists,inds,kselect = manage_self_ksel(dists,inds,kselect,self_action,wr)
     # # kselect = kselect[...,1:] if remove_self else kselect
     # # dists.shape = (B,H,Q,Ks,wr*wr)
 
@@ -112,7 +112,7 @@ def refine_forward(vid0, vid1, flows,
                                      descending=descending,unique=False,
                                      return_order=True)
     if not(kselect is None) and not(order is None):
-        kselect = stnls.nn.topk.apply_topk(kselect,order,dim)
+        kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
 
     # -- reshape for output --
     dists=dists.view(B,HD,T,nH,nW,-1)
@@ -151,25 +151,25 @@ class RefineSearchFunction(th.autograd.Function):
         device = vid0.device
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
+        flows_shape = flows.shape
+        flows_requires_grad = flows.requires_grad
         assert flows.shape[1] == HD
         patch_offset = 0 if use_adj else -(ps//2)
 
         # -- filter only to kr --
         flows = filter_k(flows,kr)
         flows = flows.contiguous()
-        flows_t = flows.clone()
-        flows_t[...,0] = flows_t[...,0].round()
+        # flows_t = flows.clone()
+        # flows_t[...,0] = flows_t[...,0].round()
 
         # -- run fwd pass --
-        dists,inds,kselect = refine_forward(vid0, vid1, flows_t,
+        dists,inds,kselect = refine_forward(vid0, vid1, flows,
                                             ws, wr, k, kr, ps, stride0, stride1,
                                             dilation, pt, dist_type, restricted_radius,
                                             reflect_bounds, full_ws, topk_mode,
                                             self_action, patch_offset, itype_fwd)
 
         # -- setup ctx --
-        flows_shape = flows.shape
-        flows_requires_grad = flows.requires_grad
         dist_type_i = dist_type_select(dist_type)[0]
         ctx.save_for_backward(inds,vid0,vid1,kselect)
         if itype_bwd == "int":
@@ -239,6 +239,7 @@ class RefineSearch(th.nn.Module):
         self.k_agg = k_agg
 
     def forward(self,vid0,vid1,flows):
+        # print(flows.requires_grad)
         return RefineSearchFunction.apply(vid0,vid1,flows,
                                           self.ws, self.wt, self.wr, self.k,
                                           self.kr, self.ps, self.nheads,

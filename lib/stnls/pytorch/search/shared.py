@@ -9,12 +9,12 @@ import stnls
 def manage_self(dists,inds,anchor_self,remove_self,qshift,stride0,H,W):
     assert not(remove_self and anchor_self)
     if remove_self:
-        outs = stnls.nn.remove_self(dists,inds,stride0,H,W,qhift)
-        dists,inds = outs
-        print("invalid.")
-        exit(0)
+        # B,HD,T,nH,nW,W_t,ws,ws = dists.shape
+        dists = dists[...,1:,:,:]
+        inds = inds[...,1:,:,:,:]
+        return dists,inds
     if anchor_self:
-        B,HD,T,nH,nW,W_t,ws2 = dists.shape
+        B,HD,T,nH,nW,W_t,ws,ws = dists.shape
         dists = dists.view(B,HD,Q,-1)
         d2or3 = inds.shape[-1]
         inds = inds.view(B,HD,Q,-1,d2or3)
@@ -23,6 +23,26 @@ def manage_self(dists,inds,anchor_self,remove_self,qshift,stride0,H,W):
         inds=inds.reshape(B,HD,T,nH0,nW0,W_t,ws*ws,d2or3)
     return dists,inds
 
+
+# def manage_self(dists,inds,kselect,anchor_self,remove_self,wr):
+#     assert not(remove_self and anchor_self)
+#     if remove_self:
+#         dists=dists.view(B,HD,Q,Ks,wr*wr)
+#         inds=inds.view(B,HD,Q,Ks,wr*wr,3)
+#         dists = dists[...,wr*wr:]
+#         inds = inds[...,wr*wr:,:]
+#         kselect = kselect[...,wr*wr:,:]
+
+
+#     if anchor_self:
+#         B,HD,T,nH,nW,W_t,ws2 = dists.shape
+#         dists = dists.view(B,HD,Q,-1)
+#         d2or3 = inds.shape[-1]
+#         inds = inds.view(B,HD,Q,-1,d2or3)
+#         stnls.nn.anchor_self(dists,inds,stride0,H,W,qshift)
+#         dists=dists.reshape(B,HD,T,nH0,nW0,W_t,ws*ws)
+#         inds=inds.reshape(B,HD,T,nH0,nW0,W_t,ws*ws,d2or3)
+#     return dists,inds
 
 
 def normz_bwd(ctx,grad_vid0,grad_vid1):
