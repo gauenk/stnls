@@ -70,23 +70,29 @@ def nls_forward(vid0, vid1, flows,
             reflect_bounds, full_ws, patch_offset,  dist_type_i)
 
     # -- reshape --
-    dists=dists.view(B,HD,T*nH0*nW0,-1)
-    inds=inds.view(B,HD,T*nH0*nW0,-1,3)
+    # dists=dists.view(B,HD,T*nH0*nW0,-1)
+    # inds=inds.view(B,HD,T*nH0*nW0,-1,3)
+    # dists=dists.view(B,HD,TnH0*nW0,W_t,ws*ws)
+    # inds=inds.view(B,HD,T*nH0*nW0,W_t,ws*ws,3)
 
     # -- fill nan --
-    fill_val = -np.inf if dist_type == "prod" else np.inf
-    dists = th.nan_to_num(dists,fill_val)
+    # fill_val = -th.inf if dist_type == "prod" else th.inf
+    # dists = th.nan_to_num(dists,fill_val)
+    print(dists.shape)
 
     # -- manage self dists --
     anchor_self = self_action == "anchor"
     remove_self = self_action == "remove"
+    assert remove_self == False
     dists,inds = manage_self(dists,inds,anchor_self,
                              remove_self,0,stride0,H,W)
 
     # -- topk --
     if topk_mode == "default":
-        dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                   descending=descending,unique=False)
+        dists=dists.view(B,HD,T*nH0*nW0,-1)
+        inds=inds.view(B,HD,T*nH0*nW0,-1,3)
+        dists,inds,order = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+                                         descending=descending,return_order=True)
     elif topk_mode == "time":
         st = 2*wt+1
         assert k % st == 0
@@ -113,7 +119,7 @@ class NonLocalSearchFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid0, vid1, flows,
                 ws, wt, ps, k, nheads=1,
-                stride0=4, stride1=1, dist_type="prod",
+                stride0=4, stride1=1, dist_type="l2",
                 dilation=1, pt=1, topk_mode="default",
                 self_action=None,
                 reflect_bounds=True, full_ws=True,
@@ -193,10 +199,10 @@ class NonLocalSearchFunction(th.autograd.Function):
 class NonLocalSearch(th.nn.Module):
 
     def __init__(self, ws, wt, ps, k, nheads=1,
-                 stride0=4, stride1=1, dist_type="prod",
+                 stride0=4, stride1=1, dist_type="l2",
                  dilation=1, pt=1, self_action=None, topk_mode="default",
                  reflect_bounds=True, full_ws=True, use_adj=False,
-                 normalize_bwd=False, k_agg=-1, itype="int"):
+                 normalize_bwd=False, k_agg=-1, itype="float"):
         super().__init__()
 
         # -- core search params --
@@ -287,7 +293,7 @@ def _apply(vid0, vid1, flows,
            dilation=1, pt=1, self_action=None,
            topk_mode="default",reflect_bounds=True,
            full_ws=True,use_adj=False,
-           normalize_bwd=False, k_agg=-1, itype="int"):
+           normalize_bwd=False, k_agg=-1, itype="float"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -311,7 +317,7 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":True,
              "self_action":None,"use_adj":False,
              "normalize_bwd": False, "k_agg":-1,
-             "itype":"int","topk_mode":"default",}
+             "itype":"float","topk_mode":"default",}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 

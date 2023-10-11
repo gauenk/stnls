@@ -14,48 +14,91 @@ import stnls
 # -- import shape info --
 # from .shape_utils import dimN_dim2,dim2_dimN
 from .dim2_utils import dimN_dim2,dim2_dimN
+from .dim2_utils import dimN_dim2_inds,dimN_dim2_dists,dim2_dimN_dists,dim2_dimN_inds
 
 def init(K,dim=1,anchor=False,descending=True,unqiue=False):
     def wrap(dists,inds):
         return run(dists,inds,K,dim)
     return wrap
 
+def apply_topk(tensor,order):
+
+    # -- squash --
+    shape = list(tensor.shape)
+    tensor = dimN_dim2_dists(tensor,dim)
+    order = dimN_dim2_dists(order,dim)
+
+    # -- exec --
+    tensor_k = th.gather(tensor,1,order)
+
+    # -- shape back --
+    shape[dim] = K
+    tensor = dim2_dimN_dists(tensor_k,shape,dim)
+    return tensor
+
+def apply_topk_3d(tensor,order):
+
+    # -- squash --
+    shape = list(tensor.shape)
+    tensor = dimN_dim2_inds(tensor,dim)
+    order = dimN_dim2_dists(order,dim)
+
+    # -- allocate --
+    device = tensor.device
+    dtype = tensor.dtype
+    Q,K,D = tensor.shape
+    tensor_k = th.zeros((Q,K,D),device=device,dtype=dtype)
+
+    # -- exec --
+    for i in range(tensor.shape[-1]):
+        tensor_k[:,:,i] = th.gather(tensor[:,:,i],1,order)
+
+    # -- shape back --
+    shape[dim] = K
+    tensor = dim2_dimN_inds(tensor_k,shape,dim)
+    return tensor
+
 def run(dists,inds,k,dim=1,anchor=False,descending=True,
-        unique=False,qinds=None):
+        unique=False,return_order=False):
     """
 
     Wrap the topk menu so the input to top-k is always square
 
     """
     # -- no run if k <= 0 --
-    if not(k > 0): return dists,inds
+    if not(k > 0): return dists,inds,None
+    if unique: assert return_order == False
 
     # -- get squares --
     dists,inds,dshape,ishape = dimN_dim2(dists,inds,dim)
 
     # -- run top-k --
-    dists,inds = topk_menu(dists,inds,k,anchor,descending,unique,qinds)
+    dists,inds,order = topk_menu(dists,inds,k,anchor,descending,unique)
 
     # -- return squares --
     k = inds.shape[1]
     dists,inds = dim2_dimN(dists,inds,dshape,ishape,dim,k)
-    return dists,inds
+    if return_order:
+        order = dim2_dimN_dists(order,dshape,dim)
+        return dists,inds,order
+    else:
+        return dists,inds
 
 def topk_menu(dists,inds,k,anchor=False,descending=True,
-              unique=False,qinds=None):
+              unique=False):
     """
 
     Select which topk to run
 
     """
     if anchor:
-        return anchored_topk(dists,inds,k,descending,unique,qinds)
+        return anchored_topk(dists,inds,k,descending,unique,return_order)
     elif unique:
         return unique_topk(dists,inds,k,descending)
     else:
         return standard_topk(dists,inds,k,descending)
 
-def anchored_topk(dists,inds,k,descending,unique,qinds):
+def anchored_topk(dists,inds,k,descending,unique,return_order):
 
     # -- unpack first --
     dists0 = dists[:,[0]]
@@ -65,11 +108,12 @@ def anchored_topk(dists,inds,k,descending,unique,qinds):
     _dists = dists[:,1:]
     _inds = inds[:,1:]
     k_s = _dists.shape[1] if unique else k-1
-    _dists,_inds = standard_topk(_dists,_inds,k_s,descending)
+    _dists,_inds,_order = standard_topk(_dists,_inds,k_s,descending)
 
     # -- combine with anchor --
     dists = th.cat([dists0,_dists],1)
     inds = th.cat([inds0,_inds],1)
+    order = th.cat([th.zeros_like(dists0),_order+1],1)
 
     # -- check -1 --
     # dists_tmp = dists.clone()
@@ -78,7 +122,9 @@ def anchored_topk(dists,inds,k,descending,unique,qinds):
 
     # -- run --
     if unique:
+        assert return_order == False
         dists,inds = unique_select(dists,inds,k,descending)
+
 
     # -- check dups -
     # dups,any_dup = stnls.testing.find_duplicate_inds(inds)
@@ -102,7 +148,7 @@ def anchored_topk(dists,inds,k,descending,unique,qinds):
     # -- check -1 --
     # assert not(th.any(inds==-1).item()),"[%s] No -1 indices" % __file__
 
-    return dists,inds
+    return dists,inds,order
 
 
 def unique_topk(dists,inds,K,descending=False):
@@ -118,7 +164,7 @@ def unique_topk(dists,inds,K,descending=False):
     dists_topk,inds_topk = unique_select(dists,inds,K,descending)
 
     # -- return --
-    return dists_topk,inds_topk
+    return dists_topk,inds_topk,None
 
 def unique_select(dists,inds,K,descending):
     inds = inds.contiguous()
@@ -149,18 +195,18 @@ def standard_topk(dists,inds,K,descending):
     d2or3 = inds.shape[-1]
 
     # -- order --
-    order = th.argsort(dists,dim=1,descending=descending)[:,:K]
-    K = order.shape[1]
+    order_k = th.argsort(dists,dim=1,descending=descending)[:,:K]
+    K = order_k.shape[1]
 
     # -- topk dists --
-    dists_k = th.gather(dists,1,order)
+    dists_k = th.gather(dists,1,order_k)
 
     # -- topk inds --
     inds_k = th.zeros((Q,K,d2or3),device=inds.device,dtype=inds.dtype)
     for i in range(inds.shape[-1]):
-        inds_k[:,:,i] = th.gather(inds[:,:,i],1,order)
+        inds_k[:,:,i] = th.gather(inds[:,:,i],1,order_k)
 
-    return dists_k,inds_k
+    return dists_k,inds_k,order_k
 
 
 

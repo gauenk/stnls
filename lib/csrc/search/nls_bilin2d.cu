@@ -30,9 +30,9 @@ void compute_dist_bilin2d(scalar_t& dist,
   int* ref_patch, scalar_t* prop_patch, int* ref, scalar_t* prop, int* prop_i,
   bool* valid_ref, bool* valid_prop,
   int ps, int pt, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid,
-  int T, int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t w){
+  int patch_offset, scalar_t invalid, int T, int C, int H, int W){
                   
+  scalar_t pix0,pix1,w;
   scalar_t interp[2];
   for (int pk = 0; pk < pt; pk++){
 
@@ -116,12 +116,11 @@ void update_bwd_patch_bilin2d(
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     scalar_t weight, int* ref_patch, scalar_t* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
-    int patch_offset,
-    int iftr, int ftr_start, int ftr_end,
-    int* ref, scalar_t* prop, int* prop_i,
-    bool* valid_ref, bool* valid_prop, bool valid,
-    int T, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix, int i1){
+    int patch_offset, int iftr, int ftr_start, int ftr_end,
+    int* ref, scalar_t* prop, int* prop_i, bool* valid_ref, bool* valid_prop,
+    bool valid, int T, int H, int W){
 
+    scalar_t pix0,pix1,pix;
     scalar_t interp[2];
     scalar_t dDists;
     for (int pk = 0; pk < pt; pk++){
@@ -222,8 +221,9 @@ void update_bwd_bilin2d_vidflows(
     int iftr, int ftr_start, int ftr_end,
     int* ref, scalar_t* prop, int* prop_i,
     bool* valid_ref, bool* valid_prop, bool valid,
-    int T, int H, int W, scalar_t pix0, scalar_t pix1){
+    int T, int H, int W){
 
+    scalar_t pix0,pix1;
     scalar_t interp[2];
     scalar_t dDists;
     for (int pk = 0; pk < pt; pk++){

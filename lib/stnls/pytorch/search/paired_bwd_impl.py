@@ -12,7 +12,7 @@ import stnls
 
 # -- local --
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
-from .utils import get_inds,allocate_grad_flow
+from .utils import get_inds,allocate_grad_flows
 from .shared import manage_self
 
 def paired_backward(ctx, grad_dists, grad_inds):
@@ -21,11 +21,7 @@ def paired_backward(ctx, grad_dists, grad_inds):
     inds,vid0,vid1,flow = ctx.saved_tensors
     itype_bwd = ctx.itype_bwd
     inds = get_inds(inds,itype_bwd)
-    grad_flow = allocate_grad_flow(itype_bwd,flow.shape,flow.device)
-
-    # print("inds.shape: ",inds.shape,vid0.shape,vid1.shape)
-    # assert not(th.any(inds==-1).item()),"No -1 indices"
-    # print(grad_dists.shape,inds.shape,ctx.vid_shape)
+    grad_flow = allocate_grad_flows(itype_bwd,flow.shape,flow.device)
 
     # -- allocate grads --
     grad_vid0 = allocate_vid(ctx.vid_shape,grad_dists.device)

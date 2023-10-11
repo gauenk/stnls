@@ -40,7 +40,7 @@ __global__ void non_local_search_int_forward_kernel(
   int HD_f = flows.size(1);
 
   // -- invalid constant --
-  float invalid = __int_as_float(0x7f800000);
+  scalar_t invalid = (scalar_t)__int_as_float(0x7f800000);
   if(DIST_TYPE == 0){ // prod
     invalid = -invalid;
   }
@@ -72,8 +72,7 @@ __global__ void non_local_search_int_forward_kernel(
   int n_hi,n_wi;
 
   // -- indexing --
-  int qindex,qindex_tmp;
-  scalar_t dist,pix0,pix1,_dist;
+  scalar_t dist;
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
@@ -85,10 +84,9 @@ __global__ void non_local_search_int_forward_kernel(
     // -- block start --
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
-    qindex = qi;// + q_shift;
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,H,W);
     n_hi = ref_patch[1] / stride0;
     n_wi = ref_patch[2] / stride0;
 
@@ -157,8 +155,7 @@ __global__ void non_local_search_int_forward_kernel(
                          ref_patch, prop_patch, 
                          ref_pix, prop_pix, valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
-                         patch_offset,invalid,
-                         T,F,H,W,pix0,pix1,_dist);
+                         patch_offset,invalid,T,F,H,W);
 
           }
 
@@ -289,9 +286,8 @@ __global__ void non_local_search_int_vid_backward_kernel(
   int prop[3];
   bool valid_ref[4];
   bool valid_prop[4];
-  int qindex,qindex_tmp;
   bool valid;
-  scalar_t dist,weight,pix0,pix1,pix;
+  scalar_t dist,weight;
   int iftr;
 
   // -- location to fill --
@@ -307,11 +303,8 @@ __global__ void non_local_search_int_vid_backward_kernel(
   // -- each region --
   if ((i0 < Q) && (i1 < K)){
 
-    // -- full-resolution video query index --
-    qindex = i0;// + q_shift;
-
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,i0,stride0,nW0,nHW0,H,W);
     int ti = ref_patch[0];
     int nh = ref_patch[1]/stride0;
     int nw = ref_patch[2]/stride0;
@@ -329,8 +322,7 @@ __global__ void non_local_search_int_vid_backward_kernel(
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,
                      patch_offset,iftr,ftr_start,ftr_end,
-                     ref,prop,valid_ref,valid_prop,valid,
-                     T,H,W,pix0,pix1,pix,i1);
+                     ref,prop,valid_ref,valid_prop,valid,T,H,W);
 
   }
 }

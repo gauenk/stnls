@@ -19,22 +19,26 @@ template <typename scalar_t, int DIST_TYPE>
 __global__ void refinement_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> qinds,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
-    torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
-    int wr, int ws, int ps, int pt, int k, int stride0, int stride1, int dilation,
+    const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> flows,
+    torch::PackedTensorAccessor32<scalar_t,8,torch::RestrictPtrTraits> dists,
+    torch::PackedTensorAccessor32<int,9,torch::RestrictPtrTraits> inds,
+    int wr, int ws, int ps, int pt, int K, int stride0, int stride1, int dilation,
     bool reflect_bounds, bool full_ws, bool restrict_radius, int patch_offset,
-    int nH0, int nW0, int nHW0,
     int q_per_thread, int k_per_thread, int wr_per_thread){
 
   // -- unpack shapes --
   int HD = vid0.size(1);
+  int HD_f = flows.size(1);
   int T = vid0.size(2);
   int F = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
-  int Q = dists.size(2);
-  int K = qinds.size(3);
+  int nH = dists.size(3);
+  int nW = dists.size(4);
+  int nHW = nH*nW;
+  int Q = T*nHW;
+  int Ks = inds.size(5);
+  int ti,nh,nw;
 
   // -- invalid constant --
   scalar_t invalid = (scalar_t)__int_as_float(0x7f800000);
@@ -46,26 +50,13 @@ __global__ void refinement_forward_kernel(
   int wrHalf = (wr-1)/2;
   int wrMax = stride1*(wr-1-wrHalf);
   int wrOff_h,wrOff_w;
-  // int t_max;
-
-  // // // -- search region offsets --
-  // int psHalf = (ps)/2;
-  // int wrHalf_h = (wr_h)/2;
-  // int wrHalf_w = (wr_w)/2;
-  // int wrOff_h = wrHalf_h;
-  // int wrOff_w = wrHalf_w;
-  // int wrMax_h = stride1*(wr_h-1-wrOff_h);
-  // int wrMax_w = stride1*(wr_w-1-wrOff_w);
-  // int wrMin_h = -stride1 * wrOff_h;
-  // int wrMin_w = -stride1 * wrOff_h;
-  // int adj = use_adj ? psHalf : 0;
 
   // -- cuda index --
-  int ibatch = blockIdx.x;
-  int ihead = blockIdx.y;
-  int q_start = blockIdx.z*q_per_thread;
-  int qi,si,wh,ww;
-  int qindex,qindex_tmp;
+  int ibatch = blockIdx.y;
+  int ihead = blockIdx.z;
+  int ihead_f = ihead % HD_f;
+  int q_start = blockIdx.x*q_per_thread;
+  int qi,ki,wh,ww;
 
   // -- fwd decls --
   int prop_center[2];
@@ -76,15 +67,7 @@ __global__ void refinement_forward_kernel(
   bool valid;
   bool valid_prop[4];
   bool valid_ref[4];
-  scalar_t dist,pix0,pix1,_dist;
-
-  // int ti,hi,wi;
-  // int n_ti,n_hi,n_wi;
-  // int vH,vW,vT,nH,nW,nT;
-  // bool valid_anchor,valid_n,valid;
-  // bool vvalid_t,vvalid_h,vvalid_w,vvalid;
-  // bool nvalid_t,nvalid_h,nvalid_w,nvalid;
-
+  scalar_t dist;
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
@@ -95,10 +78,12 @@ __global__ void refinement_forward_kernel(
     // -- block start --
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
-    qindex = qi;// + q_shift;
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW,nHW,H,W);
+    ti = ref_patch[0];
+    nh = ref_patch[1]/stride0;
+    nw = ref_patch[2]/stride0;
 
     // -- check bounds of pixel location --
     check_bounds(valid_ref[3],ref_patch,T,H,W);
@@ -117,14 +102,14 @@ __global__ void refinement_forward_kernel(
     // ---------------------------------------
     //     for each neighbor in k_search
     // ---------------------------------------
-    for(int _si = 0; _si < k_per_thread; _si++){
-      si = threadIdx.x + blockDim.x*_si;
-      if (si >= K){ continue; }
+    for(int _ki = 0; _ki < k_per_thread; _ki++){
+      ki = threadIdx.x + blockDim.x*_ki;
+      if (ki >= K){ continue; }
 
       // -- unpack base -- 
-      prop_patch[0] = qinds[ibatch][ihead][qi][si][0]; // no search
-      prop_center[0] = qinds[ibatch][ihead][qi][si][1];
-      prop_center[1] = qinds[ibatch][ihead][qi][si][2];
+      prop_patch[0] = flows[ibatch][ihead_f][ti][nh][nw][ki][0]; // no search
+      prop_center[0] = flows[ibatch][ihead_f][ti][nh][nw][ki][1];
+      prop_center[1] = flows[ibatch][ihead_f][ti][nh][nw][ki][2];
 
       // ---------------------------------------
       //     for each position to search
@@ -145,8 +130,8 @@ __global__ void refinement_forward_kernel(
           // ----------------------
           //    spatial center
           // ----------------------
-          prop_patch[1] = (prop_center[0]) + stride1 * (wh - wrOff_h);
-          prop_patch[2] = (prop_center[1]) + stride1 * (ww - wrOff_w);
+          prop_patch[1] = prop_center[0] + stride1 * (wh - wrOff_h);
+          prop_patch[2] = prop_center[1] + stride1 * (ww - wrOff_w);
 
           // -- check bounds of pixel location --
           check_bounds(valid_prop[3],prop_patch,T,H,W);
@@ -159,58 +144,61 @@ __global__ void refinement_forward_kernel(
                          ref_patch, prop_patch, 
                          ref_pix, prop_pix, valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
-                         patch_offset,invalid,
-                         T,F,H,W,pix0,pix1,_dist);
+                         patch_offset,invalid,T,F,H,W);
           }
 
           // -- assignent --
           if (!valid){ dist = invalid; }
-          dists[ibatch][ihead][qi][si][wh][ww] = dist;
-          inds[ibatch][ihead][qi][si][wh][ww][0] = prop_patch[0];
-          inds[ibatch][ihead][qi][si][wh][ww][1] = prop_patch[1];
-          inds[ibatch][ihead][qi][si][wh][ww][2] = prop_patch[2];
+          dists[ibatch][ihead][ti][nh][nw][ki][wh][ww] = dist;
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][0] = prop_patch[0];
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][1] = prop_patch[1];
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][2] = prop_patch[2];
 
         } //  ww
       } // wh
-    } // si
+    } // ki
   } // qi
 } // fxn
 
 void refinement_int_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
-    const torch::Tensor qinds, torch::Tensor dists, torch::Tensor inds,
+    const torch::Tensor flows, torch::Tensor dists, torch::Tensor inds,
     int ws, int ps, int k, int stride0, int stride1, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
     int patch_offset,  int dist_type){
 
+   // dists.shape = (B,HD,T,nH,nW,K,wr,wr)
+   // inds.shape = (B,HD,T,nH,nW,K,wr,wr,3)
+   // flows.shape = (B,HD,T,nH,nW,K,3)
+
    // -- num threads --
-   int nheads = dists.size(1);
-   int nqueries = dists.size(2);
-   int ksearch = inds.size(3);
-   int ksearch_threads = std::min(ksearch,12);
-   int k_per_thread = ((ksearch-1)/ksearch_threads)+1;
-   int wr = dists.size(4);
-   int wr_threads = std::min(wr,8);
+   int B = dists.size(0);
+   int HD = dists.size(1);
+   int T = dists.size(2);
+   int nH = dists.size(3);
+   int nW = dists.size(4);
+   int Ks = dists.size(5);
+   int wr = dists.size(6);
+
+   int Q = T*nH*nW;
+   int Ks_threads = std::min(Ks,11);
+   int k_per_thread = ((Ks-1)/Ks_threads)+1;
+   int wr_threads = std::min(wr,7);
    int wr_per_thread = ((wr-1)/wr_threads) + 1;
    // int wr_w_threads = std::min(wr_w,8);
    // int wr_w_per_thread = ((wr_w-1)/wr_w_threads) + 1;
-   dim3 nthreads(ksearch_threads,wr_threads,wr_threads);
+   dim3 nthreads(Ks_threads,wr_threads,wr_threads);
 
-   int batchsize = vid0.size(0);
-   int rem_blocks = (65535-1)/nheads+1;
    int q_per_thread = 2;
-   int nquery_blocks = ((nqueries - 1) / q_per_thread) + 1;
-   nquery_blocks = min(nquery_blocks,rem_blocks);
-   q_per_thread = ((nqueries - 1) / nquery_blocks) + 1;
-   dim3 nblocks(batchsize,nheads,nquery_blocks);
+   int nquery_blocks = ((Q - 1) / q_per_thread) + 1;
+   dim3 nblocks(nquery_blocks,B,HD);
 
-   // -- derived quantities --
-   int H = vid0.size(4);
-   int W = vid0.size(5);
-   int nH0 = (H-1)/stride0+1;
-   int nW0 = (W-1)/stride0+1;
-   int nHW0 = nH0 * nW0;
-   // int ws_w2 = ws_w/2;
+   // int rem_blocks = (65535-1)/HD;
+   // int q_per_thread = 2;
+   // int nquery_blocks = ((Q - 1) / q_per_thread) + 1;
+   // nquery_blocks = min(nquery_blocks,rem_blocks);
+   // q_per_thread = ((Q - 1) / nquery_blocks) + 1;
+   // dim3 nblocks(nquery_blocks,B,HD);
 
    // launch kernel
    if (dist_type == 0){
@@ -218,24 +206,24 @@ void refinement_int_forward_cuda(
           refinement_forward_kernel<scalar_t,0><<<nblocks, nthreads>>>(
           vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          qinds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
+          flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
+          dists.packed_accessor32<scalar_t,8,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<int,9,torch::RestrictPtrTraits>(),
           wr, ws, ps, pt, k, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset, 
-          nH0, nW0, nHW0, q_per_thread, k_per_thread, wr_per_thread);
+          q_per_thread, k_per_thread, wr_per_thread);
         }));
    }else if (dist_type == 1){
      AT_DISPATCH_FLOATING_TYPES(vid0.type(),"refinement_forward_kernel", ([&] {
           refinement_forward_kernel<scalar_t,1><<<nblocks, nthreads>>>(
           vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          qinds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-          dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
+          flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
+          dists.packed_accessor32<scalar_t,8,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<int,9,torch::RestrictPtrTraits>(),
           wr, ws, ps, pt, k, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset,
-          nH0, nW0, nHW0, q_per_thread, k_per_thread, wr_per_thread);
+          q_per_thread, k_per_thread, wr_per_thread);
         }));
    }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");

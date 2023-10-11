@@ -9,9 +9,9 @@ void compute_dist_int(scalar_t& dist,
   int* ref_patch, int* prop_patch, int* ref, int* prop,
   bool* valid_ref, bool* valid_prop,
   int ps, int pt, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid,
-  int T, int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t _dist){
+  int patch_offset, scalar_t invalid, int T, int C, int H, int W){
                   
+  scalar_t pix0,pix1,_dist;
   for (int pk = 0; pk < pt; pk++){
 
     // -- reference time --
@@ -90,10 +90,11 @@ void update_bwd_patch_int(
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     scalar_t weight, int* ref_patch, int* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
-    int patch_offset,
-    int iftr, int ftr_start, int ftr_end,
-    int* ref, int* prop, bool* valid_ref, bool* valid_prop, bool valid,
-    int T, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix, int i1){
+    int patch_offset, int iftr, int ftr_start, int ftr_end,
+    int* ref, int* prop, bool* valid_ref, bool* valid_prop,
+    bool valid, int T, int H, int W){
+
+    scalar_t pix0,pix1,pix;
 
     for (int pk = 0; pk < pt; pk++){
 

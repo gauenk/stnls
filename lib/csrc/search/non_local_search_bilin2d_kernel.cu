@@ -24,6 +24,7 @@ __global__ void non_local_search_bilin2d_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> flows,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
+    // torch::PackedTensorAccessor32<bool,7,torch::RestrictPtrTraits> reflect,
     int ws, int wt, int ps, int pt, int stride0, float _stride1, int dilation,
     bool reflect_bounds, bool full_ws, int patch_offset,
     int nH, int nW, int nHW, int st_offset,
@@ -41,7 +42,7 @@ __global__ void non_local_search_bilin2d_forward_kernel(
   scalar_t stride1 = static_cast<scalar_t>(_stride1);
 
   // -- invalid constant --
-  float invalid = __int_as_float(0x7f800000);
+  scalar_t invalid = (scalar_t)__int_as_float(0x7f800000);
   if(DIST_TYPE == 0){ // prod
     invalid = -invalid;
   }
@@ -75,8 +76,7 @@ __global__ void non_local_search_bilin2d_forward_kernel(
   int n_hi,n_wi;
 
   // -- indexing --
-  int qindex,qindex_tmp;
-  scalar_t dist,pix0,pix1,_dist;
+  scalar_t dist;
 
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
@@ -88,10 +88,9 @@ __global__ void non_local_search_bilin2d_forward_kernel(
     // -- block start --
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
-    qindex = qi;// + q_shift;
 
     // -- pixel location from query index --
-    get_pixel_loc<int>(ref_patch,qindex,qindex_tmp,stride0,nW,nHW,H,W);
+    get_pixel_loc<int>(ref_patch,qi,stride0,nW,nHW,H,W);
     n_hi = ref_patch[1] / stride0;
     n_wi = ref_patch[2] / stride0;
 
@@ -118,14 +117,20 @@ __global__ void non_local_search_bilin2d_forward_kernel(
 
       // -- offset with flows --
       if (st_i >= st_offset){
-        auto flows_t = flows[ibatch][ihead][ref_patch[0]][st_i-st_offset];
+        auto flows_t = flows[ibatch][ihead_f][ref_patch[0]][st_i-st_offset];
         frame_anchor[0] = ref_patch[1] + flows_t[1][n_hi][n_wi];
         frame_anchor[1] = ref_patch[2] + flows_t[0][n_hi][n_wi];
+        // valid_H = (frame_anchor[0] >= 0) and (frame_anchor[0] < H);
+        // valid_W = (frame_anchor[1] >= 0) and (frame_anchor[1] < W);
+        // reflect[ibatch][ihead_f][ti][si][n_hi][n_wi][1] = not valid_H;
+        // reflect[ibatch][ihead_f][ti][si][n_hi][n_w][0] = not valid_W;
         frame_anchor[0] = bounds(frame_anchor[0],H);
         frame_anchor[1] = bounds(frame_anchor[1],W);
       }else{
         frame_anchor[0] = 1.*ref_patch[1];
         frame_anchor[1] = 1.*ref_patch[2];
+        // reflect[ibatch][ihead_f][ti][si][n_hi][n_wi][1] = 0;
+        // reflect[ibatch][ihead_f][ti][si][n_hi][n_wi][0] = 0;
       }
 
       // -- search region offsets --
@@ -162,8 +167,7 @@ __global__ void non_local_search_bilin2d_forward_kernel(
                            ref_patch, prop_patch, 
                            ref_pix, prop_pix, prop_i, valid_ref, valid_prop,
                            ps,pt,dilation,reflect_bounds,
-                           patch_offset,invalid,
-                           T,C,H,W,pix0,pix1,_dist);
+                           patch_offset,invalid,T,C,H,W);
           }
 
           // -- assignent --
@@ -300,10 +304,9 @@ __global__ void nls_bwd_vid_kernel(
   int prop_i[3];
   bool valid_ref[4];
   bool valid_prop[4];
-  int qindex,qindex_tmp;
 
   bool valid;
-  scalar_t weight,pix0,pix1,pix;
+  scalar_t weight;
   scalar_t iweight[3];
   int iftr;
 
@@ -321,7 +324,7 @@ __global__ void nls_bwd_vid_kernel(
   if ((i0 < Q) && (i1 < K)){
 
     // -- full-resolution video query index --
-    get_pixel_loc(ref_patch,i0,qindex_tmp,stride0,nW,nHW,H,W);
+    get_pixel_loc(ref_patch,i0,stride0,nW,nHW,H,W);
     int ti = ref_patch[0];
     int nh = ref_patch[1]/stride0;
     int nw = ref_patch[2]/stride0;
@@ -339,10 +342,8 @@ __global__ void nls_bwd_vid_kernel(
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,patch_offset,
-                     iftr,ftr_start,ftr_end,
-                     ref,prop,prop_i,
-                     valid_ref,valid_prop,valid,
-                     T,H,W,pix0,pix1,pix,i1);
+                     iftr,ftr_start,ftr_end,ref,prop,prop_i,
+                     valid_ref,valid_prop,valid,T,H,W);
 
 
   }
@@ -474,11 +475,10 @@ __global__ void nls_bwd_vidflows_kernel(
   int prop_i[3];
   bool valid_ref[4];
   bool valid_prop[4];
-  int qindex,qindex_tmp;
   bool valid_prop_patch;
 
   bool valid;
-  scalar_t weight,pix0,pix1,pix;
+  scalar_t weight;
   scalar_t iweight[2];
   int iftr;
 
@@ -497,7 +497,7 @@ __global__ void nls_bwd_vidflows_kernel(
   if ((i0 < Q) && (i1 < K)){
 
     // -- full-resolution video query index --
-    get_pixel_loc(ref_patch,i0,qindex_tmp,stride0,nW,nHW,H,W);
+    get_pixel_loc(ref_patch,i0,stride0,nW,nHW,H,W);
     int ti = ref_patch[0];
     int nh = ref_patch[1]/stride0;
     int nw = ref_patch[2]/stride0;
@@ -533,18 +533,17 @@ __global__ void nls_bwd_vidflows_kernel(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      acc_dFlows,weight,ref_patch,prop_patch,
-                     ps,pt,dilation,stride0,
-                     reflect_bounds,patch_offset,
-                     iftr,ftr_start,ftr_end,
-                     ref,prop,prop_i,
-                     valid_ref,valid_prop,valid,
-                     T,H,W,pix0,pix1);
+                     ps,pt,dilation,stride0,reflect_bounds,patch_offset,
+                     iftr,ftr_start,ftr_end,ref,prop,prop_i,
+                     valid_ref,valid_prop,valid,T,H,W);
 
 
 
     // -- update grad_flows from grad_dists --
     scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
     scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
+    // sH = reflect[ibatch][ihead_f][ti][si][nh][nw][1] ? -1 : 1 ;
+    // sW = reflect[ibatch][ihead_f][ti][si][nh][nw][0] ? -1 : 1 ;
     int sH = ((hi >= 0) and (hi < H)) ? 1 : -1;
     int sW = ((wi >= 0) and (wi < W)) ? 1 : -1;
     bwd_flow_assign(acc_dFlows,nh,nw,sH,sW,

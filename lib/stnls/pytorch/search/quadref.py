@@ -18,7 +18,7 @@ from .utils import shape_vids,dist_type_select
 from .utils import allocate_pair,allocate_vid
 from .shared import manage_self
 from .batching_utils import run_batched,batching_info
-from .nls_bwd_impl import nls_quad_backward
+# from .nls_bwd_impl import nls_quad_backward
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #

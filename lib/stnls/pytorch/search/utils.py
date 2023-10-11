@@ -62,7 +62,7 @@ def get_ctx_qinds(itype,qinds):
     else:
         return qinds
 
-def allocate_grad_flow(itype,f_shape,device):
+def allocate_grad_flows(itype,f_shape,device):
     if itype == "int":
         grad_fflow = th.zeros((1,)*7,device=device,dtype=th.float32)
     else:
@@ -70,13 +70,13 @@ def allocate_grad_flow(itype,f_shape,device):
     return grad_fflow
 
 
-def allocate_grad_qinds(itype,ishape,device):
-    if itype == "int":
-        grad_qinds = th.zeros((1,)*5,device=device,dtype=th.int)
-    else:
-        B,HD,Q,K,_ = ishape
-        grad_qinds = th.zeros((B,HD,Q,K,3),device=device,dtype=th.float32)
-    return grad_qinds
+# def allocate_grad_qinds(itype,ishape,device):
+#     if itype == "int":
+#         grad_qinds = th.zeros((1,)*5,device=device,dtype=th.int)
+#     else:
+#         B,HD,Q,K,_ = ishape
+#         grad_qinds = th.zeros((B,HD,Q,K,3),device=device,dtype=th.float32)
+#     return grad_qinds
 
 def get_itype(itype_str):
     if itype_str in ["int","int32"]:

@@ -20,22 +20,28 @@ template <typename scalar_t, int DIST_TYPE>
 __global__ void refinement_bilin2d_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> qinds,
-    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
-    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
-    int wr, int ws, int ps, int pt, int k, int stride0, float _stride1, int dilation,
+    const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> flows,
+    torch::PackedTensorAccessor32<scalar_t,8,torch::RestrictPtrTraits> dists,
+    torch::PackedTensorAccessor32<scalar_t,9,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor32<int,8,torch::RestrictPtrTraits> kselect,
+    int wr, int ws, int ps, int pt, int K, int stride0, float _stride1, int dilation,
     bool restrict_radius, bool reflect_bounds, bool full_ws, int patch_offset,
-    int nW0, int nHW0, int q_per_thread, int k_per_thread, int wr_per_thread){
+    int q_per_thread, int k_per_thread, int wr_per_thread){
 
   // -- unpack shapes --
   int HD = vid0.size(1);
+  int HD_f = flows.size(1);
   int T = vid0.size(2);
   int C = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
-  int Q = dists.size(2);
-  int K = qinds.size(3);
+  int nH = dists.size(3);
+  int nW = dists.size(4);
+  int nHW = nH*nW;
+  int Q = T*nHW;
+  int Ks = flows.size(5);
   scalar_t stride1 = static_cast<scalar_t>(_stride1);
+  int ti,nh,nw;
 
   // -- invalid constant --
   scalar_t invalid = (scalar_t)__int_as_float(0x7f800000);
@@ -55,11 +61,11 @@ __global__ void refinement_bilin2d_forward_kernel(
   // int adj = use_adj ? psHalf : 0;
 
   // -- cuda index --
-  int ibatch = blockIdx.x;
-  int ihead = blockIdx.y;
-  int q_start = blockIdx.z*q_per_thread;
-  int qi,si,wh,ww;
-  int qindex,qindex_tmp;
+  int ibatch = blockIdx.y;
+  int ihead = blockIdx.z;
+  int ihead_f = ihead % HD_f;
+  int q_start = blockIdx.x*q_per_thread;
+  int qi,ki,wh,ww;
 
   // -- fwd decls --
   scalar_t prop_center[3];
@@ -71,19 +77,7 @@ __global__ void refinement_bilin2d_forward_kernel(
   bool valid;
   bool valid_prop[4];
   bool valid_ref[4];
-  scalar_t dist,pix0,pix1,_dist;
-
-  // int ti,hi,wi;
-  // int n_ti,n_hi,n_wi;
-  // int vH,vW,vT,nH,nW,nT;
-  // bool valid_anchor,valid_n,valid;
-  // bool vvalid_t,vvalid_h,vvalid_w,vvalid;
-  // bool nvalid_t,nvalid_h,nvalid_w,nvalid;
-
-  // -- cleaner code --
-  // int center_offsets[4] = {off_H0,off_W0,off_H1,off_W1};
-  // int patch_offset = adj - psHalf;
-  // int patch_offset = psHalf - adj;
+  scalar_t dist;
 
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
@@ -95,45 +89,36 @@ __global__ void refinement_bilin2d_forward_kernel(
     // -- block start --
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
-    qindex = qi;// + q_shift;
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qindex,qindex_tmp,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW,nHW,H,W);
+    ti = ref_patch[0];
+    nh = ref_patch[1]/stride0;
+    nw = ref_patch[2]/stride0;
 
     // -- check bounds of pixel location --
     check_bounds(valid_ref[3],ref_patch,T,H,W);
 
-    // -- search region offsets --
-    // set_search_offsets(wrOff_h, wrOff_w,
-    //                    ref_patch[0], ref_patch[1], stride1,
-    //                    wrHalf, wr, H, W, full_ws);
-    // set_search_offsets(wrOff_h,wrOff_w, ref_patch[1], ref_patch[2],
-    //                    stride1, wrHalf_h, wrHalf_w, wr_h, wr_w, H, W, full_ws);
-
-    // -- [unused] set search bounds for [optionally] expanded region --
-    // set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
-    // set_search_minmax(wrMax_w, wrMin_w, wrOff_w, wr_w, stride1, full_ws);
-
     // ---------------------------------------
     //     for each neighbor in k_search
     // ---------------------------------------
-    for(int _si = 0; _si < k_per_thread; _si++){
-      si = threadIdx.x + blockDim.x*_si;
-      if (si >= K){ continue; }
+    for(int _ki = 0; _ki < k_per_thread; _ki++){
+      ki = threadIdx.x + blockDim.x*_ki;
+      if (ki >= Ks){ continue; }
 
       // -- unpack base -- 
-      prop_center[0] = qinds[ibatch][ihead][qi][si][0]; // no search
-      prop_center[1] = qinds[ibatch][ihead][qi][si][1];
-      prop_center[2] = qinds[ibatch][ihead][qi][si][2];
+      prop_patch[0] = round(flows[ibatch][ihead_f][ti][nh][nw][ki][0]); // no search
+      prop_center[0] = flows[ibatch][ihead_f][ti][nh][nw][ki][1];
+      prop_center[1] = flows[ibatch][ihead_f][ti][nh][nw][ki][2];
 
       // -- search region offsets --
       set_search_offsets(wrOff_h, wrOff_w,
                          prop_center[0], prop_center[1], stride1,
                          wrHalf, wr, H, W, full_ws);
-      // set_search_offsets(wrOff_h,wrOff_w,
-      //                    prop_center[1],prop_center[2],
-      //                    stride1, wrHalf_h, wrHalf_w, wr_h, wr_w,
-      //                    H, W, full_ws);
+
+      // -- [unused] set search bounds for [optionally] expanded region --
+      // set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
+      // set_search_minmax(wrMax_w, wrMin_w, wrOff_w, wr_w, stride1, full_ws);
 
       // ---------------------------------------
       //     for each position to search
@@ -154,11 +139,8 @@ __global__ void refinement_bilin2d_forward_kernel(
           // ----------------------
           //    spatial center
           // ----------------------
-          // -- compute proposed location --
-          set_search_patch<scalar_t>(prop_patch,prop_center,stride1,
-                                     wh,ww,wrOff_h,wrOff_w,false);
-          // prop_patch[1] = (prop_center[0]) + stride1 * (wh - wrOff_h);
-          // prop_patch[2] = (prop_center[1]) + stride1 * (ww - wrOff_w);
+          prop_patch[1] = prop_center[0] + stride1 * (wh - wrOff_h);
+          prop_patch[2] = prop_center[1] + stride1 * (ww - wrOff_w);
 
           // -- check bounds of pixel location --
           check_bounds(valid_prop[3],prop_patch,T,H,W);
@@ -168,58 +150,59 @@ __global__ void refinement_bilin2d_forward_kernel(
           if (valid){
             compute_dist_bilin2d<scalar_t,DIST_TYPE>(dist,
                          vid0[ibatch][ihead],vid1[ibatch][ihead],
-                         ref_patch, prop_patch, 
-                         ref_pix, prop_pix, prop_i, valid_ref, valid_prop,
+                         ref_patch, prop_patch, ref_pix, prop_pix,
+                         prop_i, valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
-                         patch_offset,invalid,
-                         T,C,H,W,pix0,pix1,_dist);
+                         patch_offset,invalid,T,C,H,W);
           }
 
           // -- assignent --
           if (!valid){ dist = invalid; }
-          dists[ibatch][ihead][qi][si][wh][ww] = dist;
-          inds[ibatch][ihead][qi][si][wh][ww][0] = prop_patch[0];
-          inds[ibatch][ihead][qi][si][wh][ww][1] = prop_patch[1];
-          inds[ibatch][ihead][qi][si][wh][ww][2] = prop_patch[2];
+          dists[ibatch][ihead][ti][nh][nw][ki][wh][ww] = dist;
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][0] = prop_patch[0];
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][1] = prop_patch[1];
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][2] = prop_patch[2];
+          kselect[ibatch][ihead][ti][nh][nw][ki][wh][ww] = ki;
 
         } //  ww
       } // wh
-    } // si
+    } // ki
   } // qi
 } // fxn
 
 void refinement_bilin2d_forward_cuda(
-    const torch::Tensor vid0, const torch::Tensor vid1,
-    const torch::Tensor qinds, torch::Tensor dists, torch::Tensor inds,
+    const torch::Tensor vid0, const torch::Tensor vid1, const torch::Tensor flows,
+    torch::Tensor dists, torch::Tensor inds, torch::Tensor kselect,
     int ws, int ps, int k, int stride0, int stride1, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
     int patch_offset, int dist_type){
 
    // -- num threads --
-   int nheads = dists.size(1);
-   int nqueries = dists.size(2);
-   int ksearch = inds.size(3);
-   int wr = dists.size(4);
-   int ksearch_threads = std::min(ksearch,12);
-   int k_per_thread = ((ksearch-1)/ksearch_threads)+1;
-   int wr_threads = std::min(wr,8);
+   int B = dists.size(0);
+   int HD = dists.size(1);
+   int T = dists.size(2);
+   int nH = dists.size(3);
+   int nW = dists.size(4);
+   int Ks = dists.size(5);
+   int wr = dists.size(6);
+
+   int Q = T*nH*nW;
+   int Ks_threads = std::min(Ks,11);
+   int k_per_thread = ((Ks-1)/Ks_threads)+1;
+   int wr_threads = std::min(wr,7);
    int wr_per_thread = ((wr-1)/wr_threads) + 1;
-   dim3 nthreads(ksearch_threads,wr_threads,wr_threads);
+   dim3 nthreads(Ks_threads,wr_threads,wr_threads);
 
-   int batchsize = vid0.size(0);
-   int rem_blocks = (65535-1)/nheads+1;
    int q_per_thread = 2;
-   int nquery_blocks = ((nqueries - 1) / q_per_thread) + 1;
-   nquery_blocks = min(nquery_blocks,rem_blocks);
-   q_per_thread = ((nqueries - 1) / nquery_blocks) + 1;
-   dim3 nblocks(batchsize,nheads,nquery_blocks);
+   int nquery_blocks = ((Q - 1) / q_per_thread) + 1;
+   dim3 nblocks(nquery_blocks,B,HD);
 
-   // -- derived quantities --
-   int H = vid0.size(4);
-   int W = vid0.size(5);
-   int nH0 = (H-1)/stride0+1;
-   int nW0 = (W-1)/stride0+1;
-   int nHW0 = nH0 * nW0;
+   // int rem_blocks = (65535-1)/HD;
+   // int q_per_thread = 2;
+   // int nquery_blocks = ((Q - 1) / q_per_thread) + 1;
+   // nquery_blocks = min(nquery_blocks,rem_blocks);
+   // q_per_thread = ((Q - 1) / nquery_blocks) + 1;
+   // dim3 nblocks(nquery_blocks,B,HD);
 
    // launch kernel
    if (dist_type == 0){
@@ -227,24 +210,26 @@ void refinement_bilin2d_forward_cuda(
           refinement_bilin2d_forward_kernel<scalar_t,0><<<nblocks, nthreads>>>(
           vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          qinds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+          flows.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+          dists.packed_accessor32<scalar_t,8,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<scalar_t,9,torch::RestrictPtrTraits>(),
+          kselect.packed_accessor32<int,8,torch::RestrictPtrTraits>(),
           wr, ws, ps, pt, k, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset,
-          nW0, nHW0, q_per_thread, k_per_thread, wr_per_thread);
+          q_per_thread, k_per_thread, wr_per_thread);
         }));
    }else if (dist_type == 1){
      AT_DISPATCH_FLOATING_TYPES(vid0.type(),"refinement_bilin2d_forward_kernel", ([&] {
           refinement_bilin2d_forward_kernel<scalar_t,1><<<nblocks, nthreads>>>(
           vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          qinds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-          inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+          flows.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+          dists.packed_accessor32<scalar_t,8,torch::RestrictPtrTraits>(),
+          inds.packed_accessor32<scalar_t,9,torch::RestrictPtrTraits>(),
+          kselect.packed_accessor32<int,8,torch::RestrictPtrTraits>(),
           wr, ws, ps, pt, k, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset,
-          nW0, nHW0, q_per_thread, k_per_thread, wr_per_thread);
+          q_per_thread, k_per_thread, wr_per_thread);
         }));
    }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");
@@ -260,15 +245,15 @@ void refinement_bilin2d_forward_cuda(
 ****************************/
 
 template <typename scalar_t>
-__global__ void refinement_qinds_backward_kernel(
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_qinds,
+__global__ void refinement_flows_backward_kernel(
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_flows,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> grad_inds,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> qinds,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> flows,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> inds,
     int QK, int num_per_thread){
 
   // -- unpack shape --
-  int Ksearch = qinds.size(3);
+  int Ksearch = flows.size(3);
   int Kagg = inds.size(3);
 
   // -- decl helpers --
@@ -295,27 +280,28 @@ __global__ void refinement_qinds_backward_kernel(
 #pragma unroll
       for (int _idx=0; _idx < 3; _idx++){
         eq = eq and (fabs(inds[ibatch][ihead][qi][ki][_idx] -    \
-                          qinds[ibatch][ihead][qi][ks][_idx]) < 1e-10);
+                          flows[ibatch][ihead][qi][ks][_idx]) < 1e-10);
       }
 
       // -- assign --
       if (eq){
 #pragma unroll
         for (int _idx=0; _idx < 3; _idx++){
-          grad_qinds[ibatch][ihead][qi][ks][_idx] = \
+          grad_flows[ibatch][ihead][qi][ks][_idx] = \
             grad_inds[ibatch][ihead][qi][ki][_idx]; // should be unique
         }
         continue; // pick next (qi,ki)
       }
 
     }
+
   }
 
 } // fxn
 
-void refinement_qinds_backward_cuda(
-    torch::Tensor grad_qinds, const torch::Tensor grad_inds,
-    const torch::Tensor qinds, const torch::Tensor inds){
+void refinement_flows_backward_cuda(
+    torch::Tensor grad_flows, const torch::Tensor grad_inds,
+    const torch::Tensor flows, const torch::Tensor inds){
 
    // -- shape --
    int nbatch = inds.size(0);
@@ -336,13 +322,221 @@ void refinement_qinds_backward_cuda(
 
    // -- launch kernel --
    AT_DISPATCH_FLOATING_TYPES(inds.type(),"ref_bwd_inds_kernel", ([&] {
-   refinement_qinds_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
-          grad_qinds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+   refinement_flows_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
+          grad_flows.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           grad_inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-          qinds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+          flows.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
           QK,num_per_thread);
        }));
+
+}
+
+
+/**************************************
+
+  Backward Pass (Vid0,Vid1,Flows)
+
+**************************************/
+
+template <typename scalar_t, int DIST_TYPE>
+__global__ void refinement_vidflows_backward_kernel(
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid0,
+    torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_vid1,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_flows,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid0,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
+    // const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> flows,
+    const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_dists,
+    const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> grad_inds,
+    // const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
+    const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> kselect,
+    int wt, int ps, int pt, int stride0, int dilation,
+    bool reflect_bounds, int patch_offset, int ftrs_per_thread) {
+
+  // -- shape --
+  int B = grad_dists.size(0);
+  int K = grad_dists.size(5);
+  int HD = vid0.size(1);
+  int HD_f = grad_flows.size(1);
+  // int HD_f = flows.size(1);
+  int T = vid0.size(2);
+  int F = vid0.size(3);
+  int H = vid0.size(4);
+  int W = vid0.size(5);
+  int nH = inds.size(3);
+  int nW = inds.size(4);
+  int nHW = nH*nW;
+  int Q = T*nHW;
+
+  // -- fwd decl registers --
+  int ref_patch[3];
+  scalar_t prop_patch[3];
+  int ref[3];
+  scalar_t prop[3];
+  int prop_i[3];
+  bool valid_ref[4];
+  bool valid_prop[4];
+  bool valid_prop_patch;
+
+  bool valid;
+  scalar_t weight;
+  scalar_t iweight[2];
+  int iftr;
+
+  // -- location to fill --
+  int qi = blockIdx.x*blockDim.x+threadIdx.x;
+  int ki = blockIdx.y*blockDim.y+threadIdx.y;
+  int ihead = blockIdx.z/B;
+  int ihead_f = ihead % HD_f;
+  int ibatch = (blockIdx.z-ihead*B) % B;
+
+  // -- feature chunk --
+  int ftr_start = threadIdx.z * ftrs_per_thread;
+  int ftr_end = min(F,ftr_start + ftrs_per_thread);
+
+  // -- each region --
+  if ((qi < Q) && (ki < K)){
+
+    // -- full-resolution video query index --
+    get_pixel_loc(ref_patch,qi,stride0,nW,nHW,H,W);
+    int ti = ref_patch[0];
+    int nh = ref_patch[1]/stride0;
+    int nw = ref_patch[2]/stride0;
+
+    // -- read from tensors --
+    weight = grad_dists[ibatch][ihead][ti][nh][nw][ki];
+    iweight[0] = grad_inds[ibatch][ihead][ti][nh][nw][ki][1];
+    iweight[1] = grad_inds[ibatch][ihead][ti][nh][nw][ki][2];
+  #pragma unroll
+    for (int _idx=0; _idx < 3; _idx++){
+      prop_patch[_idx] = inds[ibatch][ihead][ti][nh][nw][ki][_idx];
+    }
+    check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
+    if (not valid_prop_patch){ return; }
+
+    // -- get kj from ki--
+    int kj = kselect[ibatch][ihead][ti][nh][nw][ki];
+
+    // -- accumulate optical flow update --
+    scalar_t acc_dFlows[8];
+  #pragma unroll
+    for (int _idx=0; _idx < 8; _idx++){
+      acc_dFlows[_idx] = static_cast<scalar_t>(0);
+    }
+
+    // -- update vid0,vid1,flows --
+    update_bwd_bilin2d_vidflows<scalar_t,DIST_TYPE>(
+                     grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
+                     vid0[ibatch][ihead],vid1[ibatch][ihead],
+                     acc_dFlows,weight,ref_patch,prop_patch,
+                     ps,pt,dilation,stride0,reflect_bounds,patch_offset,
+                     iftr,ftr_start,ftr_end,ref,prop,prop_i,
+                     valid_ref,valid_prop,valid,T,H,W);
+
+    // -- update grad_flows from grad_dists --
+    bwd_flow_assign_v2(acc_dFlows,grad_flows[ibatch][ihead_f][ti][nh][nw][kj]);
+
+    // -- update grad_flows from grad_inds --
+    if (ftr_start == 0){
+      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][2]),iweight[1]);
+      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][1]),iweight[0]);
+    }
+
+
+  }
+}
+
+void refinement_bilin2d_vidflows_backward_cuda(
+    torch::Tensor grad_vid0, torch::Tensor grad_vid1, torch::Tensor grad_flows,
+    const torch::Tensor vid0, const torch::Tensor vid1, //const torch::Tensor flows,
+    const torch::Tensor grad_dists, const torch::Tensor grad_inds,
+    const torch::Tensor inds, const torch::Tensor kselect,
+    int wt, int ps, int pt, int stride0, int dilation,
+    bool reflect_bounds, int patch_offset, int dist_type){
+
+
+  // -- unpack --
+  int B = vid0.size(0);
+  int HD = vid0.size(1);
+  int T = vid0.size(2);
+  int F = vid0.size(3);
+  int H = vid0.size(4);
+  int W = vid0.size(5);
+  int BHD = B*HD;
+
+  // -- num --
+  int nH = inds.size(3);
+  int nW = inds.size(4);
+  int nHW = nH * nW;
+  int Q = T*nH*nW;
+  assert(pt == 1);
+  int K = inds.size(5);
+
+  // -- share --
+  // int nH = (H-1)/stride0+1;
+  // int nW = (W-1)/stride0+1;
+  // int nHW = nH * nW;
+  // assert(pt == 1);
+
+  // -- launch parameters --
+  // int nbatch = grad_dists.size(0);
+  // int nheads = grad_dists.size(1);
+  // int nq = grad_dists.size(2);
+  int ftr_threads = min(1,F);
+  int ftrs_per_thread = (F-1)/ftr_threads+1;
+  dim3 threadsPerBlock(32,16,ftr_threads);
+  dim3 blocksPerGrid(1, 1, B*HD);
+  blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
+  blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));
+
+  // -- view launch info --
+  // fprintf(stdout,"BHD,nblocks_queries,chnls_nblocks: %d,%d,%d\n",
+  //         BHD,nblocks_queries,chnls_nblocks);
+  // fprintf(stdout,"query_nthreads,neigh_nthreads: %d,%d\n",
+  //         query_nthreads,neigh_nthreads);
+  // int W_t = dists.size(3);
+  // int wt = (W_t-1)/2;
+
+  // -- launch kernel --
+  if (dist_type == 0){ // prod
+    AT_DISPATCH_FLOATING_TYPES(vid0.type(),"refinement_vidflows_kernel", ([&] {
+        refinement_vidflows_backward_kernel<scalar_t,0>
+        <<<blocksPerGrid, threadsPerBlock>>>(
+            grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_flows.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            // flows.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            // dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            kselect.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+            wt, ps, pt, stride0, dilation, reflect_bounds, patch_offset, 
+            ftrs_per_thread);}));
+  }else if (dist_type == 1){ // l2
+      AT_DISPATCH_FLOATING_TYPES(vid0.type(),"refinement_vidflows_kernel", ([&] {
+      refinement_vidflows_backward_kernel<scalar_t,1>
+        <<<blocksPerGrid, threadsPerBlock>>>(
+            grad_vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_flows.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            vid0.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            // flows.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            grad_inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            // dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
+            inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+            kselect.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+            wt, ps, pt, stride0, dilation, reflect_bounds, patch_offset, 
+            ftrs_per_thread);}));
+  }else{
+    throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");
+  }
 
 }
 

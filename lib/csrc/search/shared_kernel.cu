@@ -51,9 +51,9 @@ __device__ __forceinline__ dtype bounds_clip(dtype val, int lim ){
 
 template<typename itype=int>
 __device__ __forceinline__ 
-void get_pixel_loc(itype* pix,  int qindex, int tmp, int stride0,
+void get_pixel_loc(itype* pix,  int qindex, int stride0,
                    int nW0, int nHW0, int H, int W){
-  int nH_index;
+  int tmp,nH_index;
   if (is_same_v<itype,int>){
     tmp = qindex;
     pix[0] = tmp / nHW0;
@@ -842,8 +842,8 @@ void bwd_flow_assign(scalar_t* acc_dFlows, int nh, int nw, int signH, int signW,
       val1 = acc_dFlows[kx+1];
 
       // -- update --
-      atomicAdd(&(gflows[0][nh][nw]),signW*val0);
-      atomicAdd(&(gflows[1][nh][nw]),signH*val1);
+      atomicAdd(&(gflows[0][nh][nw]),signW*val0); // w
+      atomicAdd(&(gflows[1][nh][nw]),signH*val1); // h
       // atomicAdd(&(gflows[0][nh][nw]),val0);
       // atomicAdd(&(gflows[1][nh][nw]),val1);
 
@@ -852,3 +852,33 @@ void bwd_flow_assign(scalar_t* acc_dFlows, int nh, int nw, int signH, int signW,
   }
 
 }
+
+
+template<typename scalar_t>
+__device__ __forceinline__ 
+void bwd_flow_assign_v2(scalar_t* acc_dFlows,
+     torch::TensorAccessor<scalar_t,1,torch::RestrictPtrTraits,int32_t> gflows){
+
+  // -- assignment from accumulated dFlows --
+  int kx;
+  #pragma unroll
+  for (int ix=0;ix<2;ix++){
+    #pragma unroll
+    for (int jx=0;jx<2;jx++){
+
+      // -- read --
+      kx = ix * 4 + jx * 2;
+
+      // -- update --
+      atomicAdd(&(gflows[2]),acc_dFlows[kx]);
+      atomicAdd(&(gflows[1]),acc_dFlows[kx+1]);
+      // atomicAdd(&(gflows[0][nh][nw]),val0);
+      // atomicAdd(&(gflows[1][nh][nw]),val1);
+
+
+    }
+  }
+
+}
+
+
