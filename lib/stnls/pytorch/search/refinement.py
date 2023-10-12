@@ -80,7 +80,7 @@ def refine_forward(vid0, vid1, flows,
     #     print(flows[0])
     #     print(inds[0])
 
-    # # -- manage self dists --
+    # -- manage self dists --
     # # H,W = vid0.shape[-2:]
     # anchor_self = self_action == "anchor"
     # remove_self = self_action == "remove"
@@ -90,29 +90,40 @@ def refine_forward(vid0, vid1, flows,
     # dists,inds,kselect = manage_self_ksel(dists,inds,kselect,self_action,wr)
     # # kselect = kselect[...,1:] if remove_self else kselect
     # # dists.shape = (B,H,Q,Ks,wr*wr)
+    if self_action == "anchor":
+        stnls.nn.anchor_self(dists,inds,stride0,H,W)
+    elif self_action == "anchor_each":
+        H,W = vid0.shape[-2:]
+        stnls.nn.anchor_self_refine(dists,inds,flows,stride0,H,W)
+    else:
+        assert self_action == None
 
     # -- topk --
-    if topk_mode == "default":
+    assert self_action in [None,"anchor","anchor_each"]
+    anchor_self = False if self_action is None else "anchor" in self_action
+    if topk_mode == "all":
         dim = 3
         dists=dists.view(B,HD,Q,Ks*wr*wr)
         inds=inds.view(B,HD,Q,Ks*wr*wr,3)
         kselect = kselect.view(B,HD,Q,Ks*wr*wr) if not(kselect is None) else kselect
+        unique = True
     elif topk_mode == "each":
-        dim = 4
-        dists=dists.view(B,HD,Q,Ks,wr*wr)
-        inds=inds.view(B,HD,Q,Ks,wr*wr,3)
-        kselect = kselect.view(B,HD,Q,Ks,wr*wr) if not(kselect is None) else kselect
+        # dim = 4
+        # dists=dists.view(B,HD,Q,Ks,wr*wr)
+        # inds=inds.view(B,HD,Q,Ks,wr*wr,3)
+        # kselect = kselect.view(B,HD,Q,Ks,wr*wr) if not(kselect is None) else kselect
+        # unique = False
+        dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
     else:
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
 
     # -- exec topk --
     # print(dists.shape,inds.shape,kselect.shape,k)
-    anchor_self = self_action == "anchor"
-    dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
-                                     descending=descending,unique=False,
-                                     return_order=True)
-    if not(kselect is None) and not(order is None):
-        kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
+    # dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
+    #                                  descending=descending,unique=unique,
+    #                                  return_order=True)
+    # if not(kselect is None) and not(order is None):
+    #     kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
 
     # -- reshape for output --
     dists=dists.view(B,HD,T,nH,nW,-1)
@@ -134,7 +145,7 @@ class RefineSearchFunction(th.autograd.Function):
                 ws, wt, wr, k, kr=-1, ps=1, nheads=1,
                 stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
                 restricted_radius=False, reflect_bounds=True,
-                full_ws=False, topk_mode="default", self_action=None,
+                full_ws=False, topk_mode="all", self_action=None,
                 use_adj=False, normalize_bwd=False, k_agg=-1,
                 itype_fwd="int", itype_bwd="int"):
         """
@@ -199,7 +210,7 @@ class RefineSearch(th.nn.Module):
     def __init__(self, ws, wt, wr, k, kr, ps, nheads=1,
                  stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
                  restricted_radius=False, reflect_bounds=True,
-                 full_ws=False, topk_mode="default", self_action=None,
+                 full_ws=False, topk_mode="all", self_action=None,
                  use_adj=False, normalize_bwd=False, k_agg=-1,
                  itype_fwd="int", itype_bwd="int"):
         super().__init__()
@@ -269,7 +280,7 @@ def _apply(vid0, vid1, flows,
            # ws, ps, k, wr, kr=-1, nheads=1, stride0=4, stride1=1,
            # dilation=1, pt=1,
            dist_type="l2", restricted_radius=False, reflect_bounds=True, full_ws=False,
-           topk_mode="default", self_action=None, use_adj=False,
+           topk_mode="all", self_action=None, use_adj=False,
            normalize_bwd=False, k_agg=-1, itype_fwd="int", itype_bwd="int"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
@@ -294,7 +305,7 @@ def extract_config(cfg,restrict=True):
              "nheads":1, "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "dist_type":"l2", "restricted_radius":False,
              "reflect_bounds":True, "full_ws":False,
-             "topk_mode": "default", "self_action":None,
+             "topk_mode": "all", "self_action":None,
              "use_adj":False, "normalize_bwd": False, "k_agg":-1,
              "itype_fwd":"int", "itype_bwd":"int"}
     return extract_pairs(cfg,pairs,restrict=restrict)

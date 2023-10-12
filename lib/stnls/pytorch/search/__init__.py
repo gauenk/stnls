@@ -13,6 +13,7 @@ from . import nls_accumulated_flows as nls_accumulated_flows_f
 from . import n3mm_search as n3mm_search_f
 from . import nls_pair as nls_pair_f
 from .utils import empty_flow,search_wrap
+from .paired_utils import get_time_window_inds
 
 # -- api to programatically access search functions --
 from . import api # access uniformly

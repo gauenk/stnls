@@ -18,7 +18,7 @@ def manage_self(dists,inds,anchor_self,remove_self,qshift,stride0,H,W):
         dists = dists.view(B,HD,Q,-1)
         d2or3 = inds.shape[-1]
         inds = inds.view(B,HD,Q,-1,d2or3)
-        stnls.nn.anchor_self(dists,inds,stride0,H,W,qshift)
+        order = stnls.nn.anchor_self(dists,inds,stride0,H,W,qshift)[-1]
         dists=dists.reshape(B,HD,T,nH0,nW0,W_t,ws*ws)
         inds=inds.reshape(B,HD,T,nH0,nW0,W_t,ws*ws,d2or3)
     return dists,inds

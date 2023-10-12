@@ -16,11 +16,16 @@ from . import non_local_attn as non_local_attn_f
 from . import non_local_attn_stack as non_local_attn_stack_f
 from . import non_local_attn_stack_deform as non_local_attn_stack_deform_f
 from . import remove_same_frame as remove_same_frame_f
+from .accumulate_flow import index_grid
 
 # -- [register] so we can run stnls.nn.NAME_HERE --
 topk = topk_f.run
-topk_time = topk_time_f.run
+topk_each = topk_f.run_each
+# topk_time = topk_f.run_time
+# topk_time = topk_time_f.run
 anchor_self = anchor_self_f.run
+anchor_self_time = anchor_self_f.run_time
+anchor_self_refine = anchor_self_f.run_refine
 temporal_inds = temporal_inds_f.run
 non_local_inds = non_local_inds_f.run
 accumulate_flow = accumulate_flow_f.run

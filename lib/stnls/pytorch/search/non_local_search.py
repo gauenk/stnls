@@ -80,27 +80,42 @@ def nls_forward(vid0, vid1, flows,
     # dists = th.nan_to_num(dists,fill_val)
     # print(dists.shape)
 
-    # -- manage self dists --
-    anchor_self = self_action == "anchor"
-    remove_self = self_action == "remove"
-    # assert remove_self == False
-    dists,inds = manage_self(dists,inds,anchor_self,
-                             remove_self,0,stride0,H,W)
+    # # -- manage self dists --
+    # anchor_self = self_action == "anchor"
+    # remove_self = self_action == "remove"
+    # # assert remove_self == False
+    # dists,inds = manage_self(dists,inds,anchor_self,
+    #                          remove_self,0,stride0,H,W)
+    assert self_action in [None,"anchor","anchor_each","remove","remove_tref"]
+    anchor_self = False if self_action is None else "anchor" in self_action
+    if self_action == "anchor":
+        stnls.nn.anchor_self(dists,inds,stride0,H,W)
+    elif self_action == "anchor_each":
+        stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
+    elif self_action == "remove":
+        raise NotImplementedError("Not implemented self_action [remove].")
+    elif self_action == "remove_tref":
+        dists = dists[...,1:,:,:]
+        inds = inds[...,1:,:,:,:]
 
     # -- topk --
-    if topk_mode == "default":
-        dists=dists.view(B,HD,T*nH0*nW0,-1)
-        inds=inds.view(B,HD,T*nH0*nW0,-1,3)
-        dists,inds,order = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                         descending=descending,return_order=True)
-    elif topk_mode == "time":
-        st = 2*wt+1
-        assert k % st == 0
-        ke = k//st
-        dists,inds = stnls.nn.topk_time(dists,inds,ke,ws,dim=3,anchor=anchor_self,
-                                        descending=descending,unique=False)
+    if topk_mode == "all":
+        dim = 3
+        dists=dists.view(B,HD,Q,W_t*ws*ws)
+        inds=inds.view(B,HD,Q,W_t*ws*ws,3)
+    elif topk_mode == "each":
+        # dim = 4
+        # dists=dists.view(B,HD,Q,W_t,ws*ws)
+        # inds=inds.view(B,HD,Q,W_t,ws*ws,3)
+        dists = rearrange(dists,'... wh ww -> ... (wh ww)')
+        inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
+        dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
+        # dists,inds = stnls.nn.topk_time(dists,inds,k,dim=dim,anchor=anchor_self,
+        #                                 descending=descending,return_order=True)
     else:
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
+    # dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
+    #                                  descending=descending,return_order=True)
 
     # -- reshape --
     dists=dists.view(B,HD,T,nH0,nW0,-1)
@@ -120,7 +135,7 @@ class NonLocalSearchFunction(th.autograd.Function):
     def forward(ctx, vid0, vid1, flows,
                 ws, wt, ps, k, nheads=1,
                 stride0=4, stride1=1, dist_type="l2",
-                dilation=1, pt=1, topk_mode="default",
+                dilation=1, pt=1, topk_mode="all",
                 self_action=None,
                 reflect_bounds=True, full_ws=True,
                 use_adj=False, normalize_bwd=False, k_agg=-1, itype="int"):
@@ -200,7 +215,7 @@ class NonLocalSearch(th.nn.Module):
 
     def __init__(self, ws, wt, ps, k, nheads=1,
                  stride0=4, stride1=1, dist_type="l2",
-                 dilation=1, pt=1, self_action=None, topk_mode="default",
+                 dilation=1, pt=1, self_action=None, topk_mode="all",
                  reflect_bounds=True, full_ws=True, use_adj=False,
                  normalize_bwd=False, k_agg=-1, itype="float"):
         super().__init__()
@@ -291,7 +306,7 @@ def _apply(vid0, vid1, flows,
            ws, wt, ps, k, nheads=1,
            stride0=1, stride1=1, dist_type="l2",
            dilation=1, pt=1, self_action=None,
-           topk_mode="default",reflect_bounds=True,
+           topk_mode="all",reflect_bounds=True,
            full_ws=True,use_adj=False,
            normalize_bwd=False, k_agg=-1, itype="float"):
     # wrap "new (2018) apply function
@@ -317,7 +332,7 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":True,
              "self_action":None,"use_adj":False,
              "normalize_bwd": False, "k_agg":-1,
-             "itype":"float","topk_mode":"default",}
+             "itype":"float","topk_mode":"all",}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 

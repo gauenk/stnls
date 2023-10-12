@@ -2,6 +2,28 @@
 
 import torch as th
 
+def get_time_window_inds(ti,wt,T):
+    swap = False
+    t_inc = 0
+    prev_t = ti
+    t_shift = min(0,ti-wt) + max(0,ti + wt - (T-1))
+    t_max = min(T-1,ti + wt - t_shift);
+    # print(t_shift,t_max)
+    tj = ti
+    inds = []
+    for _tj in range(2*wt+1):
+        # -- update search frame --
+        prev_t = tj
+        tj = prev_t + t_inc
+        swap = tj > t_max
+        t_inc = 1 if (t_inc == 0) else t_inc
+        t_inc = -1 if swap else t_inc
+        tj = ti-1 if swap else tj
+        prev_t = ti if swap else prev_t
+        # print(ti,tj,t_inc,swap)
+        inds.append(tj)
+    return inds
+
 def paired_vids(forward, vid0, vid1, acc_flows, wt, skip_self=False):
     dists,inds = [],[]
     T = vid0.shape[1]

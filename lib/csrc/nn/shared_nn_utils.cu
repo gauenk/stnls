@@ -18,12 +18,15 @@ at::ScalarType get_type(const torch::Tensor my_tensor){
 template< class T, class U >
 inline constexpr bool is_same_v = ::cuda::std::is_same<T, U>::value;
 
-__inline__ __device__ int bounds(int val, int lim ){
-  int vval = val;
+template<typename dtype=int>
+__device__ __forceinline__ dtype bounds(dtype val, int lim ){
+  dtype vval = val;
   if (val < 0){
-    vval = -val;
-  }else if (val >= lim){
-    vval = 2*(lim-1)-val;
+    vval = -val; // want ("-1" -> "1") _not_ ("-1" -> "0")
+    // vval = 10; // want ("-1" -> "1") _not_ ("-1" -> "0")
+  }else if (val > (lim-1)){
+    vval = 2*(lim-1)-val; // want ("H" -> "H-2") _not_ ("H" -> "H-1")
+    // vval = 10;
   }
   return vval;
 }

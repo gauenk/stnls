@@ -20,16 +20,16 @@ def dimN_dim3(dists,inds):
     return dists,inds,dshape,ishape
 
 def dim3_dimN(dists,inds,dshape,ishape):
-    dists = dists.reshape(dshape)
-    inds = inds.reshape(ishape)
+    dists = dists.view(dshape)
+    inds = inds.view(ishape)
     return dists,inds
 
 def dimN_dim3_dists(tensor):
     shape = tensor.shape
     Q,K = tensor.shape[-2:]
-    return tensor.reshape(-1,Q,K).contiguous(),shape
+    return tensor.view(-1,Q,K).contiguous(),shape
 
 def dimN_dim3_inds(tensor):
     shape = tensor.shape
     Q,K,d2or3 = tensor.shape[-3:]
-    return tensor.reshape(-1,Q,K,d2or3).contiguous(),shape
+    return tensor.view(-1,Q,K,d2or3).contiguous(),shape

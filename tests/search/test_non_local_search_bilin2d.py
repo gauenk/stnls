@@ -527,3 +527,122 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
     # # print("[in/out]: ",flows.numel(),out.numel())
 
 
+def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
+                    self_action,dist_type,seed):
+
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+    # -- init vars --
+    dil = dilation
+    pt = 1
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    reflect_bounds = False
+    use_adj = False
+    full_ws = True
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    topk_mode = "each"
+    itype = "float"
+    nheads = 1
+
+    # -- load data --
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,:3,::2,::2].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid /= vid.max()
+    vid0 = th.rand_like(vid)-0.5
+    vid1 = th.rand_like(vid)-0.5
+
+    # -- compute flow --
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    fflow = 10*th.randn_like(flows.fflow)
+    bflow = 10*th.randn_like(flows.bflow)
+    B,T,F,H,W = vid.shape
+    W_t = 2*wt+1
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    flows = 2*th.rand((B,T,W_t-1,2,nH,nW)).to(vid0.device)
+
+    # -- exec fold fxns --
+    k0 = ws*ws
+    search0 = stnls.search.NonLocalSearch(ws, wt, ps, -1, nheads,
+                                          dilation=dil,stride0=stride0, stride1=stride1,
+                                          reflect_bounds=reflect_bounds,full_ws=False,
+                                          self_action=None,use_adj=use_adj,
+                                          dist_type=dist_type,topk_mode=topk_mode,
+                                          itype=itype)
+    k1 = 3
+    search1 = stnls.search.NonLocalSearch(ws, wt, ps, k1, nheads,
+                                          dilation=dil,stride0=stride0, stride1=stride1,
+                                          reflect_bounds=reflect_bounds,full_ws=False,
+                                          self_action="anchor_each",use_adj=use_adj,
+                                          dist_type=dist_type,topk_mode=topk_mode,
+                                          itype=itype)
+    k2 = 5
+    search2 = stnls.search.NonLocalSearch(ws, wt, ps, k2, nheads,
+                                          dilation=dil,stride0=stride0, stride1=stride1,
+                                          reflect_bounds=reflect_bounds,full_ws=True,
+                                          self_action="anchor_each",use_adj=use_adj,
+                                          dist_type=dist_type,topk_mode=topk_mode,
+                                          itype=itype)
+
+
+
+    # -- exec --
+    HD = nheads
+    vshape = (B,HD,T,nH,nW,W_t)
+
+    dists0,inds0 = search0(vid0,vid1,flows)
+    dists0,inds0 = dists0.view(vshape+(k0,)),inds0.view(vshape+(k0,3,))
+    dists0 = dists0[...,:,ws//2+ws]
+    inds0= inds0[...,:,ws//2+ws,:]
+
+    dists1,inds1 = search1(vid0,vid1,flows)
+    dists1,inds1 = dists1.view(vshape+(k1,)),inds1.view(vshape+(k1,3,))
+    dists1 = dists1[...,:,0]
+    inds1= inds1[...,:,0,:]
+
+
+    dists2,inds2 = search2(vid0,vid1,flows)
+    dists2,inds2 = dists2.view(vshape+(k2,)),inds2.view(vshape+(k2,3,))
+    dists2 = dists2[...,:,0]
+    inds2= inds2[...,:,0,:]
+
+
+    # -- check all pairwise --
+    dists = [dists0,dists1,dists2]
+    inds = [inds0,inds1,inds2]
+    for i in range(3):
+        for j in range(3):
+            if i == j: continue
+            assert th.allclose(dists[i],dists[j],1e-3,1e-3,equal_nan=True)
+            assert th.allclose(inds[i],inds[j],1e-3,1e-3,equal_nan=True)
+
+    # -- check against flow --
+    def reflect_bounds(flow,i,L):
+        args = th.where(flow[...,i] >= L)
+        flow[...,i][args] = 2*L - flow[...,i][args]
+        args = th.where(flow[...,i] < 0)
+        flow[...,i][args] = -flow[...,i][args]
+    grid = stnls.nn.index_grid(nH,nW).flip(1)*stride0
+    for i in range(3):
+        inds_i = inds[i]
+        for ti in range(T):
+            for si in range(W_t):
+                ind = inds_i[:,0,ti,:,:,si,1:]
+                if si > 0:
+                    flow = flows[:,ti,si-1].flip(1) + grid
+                else:
+                    flow = th.zeros_like(flows[:,ti,0]).flip(1) + grid
+                flow = rearrange(flow,'b i h w -> b h w i')
+                reflect_bounds(flow,0,H)
+                reflect_bounds(flow,1,W)
+                diff = th.mean(th.abs(ind - flow)).item()
+                assert th.allclose(ind,flow,1e-3,1e-3,equal_nan=True)

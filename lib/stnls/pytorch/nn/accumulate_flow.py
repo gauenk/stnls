@@ -182,10 +182,11 @@ def flow_warp(x, flow, interp_mode='bilinear',
     n, _, h, w = x.size()
 
     # -- create mesh grid --
-    grid_y, grid_x = th.meshgrid(th.arange(0, h, dtype=x.dtype, device=x.device),
-                                 th.arange(0, w, dtype=x.dtype, device=x.device))
-    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
-    grid.requires_grad = False
+    grid = index_grid(h,w,dtype=x.dtype,device=x.device)
+    # grid_y, grid_x = th.meshgrid(th.arange(0, h, dtype=x.dtype, device=x.device),
+    #                              th.arange(0, w, dtype=x.dtype, device=x.device))
+    # grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
+    # grid.requires_grad = False
 
     vgrid = grid + flow
 
@@ -201,6 +202,14 @@ def flow_warp(x, flow, interp_mode='bilinear',
     )
 
     return output
+
+def index_grid(H,W,dtype=th.float,device="cuda"):
+    # -- create mesh grid --
+    grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
+                                 th.arange(0, W, dtype=dtype, device=device))
+    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
+    grid.requires_grad = False
+    return grid
 
 def bclip(flow,H,W):
     grid = make_grid(flow[None,:])[0]

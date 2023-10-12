@@ -34,7 +34,7 @@ def pytest_generate_tests(metafunc):
     np.random.seed(seed)
     test_lists = {"ws":[3],"wt":[1],"k":[-1],"wr":[3],"kr":[-1],
                   "ps":[1],"stride0":[4],"stride1":[1],"dilation":[1],
-                  "self_action":[None],"nheads":[1],"seed":[0],
+                  "self_action":["anchor_each"],"nheads":[1],"seed":[0],
                   "dist_type":["l2"],"itype":["float"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -46,7 +46,7 @@ def set_seed(seed):
     random.seed(seed)
 
 def test_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
-             self_action,nheads,dist_type,itype,seed):
+             nheads,dist_type,itype,seed):
     """
 
     Test the CUDA code with torch code
@@ -57,6 +57,7 @@ def test_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
 
 
     # -- init vars --
+    self_action = None
     dil = dilation
     pt = 1
     device = "cuda:0"
@@ -102,9 +103,77 @@ def test_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
     assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True).item()
 
 
+def test_fwd_anchor(ws,wt,wr,ps,stride0,stride1,dilation,
+                    self_action,nheads,dist_type,itype,seed):
+
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+    # -- init vars --
+    dil = dilation
+    pt = 1
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    reflect_bounds = False
+    use_adj = False
+    full_ws = False
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    topk_mode = "each"
+
+
+    # -- load data --
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,:3,::2,::2].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid /= vid.max()
+
+    # -- compute flow --
+    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
+    fflow = 10*th.randn_like(flows.fflow)
+    bflow = 10*th.randn_like(flows.bflow)
+
+    # -- exec fold fxns --
+    k = -1
+    search = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
+                                         dilation=dil,stride0=stride0, stride1=stride1,
+                                         reflect_bounds=reflect_bounds,full_ws=full_ws,
+                                         self_action=self_action,use_adj=use_adj,
+                                         dist_type=dist_type,topk_mode=topk_mode,
+                                         itype=itype)
+    k = 1
+    kr = -1
+    refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads,
+                                       dilation=dil,stride0=stride0, stride1=stride1,
+                                       reflect_bounds=reflect_bounds,full_ws=full_ws,
+                                       self_action=self_action,use_adj=use_adj,
+                                       dist_type=dist_type,topk_mode=topk_mode,
+                                       itype_fwd=itype,itype_bwd=itype)
+
+    # -- test api --
+    dists_gt,inds_gt = search(vid,vid,fflow,bflow)
+    print(inds_gt.shape)
+    vshape = (2,1,5,8,8,2*wt+1,ws*ws,3)
+    print(inds_gt.view(vshape)[0,0,0,:2,:2,:,:2])
+    print(inds_gt.view(vshape)[0,0,1,:2,:2,:,:2])
+    th.cuda.synchronize()
+    dists_te,inds_te = refine(vid,vid,inds_gt)
+
+    # print(inds_te.shape)
+    # print(inds_te[0,0,:2,:2,:2,:])
+
+    # -- compare --
+    assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True).item()
+
 # @pytest.mark.slow
-def test_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,self_action,
-                  k,nheads,dist_type,itype,seed):
+def test_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
+             k,nheads,dist_type,itype,seed):
     """
 
     Test the CUDA code with torch code
