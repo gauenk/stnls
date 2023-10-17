@@ -16,12 +16,26 @@ import stnls_cuda
 from .dim3_utils import dimN_dim3,dim3_dimN
 
 def run(dists,inds,stride0,H,W,qstart=0):
-    dists,inds,dshape,ishape = dimN_dim3(dists,inds)
-    order = th.zeros_like(dists[...,0])
-    stnls_cuda.anchor_self(dists,inds,order,qstart,stride0,H,W)
-    dists,inds = dim3_dimN(dists,inds,dshape,ishape)
-    order = order.reshape(dshape[:-1])
-    return dists,inds,order
+
+    # -- view --
+    # print(dists.shape)
+    B,HD,Q,Ks,ws,ws = dists.shape
+    dshape,ishape = list(dists.shape),list(inds.shape)
+    dists = dists.view(B*HD,Q,Ks*ws*ws)
+    inds = inds.view(B*HD,Q,Ks*ws*ws,3)
+
+    # -- allocate --
+    order = th.zeros_like(dists[...,0]).int()
+
+    # -- run --
+    stnls_cuda.anchor_self(dists,inds,order,stride0,H,W)
+
+    # -- return --
+    dists = dists.reshape(dshape)
+    inds = inds.reshape(ishape)
+    order = order.reshape(dshape[:-3])
+
+    return order
 
 def run_refine(dists,inds,flows,stride0,H,W):
 

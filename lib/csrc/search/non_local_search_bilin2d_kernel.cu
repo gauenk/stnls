@@ -202,11 +202,11 @@ void non_local_search_bilin2d_forward_cuda(
    int nqueries = dists.size(2);
 
    int ws = dists.size(4);
-   int ws_threads = std::min(ws,15);
+   int ws_threads = std::min(ws,13);
    int ws_per_thread = (ws/ws_threads) + 1;
    int W_t = dists.size(3);
    int wt = (W_t-1)/2;
-   int wt_threads = std::min(W_t,3);
+   int wt_threads = std::min(W_t,2);
    int wt_per_thread = (W_t/wt_threads) + 1;
 
    dim3 nthreads(ws_threads,ws_threads,wt_threads);
@@ -308,7 +308,6 @@ __global__ void nls_bwd_vid_kernel(
   bool valid;
   scalar_t weight;
   scalar_t iweight[3];
-  int iftr;
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -342,7 +341,7 @@ __global__ void nls_bwd_vid_kernel(
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,patch_offset,
-                     iftr,ftr_start,ftr_end,ref,prop,prop_i,
+                     ftr_start,ftr_end,ref,prop,prop_i,
                      valid_ref,valid_prop,valid,T,H,W);
 
 
@@ -480,7 +479,6 @@ __global__ void nls_bwd_vidflows_kernel(
   bool valid;
   scalar_t weight;
   scalar_t iweight[2];
-  int iftr;
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -534,7 +532,7 @@ __global__ void nls_bwd_vidflows_kernel(
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      acc_dFlows,weight,ref_patch,prop_patch,
                      ps,pt,dilation,stride0,reflect_bounds,patch_offset,
-                     iftr,ftr_start,ftr_end,ref,prop,prop_i,
+                     ftr_start,ftr_end,ref,prop,prop_i,
                      valid_ref,valid_prop,valid,T,H,W);
 
 

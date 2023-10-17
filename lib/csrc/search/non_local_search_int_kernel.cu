@@ -157,6 +157,7 @@ __global__ void non_local_search_int_forward_kernel(
                          ps,pt,dilation,reflect_bounds,
                          patch_offset,invalid,T,F,H,W);
 
+
           }
 
           // -- assignent --
@@ -288,7 +289,6 @@ __global__ void non_local_search_int_vid_backward_kernel(
   bool valid_prop[4];
   bool valid;
   scalar_t dist,weight;
-  int iftr;
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -321,7 +321,7 @@ __global__ void non_local_search_int_vid_backward_kernel(
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,
-                     patch_offset,iftr,ftr_start,ftr_end,
+                     patch_offset,ftr_start,ftr_end,
                      ref,prop,valid_ref,valid_prop,valid,T,H,W);
 
   }

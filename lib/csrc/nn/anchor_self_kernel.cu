@@ -5,15 +5,15 @@
 #include <vector>
 #include <assert.h>
 #include <cuda/std/type_traits>
-#include "shared_nn_utils.cu"
-// #include "search/shared_kernel.cu"
+// #include "shared_nn_utils.cu"
+#include "../search/shared_kernel.cu"
 
-__device__ __forceinline__
-void set_time_range(int& t_max, int ti, int T, int wt){
-  int t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1));
-  // t_min = max(ti - wt - t_shift,0);
-  t_max = min(T-1,ti + wt - t_shift);
-}
+// __device__ __forceinline__
+// void set_time_range(int& t_max, int ti, int T, int wt){
+//   int t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1));
+//   // t_min = max(ti - wt - t_shift,0);
+//   t_max = min(T-1,ti + wt - t_shift);
+// }
 
 // template< class T, class U >
 // inline constexpr bool is_same_v = cuda::std::is_same<T, U>::value;
@@ -25,7 +25,7 @@ __global__ void anchor_self_kernel(
     torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<itype,4,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> order,
-    int qstart, int stride0, int H, int W, int nHW, int nW, int q_per_thread){
+    int stride0, int H, int W, int nHW, int nW, int q_per_thread){
 
   // -- starting qi for thread --
   int Q = dists.size(1);
@@ -38,7 +38,7 @@ __global__ void anchor_self_kernel(
   itype loc[3];
   itype i_tmp[3];
   scalar_t d_tmp;
-  int qi,i_mod,qindex;
+  int qi;
   scalar_t delta,dmin_curr;
   int min_idx;
 
@@ -49,12 +49,11 @@ __global__ void anchor_self_kernel(
     // -- current query --
     qi = qi_thread + qi_ix;
     if (qi >= Q){ continue; }
-    qindex = qi + qstart;
 
     // -- unpack pixel locs --
     // get_pixel_loc(loc,  qi, tmp,  stride0, nW, nHW, H,W);
-    int tmp = qindex;
-    iloc[0] = qindex / nHW;
+    int tmp = qi;
+    iloc[0] = qi / nHW;
     tmp = (tmp - iloc[0]*nHW); 
     int nH_index = tmp / nW;
     iloc[1] = (nH_index*stride0) % H;
@@ -130,10 +129,8 @@ __global__ void anchor_self_kernel(
 
 
 void anchor_self_forward_cuda(
-     torch::Tensor dists,
-     torch::Tensor inds,
-     torch::Tensor order,
-     int qstart, int stride0, int H, int W){
+     torch::Tensor dists, torch::Tensor inds,
+     torch::Tensor order, int stride0, int H, int W){
   
   // -- unpack --
   int B = dists.size(0);
@@ -149,13 +146,12 @@ void anchor_self_forward_cuda(
   int nRun = Q;
 
   // -- kernel params --
-  int q_per_thread = 1;
-  int _nthreads = 256;
-  // int _nthreads = 128;
+  int q_per_thread = 2;
+  int _nthreads = 512;
   dim3 nthreads(_nthreads);
   int _nblocks = (nRun-1)/(_nthreads*q_per_thread)+1;
   dim3 nblocks(_nblocks,B);
-  // fprintf(stdout,"nblocks,nthreads: %d,%d\n",_nblocks,_nthreads);
+  // fprintf(stdout,"B,Q,K,nblocks,nthreads: %d,%d,%d,%d,%d\n",B,Q,K,_nblocks,_nthreads);
   // fprintf(stdout,"nH,nW,stride0: %d,%d,%d\n",nH,nW,stride0);
 
   // -- launch kernel --
@@ -168,7 +164,7 @@ void anchor_self_forward_cuda(
          dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
          order.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-         qstart, stride0, H, W, nHW, nW, q_per_thread);
+         stride0, H, W, nHW, nW, q_per_thread);
         }));
   }else if (itype == dtype){
   // }else if(std::is_same_v<inds.type(),dists.type()>){
@@ -177,7 +173,7 @@ void anchor_self_forward_cuda(
          dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
          order.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-         qstart, stride0, H, W, nHW, nW, q_per_thread);
+         stride0, H, W, nHW, nW, q_per_thread);
         }));
 
   }else{
@@ -224,7 +220,7 @@ __global__ void anchor_self_time_kernel(
   itype loc[3];
   itype i_tmp[3];
   scalar_t d_tmp;
-  int qi,i_mod,qindex;
+  int qi;
   scalar_t delta,dmin_curr;
   int min_idx;
 
@@ -235,12 +231,11 @@ __global__ void anchor_self_time_kernel(
     // -- current query --
     qi = qi_thread + qi_ix;
     if (qi >= Q){ continue; }
-    qindex = qi;
 
     // -- unpack pixel locs --
     // get_pixel_loc(loc,  qi, tmp,  stride0, nW, nHW, H,W);
-    int tmp = qindex;
-    iloc[0] = qindex / nHW;
+    int tmp = qi;
+    iloc[0] = qi / nHW;
     tmp = (tmp - iloc[0]*nHW); 
     int nH_index = tmp / nW;
     iloc[1] = (nH_index*stride0) % H;
@@ -356,7 +351,6 @@ void anchor_self_time_forward_cuda(
   auto itype = get_type(inds);
   auto dtype = get_type(dists);
   if (itype == torch::kInt32){
-    fprintf(stdout,"int.\n");
     AT_DISPATCH_FLOATING_TYPES(dists.type(), "anchor_self_time_kernel", ([&] {
          anchor_self_time_kernel<scalar_t,int><<<nblocks, nthreads>>>(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
@@ -415,7 +409,7 @@ __global__ void anchor_self_refine_kernel(
   itype loc[3];
   itype i_tmp[3];
   scalar_t d_tmp;
-  int qi,i_mod;
+  int qi;
   scalar_t delta,dmin_curr;
   int min_idx;
 
@@ -519,8 +513,6 @@ void anchor_self_refine_forward_cuda(
   auto itype = get_type(inds);
   auto dtype = get_type(dists);
   if (itype == torch::kInt32){
-    fprintf(stdout,"int.\n");
-
     AT_DISPATCH_FLOATING_TYPES(dists.type(), "anchor_self_refine_kernel", ([&] {
          anchor_self_refine_kernel<scalar_t,int><<<nblocks, nthreads>>>(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),

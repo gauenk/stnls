@@ -54,11 +54,6 @@ __global__ void refinement_bilin2d_forward_kernel(
   scalar_t wrHalf = (wr-1)/2;
   scalar_t wrOff_h = wrHalf;
   scalar_t wrOff_w = wrHalf;
-  // int wrMax_h = stride1*(wr_h-1-wrOff_h);
-  // int wrMax_w = stride1*(wr_w-1-wrOff_w);
-  // int wrMin_h = -stride1 * wrOff_h;
-  // int wrMin_w = -stride1 * wrOff_h;
-  // int adj = use_adj ? psHalf : 0;
 
   // -- cuda index --
   int ibatch = blockIdx.y;
@@ -173,7 +168,7 @@ __global__ void refinement_bilin2d_forward_kernel(
 void refinement_bilin2d_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1, const torch::Tensor flows,
     torch::Tensor dists, torch::Tensor inds, torch::Tensor kselect,
-    int ws, int ps, int k, int stride0, int stride1, int dilation, int pt,
+    int ws, int ps, int k, int stride0, float stride1, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
     int patch_offset, int dist_type){
 
@@ -189,7 +184,7 @@ void refinement_bilin2d_forward_cuda(
    int Q = T*nH*nW;
    int Ks_threads = std::min(Ks,11);
    int k_per_thread = ((Ks-1)/Ks_threads)+1;
-   int wr_threads = std::min(wr,7);
+   int wr_threads = std::min(wr,5);
    int wr_per_thread = ((wr-1)/wr_threads) + 1;
    dim3 nthreads(Ks_threads,wr_threads,wr_threads);
 

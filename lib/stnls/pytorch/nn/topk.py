@@ -67,8 +67,10 @@ def run(dists,inds,k,dim=1,anchor=False,descending=True,
 
     """
     # -- no run if k <= 0 --
-    if not(k > 0): return dists,inds,None
-    if unique: assert return_order == False
+    if not(k > 0):
+        if return_order: return dists,inds,None
+        else: return dists,inds
+    # if unique: assert return_order == False
 
     # -- get squares --
     dists,inds,dshape,ishape = dimN_dim2(dists,inds,dim)
@@ -207,44 +209,6 @@ def standard_topk(dists,inds,K,descending):
         inds_k[:,:,i] = th.gather(inds[:,:,i],1,order_k)
 
     return dists_k,inds_k,order_k
-
-
-# def run_refine(dists,inds,ksel,K,descending,anchor_self=False):
-#     if anchor_self:
-#         dists0 = dists[...,[0]]
-#         inds0 = inds[...,[0],:]
-#         ksel0 = ksel[...,[0]]
-#         dists_k,inds_k,ksel_k = topk_each_impl(dists[...,1:],inds[...,1:,:],
-#                                                ksel[...,1:],K-1,descending)
-#         dists = th.stack([dists0,dists_k],-1)
-#         inds = th.stack([inds0,inds_k],-2)
-#         ksel = th.stack([ksel0,ksel_k],-2)
-#     else:
-#         dists,inds,ksel = topk_each_impl(dists,inds,K-1,descending)
-#     return dists,inds,ksel
-
-# def topk_each_impl(dists,inds,ksel,K,descending):
-
-#     # -- reshape exh --
-#     Q,S = dists.shape
-#     d2or3 = inds.shape[-1]
-
-#     # -- order --
-#     order_k = th.argsort(dists,dim=1,descending=descending)[:,:K]
-#     K = order_k.shape[1]
-
-#     # -- topk dists --
-#     dists_k = th.gather(dists,1,order_k)
-
-#     # -- topk inds --
-#     inds_k = th.zeros((Q,K,d2or3),device=inds.device,dtype=inds.dtype)
-#     for i in range(inds.shape[-1]):
-#         inds_k[:,:,i] = th.gather(inds[:,:,i],1,order_k)
-
-#     # -- topk ksel
-#     ksel_k = th.gather(ksel,1,order_k)
-
-#     return dists_k,inds_k,ksel_k
 
 
 

@@ -1,6 +1,13 @@
 
+import random
+import numpy as np
 import torch as th
 import pickle
+
+def set_seed(seed):
+    random.seed(seed)
+    th.manual_seed(seed)
+    np.random.seed(seed)
 
 def optional(pydict,key,default):
     if pydict is None: return default

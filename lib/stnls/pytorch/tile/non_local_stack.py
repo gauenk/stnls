@@ -219,6 +219,10 @@ class non_local_stack(th.autograd.Function):
         grad_stack = grad_stack / (counts+eps)
         # if imode == 0:
         #     inds = inds.int()
+
+        # -- view --
+        print(grad_vid.ndim,grad_weights.ndim,grad_inds.ndim,grad_stack.ndim)
+
         stnls_cuda.non_local_stack_backward(
             grad_vid,grad_weights,grad_inds,grad_stack,
             vid,weights,inds,stack,counts,

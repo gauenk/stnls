@@ -15,7 +15,7 @@ void refinement_int_forward_cuda(
 void refinement_bilin2d_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1, const torch::Tensor flows,
     torch::Tensor dists, torch::Tensor inds,  torch::Tensor kselect,
-    int ws, int ps, int k, int stride0, int stride1, int dilation, int pt,
+    int ws, int ps, int k, int stride0, float stride1, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
     int patch_offset, int dist_type);
 

@@ -21,6 +21,13 @@ inline constexpr bool is_same_v = cuda::std::is_same<T, U>::value;
 using namespace at;
 
 //#define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)    \
+
+inline
+at::ScalarType get_type(const torch::Tensor my_tensor){
+  const auto& the_type = my_tensor.type();
+  at::ScalarType _st = ::detail::scalar_type(the_type);
+  return _st;
+}
   
 template<typename dtype=int>
 __device__ __forceinline__ dtype bounds(dtype val, int lim ){

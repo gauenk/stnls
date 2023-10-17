@@ -75,6 +75,7 @@ def refine_forward(vid0, vid1, flows,
                 reflect_bounds, full_ws, restricted_radius,
                 patch_offset, dist_type_i)
 
+    # print(inds[0,0,0,0,0,:2])
     # -- no negative --
     # if th.any(flows[0]<0):
     #     print(flows[0])
@@ -90,9 +91,7 @@ def refine_forward(vid0, vid1, flows,
     # dists,inds,kselect = manage_self_ksel(dists,inds,kselect,self_action,wr)
     # # kselect = kselect[...,1:] if remove_self else kselect
     # # dists.shape = (B,H,Q,Ks,wr*wr)
-    if self_action == "anchor":
-        stnls.nn.anchor_self(dists,inds,stride0,H,W)
-    elif self_action == "anchor_each":
+    if not(self_action is None) and "anchor" in self_action:
         H,W = vid0.shape[-2:]
         stnls.nn.anchor_self_refine(dists,inds,flows,stride0,H,W)
     else:
@@ -106,24 +105,20 @@ def refine_forward(vid0, vid1, flows,
         dists=dists.view(B,HD,Q,Ks*wr*wr)
         inds=inds.view(B,HD,Q,Ks*wr*wr,3)
         kselect = kselect.view(B,HD,Q,Ks*wr*wr) if not(kselect is None) else kselect
-        unique = True
+        dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
+                                         descending=descending,unique=False,
+                                         return_order=True)
+        if not(kselect is None) and not(order is None):
+            kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
     elif topk_mode == "each":
-        # dim = 4
-        # dists=dists.view(B,HD,Q,Ks,wr*wr)
-        # inds=inds.view(B,HD,Q,Ks,wr*wr,3)
-        # kselect = kselect.view(B,HD,Q,Ks,wr*wr) if not(kselect is None) else kselect
-        # unique = False
+        dists = rearrange(dists,'... wh ww -> ... (wh ww)')
+        inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
+        kselect = rearrange(kselect,'... wh ww -> ... (wh ww)')
         dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
+        kselect = kselect[...,:k] # all same across dim
     else:
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
 
-    # -- exec topk --
-    # print(dists.shape,inds.shape,kselect.shape,k)
-    # dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
-    #                                  descending=descending,unique=unique,
-    #                                  return_order=True)
-    # if not(kselect is None) and not(order is None):
-    #     kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
 
     # -- reshape for output --
     dists=dists.view(B,HD,T,nH,nW,-1)

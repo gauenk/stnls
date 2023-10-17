@@ -16,6 +16,41 @@
 template<typename scalar_t, typename itype=int>
 __device__ __forceinline__ 
 void update_centers_flow_acc(itype& hj_center, itype& wj_center, int H, int W,
+  const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int64_t> flow){
+
+
+  // -- fixed so we can read both --
+  itype hj_tmp = hj_center;
+  itype wj_tmp = wj_center;
+
+  // -- weighted average of neighbors --
+  float weight = 0;
+  int hj = 0, wj = 0;
+#pragma unroll
+  for (int i=0;i<2;i++){
+#pragma unroll
+    for (int j=0;j<2;j++){
+
+      // -- compute int locaion with weight --
+      hj = __float2int_rd(hj_tmp + i);
+      wj = __float2int_rd(wj_tmp + j);
+      weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
+
+      // -- ensure legal boudns --
+      hj = bounds(hj,H);
+      wj = bounds(wj,W);
+
+      // -- update with shift --
+      wj_center += weight*flow[0][hj][wj];
+      hj_center += weight*flow[1][hj][wj];
+    }
+  }
+
+}
+
+template<typename scalar_t, typename itype=int>
+__device__ __forceinline__ 
+void update_centers_flow_acc(itype& hj_center, itype& wj_center, int H, int W,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow){
 
 

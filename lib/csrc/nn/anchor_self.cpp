@@ -24,7 +24,7 @@ We also want to compute the center of the offset regions too.
 
 void anchor_self_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor order, int qstart, int stride0, int H, int W);
+     torch::Tensor order, int stride0, int H, int W);
 
 void anchor_self_time_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
@@ -43,11 +43,11 @@ void anchor_self_refine_forward_cuda(
 
 void anchor_self_forward(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor order, int qstart, int stride0, int H, int W){
+     torch::Tensor order, int stride0, int H, int W){
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   CHECK_INPUT(order);
-  anchor_self_forward_cuda(dists,inds,order,qstart,stride0,H,W);
+  anchor_self_forward_cuda(dists,inds,order,stride0,H,W);
 }
 
 void anchor_self_time_forward(

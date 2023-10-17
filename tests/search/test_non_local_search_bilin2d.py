@@ -42,8 +42,9 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[1],"stride0":[4],"stride1":[1],
-                  "dilation":[1],"wt":[1],"ws":[3],
+    test_lists = {"ps":[3],"stride0":[4],
+                  "stride1":[1],
+                  "dilation":[1],"wt":[1],"ws":[9],
                   "k":[-1],"nheads":[1],
                   "self_action":[None],"seed":[0],
                   "dist_type":["prod"],
@@ -527,6 +528,141 @@ def test_bwd_flows(ws,wt,k,ps,stride0,stride1,k_agg,
     # # print("[in/out]: ",flows.numel(),out.numel())
 
 
+def test_compare_mse(stride1,dilation,self_action,seed):
+
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+    # -- init vars --
+    dil = dilation
+    pt = 1
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    reflect_bounds = False
+    use_adj = False
+    full_ws = False
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    topk_mode = "each"
+    itype = "float"
+    nheads = 1
+    ws = 1
+    ps = 1
+    wt = 0
+    stride0 = 1
+    dist_type = "l2"
+    from stnls.utils.misc import set_seed
+    set_seed(seed)
+
+    # -- load data --
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:1,:3,:,:].contiguous()
+    vid = repeat(vid,'b 1 c h w -> b t (r c) h w',t=5,r=12)[:,:,:32].contiguous()
+    vid /= vid.max()
+    sigma = 10/255.
+    vid0 = vid + th.randn_like(vid)*sigma
+    vid1 = vid + th.randn_like(vid)*sigma
+    _vid0 = vid0.clone().requires_grad_(True)
+    _vid1 = vid1.clone().requires_grad_(True)
+    vid0 = vid0.requires_grad_(True)
+    vid1 = vid1.requires_grad_(True)
+
+    # -- compute flow --
+    B,T,F,H,W = vid.shape
+    W_t = 2*wt+1
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    flows = 2*th.zeros((B,T,W_t-1,2,nH,nW)).to(vid0.device)
+
+    # -- exec fold fxns --
+    k = -1
+    search = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
+                                         dilation=dil,stride0=stride0, stride1=stride1,
+                                         reflect_bounds=reflect_bounds,full_ws=full_ws,
+                                         self_action=None,use_adj=use_adj,
+                                         dist_type=dist_type,topk_mode="all",
+                                         itype=itype)
+
+    # -- search --
+    dists,inds = search(vid0,vid1,flows)
+    dists,inds = dists[:,0,:,:,:,0],inds[:,0,:,:,:,0]
+    dists_grad = th.randn_like(dists)
+    th.autograd.backward(dists,dists_grad)
+    grad0,grad1 = vid0.grad,vid1.grad
+
+    # -- mse --
+    mse = th.sum((_vid0 - _vid1)**2,dim=(2,))
+    th.autograd.backward(mse,dists_grad)
+    _grad0,_grad1 = _vid0.grad,_vid1.grad
+
+    # -- check fwd --
+    assert th.mean((dists-mse)**2).item() < 1e-8
+    assert th.mean((grad0 - _grad0)**2).item() < 1e-8
+    assert th.mean((grad1 - _grad1)**2).item() < 1e-8
+
+
+def test_fwd_topk(ws,wt,ps,stride0,stride1,dilation,
+                    self_action,dist_type,seed):
+
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+    # -- init vars --
+    dil = dilation
+    pt = 1
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    reflect_bounds = False
+    use_adj = False
+    full_ws = True
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    topk_mode = "each"
+    itype = "float"
+    nheads = 1
+
+    # -- load data --
+    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
+    vid = vid.to(device)[:,:5,:3,:,:].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid /= vid.max()
+    vid0 = th.rand_like(vid)-0.5
+    vid1 = th.rand_like(vid)-0.5
+
+    # -- compute flow --
+    B,T,F,H,W = vid.shape
+    W_t = 2*wt+1
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    flows = 2*th.rand((B,T,W_t-1,2,nH,nW)).to(vid0.device)
+
+    # -- exec fold fxns --
+    k = ws*ws*W_t
+    search = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
+                                         dilation=dil,stride0=stride0, stride1=stride1,
+                                         reflect_bounds=reflect_bounds,full_ws=full_ws,
+                                         self_action=None,use_adj=use_adj,
+                                         dist_type=dist_type,topk_mode="all",
+                                         itype=itype)
+
+    # -- exec --
+    dists,inds = search(vid0,vid1,flows)
+    delta = dists[...,1:] - dists[...,:-1]
+    if dist_type == "l2":
+        assert th.all(delta>=0).item()
+    else:
+        assert th.all(delta<=0).item()
+
 def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
                     self_action,dist_type,seed):
 
@@ -562,9 +698,6 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     vid1 = th.rand_like(vid)-0.5
 
     # -- compute flow --
-    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    fflow = 10*th.randn_like(flows.fflow)
-    bflow = 10*th.randn_like(flows.bflow)
     B,T,F,H,W = vid.shape
     W_t = 2*wt+1
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
@@ -601,8 +734,8 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
 
     dists0,inds0 = search0(vid0,vid1,flows)
     dists0,inds0 = dists0.view(vshape+(k0,)),inds0.view(vshape+(k0,3,))
-    dists0 = dists0[...,:,ws//2+ws]
-    inds0= inds0[...,:,ws//2+ws,:]
+    dists0 = dists0[...,:,ws//2*ws+ws//2]
+    inds0= inds0[...,:,ws//2*ws+ws//2,:]
 
     dists1,inds1 = search1(vid0,vid1,flows)
     dists1,inds1 = dists1.view(vshape+(k1,)),inds1.view(vshape+(k1,3,))
@@ -614,7 +747,6 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     dists2,inds2 = dists2.view(vshape+(k2,)),inds2.view(vshape+(k2,3,))
     dists2 = dists2[...,:,0]
     inds2= inds2[...,:,0,:]
-
 
     # -- check all pairwise --
     dists = [dists0,dists1,dists2]

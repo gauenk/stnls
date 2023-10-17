@@ -165,7 +165,7 @@ class PairedSearchFunction(th.autograd.Function):
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
-        flow = get_ctx_shell(flows,itype_bwd=="int")
+        flow = get_ctx_shell(flow,itype_bwd=="int")
         ctx.save_for_backward(inds,frame0,frame1,flow)
         if itype_bwd == "int":
             ctx.mark_non_differentiable(inds)

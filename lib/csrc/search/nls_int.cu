@@ -9,7 +9,7 @@ void compute_dist_int(scalar_t& dist,
   int* ref_patch, int* prop_patch, int* ref, int* prop,
   bool* valid_ref, bool* valid_prop,
   int ps, int pt, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid, int T, int C, int H, int W){
+  int patch_offset, scalar_t invalid, int T, int F, int H, int W){
                   
   scalar_t pix0,pix1,_dist;
   for (int pk = 0; pk < pt; pk++){
@@ -56,11 +56,14 @@ void compute_dist_int(scalar_t& dist,
         }
 
         // -- fill each channel --
-        for (int ci = 0; ci < C; ci++){
+        for (int fi = 0; fi < F; fi++){
 
           // -- get data --
-          pix0 = valid_ref[3] ? vid0[ref[0]][ci][ref[1]][ref[2]] : (scalar_t)0.;
-          pix1 = valid_prop[3] ? vid1[prop[0]][ci][prop[1]][prop[2]] : (scalar_t)0.;
+          pix0 = valid_ref[3] ? vid0[ref[0]][fi][ref[1]][ref[2]] : (scalar_t)0.;
+          pix1 = valid_prop[3] ? vid1[prop[0]][fi][prop[1]][prop[2]] : (scalar_t)0.;
+          // // pix1 = valid_prop[3] ? vid1[0][fi][0][0] : (scalar_t)0.;
+          // pix0 = vid0[0][fi][0][0];
+          // pix1 = vid1[0][fi][0][0];
 
           // -- compute dist --
           if(DIST_TYPE == 0){ // product
@@ -90,7 +93,7 @@ void update_bwd_patch_int(
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     scalar_t weight, int* ref_patch, int* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
-    int patch_offset, int iftr, int ftr_start, int ftr_end,
+    int patch_offset, int ftr_start, int ftr_end,
     int* ref, int* prop, bool* valid_ref, bool* valid_prop,
     bool valid, int T, int H, int W){
 
@@ -143,7 +146,7 @@ void update_bwd_patch_int(
           if (not valid) { continue; }
           
           // -- fill each channel --
-          for (iftr = ftr_start; iftr < ftr_end; iftr++){
+          for (int iftr = ftr_start; iftr < ftr_end; iftr++){
             if (DIST_TYPE == 0){ // prod
               pix0 = weight*vid0[ref[0]][iftr][ref[1]][ref[2]];
               pix1 = weight*vid1[prop[0]][iftr][prop[1]][prop[2]];

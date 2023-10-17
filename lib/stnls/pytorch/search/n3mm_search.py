@@ -31,8 +31,7 @@ from .n3mm_utils import matmult_fwd,matmult_bwd,raster_indices,vid2patches
 def n3mm_fwd_main(vid0, vid1, fflow, bflow,
                   nheads, ws, wt, ps, dist_type,
                   stride0, stride1, dilation, pt,
-                  reflect_bounds, use_adj, full_ws,
-                  off_H0, off_W0, off_H1, off_W1):
+                  reflect_bounds, use_adj, full_ws):
 
     # -- unpack --
     device = vid0.device
@@ -124,9 +123,8 @@ class N3MatMultSearchFunction(th.autograd.Function):
     def forward(ctx, vid0, vid1, fflow, bflow,
                 ws, wt, ps, k, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
-                dilation=1, pt=1, reflect_bounds=True, full_ws=False,
-                anchor_self=False, remove_self=False,
-                use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0):
+                dilation=1, pt=1, reflect_bounds=True,
+                full_ws=False,self_action=None, use_adj=False):
 
         """
         Run the non-local search
@@ -147,8 +145,7 @@ class N3MatMultSearchFunction(th.autograd.Function):
         dists,inds = n3mm_fwd_main(vid0, vid1, fflow, bflow,
                                    nheads, ws, wt, ps, dist_type,
                                    stride0, stride1, dilation, pt,
-                                   reflect_bounds, use_adj, full_ws,
-                                   off_H0, off_W0, off_H1, off_W1)
+                                   reflect_bounds, use_adj, full_ws)
 
 
         # -- compress search region --
@@ -158,6 +155,8 @@ class N3MatMultSearchFunction(th.autograd.Function):
 
         # -- manage self dists --
         qshift = 0
+        anchor_self = "anchor" in self_action
+        remove_self = "remove" in self_action
         dists,inds = manage_self(dists,inds,anchor_self,
                                  remove_self,qshift,stride0,H,W)
         # -- topk --
@@ -173,8 +172,7 @@ class N3MatMultSearchFunction(th.autograd.Function):
                     "dist_type":dist_type,"nheads":nheads,
                     "stride0":stride0,"stride1":stride1,
                     "dil":dilation,"reflect_bounds":reflect_bounds,
-                    "use_adj":use_adj,"off_H0":off_H0,"off_W0":off_W0,
-                    "off_H1":off_H1,"off_W1":off_W1,"dist_type_i":dist_type_i}
+                    "use_adj":use_adj,"dist_type_i":dist_type_i}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 
@@ -286,8 +284,7 @@ class N3MatMultSearch(th.nn.Module):
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
-                 full_ws=True, anchor_self=False, remove_self=False,
-                 use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0):
+                 full_ws=True, self_action=None, use_adj=False):
         super().__init__()
 
         # -- core search params --
@@ -305,17 +302,10 @@ class N3MatMultSearch(th.nn.Module):
         # -- manage patch and search boundaries --
         self.reflect_bounds = reflect_bounds
         self.full_ws = full_ws
+        self.use_adj = use_adj
 
         # -- special mods to "self" search --
-        self.anchor_self = anchor_self
-        self.remove_self = remove_self
-
-        # -- searching offsets --
-        self.use_adj = use_adj
-        self.off_H0 = off_H0
-        self.off_W0 = off_W0
-        self.off_H1 = off_H1
-        self.off_W1 = off_W1
+        self.self_action = self_action
 
 
     def forward(self, vid0, vid1, fflow, bflow, batchsize=-1):
@@ -325,9 +315,7 @@ class N3MatMultSearch(th.nn.Module):
                                         self.dist_type,self.stride0,
                                         self.stride1,self.dilation,self.pt,
                                         self.reflect_bounds,self.full_ws,
-                                        self.anchor_self,self.remove_self,
-                                        self.use_adj,self.off_H0,self.off_W0,
-                                        self.off_H1,self.off_W1)
+                                        self.self_action,self.use_adj)
 
     def flops(self,T,F,H,W):
         return 0
@@ -362,9 +350,8 @@ class N3MatMultSearch(th.nn.Module):
 def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
-           dilation=1, pt=1, reflect_bounds=True, full_ws=True,
-           anchor_self=False, remove_self=False,
-           use_adj=False, off_H0=0, off_W0=0, off_H1=0, off_W1=0):
+           dilation=1, pt=1, reflect_bounds=True,
+           full_ws=True, self_action=None,use_adj=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -372,8 +359,7 @@ def _apply(vid0, vid1, fflow, bflow,
     return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
-               full_ws,anchor_self,remove_self,
-               use_adj,off_H0,off_W0,off_H1,off_W1)
+               full_ws,self_action,use_adj)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -387,8 +373,7 @@ def extract_config(cfg,restrict=True):
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True,
-             "anchor_self":False, "remove_self":False,
-             "use_adj":False,"off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0}
+             "self_action":None,"use_adj":False}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
@@ -397,7 +382,5 @@ def init(cfg):
                         dist_type=cfg.dist_type, stride0=cfg.stride0,
                         stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
                         reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
-                        anchor_self=cfg.anchor_self, remove_self=cfg.remove_self,
-                        use_adj=cfg.use_adj,off_H0=cfg.off_H0,off_W0=cfg.off_W0,
-                        off_H1=cfg.off_H1,off_W1=cfg.off_W1)
+                        self_action=cfg.self_action,use_adj=cfg.use_adj)
     return search

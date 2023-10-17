@@ -269,7 +269,6 @@ def test_fwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
                                    full_ws=full_ws,
-                                   full_ws_time=full_ws,
                                    anchor_self=anchor_self,
                                    use_adj=use_adj,normalize_bwd=True,
                                    itype_fwd="int")
@@ -487,7 +486,7 @@ def test_bwd_dev(ws,wt,k,ps,stride0,stride1,k_agg,
     reflect_bounds = True
     use_k = k > 0
     use_adj = False
-    anchor_self = False
+    self_action = None
 
     # -- load data --
     vid = get_data(dnames,ext)
@@ -514,9 +513,8 @@ def test_bwd_dev(ws,wt,k,ps,stride0,stride1,k_agg,
     search_te = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
-                                   reflect_bounds=reflect_bounds,
-                                   full_ws=False,full_ws_time=False,
-                                   use_adj=use_adj,anchor_self=anchor_self)
+                                   reflect_bounds=reflect_bounds,full_ws=False,
+                                   self_action=self_action,use_adj=use_adj)
     search_gt = stnls.search_dev.init("%s_search_with_heads" % dist_type,
                                       flows.fflow, flows.bflow,
                                       k, ps, pt, ws, wt, nheads,

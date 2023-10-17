@@ -34,7 +34,6 @@ __global__ void accumulate_flow_forward_kernel(
   int nW = (W-1)/stride0+1;
   int nHW = nH*nW;
   int TnHW = T*nH*nW;
-  int tmp;
   int ref[3];
 
   // -- get location --
@@ -43,7 +42,7 @@ __global__ void accumulate_flow_forward_kernel(
     // -- get location --
     int qi = raster_index + loc;
     if (qi >= TnHW){ return; } 
-    get_pixel_loc(ref,qi,tmp,stride0,nW,nHW,H,W);
+    get_pixel_loc(ref,qi,stride0,nW,nHW,H,W);
     int ti = ref[0];
     int wn = ref[1];
     int hn = ref[2];
@@ -178,7 +177,6 @@ __global__ void accumulate_flow_backward_kernel(
   int T = fflow.size(1);
   int H = fflow.size(3);
   int W = fflow.size(4);
-  int tmp;
   int ref[3];
   scalar_t refs[3];
   int prop_i[3];
@@ -207,7 +205,7 @@ __global__ void accumulate_flow_backward_kernel(
     // -- get reference location --
     qi = raster_index + loc;
     if (qi >= TnHW){ break; } 
-    get_pixel_loc(ref,qi,tmp,stride0,nW,nHW,H,W);
+    get_pixel_loc(ref,qi,stride0,nW,nHW,H,W);
 
     // -- init/reset --
     v0 = 0;

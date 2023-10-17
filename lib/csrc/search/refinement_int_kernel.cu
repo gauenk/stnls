@@ -181,9 +181,9 @@ void refinement_int_forward_cuda(
    int wr = dists.size(6);
 
    int Q = T*nH*nW;
-   int Ks_threads = std::min(Ks,11);
+   int Ks_threads = std::min(Ks,9);
    int k_per_thread = ((Ks-1)/Ks_threads)+1;
-   int wr_threads = std::min(wr,7);
+   int wr_threads = std::min(wr,5);
    int wr_per_thread = ((wr-1)/wr_threads) + 1;
    // int wr_w_threads = std::min(wr_w,8);
    // int wr_w_per_thread = ((wr_w-1)/wr_w_threads) + 1;

@@ -36,6 +36,7 @@ def nls_forward(vid0, vid1, flows,
     device = vid0.device
     B,HD,T,C,H,W = vid0.shape
     patch_offset = 0 if use_adj else -(ps//2)
+    # print(ps,k,dist_type,topk_mode,self_action)
 
     # -- derived shapes --
     nH0 = (H-1)//stride0+1
@@ -58,9 +59,9 @@ def nls_forward(vid0, vid1, flows,
     # -- forward --
     if itype == "int":
         flows = flows.int()
+        inds = inds.int()
         fwd_fxn = stnls_cuda.non_local_search_int_forward
         stride1 = max(1,int(stride1))
-        # flows = flows.int()
     else:
         fwd_fxn = stnls_cuda.non_local_search_bilin2d_forward
         stride1 = float(stride1)
@@ -86,7 +87,7 @@ def nls_forward(vid0, vid1, flows,
     # # assert remove_self == False
     # dists,inds = manage_self(dists,inds,anchor_self,
     #                          remove_self,0,stride0,H,W)
-    assert self_action in [None,"anchor","anchor_each","remove","remove_tref"]
+    assert self_action in [None,"anchor","anchor_each","remove","remove_ref_frame"]
     anchor_self = False if self_action is None else "anchor" in self_action
     if self_action == "anchor":
         stnls.nn.anchor_self(dists,inds,stride0,H,W)
@@ -94,28 +95,28 @@ def nls_forward(vid0, vid1, flows,
         stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
     elif self_action == "remove":
         raise NotImplementedError("Not implemented self_action [remove].")
-    elif self_action == "remove_tref":
-        dists = dists[...,1:,:,:]
-        inds = inds[...,1:,:,:,:]
+    elif self_action == "remove_ref_frame":
+        assert wt > 0,"Cannot remove ref frame if not searching across time."
+        dists = dists[...,1:,:,:].contiguous()
+        inds = inds[...,1:,:,:,:].contiguous()
+    elif self_action is None:
+        pass
+    else:
+        raise ValueError(f"Uknown option for self_action [{self_action}]")
 
     # -- topk --
     if topk_mode == "all":
         dim = 3
         dists=dists.view(B,HD,Q,W_t*ws*ws)
         inds=inds.view(B,HD,Q,W_t*ws*ws,3)
+        dists,inds = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
+                                   descending=descending)
     elif topk_mode == "each":
-        # dim = 4
-        # dists=dists.view(B,HD,Q,W_t,ws*ws)
-        # inds=inds.view(B,HD,Q,W_t,ws*ws,3)
         dists = rearrange(dists,'... wh ww -> ... (wh ww)')
         inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
         dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
-        # dists,inds = stnls.nn.topk_time(dists,inds,k,dim=dim,anchor=anchor_self,
-        #                                 descending=descending,return_order=True)
     else:
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
-    # dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
-    #                                  descending=descending,return_order=True)
 
     # -- reshape --
     dists=dists.view(B,HD,T,nH0,nW0,-1)
