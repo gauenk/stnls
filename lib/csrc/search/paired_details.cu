@@ -18,7 +18,7 @@
 // template< class T, class U >
 // inline constexpr bool is_same_v = cuda::std::is_same<T, U>::value;
 
-#include "shared_kernel.cu"
+#include "../shared_kernel.cu"
 using namespace at;
 
 
@@ -37,10 +37,9 @@ void compute_dist_2d(scalar_t& dist,
   int* ref_patch, int* prop_patch, int* ref, int* prop,
   bool* valid_ref, bool* valid_prop,
   int ps, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid,
-  int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t _dist){
+  int patch_offset, scalar_t invalid, int C, int H, int W){
                   
-    
+  scalar_t pix0,pix1,_dist;
   for (int pi = 0; pi < ps; pi++){
 
     // -- ref height --
@@ -102,28 +101,16 @@ void compute_dist_2d(scalar_t& dist,
 
  *********************************************/
 
-// template<typename scalar_t, int DIST_TYPE>
-// __device__ __forceinline__ 
-// void compute_dist_bilin2d_2d_asdf(scalar_t& dist,
-//   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame0,
-//   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame1,
-//   int* ref_patch, scalar_t* prop_patch, int* ref, scalar_t* prop, int* prop_i,
-//   bool* valid_ref, bool* valid_prop, int ps, int pt, int dilation,
-//   bool reflect_bounds, int patch_offset, int* center_offsets){
-//   return;
-// }
-
 template<typename scalar_t, int DIST_TYPE>
 __device__ __forceinline__ 
 void compute_dist_bilin2d_2d(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame0,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame1,
   int* ref_patch, scalar_t* prop_patch, int* ref, scalar_t* prop, int* prop_i,
-  bool* valid_ref, bool* valid_prop,
-  int ps, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid,
-  int C, int H, int W, scalar_t pix0, scalar_t pix1, scalar_t w){
+  bool* valid_ref, bool* valid_prop, int ps, int dilation, bool reflect_bounds,
+  int patch_offset, scalar_t invalid, int C, int H, int W){
                   
+  scalar_t pix0,pix1,w;
   scalar_t interp[2];
   for (int pi = 0; pi < ps; pi++){
 
@@ -219,11 +206,10 @@ void update_bwd_patch_2d(
     const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame0,
     const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame1,
     scalar_t weight, int* ref_patch, int* prop_patch,
-    int ps, int pt, int dilation, bool reflect_bounds,
-    int patch_offset,
-    int iftr, int ftr_start, int ftr_end,
+    int ps, int dilation, bool reflect_bounds, int patch_offset,
+    int ftr_start, int ftr_end,
     int* ref, int* prop, bool* valid_ref, bool* valid_prop, bool valid,
-    int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix, int i1){
+    int H, int W, scalar_t pix0, scalar_t pix1){
 
     for (int pi = 0; pi < ps; pi++){
 
@@ -261,7 +247,7 @@ void update_bwd_patch_2d(
         if (not valid) { continue; }
         
         // -- fill each channel --
-        for (iftr = ftr_start; iftr < ftr_end; iftr++){
+        for (int iftr = ftr_start; iftr < ftr_end; iftr++){
 
           if (DIST_TYPE == 0){ // prod
             pix0 = weight*frame0[iftr][ref[0]][ref[1]];
@@ -271,7 +257,7 @@ void update_bwd_patch_2d(
           }else if(DIST_TYPE == 1){ // l2 norm
             pix0 = frame0[iftr][ref[0]][ref[1]];
             pix1 = frame1[iftr][prop[0]][prop[1]];
-            pix = 2 * weight * (pix0 - pix1);
+            scalar_t pix = 2 * weight * (pix0 - pix1);
             atomicAdd(&grad_frame0[iftr][ref[0]][ref[1]],pix);
             atomicAdd(&grad_frame1[iftr][prop[0]][prop[1]],-pix);
           }
@@ -290,15 +276,18 @@ void update_bwd_bilin2d_patch_2d(
     torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> grad_frame1,
     const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame0,
     const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame1,
-    scalar_t weight, int* ref_patch, scalar_t* prop_patch,
+    scalar_t* acc_dFlows, scalar_t weight, int* ref_patch, scalar_t* prop_patch,
     int ps, int dilation, bool reflect_bounds,
-    int patch_offset,
-    int iftr, int ftr_start, int ftr_end,
-    int* ref, scalar_t* prop, int* prop_i,
-    bool* valid_ref, bool* valid_prop, bool valid,
-    int H, int W, scalar_t pix0, scalar_t pix1, scalar_t pix, int i1){
+    int patch_offset, // int ftr_start, int ftr_end,
+    // int* ref, scalar_t* prop, int* prop_i,
+    bool* valid_ref, bool* valid_prop, bool valid, int H, int W){
 
-    scalar_t interp[2];
+    scalar_t dDists,pix0,pix1;
+    int ref[2];
+    int prop_i[2];
+    scalar_t prop[2];
+    int F = frame0.size(0);
+
     for (int pi = 0; pi < ps; pi++){
 
       // -- ref patch --
@@ -335,71 +324,32 @@ void update_bwd_bilin2d_patch_2d(
         if (not valid) { continue; }
         
         // -- fill each channel --
-        for (iftr = ftr_start; iftr < ftr_end; iftr++){
+        for (int iftr = 0; iftr < F; iftr++){
           
           // -- reference value --
           pix0 = frame0[iftr][ref[0]][ref[1]];
 
           // -- interpolate pixel value --
-          pix1 = 0;
-          scalar_t w = 0;
-          #pragma unroll
-          for (int ix=0;ix<2;ix++){
-            #pragma unroll
-            for (int jx=0;jx<2;jx++){
+          bilin2d_interpolate(pix1, prop[0], prop[1], H, W, frame1[iftr]);
 
-              // -- interpolation weight --
-              prop_i[0] = __float2int_rd(prop[0]+ix);
-              interp[0] = max(0.,1-fabs(prop[0]-prop_i[0]));
-              prop_i[1] = __float2int_rd(prop[1]+jx);
-              interp[1] = max(0.,1-fabs(prop[1]-prop_i[1]));
-              w = interp[0] * interp[1];
-
-              // -- ensure legal bounds --
-              prop_i[0] = bounds(prop_i[0],H);
-              prop_i[1] = bounds(prop_i[1],W);
-
-              // -- update pixel --
-              pix1 += w*frame1[iftr][prop_i[0]][prop_i[1]];
-            }
-          }
-
-          // -- update frame0 --
-          pix = 2 * weight * (pix0 - pix1);
+          // -- update grad_frame0 --
           if (DIST_TYPE == 0){ // prod
-            atomicAdd(&(grad_frame0[iftr][ref[0]][ref[1]]),weight*pix1);
+            dDists = weight * pix1;
           }else if(DIST_TYPE == 1){ // l2 norm
-            atomicAdd(&grad_frame0[iftr][ref[0]][ref[1]],pix);
+            dDists = weight * 2 * (pix0 - pix1);
           }
+          atomicAdd(&grad_frame0[iftr][ref[0]][ref[1]],dDists);
 
-          //
-          // -- update frame1 --
-          //
-          scalar_t wpix0 = weight*pix0;
-          #pragma unroll
-          for (int ix=0;ix<2;ix++){
-            #pragma unroll
-            for (int jx=0;jx<2;jx++){
-
-              // -- interpolation weighting --
-              prop_i[0] = __float2int_rd(prop[0]+ix);
-              interp[0] = max(0.,1-fabs(prop[0]-prop_i[0]));
-              prop_i[1] = __float2int_rd(prop[1]+jx);
-              interp[1] = max(0.,1-fabs(prop[1]-prop_i[1]));
-              w = interp[0] * interp[1];
-
-              // -- ensure legal bounds --
-              prop_i[0] = bounds(prop_i[0],H);
-              prop_i[1] = bounds(prop_i[1],W);
-
-              if (DIST_TYPE == 0){ // prod
-                atomicAdd(&(grad_frame1[iftr][prop_i[0]][prop_i[1]]),w*wpix0);
-              }else if(DIST_TYPE == 1){ // l2 norm
-                atomicAdd(&grad_frame1[iftr][prop_i[0]][prop_i[1]],-w*pix);
-              }
-            }
+          // -- update grad_frame1 --
+          if (DIST_TYPE == 0){ // prod
+            dDists = weight * pix0;
+          }else if(DIST_TYPE == 1){ // l2 norm
+            dDists = -dDists;
           }
+          bilin2d_assign(dDists,prop[0],prop[1],H,W,grad_frame1[iftr]);
 
+          // -- update accumulated dflows --
+          update_dFlows(acc_dFlows,dDists,prop[0],prop[1],H,W,frame1[iftr]);
 
         }
       }

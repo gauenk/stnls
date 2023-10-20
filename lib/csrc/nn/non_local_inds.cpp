@@ -9,21 +9,18 @@ Get indices of a non-local search
 #include <vector>
 
 // -- include cuda_runtime for jax --
-#include <cuda_runtime_api.h>
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib>
-#include <pybind11/pybind11.h>
+// #include <cuda_runtime_api.h>
+// #include <cstddef>
+// #include <cstdint>
+// #include <cstdlib>
+// #include <pybind11/pybind11.h>
 
 
 // CUDA forward declarations
 
 void non_local_inds_cuda(
-    torch::Tensor inds,
-    const torch::Tensor fflow,
-    const torch::Tensor bflow,
-    int ws, int wt, int stride0, int stride1,
-    bool full_ws, bool full_ws_time);
+    torch::Tensor inds, const torch::Tensor fflow, const torch::Tensor bflow,
+    int ws, int wt, int stride0, int stride1, bool full_ws);
 
 // C++ interface
 
@@ -33,16 +30,13 @@ void non_local_inds_cuda(
 
 void non_local_inds(
     torch::Tensor inds,
-    const torch::Tensor fflow,
-    const torch::Tensor bflow,
-    int ws, int wt, int stride0, int stride1,
-    bool full_ws, bool full_ws_time){
+    const torch::Tensor fflow, const torch::Tensor bflow,
+    int ws, int wt, int stride0, int stride1, bool full_ws){
   CHECK_INPUT(inds);
   CHECK_INPUT(fflow);
   CHECK_INPUT(bflow);
   non_local_inds_cuda(inds, fflow, bflow,
-                      ws, wt, stride0, stride1,
-                      full_ws, full_ws_time);
+                      ws, wt, stride0, stride1, full_ws);
 }
 
 

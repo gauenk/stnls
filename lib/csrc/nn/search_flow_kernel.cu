@@ -160,7 +160,7 @@ __global__ void search_flow_backward_kernel(
   bool isFwd;
 
   // -- fwd decl --
-  scalar_t v0,v1,gv_W,gv_H;
+  scalar_t gv_W,gv_H;
   scalar_t dAdF0[2];
   scalar_t dAdF1[2];
 
@@ -190,8 +190,6 @@ __global__ void search_flow_backward_kernel(
     // auto g_pflow = isFwd ? grad_pfflow[ibatch] : grad_pbflow[ibatch];
 
     // -- init/reset --
-    v0 = 0;
-    v1 = 0;
     gv_W = 0;
     gv_H = 0;
 

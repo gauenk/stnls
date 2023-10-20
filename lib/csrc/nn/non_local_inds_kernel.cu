@@ -9,47 +9,8 @@ Get indices of a non-local search
 #include <cuda_runtime.h>
 #include <vector>
 #include <assert.h>
-// #include "../search/shared_kernel.cu"
+// #include "../shared_kernel.cu"
 #include "shared_flows.cu"
-
-// template<typename scalar_t, typename itype=int>
-// __device__ __forceinline__ 
-// void update_centers_flow_acc(itype& hj_center, itype& wj_center, int H, int W,
-//   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int64_t> flow){
-
-
-//   // -- fixed so we can read both --
-//   itype hj_tmp = hj_center;
-//   itype wj_tmp = wj_center;
-//   scalar_t h_acc = 0;
-//   scalar_t w_acc = 0;
-
-//   // -- weighted average of neighbors --
-//   float weight = 0;
-//   int hj = 0, wj = 0;
-// #pragma unroll
-//   for (int i=0;i<2;i++){
-// #pragma unroll
-//     for (int j=0;j<2;j++){
-
-//       // -- compute int locaion with weight --
-//       hj = __float2int_rd(hj_tmp + i);
-//       wj = __float2int_rd(wj_tmp + j);
-//       weight = max(0.,1-fabs(hj-hj_tmp)) * max(0.,1-fabs(wj-wj_tmp));
-
-//       // -- ensure legal boudns --
-//       hj = bounds(hj,H);
-//       wj = bounds(wj,W);
-
-//       // -- update with shift --
-//       h_acc += weight*flow[0][hj][wj];
-//       w_acc += weight*flow[1][hj][wj];
-//     }
-//   }
-//   hj_center = hj_center + h_acc;
-//   wj_center = wj_center + w_acc;
-
-// }
 
 
 template <typename scalar_t>
@@ -58,7 +19,7 @@ __global__ void non_local_inds_kernel(
     const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> bflow,
     int ws, int wt, int nH, int nW, int nHW,
-    int stride0, int stride1, bool full_ws, bool full_ws_time,
+    int stride0, int stride1, bool full_ws,
     int q_per_thread, int ws_per_thread){
 
   // -- unpack --
@@ -77,10 +38,10 @@ __global__ void non_local_inds_kernel(
   // -- temporal search --
   int hj = 0;
   int wj = 0;
+  scalar_t hj_acc,wj_acc;
 
   // -- search space offset --
   int wsHalf = (ws-1)/2;
-  int wsMax = stride1*(ws-1-wsHalf);
   int wsOff_h,wsOff_w;
   int ws_i,ws_j;
 
@@ -116,7 +77,7 @@ __global__ void non_local_inds_kernel(
   
     // -- search region offsets --
     set_search_offsets(wsOff_h,wsOff_w, ref[1], ref[2], stride1,
-                       wsHalf, wsMax, H, W, full_ws);
+                       wsHalf, ws, H, W, full_ws);
 
     // -- search across space --
     hj = ref[1];
@@ -140,15 +101,17 @@ __global__ void non_local_inds_kernel(
     // ---------------------------------------
 
     // -- run right --
+    hj_acc = __int2float_rn(ref[1]);
+    wj_acc = __int2float_rn(ref[2]);
     int ta = 1;
     int t_prev = ref[0];
     auto flow = fflow;
     for(int tj=ref[0]+1; tj <= t_right; tj++){
 
       // -- accumulate --
-      update_centers_flow_acc(hj,wj,H,W,flow[ibatch][t_prev]);
-      hj = bounds(hj,H-1);
-      wj = bounds(wj,W-1);
+      update_centers_flow_acc(hj_acc,wj_acc,H,W,flow[ibatch][t_prev]);
+      hj = bounds(hj_acc,H);
+      wj = bounds(wj_acc,W);
       // itype& hj_center, itype& wj_center, int H, int W,
       //   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> flow)
       // hj_tmp = hj;
@@ -165,7 +128,7 @@ __global__ void non_local_inds_kernel(
 
       // -- search region offsets --
       set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
-                         wsHalf, wsMax, H, W, full_ws_time);
+                         wsHalf, ws, H, W, full_ws);
 
       // -- search across space --
       for (int _xi = 0; _xi < ws_per_thread; _xi++){
@@ -195,16 +158,16 @@ __global__ void non_local_inds_kernel(
     // ---------------------------------------
 
     // -- init --
-    hj = ref[1];
-    wj = ref[2];
+    hj_acc = __int2float_rn(ref[1]);
+    wj_acc = __int2float_rn(ref[2]);
     t_prev = ref[0];
     flow = bflow;
     for(int tj=ref[0]-1; tj >= t_left; tj--){
 
       // -- accumulate --
-      update_centers_flow_acc(hj,wj,H,W,flow[ibatch][t_prev]);
-      hj = bounds(hj,H-1);
-      wj = bounds(wj,W-1);
+      update_centers_flow_acc(hj_acc,wj_acc,H,W,flow[ibatch][t_prev]);
+      hj = bounds(hj_acc,H);
+      wj = bounds(wj_acc,W);
       // hj_tmp = hj;
       // wj_tmp = wj;
       // hj = int(1.*hj + flow[ibatch][t_prev][1][hj_tmp][wj_tmp] + 0.5);
@@ -218,7 +181,7 @@ __global__ void non_local_inds_kernel(
   
       // -- search region offsets --
       set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
-                         wsHalf, wsMax, H, W, full_ws_time);
+                         wsHalf, ws, H, W, full_ws);
 
       // -- search across space --
       for (int _xi = 0; _xi < ws_per_thread; _xi++){
@@ -250,10 +213,8 @@ __global__ void non_local_inds_kernel(
 
 void non_local_inds_cuda(
      torch::Tensor inds,
-     const torch::Tensor fflow,
-     const torch::Tensor bflow,
-     int ws, int wt, int stride0, int stride1,
-     bool full_ws, bool full_ws_time){
+     const torch::Tensor fflow, const torch::Tensor bflow,
+     int ws, int wt, int stride0, int stride1, bool full_ws){
   
   // -- unpack --
   int B = inds.size(0);
@@ -294,7 +255,7 @@ void non_local_inds_cuda(
        inds.packed_accessor64<int,6,torch::RestrictPtrTraits>(),
        fflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
        bflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
-       ws, wt, nH, nW, nHW, stride0, stride1, full_ws, full_ws_time,
+       ws, wt, nH, nW, nHW, stride0, stride1, full_ws,
        q_per_thread, ws_per_thread);
       }));
 

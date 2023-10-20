@@ -1,26 +1,4 @@
-#include <cuda/std/type_traits>
-#include <cstdio>
-#include <torch/types.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <vector>
-#include <cstddef>
-#include <assert.h>
-
-
-#include <math.h>
-// #include "stdio.h"
-// #include "iostream"
-// #include <cuda.h>
-// #include <cuda_runtime.h>
-// #include <vector>
-// #include <chrono>
-#include <ATen/ATen.h>
-#include "shared_kernel.cu"
-
-using namespace at;
-
-
+#include "../shared_kernel.cu"
 
 template<typename scalar_t, int DIST_TYPE>
 __device__ __forceinline__ 
@@ -31,9 +9,9 @@ void compute_dist_bilin2d(scalar_t& dist,
   bool* valid_ref, bool* valid_prop,
   int ps, int pt, int dilation, bool reflect_bounds,
   int patch_offset, scalar_t invalid, int T, int C, int H, int W){
+
                   
   scalar_t pix0,pix1,w;
-  scalar_t interp[2];
   for (int pk = 0; pk < pt; pk++){
 
     // -- reference time --
@@ -116,14 +94,14 @@ void update_bwd_patch_bilin2d(
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     scalar_t weight, int* ref_patch, scalar_t* prop_patch,
     int ps, int pt, int dilation, bool reflect_bounds,
-    int patch_offset, int ftr_start, int ftr_end,
+    int patch_offset, int iftr, int ftr_start, int ftr_end,
     int* ref, scalar_t* prop, int* prop_i, bool* valid_ref, bool* valid_prop,
     bool valid, int T, int H, int W){
 
-    scalar_t pix0,pix1,pix;
-    scalar_t interp[2];
+    scalar_t pix0,pix1;
     scalar_t dDists;
     for (int pk = 0; pk < pt; pk++){
+
 
       // -- ref patch --
 
@@ -173,7 +151,7 @@ void update_bwd_patch_bilin2d(
           prop_i[0] = __float2int_rn(prop[0]);
 
           // -- fill each channel --
-          for (int iftr = ftr_start; iftr < ftr_end; iftr++){
+          for (iftr = ftr_start; iftr < ftr_end; iftr++){
             
             // -- reference value --
             pix0 = vid0[ref[0]][iftr][ref[1]][ref[2]];
@@ -214,17 +192,13 @@ void update_bwd_bilin2d_vidflows(
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
     // const torch::TensorAccessor<scalar_t,5,torch::RestrictPtrTraits,int32_t> flows,
-    scalar_t* acc_dFlows,
-    scalar_t weight, int* ref_patch, scalar_t* prop_patch,
-    int ps, int pt, int dilation, int stride0,
-    bool reflect_bounds, int patch_offset,
-    int ftr_start, int ftr_end,
-    int* ref, scalar_t* prop, int* prop_i,
-    bool* valid_ref, bool* valid_prop, bool valid,
-    int T, int H, int W){
+    scalar_t* acc_dFlows, scalar_t weight, int* ref_patch, scalar_t* prop_patch,
+    int ps, int pt, int dilation, int stride0, bool reflect_bounds,
+    int patch_offset, int iftr, int ftr_start, int ftr_end,
+    int* ref, scalar_t* prop, int* prop_i, bool* valid_ref, bool* valid_prop,
+    bool valid, int T, int H, int W){
 
     scalar_t pix0,pix1;
-    scalar_t interp[2];
     scalar_t dDists;
     for (int pk = 0; pk < pt; pk++){
 
@@ -272,14 +246,11 @@ void update_bwd_bilin2d_vidflows(
           valid = valid_ref[3] && valid_prop[3];
           if (not valid) { continue; }
           
-          // -- bwd flow accumulation --
-          scalar_t dDistAcc = static_cast<scalar_t>(0);
-
           // -- set time --
           prop_i[0] = __float2int_rn(prop[0]);
 
           // -- fill each channel --
-          for (int iftr = ftr_start; iftr < ftr_end; iftr++){
+          for (iftr = ftr_start; iftr < ftr_end; iftr++){
             
             // -- reference value --
             pix0 = vid0[ref[0]][iftr][ref[1]][ref[2]];
@@ -302,6 +273,7 @@ void update_bwd_bilin2d_vidflows(
               dDists = -dDists;
             }
             bilin2d_assign(dDists,prop[1],prop[2],H,W,grad_vid1[prop_i[0]][iftr]);
+
 
             // -- update accumulated dflows --
             update_dFlows(acc_dFlows,dDists,prop[1],prop[2],H,W,vid1[prop_i[0]][iftr]);

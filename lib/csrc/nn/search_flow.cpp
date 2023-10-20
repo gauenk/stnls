@@ -1,15 +1,12 @@
+
 // -- included for pytorch --
 #include <torch/extension.h>
 #include <vector>
-
-// -- include cuda_runtime for jax --
-#include <cuda_runtime_api.h>
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib>
-#include <pybind11/pybind11.h>
-#include "../jax_pybind.h"
-using namespace torch::indexing;
+// #include <cstddef>
+// #include <cstdint>
+// #include <cstdlib>
+// #include <pybind11/pybind11.h>
+// using namespace torch::indexing;
 
 
 // CUDA forward declarations

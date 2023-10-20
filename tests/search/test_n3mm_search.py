@@ -51,14 +51,13 @@ def pytest_generate_tests(metafunc):
     test_lists = {"wt":[1],"ws":[15],"k":[20],"ps":[7],
                   "stride0":[4],"stride1":[1],"dilation":[1],
                   "nheads":[1],"anchor_self":[True],
-                  "full_ws":[True],"dist_type":["prod"],
-                  "seed":[0]}
+                  "dist_type":["prod"],"seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
 def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
-             nheads,anchor_self,full_ws,dist_type,seed):
+             nheads,anchor_self,dist_type,seed):
     """
 
     Test the CUDA code with torch code
@@ -77,6 +76,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     clean_flow = True
     run_flow = False
     reflect_bounds = True
+    self_action = None
     set_seed(seed)
 
     # -- load data --
@@ -84,8 +84,8 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
-    flows.fflow = th.clamp(5*th.randn_like(flows.fflow),-5,5)
-    flows.bflow = th.clamp(5*th.randn_like(flows.bflow),-5,5)
+    flows.fflow = th.clamp(0*th.randn_like(flows.fflow),-5,5)
+    flows.bflow = th.clamp(0*th.randn_like(flows.bflow),-5,5)
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -93,24 +93,20 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
                                     dist_type=dist_type, dilation=dil,
                                     stride0=stride0, stride1=stride1,
                                     reflect_bounds=reflect_bounds,
-                                    full_ws=full_ws,anchor_self=anchor_self)
+                                    self_action=self_action)
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,anchor_self=anchor_self)
+                                   self_action=self_action)
 
     # -- [testing] search --
     dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
-    # print(dists_te[0,0,0])
-    # print(inds_te[0,0,0])
 
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid,vid,flows.fflow,flows.bflow)
     th.cuda.synchronize()
-    # print(dists_gt[0,0,0])
-    # print(inds_gt[0,0,0])
 
     # -- pick tolerance --
     if dist_type == "prod":
@@ -158,7 +154,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
 
 
 def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
-             nheads,anchor_self,full_ws,dist_type,seed):
+             nheads,anchor_self,dist_type,seed):
     """
 
     Test the CUDA code with torch code
@@ -176,6 +172,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     clean_flow = True
     run_flow = False
     reflect_bounds = False
+    self_action = None
     set_seed(seed)
 
     # -- load data --
@@ -208,12 +205,12 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
                                     dist_type=dist_type, dilation=dil,
                                     stride0=stride0, stride1=stride1,
                                     reflect_bounds=reflect_bounds,
-                                    full_ws=full_ws,anchor_self=anchor_self)
+                                    self_action=self_action)
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,anchor_self=anchor_self)
+                                   self_action=self_action)
 
     # -- [testing] search --
     dists_te,inds_te = search_te(vid_te0,vid_te1,flows.fflow,flows.bflow)

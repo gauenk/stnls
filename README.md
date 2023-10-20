@@ -1,10 +1,9 @@
 # stnls
 
-Differentiable Non-Local Space-Time Search with Optical Flow: A differentiable non-local search module that allowers users to (i) scale to standard resolution images and (ii) search over multiple frames with optical flow.
+A small CUDA library to support Space-Time Attention with a Shifted Non-Local Search.
 
 ## Summary
 
-Would you like to use optical flow or [remove cropped effects](https://github.com/ZhendongWang6/Uformer/issues/25) from vision transformers? This is the code repo for you! Transformers operate on image patches, which are often explicitly represented in GPU memory. This repo provides a set of functions which allow for users to execute patch-based operations on nearly arbitrary video lengths and resolutions. By operating in-place, we don't have to crop video regions so we can incorporate optical flow. Also, non-patch-based layers (like convolution for example) can be operated on the entire video at once, so we don't see edge effects where cropped regions come together.
 
 ## Install
 
@@ -16,6 +15,7 @@ python -m pip install -e .
 
 ## Usage (torch.nn.Module)
 
+See `scripts/example_attn.py`
 
 ```python
 

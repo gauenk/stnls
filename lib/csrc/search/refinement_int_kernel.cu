@@ -1,11 +1,9 @@
 
-// #include <torch/extension.h>
 #include <torch/types.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <vector>
 #include <cstddef>
-// #include "shared_kernel.cu"
 #include "nls_int.cu"
 using namespace at;
 
@@ -22,7 +20,7 @@ __global__ void refinement_forward_kernel(
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> flows,
     torch::PackedTensorAccessor32<scalar_t,8,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,9,torch::RestrictPtrTraits> inds,
-    int wr, int ws, int ps, int pt, int K, int stride0, int stride1, int dilation,
+    int wr, int ws, int ps, int pt, int stride0, int stride1, int dilation,
     bool reflect_bounds, bool full_ws, bool restrict_radius, int patch_offset,
     int q_per_thread, int k_per_thread, int wr_per_thread){
 
@@ -86,31 +84,33 @@ __global__ void refinement_forward_kernel(
     nw = ref_patch[2]/stride0;
 
     // -- check bounds of pixel location --
-    check_bounds(valid_ref[3],ref_patch,T,H,W);
-
-    // -- search region offsets --
-    set_search_offsets(wrOff_h, wrOff_w,
-                       ref_patch[0], ref_patch[1], stride1,
-                       wrHalf, wr, H, W, full_ws);
-
-    // -- [unused] set search bounds for [optionally] expanded region --
-    // if (restrict_radius){
-    //   set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
-    //   set_search_minmax(wrMax_w, wrMin_w, wrOff_w, wr_w, stride1, full_ws);
-    // }
+    // check_bounds(valid_ref[3],ref_patch,T,H,W);
 
     // ---------------------------------------
     //     for each neighbor in k_search
     // ---------------------------------------
     for(int _ki = 0; _ki < k_per_thread; _ki++){
       ki = threadIdx.x + blockDim.x*_ki;
-      if (ki >= K){ continue; }
+      if (ki >= Ks){ continue; }
 
       // -- unpack base -- 
-      prop_patch[0] = flows[ibatch][ihead_f][ti][nh][nw][ki][0]; // no search
-      prop_center[0] = flows[ibatch][ihead_f][ti][nh][nw][ki][1];
-      prop_center[1] = flows[ibatch][ihead_f][ti][nh][nw][ki][2];
+      prop_patch[0] = ref_patch[0] + flows[ibatch][ihead_f][ti][nh][nw][ki][0];
+      prop_center[0] = ref_patch[1] + flows[ibatch][ihead_f][ti][nh][nw][ki][1];
+      prop_center[1] = ref_patch[2] + flows[ibatch][ihead_f][ti][nh][nw][ki][2];
+      prop_center[0] = bounds(prop_center[0],H);
+      prop_center[1] = bounds(prop_center[1],W);
 
+      // -- search region offsets --
+      set_search_offsets(wrOff_h, wrOff_w,
+                         prop_center[0], prop_center[1], stride1,
+                         wrHalf, wr, H, W, full_ws);
+  
+      // -- [unused] set search bounds for [optionally] expanded region --
+      // if (restrict_radius){
+      //   set_search_minmax(wrMax_h, wrMin_h, wrOff_h, wr_h, stride1, full_ws);
+      //   set_search_minmax(wrMax_w, wrMin_w, wrOff_w, wr_w, stride1, full_ws);
+      // }
+  
       // ---------------------------------------
       //     for each position to search
       // ---------------------------------------
@@ -134,8 +134,9 @@ __global__ void refinement_forward_kernel(
           prop_patch[2] = prop_center[1] + stride1 * (ww - wrOff_w);
 
           // -- check bounds of pixel location --
-          check_bounds(valid_prop[3],prop_patch,T,H,W);
-          valid = valid_ref[3] && valid_prop[3];
+          // check_bounds(valid_prop[3],prop_patch,T,H,W);
+          // valid = valid_ref[3] && valid_prop[3];
+          valid = true;//valid_prop[3];
 
           //  -- compute patch difference --
           if (valid){
@@ -150,9 +151,9 @@ __global__ void refinement_forward_kernel(
           // -- assignent --
           if (!valid){ dist = invalid; }
           dists[ibatch][ihead][ti][nh][nw][ki][wh][ww] = dist;
-          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][0] = prop_patch[0];
-          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][1] = prop_patch[1];
-          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][2] = prop_patch[2];
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][0] = prop_patch[0]-ref_patch[0];
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][1] = prop_patch[1]-ref_patch[1];
+          inds[ibatch][ihead][ti][nh][nw][ki][wh][ww][2] = prop_patch[2]-ref_patch[2];
 
         } //  ww
       } // wh
@@ -163,7 +164,7 @@ __global__ void refinement_forward_kernel(
 void refinement_int_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor flows, torch::Tensor dists, torch::Tensor inds,
-    int ws, int ps, int k, int stride0, int stride1, int dilation, int pt,
+    int ws, int ps, int stride0, int stride1, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
     int patch_offset,  int dist_type){
 
@@ -209,7 +210,7 @@ void refinement_int_forward_cuda(
           flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
           dists.packed_accessor32<scalar_t,8,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,9,torch::RestrictPtrTraits>(),
-          wr, ws, ps, pt, k, stride0, stride1, dilation,
+          wr, ws, ps, pt, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset, 
           q_per_thread, k_per_thread, wr_per_thread);
         }));
@@ -221,7 +222,7 @@ void refinement_int_forward_cuda(
           flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
           dists.packed_accessor32<scalar_t,8,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,9,torch::RestrictPtrTraits>(),
-          wr, ws, ps, pt, k, stride0, stride1, dilation,
+          wr, ws, ps, pt, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset,
           q_per_thread, k_per_thread, wr_per_thread);
         }));

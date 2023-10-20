@@ -16,12 +16,12 @@ void paired_search_bilin2d_forward_cuda(
     int ps, int k, int stride0, float stride1, int dilation,
     bool reflect_bounds, bool full_ws, int patch_offset, int dist_type);
 
-void paired_search_backward_cuda(
+void paired_search_int_backward_cuda(
     torch::Tensor grad_frame0, torch::Tensor grad_frame1,
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_size, int dist_type);
+    int patch_offset, int dist_type);
 
 void paired_search_bilin2d_backward_cuda(
     torch::Tensor grad_frame0, torch::Tensor grad_frame1,
@@ -31,7 +31,7 @@ void paired_search_bilin2d_backward_cuda(
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_size, int dist_type);
+    int patch_offset, int dist_type);
 
 
 // C++ interface
@@ -72,20 +72,45 @@ void paired_search_bilin2d_forward(
                                      reflect_bounds, full_ws, patch_offset, dist_type);
 }
 
-void paired_search_backward(
-    torch::Tensor grad_frame0,
-    torch::Tensor grad_frame1,
+void paired_search_int_backward(
+    torch::Tensor grad_frame0, torch::Tensor grad_frame1,
+    const torch::Tensor frame0, const torch::Tensor frame1,
+    const torch::Tensor grad_dists, const torch::Tensor inds,
+    int stride0, int ps, int dilation, bool reflect_bounds,
+    int patch_offset, int dist_type) {
+
+  // -- validate --
+  CHECK_INPUT(grad_frame0);
+  CHECK_INPUT(grad_frame1);
+  CHECK_INPUT(frame0);
+  CHECK_INPUT(frame1);
+  CHECK_INPUT(grad_dists);
+  CHECK_INPUT(inds);
+
+  // -- search --
+  paired_search_int_backward_cuda(
+         grad_frame0, grad_frame1,
+         frame0, frame1,
+         grad_dists, inds,
+         stride0, ps, dilation, reflect_bounds,
+         patch_offset, dist_type);
+
+}
+
+
+void paired_search_bilin2d_backward(
+    torch::Tensor grad_frame0, torch::Tensor grad_frame1,
     torch::Tensor grad_flow,
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow,
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_size, int dist_type) {
+    int patch_offset, int dist_type) {
 
+  // -- validate --
   CHECK_INPUT(grad_frame0);
   CHECK_INPUT(grad_frame1);
-  CHECK_INPUT(grad_flow);
   CHECK_INPUT(frame0);
   CHECK_INPUT(frame1);
   CHECK_INPUT(flow);
@@ -93,22 +118,12 @@ void paired_search_backward(
   CHECK_INPUT(grad_inds);
   CHECK_INPUT(inds);
 
-  if(inds.dtype() == torch::kInt32){
-    assert(1==0);
-    // paired_search_backward_cuda(
-    //       grad_frame0, grad_frame1, frame0, frame1,
-    //       grad_dists, inds, q_shift, stride0, nH0, nW0,
-    //       ps, dilation, reflect_bounds,
-    //       use_adj, off_H0, off_W0,
-    //       off_H1, off_W1, dist_type);
-  }else{
-    paired_search_bilin2d_backward_cuda(
-           grad_frame0, grad_frame1, grad_flow,
-           frame0, frame1, flow,
-           grad_dists, grad_inds, inds,
-           stride0, ps, dilation, reflect_bounds,
-           patch_size, dist_type);
-  }
+  paired_search_bilin2d_backward_cuda(
+         grad_frame0, grad_frame1, grad_flow,
+         frame0, frame1, flow,
+         grad_dists, grad_inds, inds,
+         stride0, ps, dilation, reflect_bounds,
+         patch_offset, dist_type);
 
 }
 
@@ -119,7 +134,10 @@ void init_paired_search(py::module &m){
         "Search Forward with Heads (CUDA)");
   m.def("paired_search_bilin2d_forward", &paired_search_bilin2d_forward,
         "Search Forward with Heads (CUDA)");
-  m.def("paired_search_backward", &paired_search_backward,
+  m.def("paired_search_int_backward", &paired_search_int_backward,
         "Search Backward with Heads (CUDA)");
+  m.def("paired_search_bilin2d_backward", &paired_search_bilin2d_backward,
+        "Search Backward with Heads (CUDA)");
+
 }
 

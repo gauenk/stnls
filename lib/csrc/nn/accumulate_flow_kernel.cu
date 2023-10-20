@@ -179,13 +179,11 @@ __global__ void accumulate_flow_backward_kernel(
   int W = fflow.size(4);
   int ref[3];
   scalar_t refs[3];
-  int prop_i[3];
   scalar_t prop[3];
-  scalar_t prop_time;
   bool isFwd;
 
   // -- fwd decl --
-  scalar_t v0,v1,gv0,gv1;
+  scalar_t gv0,gv1;
   scalar_t dAdF0[2];
   scalar_t dAdF1[2];
 
@@ -208,8 +206,6 @@ __global__ void accumulate_flow_backward_kernel(
     get_pixel_loc(ref,qi,stride0,nW,nHW,H,W);
 
     // -- init/reset --
-    v0 = 0;
-    v1 = 0;
     gv0 = 0;
     gv1 = 0;
 

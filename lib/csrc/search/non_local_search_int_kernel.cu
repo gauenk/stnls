@@ -6,7 +6,6 @@
 #include <vector>
 #include <cstddef>
 #include "nls_int.cu"
-// #include "shared_kernel.cu"
 
 using namespace at;
 
@@ -47,7 +46,7 @@ __global__ void non_local_search_int_forward_kernel(
 
   // -- search window params --
   int wsHalf = (ws-1)/2;
-  int wsMax = stride1*(ws-1-wsHalf);
+  // int wsMax = stride1*(ws-1-wsHalf);
   int wsOff_h,wsOff_w;
   int W_t = 2*wt+1;
   int t_max;
@@ -116,6 +115,8 @@ __global__ void non_local_search_int_forward_kernel(
         auto flows_t = flows[ibatch][ihead_f][ref_patch[0]][st_i-st_offset];
         frame_anchor[0] = ref_patch[1] + flows_t[1][n_hi][n_wi];
         frame_anchor[1] = ref_patch[2] + flows_t[0][n_hi][n_wi];
+        frame_anchor[0] = bounds(frame_anchor[0],H);
+        frame_anchor[1] = bounds(frame_anchor[1],W);
       }else{
         frame_anchor[0] = ref_patch[1];
         frame_anchor[1] = ref_patch[2];
@@ -157,15 +158,14 @@ __global__ void non_local_search_int_forward_kernel(
                          ps,pt,dilation,reflect_bounds,
                          patch_offset,invalid,T,F,H,W);
 
-
           }
 
           // -- assignent --
           if (!valid){ dist = invalid; }
           dists[ibatch][ihead][qi][st_i][ws_i][ws_j] = dist;
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0];
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1];
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][2] = prop_patch[2];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0] - ref_patch[0];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1] - ref_patch[1];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][2] = prop_patch[2] - ref_patch[2];
           
         }
       }
@@ -289,10 +289,11 @@ __global__ void non_local_search_int_vid_backward_kernel(
   bool valid_prop[4];
   bool valid;
   scalar_t dist,weight;
+  int iftr;
 
   // -- location to fill --
-  int i0 = blockIdx.x*blockDim.x+threadIdx.x;
-  int i1 = blockIdx.y*blockDim.y+threadIdx.y;
+  int qi = blockIdx.x*blockDim.x+threadIdx.x;
+  int ki = blockIdx.y*blockDim.y+threadIdx.y;
   int ihead = blockIdx.z/nbatch;
   int ibatch = (blockIdx.z-ihead*nbatch) % nbatch;
 
@@ -301,19 +302,19 @@ __global__ void non_local_search_int_vid_backward_kernel(
   int ftr_end = min(F,ftr_start + ftrs_per_thread);
 
   // -- each region --
-  if ((i0 < Q) && (i1 < K)){
+  if ((qi < Q) && (ki < K)){
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,i0,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,H,W);
     int ti = ref_patch[0];
     int nh = ref_patch[1]/stride0;
     int nw = ref_patch[2]/stride0;
 
     // -- proposed location --
-    prop_patch[0] = inds[ibatch][ihead][ti][nh][nw][i1][0];
-    prop_patch[1] = inds[ibatch][ihead][ti][nh][nw][i1][1];
-    prop_patch[2] = inds[ibatch][ihead][ti][nh][nw][i1][2];
-    weight = grad_dists[ibatch][ihead][ti][nh][nw][i1];
+    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][ki][0];
+    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][ki][1];
+    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][ki][2];
+    weight = grad_dists[ibatch][ihead][ti][nh][nw][ki];
 
     // -- update patch --
     update_bwd_patch_int<scalar_t,DIST_TYPE>(
@@ -321,7 +322,7 @@ __global__ void non_local_search_int_vid_backward_kernel(
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,
-                     patch_offset,ftr_start,ftr_end,
+                     patch_offset,iftr,ftr_start,ftr_end,
                      ref,prop,valid_ref,valid_prop,valid,T,H,W);
 
   }

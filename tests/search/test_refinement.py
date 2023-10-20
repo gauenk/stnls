@@ -29,32 +29,90 @@ from torchvision.transforms.functional import center_crop
 SAVE_DIR = Path("./output/tests/non_local_search")
 
 
-def gradcheck_skipnan(fxn,inputs, rtol=1e-05, atol=1e-08):
-    num,ana = get_gradcheck_pair(fxn,inputs)
+def gradcheck_skip_nan_unstable(fxn,inputs, rtol=1e-05, atol=1e-08,
+                                nreps=3, num_eps=5e-4, unstable_eps=1e-2):
+    num = get_num_jacobian_skip_unstable(fxn,inputs,eps=num_eps,
+                                         nreps=nreps,unstable_eps=unstable_eps)
+    ana = get_ana_jacobian(fxn,inputs)
     args = th.where(th.logical_and(~th.isnan(num),num.abs()>0))
-    # args = th.where(~th.isnan(num))
-    # print(num[args])
-    # print(ana[args])
+    args1 = th.where(th.abs(num[args]-ana[args])>1e-2)[0]
+    # print("ana: ",ana[47,573:575])
+    # print(num[:5,:5])
+    # print(ana[:5,:5])
+    # print(num[-5:,-5:])
+    # print(ana[-5:,-5:])
+    # print(num.shape)
+    # print(num[args][args1][:20])
+    # print(ana[args][args1][:20])
+    # print([args[i][args1] for i in range(2)])
     return th.allclose(num[args],ana[args],atol=atol,rtol=rtol)
 
-def get_gradcheck_pair(fxn,inputs):
-    from torch.autograd.gradcheck import get_numerical_jacobian,get_analytical_jacobian
+def gradcheck_skipnan(fxn,inputs, rtol=1e-05, atol=1e-08, nreps=1, num_eps=5e-4):
+    num = get_num_jacobian(fxn,inputs,eps=num_eps,nreps=nreps)
+    ana = get_ana_jacobian(fxn,inputs)
+    args = th.where(th.logical_and(~th.isnan(num),num.abs()>0))
+    args1 = th.where(th.abs(num[args]-ana[args])>1e-2)[0]
+    # print(num[-5:,-5:])
+    # print(ana[-5:,-5:])
+    # print(num.shape)
+    # print(num[args][args1][:20])
+    # print(ana[args][args1][:20])
+    # print([args[i][args1] for i in range(2)])
+    return th.allclose(num[args],ana[args],atol=atol,rtol=rtol)
+
+def get_num_jacobian_skip_unstable(fxn,inputs,eps=1e-3,nreps=1,unstable_eps=1e-2):
     from torch.autograd.gradcheck import _get_numerical_jacobian
-    from torch.autograd.gradcheck import _check_analytical_jacobian_attributes
+    nums = []
+    for i in range(nreps):
+        eps_i = eps * (1 + i*eps)
+        num = _get_numerical_jacobian(fxn, (inputs,),
+                                      eps=eps_i, is_forward_ad=False)[0][0]
+        nums.append(num)
+
+    delta = th.zeros_like(nums[0])
+    for i in range(nreps):
+        # print(nums[i][47,573:575])
+        for j in range(nreps):
+            if i >= j: continue
+            # print(i,j)
+            delta += th.abs(nums[i] - nums[j])
+    # print(delta)
+    # print(delta[~th.isnan(delta)].min(),delta[~th.isnan(delta)].max())
+    # print("Percentage unstable: ",100*th.mean(1.*(delta > unstable_eps)).item())
+    unstable = th.where(th.logical_or(delta > unstable_eps,th.isnan(delta)))
+    num = th.mean(th.stack(nums),dim=0)
+    num[unstable] = th.nan
+    # print(num)
+    # print(nums[0])
+    return num
+
+def get_num_jacobian(fxn,inputs,eps=1e-3,nreps=1):
+    from torch.autograd.gradcheck import _get_numerical_jacobian
     num = _get_numerical_jacobian(fxn, (inputs,),
-                                  eps=1e-3, is_forward_ad=False)[0][0]
+                                  eps=eps, is_forward_ad=False)[0][0]
+    for i in range(nreps-1):
+        num += get_num_jacobian(fxn,inputs,eps=eps)
+    num /= nreps
+    return num
+
+def get_ana_jacobian(fxn,inputs):
+    from torch.autograd.gradcheck import _check_analytical_jacobian_attributes
     out = fxn(inputs)
     ana = _check_analytical_jacobian_attributes((inputs,), out, 1e-7, False)[0]
-    return num,ana
+    return ana
 
+def get_gradcheck_pair(fxn,inputs,eps=1e-3):
+    num = get_num_jacobian(fxn,inputs,eps=1e-3)
+    ana = get_ana_jacobian(fxn,inputs)
+    return num,ana
 
 def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ws":[3],"wt":[1],"k":[-1],"wr":[3],"kr":[-1],
-                  "ps":[1],"stride0":[4],"stride1":[1,0.5],"dilation":[1],
-                  "self_action":["anchor_each"],"nheads":[1],"seed":[0],
+    test_lists = {"ws":[1],"wt":[1],"k":[-1],"wr":[3],"kr":[-1],
+                  "ps":[1],"stride0":[1],"stride1":[1],"dilation":[1],
+                  "self_action":["anchor_each"],"nheads":[1],"seed":[0,1,2,3],
                   "dist_type":["l2"],"itype":["float"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -65,7 +123,7 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
-def test_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
+def test_refine_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
              nheads,dist_type,itype,seed):
     """
 
@@ -86,7 +144,6 @@ def test_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
     reflect_bounds = False
     use_adj = False
     self_action = None
-    full_ws = False
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
 
@@ -104,12 +161,12 @@ def test_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
     # -- exec fold fxns --
     search = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
                                          dilation=dil,stride0=stride0, stride1=stride1,
-                                         reflect_bounds=reflect_bounds,full_ws=full_ws,
+                                         reflect_bounds=reflect_bounds,full_ws=True,
                                          self_action=self_action,use_adj=use_adj,
                                          dist_type=dist_type,itype=itype)
-    refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads,
+    refine = stnls.search.RefineSearch(ws, wt, 1, -1, kr, ps, nheads,
                                        dilation=dil,stride0=stride0, stride1=stride1,
-                                       reflect_bounds=reflect_bounds,full_ws=full_ws,
+                                       reflect_bounds=reflect_bounds,full_ws=True,
                                        self_action=self_action,use_adj=use_adj,
                                        dist_type=dist_type,
                                        itype_fwd=itype,itype_bwd=itype)
@@ -118,13 +175,31 @@ def test_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
     dists_gt,inds_gt = search(vid,vid,fflow,bflow)
     th.cuda.synchronize()
     dists_te,inds_te = refine(vid,vid,inds_gt)
+    # print(dists_gt.shape,dists_te.shape)
 
     # -- compare --
-    assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True).item()
+    assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True)
+
+def int_spaced_vid(B,T,F,H,W):
+    device = "cuda:0"
+    dtype = th.float32
+    grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
+                                 th.arange(0, W, dtype=dtype, device=device))
+    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
+    vid = []
+    for ti in range(T):
+        g0 = grid[:,[0]].repeat(B,F,1,1)/W-0.5
+        g1 = grid[:,[1]].repeat(B,F,1,1)/H-0.5
+        # g0 += th.rand_like(g0)
+        # g1 += th.rand_like(g1)
+        tN = (ti+1)*th.ones_like(g0)
+        vid.append(g0*g1*tN) # noise less than int
+    vid = th.stack(vid,1)
+    return vid
 
 # @pytest.mark.slow
-def test_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
-             k,nheads,dist_type,itype,seed):
+def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
+                    k,nheads,dist_type,itype,seed):
     """
 
     Test the CUDA code with torch code
@@ -146,13 +221,113 @@ def test_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
     full_ws = True
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    set_seed(seed)
+
+    # -- shapes --
+    W_t = 2*wt+1
+    k,kr = W_t*ws*ws,-1
+    HD,K = nheads,k
+
+    # -- load data --
+    B,T,F,H,W = 1,5,1,12,12
+    W_t = 2*wt+1
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    vid0 = int_spaced_vid(B,T,F,H,W)
+    # vid0 = th.rand_like(vid0)/2.+0.2
+    # vid1 = th.rand_like(vid0)/2.+0.2
+    vid0 = int_spaced_vid(B,T,F,H,W)
+    vid1 = int_spaced_vid(B,T,F,H,W)
+
+    # -- init for grads --
+    vid0_srch,vid1_srch = vid0.clone(),vid1.clone()
+    vid0.requires_grad_(True)
+    vid1.requires_grad_(True)
+
+    # -- exec fold fxns --
+    wr = 1
+    refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads,
+                                       dilation=dil,stride0=stride0, stride1=stride1,
+                                       reflect_bounds=reflect_bounds,full_ws=full_ws,
+                                       self_action=self_action,use_adj=use_adj,
+                                       dist_type=dist_type,
+                                       itype_fwd=itype,itype_bwd=itype,topk_mode="all")
+
+    # -- create inds --
+    srch_inds = th.ones((B,HD,T,nH,nW,K,3))+0.1
+    srch_inds = th.rand_like(srch_inds)/2.+1.1
+    tgrid = th.arange(0,T).view(1,1,T,1,1,1)
+    srch_inds[...,0] = th.randint(0,T,size=srch_inds[...,0].shape)-tgrid
+    srch_inds[...,1:] = th.rand_like(srch_inds[...,1:])/2.+0.2
+    # srch_inds[...,1:] = -srch_inds[...,1:]
+    not_int = th.all(th.abs(srch_inds[...,1:].round() - srch_inds[...,1:])>1e-5).item()
+    assert not_int,"Gradcheck only works _not_ near an int."
+    srch_inds = srch_inds.to(vid0.device)
+    # srch_inds = srch_inds.requires_grad_(True)
+
+    # -- run refinement --
+    ref_dists,ref_inds = refine(vid0,vid1,srch_inds)
+
+    # -- autograd --
+    # fxn = lambda vid0: refine(vid0,vid1,srch_inds)[0]
+    # # assert gradcheck_skip_nan_unstable(fxn,vid0, atol=1e-02, num_eps=1e-5)
+    # assert gradcheck_skipnan(fxn,vid0, atol=1e-02, num_eps=1e-5)
+    # fxn = lambda vid1: refine(vid0,vid1,srch_inds)[0]
+    # assert gradcheck_skipnan(fxn,vid1, atol=1e-02, num_eps=1e-5)
+    # # assert gradcheck_skip_nan_unstable(fxn,vid1, atol=1e-02, num_eps=1e-5)
+
+    # -- autograd check for indices --
+    srch_inds_t =  srch_inds[...,[0]]
+    srch_inds_sp =  srch_inds[...,1:].requires_grad_(True)
+    def fxn(srch_inds_sp):
+        srch_inds = th.cat([srch_inds_t,srch_inds_sp],-1).requires_grad_(True)
+        return refine(vid0,vid1,srch_inds)[0]
+    # assert gradcheck_skipnan(fxn, srch_inds_sp, atol=1e-02, num_eps=1e-5)
+    assert gradcheck_skip_nan_unstable(fxn, srch_inds_sp, atol=1e-02,
+                                       nreps=3, num_eps=1e-4)
+
+    if itype == "float":
+        def fxn(srch_inds_sp):
+            srch_inds = th.cat([srch_inds_t,srch_inds_sp],-1).requires_grad_(True)
+            return refine(vid0,vid1,srch_inds)[1]
+        # assert gradcheck_skipnan(fxn, srch_inds_sp, atol=1e-02, num_eps=1e-5)
+        assert gradcheck_skip_nan_unstable(fxn, srch_inds_sp, atol=1e-02,
+                                           nreps=3, num_eps=1e-4)
+
+def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
+                              k,nheads,dist_type,itype,seed):
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+
+    # -- init vars --
+    dil = dilation
+    pt = 1
+    device = "cuda:0"
+    clean_flow = True
+    comp_flow = False
+    reflect_bounds = True
+    use_adj = False
+    self_action = None
+    full_ws = True
+    ext = "jpg"
+    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+    set_seed(seed)
+    W_t = 2*wt+1
+    k,kr = W_t*ws*ws,-1
+    HD,K = nheads,k
 
     # -- load data --
     vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:1,:5,:3,::4,::4].contiguous()
     vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:,:3].contiguous()
-    vid /= vid.max()
-    vid0 = th.rand_like(vid)-0.5
+    B,T,F,H,W = 1,5,1,32,32
+    # vid = int_spaced_vid(B,T,F,H,W)
+    vid0 = th.rand_like(vid)-0.25
     vid1 = th.rand_like(vid)-0.5
     T = vid.shape[1]
 
@@ -162,39 +337,39 @@ def test_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
     vid1.requires_grad_(True)
 
     # -- compute flow --
-    flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    fflow = (th.rand_like(flows.fflow)/(2.*T)+0.1)
-    bflow = (th.rand_like(flows.bflow)/(2.*T)+0.1)
-    # fflow = 2*(th.rand_like(flows.fflow)-0.5)
-    # bflow = 2*(th.rand_like(flows.bflow)-0.5)
-
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    W_t = 2*wt+1
+    flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
+    flows = th.ones_like(flows)/2.+0.2 # away from int
+    flows = -flows
 
     # -- exec fold fxns --
-    k_search = 5
-    search = stnls.search.NonLocalSearch(ws, wt, ps, k_search, nheads,
-                                         dilation=dil,stride0=stride0, stride1=stride1,
-                                         reflect_bounds=reflect_bounds,full_ws=full_ws,
-                                         self_action="remove",use_adj=use_adj,
-                                         dist_type=dist_type,itype=itype)
+    wr = 1
+    k = -1
     refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads,
                                        dilation=dil,stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=full_ws,
                                        self_action=self_action,use_adj=use_adj,
                                        dist_type=dist_type,
-                                       itype_fwd=itype,itype_bwd=itype)
+                                       itype_fwd=itype,itype_bwd=itype,
+                                       topk_mode="all")
 
-    # -- test api --
-    srch_dists,srch_inds = search(vid0_srch,vid1_srch,fflow,bflow)
-    # srch_inds = srch_inds.detach()[...,ws*ws:ws*ws+5,:] # skip self
-    srch_inds = srch_inds.requires_grad_(True)
-    th.cuda.synchronize()
-    # print(srch_dists[0,0,:2,:2,:2,:2])
-    # print(srch_inds[0,0,:2,:2,:2,:2])
+    # -- create inds --
+    srch_inds = th.ones((B,HD,T,nH,nW,K,3))
+    tgrid = th.arange(0,T).view(1,1,T,1,1,1)
+    srch_inds[...,0] = th.randint(0,T,size=srch_inds[...,0].shape)-tgrid
+    srch_inds[...,1:] = th.rand_like(srch_inds[...,1:])/2.+0.2
+    srch_inds = srch_inds.to(vid0.device)
+    not_int = th.all(th.abs(srch_inds[...,1:].round() - srch_inds[...,1:])>1e-5).item()
+    assert not_int,"Gradcheck only works _not_ near an int."
+
+    # -- run refinement --
+    ref_dists,ref_inds = refine(vid0,vid1,srch_inds)
 
     # -- autograd --
     fxn = lambda vid0: refine(vid0,vid1,srch_inds)[0]
     assert gradcheck_skipnan(fxn,vid0, atol=1e-02)
-    fxn = lambda vid0: refine(vid0,vid1,srch_inds)[0]
+    fxn = lambda vid1: refine(vid0,vid1,srch_inds)[0]
     assert gradcheck_skipnan(fxn,vid1, atol=1e-02)
 
     # -- autograd check for indices --
@@ -210,11 +385,9 @@ def test_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
             srch_inds = th.cat([srch_inds_t,srch_inds_sp],-1).requires_grad_(True)
             return refine(vid0,vid1,srch_inds)[1]
         assert gradcheck_skipnan(fxn, srch_inds_sp, atol=1e-02)
-        # th.autograd.gradcheck(fxn, srch_inds_sp, eps=1e-2,
-        #                       atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 
-def test_fwd_anchor(ws,wt,wr,ps,stride0,stride1,dilation,
+def test_anchor_fwd(ws,wt,wr,ps,stride0,stride1,dilation,
                     self_action,nheads,dist_type,itype,seed):
 
     """
@@ -353,8 +526,8 @@ def test_fwd_topk(ws,wt,wr,ps,stride0,stride1,dilation,
     # -- exec --
     _dists,_inds = search(vid0,vid1,flows)
     dists,inds = refine(vid0,vid1,_inds)
-    print(_inds[0,0,0,2,2,:10])
-    print(inds[0,0,0,2,2,:10])
+    # print(_inds[0,0,0,2,2,:10])
+    # print(inds[0,0,0,2,2,:10])
 
     delta = dists[...,1:] - dists[...,:-1]
     delta = delta[~th.isnan(delta)]

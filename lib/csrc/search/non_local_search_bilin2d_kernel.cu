@@ -49,7 +49,7 @@ __global__ void non_local_search_bilin2d_forward_kernel(
 
   // -- search window params --
   scalar_t wsHalf = (ws-1)/2;
-  scalar_t wsMax = stride1*(ws-1-wsHalf);
+  // scalar_t wsMax = stride1*(ws-1-wsHalf);
   scalar_t wsOff_h,wsOff_w;
   int W_t = 2*wt+1;
   int t_max;
@@ -173,9 +173,11 @@ __global__ void non_local_search_bilin2d_forward_kernel(
           // -- assignent --
           if (!valid){ dist = invalid; }
           dists[ibatch][ihead][qi][st_i][ws_i][ws_j] = dist;
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0];
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1];
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][2] = prop_patch[2];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0] - ref_patch[0];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1] - ref_patch[1];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][2] = prop_patch[2] - ref_patch[2];
+
+
           
         }
       }
@@ -202,11 +204,11 @@ void non_local_search_bilin2d_forward_cuda(
    int nqueries = dists.size(2);
 
    int ws = dists.size(4);
-   int ws_threads = std::min(ws,13);
+   int ws_threads = std::min(ws,15);
    int ws_per_thread = (ws/ws_threads) + 1;
    int W_t = dists.size(3);
    int wt = (W_t-1)/2;
-   int wt_threads = std::min(W_t,2);
+   int wt_threads = std::min(W_t,3);
    int wt_per_thread = (W_t/wt_threads) + 1;
 
    dim3 nthreads(ws_threads,ws_threads,wt_threads);
@@ -308,6 +310,9 @@ __global__ void nls_bwd_vid_kernel(
   bool valid;
   scalar_t weight;
   scalar_t iweight[3];
+  int iftr;
+  bool valid_prop_patch;
+
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -330,18 +335,19 @@ __global__ void nls_bwd_vid_kernel(
 
     // -- read from tensors --
     weight = grad_dists[ibatch][ihead][ti][nh][nw][i1];
-  #pragma unroll
-    for (int _idx=0; _idx < 3; _idx++){
-      prop_patch[_idx] = inds[ibatch][ihead][ti][nh][nw][i1][_idx];
-    }
-
+    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][i1][0];
+    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][i1][1];
+    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][i1][2];
+    check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
+    if (not valid_prop_patch){ return; }
+    
     // -- update vid0,vid1 --
     update_bwd_patch_bilin2d<scalar_t,DIST_TYPE>(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,patch_offset,
-                     ftr_start,ftr_end,ref,prop,prop_i,
+                     iftr,ftr_start,ftr_end,ref,prop,prop_i,
                      valid_ref,valid_prop,valid,T,H,W);
 
 
@@ -389,6 +395,7 @@ void non_local_search_bilin2d_vid_backward_cuda(
   dim3 blocksPerGrid(1, 1, B*HD);
   blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));
+
 
   // -- view launch info --
   // fprintf(stdout,"BHD,nblocks_queries,chnls_nblocks: %d,%d,%d\n",
@@ -466,6 +473,7 @@ __global__ void nls_bwd_vidflows_kernel(
   int nHW = nH*nW;
   int Q = T*nHW;
 
+
   // -- fwd decl registers --
   int ref_patch[3];
   scalar_t prop_patch[3];
@@ -479,6 +487,7 @@ __global__ void nls_bwd_vidflows_kernel(
   bool valid;
   scalar_t weight;
   scalar_t iweight[2];
+  int iftr;
 
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -504,18 +513,16 @@ __global__ void nls_bwd_vidflows_kernel(
     weight = grad_dists[ibatch][ihead][ti][nh][nw][i1];
     iweight[0] = grad_inds[ibatch][ihead][ti][nh][nw][i1][1];
     iweight[1] = grad_inds[ibatch][ihead][ti][nh][nw][i1][2];
-  #pragma unroll
-    for (int _idx=0; _idx < 3; _idx++){
-      prop_patch[_idx] = inds[ibatch][ihead][ti][nh][nw][i1][_idx];
-    }
+    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][i1][0];
+    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][i1][1];
+    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][i1][2];
     check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
     if (not valid_prop_patch){ return; }
 
-    // -- temporal index from frame difference --
+    // -- accumulated temporal index from frame difference --
     int t_max;
     set_time_range(t_max, ti, T, wt);
     int dt = static_cast<int>(prop_patch[0]) - ti;
-    if (dt==0){ return; }
     int dto = t_max - ti;
     int si = dt > 0 ? (dt-1) : dto - dt - 1;
 
@@ -532,12 +539,12 @@ __global__ void nls_bwd_vidflows_kernel(
                      vid0[ibatch][ihead],vid1[ibatch][ihead],
                      acc_dFlows,weight,ref_patch,prop_patch,
                      ps,pt,dilation,stride0,reflect_bounds,patch_offset,
-                     ftr_start,ftr_end,ref,prop,prop_i,
+                     iftr,ftr_start,ftr_end,ref,prop,prop_i,
                      valid_ref,valid_prop,valid,T,H,W);
 
 
-
-    // -- update grad_flows from grad_dists --
+    // -- update grad_flows from grad_dists,vid0,vid1 --
+    if (dt==0){ return; }
     scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
     scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
     // sH = reflect[ibatch][ihead_f][ti][si][nh][nw][1] ? -1 : 1 ;
@@ -546,6 +553,7 @@ __global__ void nls_bwd_vidflows_kernel(
     int sW = ((wi >= 0) and (wi < W)) ? 1 : -1;
     bwd_flow_assign(acc_dFlows,nh,nw,sH,sW,
                     grad_flows[ibatch][ihead_f][ref_patch[0]][si]);
+
 
     // -- update grad_flows from grad_inds --
     if (ftr_start == 0){
