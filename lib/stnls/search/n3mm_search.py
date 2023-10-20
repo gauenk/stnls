@@ -46,7 +46,7 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
     # -- compute indices --
-    inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,stride0,stride1)
+    inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,stride0,stride1).int()
 
     # -- boundary --
     # inds = th.where(inds<0,-inds,inds)

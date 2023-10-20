@@ -20,7 +20,7 @@ Get indices of a non-local search
 
 void non_local_inds_cuda(
     torch::Tensor inds, const torch::Tensor fflow, const torch::Tensor bflow,
-    int ws, int wt, int stride0, int stride1, bool full_ws);
+    int ws, int wt, int stride0, float stride1, bool full_ws);
 
 // C++ interface
 
@@ -31,7 +31,7 @@ void non_local_inds_cuda(
 void non_local_inds(
     torch::Tensor inds,
     const torch::Tensor fflow, const torch::Tensor bflow,
-    int ws, int wt, int stride0, int stride1, bool full_ws){
+    int ws, int wt, int stride0, float stride1, bool full_ws){
   CHECK_INPUT(inds);
   CHECK_INPUT(fflow);
   CHECK_INPUT(bflow);

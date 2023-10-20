@@ -44,14 +44,16 @@ def get_space_grid(H,W,dtype=th.float,device="cuda"):
     # -- create mesh grid --
     grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
                                  th.arange(0, W, dtype=dtype, device=device))
-    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
+    grid = th.stack((grid_x, grid_y), -1).float()[None,:]  # 2, W(x), H(y)
     grid.requires_grad = False
     return grid
 
 def flow2inds(flow,stride0):
-    B,T,nH,nW,three = flow.shape
-    space_grid = stride0*get_space_grid(nH,nW)
+    device = flow.device
+    B,T,nH,nW,K,three = flow.shape
+    space_grid = stride0*get_space_grid(nH,nW).to(device)
+    print(space_grid.shape,space_grid[:,None,:,:,None].shape)
     inds = flow.clone()
-    inds = flow[...,1:] + space_grid
-    inds = flow[...,0] + th.arange(T).view(1,T,1,1)
+    inds[...,1:] = flow[...,1:] + space_grid[:,None,:,:,None].flip(-1)
+    inds[...,0] = flow[...,0] + th.arange(T).view(1,T,1,1,1).to(device)
     return inds

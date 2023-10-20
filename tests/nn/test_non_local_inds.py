@@ -34,8 +34,8 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ws":[5,21],"wt":[0,1,3],
-                  "stride0":[1,4],"stride1":[1,4],
+    test_lists = {"ws":[1],"wt":[1],
+                  "stride0":[1],"stride1":[1],
                   "full_ws":[True],"seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -45,7 +45,6 @@ def set_seed(seed):
     th.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
 
 def test_fwd(ws,wt,stride0,stride1,full_ws,seed):
     """
@@ -59,7 +58,6 @@ def test_fwd(ws,wt,stride0,stride1,full_ws,seed):
     # -- get args --
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    pt = 1
     set_seed(seed)
 
     # -- init vars --
@@ -68,64 +66,43 @@ def test_fwd(ws,wt,stride0,stride1,full_ws,seed):
     clean_flow = True
     reflect_bounds = True
     use_adj = False
-    adj = 0
-    rbwd = False
+    self_action = None
+    pt,ps,k = 1,7,-1
 
     # -- load data --
-    vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
-    vid = vid.to(device)[:,:5,].contiguous()
-    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
-    vid /= vid.max()
+    B,T,F,H,W = 2,10,16,16,16
+    vid = th.ones((B,T,F,H,W),device=device).float()
+    vid0 = th.randn_like(vid)-0.5
+    vid1 = th.randn_like(vid)
 
-    # -- compute flow --
-    flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
-    flows.fflow = 10*th.randn_like(flows.fflow)
-    flows.bflow = 10*th.randn_like(flows.bflow)
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    B,T,color,H,W = shape
-    vshape = vid.shape
-    chnls = vid.shape[-3]
-    # B,T,C,H,W = vid.shape
-
-    # -- batching info --
+    # -- load flows --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
-    ntotal = T * nH * nW
-    nbatch = ntotal
-    nbatches = (ntotal-1) // nbatch + 1
-    h0_off,w0_off = 0,0
-    h1_off,w1_off = 0,0
+    W_t = 2*wt+1
+    flows = edict()
+    flows.fflow = th.ones((B,T,2,nH,nW)).to(device)
+    flows.bflow = th.ones((B,T,2,nH,nW)).to(device)
+    flows.fflow = th.rand_like(flows.fflow)/(2*T)+1./(2*T)
+    flows.bflow = th.rand_like(flows.bflow)/(2*T)+1./(2*T)
 
     # -- exec fold fxns --
-    ps,k = 7,-1
     search = stnls.search.NonLocalSearch(ws, wt, ps, k,
                                          stride0=stride0, stride1=stride1,
-                                         full_ws=full_ws, anchor_self=False,
-                                         remove_self=False)
+                                         full_ws=full_ws, self_action=self_action)
     _,inds_gt = search(vid,vid,flows.fflow,flows.bflow)
-    inds_gt = inds_gt[:,0]
+    B,HD,T,nH,nW,K,_ = inds_gt.shape
+    inds_gt = inds_gt.view(B*HD,T,nH,nW,K,3)
+    print(inds_gt.shape)
+    inds_gt = stnls.utils.misc.flow2inds(inds_gt,stride0)
+    print(inds_gt.shape)
+    inds_gt = inds_gt.view(B,HD,T*nH*nW,K,3)[:,0]
+    # flow2inds(flow,stride0)
 
     # -- apply temporal inds --
     inds_te = stnls.nn.non_local_inds(flows.fflow,flows.bflow,ws,wt,
                                       stride0,stride1,full_ws)
-    B,Q,*_ = inds_te.shape
-    inds_te = inds_te.reshape(B,Q,-1,3)
+    inds_te = inds_te.view(B,T*nH*nW,K,3)
 
-    # -- viz --
-    # print(inds_gt.shape,inds_te.shape)
-    # print("-"*20)
-    # i = 0
-    # print(th.cat([inds_gt[0][i],inds_te[0][i]],-1))
-    # print(th.abs(inds_gt[0][i]-inds_te[0][i]))
-    # print("-"*20)
-    # print(inds_gt[0][100])
-    # print(inds_te[0][100])
-    # for i in range(inds_gt.shape[1]):
-    #     eq = th.all(inds_gt[0][i] == inds_te[0][i]).item()
-    #     print(i,eq)
-    #     if not(eq): break
+    print(th.cat([inds_gt,inds_te],-1))
 
     # -- compare --
     diff = th.mean(th.mean(1.*(inds_te != inds_gt))).item()

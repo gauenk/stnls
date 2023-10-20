@@ -15,11 +15,11 @@ Get indices of a non-local search
 
 template <typename scalar_t>
 __global__ void non_local_inds_kernel(
-    torch::PackedTensorAccessor64<int,6,torch::RestrictPtrTraits> inds,
+    torch::PackedTensorAccessor64<scalar_t,6,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> fflow,
     const torch::PackedTensorAccessor64<scalar_t,5,torch::RestrictPtrTraits> bflow,
     int ws, int wt, int nH, int nW, int nHW,
-    int stride0, int stride1, bool full_ws,
+    int stride0, float _stride1, bool full_ws,
     int q_per_thread, int ws_per_thread){
 
   // -- unpack --
@@ -33,16 +33,17 @@ __global__ void non_local_inds_kernel(
   int St = inds.size(2);
   int Ss_h = inds.size(3);
   int Ss_w = inds.size(4);
+  scalar_t stride1 = static_cast<scalar_t>(_stride1);
   // int wt = (St-1)/2; // St is *always* odd
 
   // -- temporal search --
-  int hj = 0;
-  int wj = 0;
+  scalar_t hj = 0;
+  scalar_t wj = 0;
   scalar_t hj_acc,wj_acc;
 
   // -- search space offset --
-  int wsHalf = (ws-1)/2;
-  int wsOff_h,wsOff_w;
+  scalar_t wsHalf = (ws-1)/2;
+  scalar_t wsOff_h,wsOff_w;
   int ws_i,ws_j;
 
   // -- reference location --
@@ -76,12 +77,12 @@ __global__ void non_local_inds_kernel(
     // ---------------------------------------
   
     // -- search region offsets --
-    set_search_offsets(wsOff_h,wsOff_w, ref[1], ref[2], stride1,
+    hj = __int2float_rn(ref[1]);
+    wj = __int2float_rn(ref[2]);
+    set_search_offsets(wsOff_h, wsOff_w, hj, wj, stride1,
                        wsHalf, ws, H, W, full_ws);
 
     // -- search across space --
-    hj = ref[1];
-    wj = ref[2];
     for (int _xi = 0; _xi < ws_per_thread; _xi++){
       ws_i = threadIdx.x + blockDim.x*_xi;
       if (ws_i >= ws){ continue; }
@@ -125,10 +126,13 @@ __global__ void non_local_inds_kernel(
       //   spatial radius centered @ offset
       // ---------------------------------------
   
-
       // -- search region offsets --
-      set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
+      set_search_offsets(wsOff_h, wsOff_w, hj, wj, stride1,
                          wsHalf, ws, H, W, full_ws);
+
+      // // -- search region offsets --
+      // set_search_offsets(wsOff_h,wsOff_w, hj, wj, stride1,
+      //                    wsHalf, ws, H, W, full_ws);
 
       // -- search across space --
       for (int _xi = 0; _xi < ws_per_thread; _xi++){
@@ -214,7 +218,7 @@ __global__ void non_local_inds_kernel(
 void non_local_inds_cuda(
      torch::Tensor inds,
      const torch::Tensor fflow, const torch::Tensor bflow,
-     int ws, int wt, int stride0, int stride1, bool full_ws){
+     int ws, int wt, int stride0, float stride1, bool full_ws){
   
   // -- unpack --
   int B = inds.size(0);
@@ -252,7 +256,7 @@ void non_local_inds_cuda(
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(fflow.type(), "non_local_inds_kernel", ([&] {
      non_local_inds_kernel<scalar_t><<<nblocks, nthreads>>>(
-       inds.packed_accessor64<int,6,torch::RestrictPtrTraits>(),
+       inds.packed_accessor64<scalar_t,6,torch::RestrictPtrTraits>(),
        fflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
        bflow.packed_accessor64<scalar_t,5,torch::RestrictPtrTraits>(),
        ws, wt, nH, nW, nHW, stride0, stride1, full_ws,
