@@ -77,8 +77,7 @@ class non_local_stack(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid, weights, inds,
                 ps=7,stride0=4,pt=1,reflect_bounds=True,
-                dilation=1,use_adj=False,
-                itype_fwd="int",itype_bwd="int"):
+                dilation=1,use_adj=False, itype="int"):
 
         # -- init --
         HD = inds.shape[1]
@@ -89,23 +88,29 @@ class non_local_stack(th.autograd.Function):
         B,HD_v,T,F,H,W = vid.shape
         HD_i = inds.shape[1]
         HD = max(HD_v,HD_i)
+        wshape = weights.shape
         stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
         counts = th.zeros((B,HD,H,W),device=vid.device,dtype=th.int32)
         # print("B,HD,K,T,F,H,W: ",B,HD,K,T,F,H,W)
         # print("stack [weights.shape,inds.shape]: ",weights.shape,inds.shape)
+        patch_offset = 0 if use_adj else -(ps//2)
 
         # -- reshape --
         # nH = (H-1)//stride0+1
         # nW = (W-1)//stride0+1
-        weights = weights.reshape(B,HD,-1,K)
-        inds = inds.reshape(B,HD,-1,K,3)
+        weights = weights.view(B,HD,-1,K)
+        inds = inds.view(B,HD,-1,K,3)
 
         # -- non-local stacking --
         vid = vid.contiguous()
         weights = weights.contiguous()
-        inds = get_inds(inds,itype_fwd)
-        imode = get_imode(itype_fwd)
+        inds = get_inds(inds,itype)
+        imode = get_imode(itype)
         assert inds.shape[-1] == 3
+
+        # -- all same num of heads --
+        assert vid.shape[1] == inds.shape[1]
+        assert inds.shape[1] == weights.shape[1]
         # print(vid.shape)
         # print(inds[0,0,9])
         # inds_n = rearrange(inds,'b HD (H W) k two -> b (HD k) two H W',H=H,W=W)
@@ -114,30 +119,23 @@ class non_local_stack(th.autograd.Function):
         #     print(inds_n[0,i,:,:3,:3])
         # print(stride0,use_adj,ps)
         assert not th.any(th.isnan(weights)).item()
+        # print(vid.shape)
 
+        # print(vid.shape,weights.shape,inds.shape,stack.shape,counts.shape)
+        # print(weights[0,0,0,0])
         # print(inds,imode)
-        stnls_cuda.non_local_stack_forward(vid, weights, inds,
-                                           stack, counts,
-                                           ps, pt, dilation, stride0,
-                                           use_adj, reflect_bounds, q_start, imode)
-        # print(counts[30:34,30:34])
-        # counts = get_counts(vid,stride0,ps,pt,
-        #                     dilation,use_adj,reflect_bounds)
-        # print(stack[0][0][0])
-        # print(counts)
-        # exit()
-        # print(counts)
-        # assert th.all(counts == vid.shape[0]).item()
-        # counts = counts/(1.*vid.shape[0])
-        # print(K)
-        # print(inds[0,0,12*W+23-1])
-        # print(inds[0,0,12*W+23])
-        # print(inds[0,0,12*W+23+1])
-        # print(counts)
-        # print(th.where(counts==0))
+        if inds.dtype == th.int:
+            fwd_fxn = stnls_cuda.non_local_stack_int_forward
+            fwd_fxn(vid, weights, inds, stack, counts,
+                    ps, pt, dilation, stride0,
+                    reflect_bounds, patch_offset)
+        else:
+            fwd_fxn = stnls_cuda.non_local_stack_bilin2d_forward
+            fwd_fxn(vid, weights, inds, stack, counts,
+                    ps, pt, dilation, stride0,
+                    reflect_bounds, patch_offset)
         assert th.all(counts > 0).item()
         eps = 1e-10
-        # counts = counts.view((B,HD,1,1,1,H,W))
         stack /= (counts.view((B,HD,1,1,1,H,W))+eps)
         assert not th.any(th.isnan(stack)).item()
 
@@ -150,9 +148,8 @@ class non_local_stack(th.autograd.Function):
         ctx.ps = ps
         ctx.pt = pt
         ctx.ndim = ndim
-        ctx.off_H0,ctx.off_W0 = off_H0,off_W0
-        ctx.off_H1,ctx.off_W1 = off_H1,off_W1
-        ctx.itype_bwd = itype_bwd
+        ctx.itype = itype
+        ctx.wshape = wshape
 
         return stack
 
@@ -166,21 +163,24 @@ class non_local_stack(th.autograd.Function):
         stride0 = ctx.stride0
         use_adj = ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
-        off_H0,off_W0 = ctx.off_H0,ctx.off_W0
-        off_H1,off_W1 = ctx.off_H1,ctx.off_W1
-        itype_bwd = ctx.itype_bwd
+        itype = ctx.itype
         ndim = ctx.ndim
-        imode = get_imode(itype_bwd)
+        imode = get_imode(itype)
+        patch_offset = 0 if use_adj else -(ps//2)
 
         # -- alloc --
         grad_vid = th.zeros_like(vid)
         grad_weights = th.zeros_like(weights)
         grad_stack = grad_stack.contiguous()
-        if itype_bwd != "int": grad_inds = th.zeros_like(inds)
+        if itype != "int": grad_inds = th.zeros_like(inds)
         else: grad_inds = th.zeros((1,)*5).to(inds.device).int()
+
+        # print(grad_stack[0,0,0,0,:,:2,:2])
+        # print(th.all(grad_stack==0))
 
         # -- view --
         # print("grad_vid.shape: ",grad_vid.shape)
+        # print("grad_stack.shape: ",grad_stack.shape)
         # print("grad_weights.shape: ",grad_weights.shape)
         # print("vid.shape: ",vid.shape)
         # print("weights.shape: ",weights.shape)
@@ -221,35 +221,42 @@ class non_local_stack(th.autograd.Function):
         grad_stack = grad_stack / (counts+eps)
         # if imode == 0:
         #     inds = inds.int()
-        stnls_cuda.non_local_stack_backward(
-            grad_vid,grad_weights,grad_inds,grad_stack,
-            vid,weights,inds,stack,counts,
-            ps,pt,dilation,stride0,use_adj,reflect_bounds,
-            off_H0,off_W0,off_H1,off_W1, imode)
+        if ctx.itype == "int":
+            fwd_fxn = stnls_cuda.non_local_stack_int_backward
+            fwd_fxn(grad_vid,grad_weights,grad_inds,grad_stack,
+                    vid,weights,inds,stack,counts,
+                    ps,pt,dilation,stride0,reflect_bounds,patch_offset)
+        else:
+            fwd_fxn = stnls_cuda.non_local_stack_bilin2d_backward
+            fwd_fxn(grad_vid,grad_weights,grad_inds,grad_stack,
+                    vid,weights,inds,stack,counts,
+                    ps,pt,dilation,stride0,reflect_bounds,patch_offset)
 
         # -- info --
         # print("grad weights.")
-        # print(grad_weights)
+        # print(grad_weights.shape)
+        # print(th.all(grad_weights==0))
 
         # -- ensure original ndim --
         grad_vid = revert_ndim(grad_vid,ndim)
 
         # -- don't propogate "int" --
-        if itype_bwd == "int": grad_inds = None
-        # print(grad_stack.abs().mean(),grad_vid.abs().mean(),grad_weights.abs().mean())
+        if itype == "int": grad_inds = None
+        else:
+            grad_inds = grad_inds.reshape(ctx.wshape+(3,))
 
-        # print("stack [grad_weights.shape,grad_inds.shape]: ",grad_weights.shape)
+        # -- reshape --
+        grad_weights = grad_weights.reshape(ctx.wshape)
+
         return grad_vid,grad_weights,grad_inds,None,None,\
             None,None,None,None,None,None,None,None,None,None
 
 class NonLocalStack(th.nn.Module):
 
     def __init__(self,ps=7,stride0=4,pt=1,reflect_bounds=True,
-                 dilation=1,use_adj=False,off_H0=0,off_W0=0,off_H1=0,off_W1=0,
-                 itype_fwd="int",itype_bwd="int"):
+                 dilation=1,use_adj=False,itype="int"):
         super().__init__()
-        _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj",
-                 "off_H0","off_W0","off_H1","off_W1","itype_fwd","itype_bwd"]
+        _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))
@@ -261,23 +268,33 @@ class NonLocalStack(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
+#            [Functional API]  stnls.agg.nlstack(...)
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
+           reflect_bounds=True, dilation=1, use_adj=False, itype="float"):
+    # wrap "new (2018) apply function
+    # https://discuss.pytorch.org #13845/17
+    # cfg = extract_config(kwargs)
+    fxn = NonLocalSearchFunction.apply
+    return fxn(vid,weights,flows,ps,stride0,pt,reflect_bounds,dilation,use_adj,itype)
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
 #        [Python Dict API] stnls.tile.init(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
     pairs = {"ps":7,"stride0":4,"pt":1,"reflect_bounds":True,
-             "dilation":1, "use_adj":False,
-             "off_H0":0,"off_W0":0,"off_H1":0,"off_W1":0,
-             "itype_fwd":"int","itype_bwd":"int"}
+             "dilation":1, "use_adj":False,"itype":"int"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     cfg = extract_config(cfg)
     search = NonLocalStack(cfg.ps,cfg.stride0,cfg.pt,cfg.reflect_bounds,
-                           cfg.dilation,cfg.use_adj,
-                           cfg.off_H0,cfg.off_W0,cfg.off_H1,cfg.off_W1,
-                           cfg.itype_fwd,cfg.itype_bwd)
+                           cfg.dilation,cfg.use_adj,cfg.itype)
     return search
 
 

@@ -20,6 +20,23 @@ inline constexpr bool is_same_v = cuda::std::is_same<T, U>::value;
 
 using namespace at;
 
+#define CUDA_KERNEL_LOOP_TYPE(i, n, index_type)                         \
+  int64_t _i_n_d_e_x = blockIdx.x * blockDim.x + threadIdx.x;           \
+  for (index_type i=_i_n_d_e_x; _i_n_d_e_x < (n); _i_n_d_e_x+=blockDim.x * gridDim.x, i=_i_n_d_e_x)
+
+#define CUDA_KERNEL_LOOP(i, n) CUDA_KERNEL_LOOP_TYPE(i, n, int)
+
+__inline__ __device__ int bounds(int val, int lb, int ub ){
+  int vval = val;
+  if (val < lb){
+    vval = 2*lb - val;
+  }else if (val >= ub){
+    vval = 2*(ub-1) - val;
+  }
+  return vval;
+}
+
+
 //#define LAUNCH_KERNEL(kernel, dist_type, full_ws, ...)    \
 
 inline

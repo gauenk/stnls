@@ -14,3 +14,4 @@ from . import vid_io
 # -- specific funcs --
 from .inds import get_nums_hw
 from .config import extract_pairs
+from .misc import flow2inds

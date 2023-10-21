@@ -9,7 +9,7 @@ void wpsum_int_forward_cuda(
   torch::Tensor out_vid, torch::Tensor out_vidz,
   torch::Tensor dists, torch::Tensor inds,
   int ps, int pt, int dilation,
-  bool reflect_bounds, bool use_adj);
+  bool reflect_bounds, int patch_offset);
 
 void wpsum_int_backward_vid_cuda(
     torch::Tensor vid_grad, torch::Tensor vid2fill_grad,
@@ -68,14 +68,14 @@ void wpsum_int_forward(
   torch::Tensor out_vid, torch::Tensor out_vidz,
   torch::Tensor dists, torch::Tensor inds,
   int ps, int pt, int dilation,
-  bool reflect_bounds, bool use_adj){
+  bool reflect_bounds, int patch_offset){
   CHECK_INPUT(in_vid);
   CHECK_INPUT(out_vid);
   CHECK_INPUT(out_vidz);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   wpsum_int_forward_cuda(in_vid,out_vid,out_vidz,dists,inds,
-                      ps,pt,dilation,reflect_bounds,use_adj);
+                         ps,pt,dilation,reflect_bounds,patch_offset);
 }
 
 void wpsum_int_backward_vid(

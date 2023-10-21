@@ -3,6 +3,7 @@ import random
 import numpy as np
 import torch as th
 import pickle
+from einops import rearrange
 
 def set_seed(seed):
     random.seed(seed)
@@ -50,10 +51,18 @@ def get_space_grid(H,W,dtype=th.float,device="cuda"):
 
 def flow2inds(flow,stride0):
     device = flow.device
+    B = flow.shape[0]
+    ndim = flow.ndim
+    if ndim == 7:
+        flow = rearrange(flow,'b hd t nh nw k tr -> (b hd) t nh nw k tr')
     B,T,nH,nW,K,three = flow.shape
     space_grid = stride0*get_space_grid(nH,nW).to(device)
-    print(space_grid.shape,space_grid[:,None,:,:,None].shape)
+    # print(space_grid.shape,space_grid[:,None,:,:,None].shape)
     inds = flow.clone()
     inds[...,1:] = flow[...,1:] + space_grid[:,None,:,:,None].flip(-1)
     inds[...,0] = flow[...,0] + th.arange(T).view(1,T,1,1,1).to(device)
+
+    if ndim == 7:
+        inds = rearrange(inds,'(b hd) t nh nw k tr -> b hd t nh nw k tr',b=B)
+
     return inds

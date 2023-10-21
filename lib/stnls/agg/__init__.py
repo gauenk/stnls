@@ -9,7 +9,7 @@ from . import api # access uniformly
 from .api import init,extract_config
 
 # -- functional api --
-wpsum = wpsum_f._apply
+# wpsum = wpsum_f._apply
 nlstack = nlstack_f._apply
 
 # -- class api --

@@ -28,7 +28,8 @@ void non_local_stack_int_backward_cuda(
     const torch::Tensor inds,
     const torch::Tensor stack,
     const torch::Tensor counts,
-    int ps, int pt, int dilation, int stride0, bool reflect_bounds, int patch_offset);
+    int ps, int pt, int dilation, int stride0,
+    bool reflect_bounds, int patch_offset);
 
 void non_local_stack_bilin2d_backward_cuda(
     torch::Tensor grad_vid,
@@ -40,7 +41,8 @@ void non_local_stack_bilin2d_backward_cuda(
     const torch::Tensor inds,
     const torch::Tensor stack,
     const torch::Tensor counts,
-    int ps, int pt, int dilation, int stride0, bool reflect_bounds, int patch_offset);
+    int ps, int pt, int dilation, int stride0,
+    bool reflect_bounds, int patch_offset);
 
 // C++ interface
 
@@ -57,10 +59,16 @@ void non_local_stack_bilin2d_backward_cuda(
 void non_local_stack_int_forward(
     const torch::Tensor vid, const torch::Tensor weights,
     const torch::Tensor inds, torch::Tensor stack, torch::Tensor counts,
-    int ps, int pt, int dilation, int stride0, bool use_adj, bool reflect_bounds){
+    int ps, int pt, int dilation, int stride0, bool reflect_bounds, int patch_offset){
+  CHECK_INPUT(vid);
+  CHECK_INPUT(weights);
+  CHECK_INPUT(inds);
+  CHECK_INPUT(stack);
+  CHECK_INPUT(counts);
 
     non_local_stack_int_forward_cuda(vid,weights,inds,stack,counts,
-              ps,pt,dilation,stride0,reflect_bounds,patch_offset);
+                                     ps,pt,dilation,stride0,
+                                     reflect_bounds,patch_offset);
 }
 
 
@@ -68,13 +76,45 @@ void non_local_stack_bilin2d_forward(
     const torch::Tensor vid, const torch::Tensor weights,
     const torch::Tensor inds, torch::Tensor stack, torch::Tensor counts,
     int ps, int pt, int dilation, int stride0, bool reflect_bounds, int patch_offset){
+  CHECK_INPUT(vid);
+  CHECK_INPUT(weights);
+  CHECK_INPUT(inds);
+  CHECK_INPUT(stack);
+  CHECK_INPUT(counts);
 
     non_local_stack_bilin2d_forward_cuda(vid,weights,inds,stack,counts,
-              ps,pt,dilation,stride0,reflect_bounds,patch_offset);
+                                         ps,pt,dilation,stride0,
+                                         reflect_bounds,patch_offset);
 }
 
 
-void non_local_stack_backward(
+void non_local_stack_int_backward(
+    torch::Tensor grad_vid,
+    torch::Tensor grad_weights,
+    const torch::Tensor grad_stack,
+    const torch::Tensor vid,
+    const torch::Tensor weights,
+    const torch::Tensor inds,
+    const torch::Tensor stack,
+    const torch::Tensor counts,
+    int ps, int pt, int dilation, int stride0,
+    bool reflect_bounds, int patch_offset){
+  CHECK_INPUT(grad_vid);
+  CHECK_INPUT(grad_weights);
+  CHECK_INPUT(grad_stack);
+  CHECK_INPUT(vid);
+  CHECK_INPUT(weights);
+  CHECK_INPUT(inds);
+  CHECK_INPUT(stack);
+  CHECK_INPUT(counts);
+  non_local_stack_int_backward_cuda(grad_vid,grad_weights,grad_stack,
+                                    vid,weights,inds,stack,counts,
+                                    ps,pt,dilation,stride0,
+                                    reflect_bounds,patch_offset);
+}
+
+
+void non_local_stack_bilin2d_backward(
     torch::Tensor grad_vid,
     torch::Tensor grad_weights,
     torch::Tensor grad_inds,
@@ -85,9 +125,7 @@ void non_local_stack_backward(
     const torch::Tensor stack,
     const torch::Tensor counts,
     int ps, int pt, int dilation, int stride0,
-    bool use_adj, bool reflect_bounds,
-    int off_H0, int off_W0, int off_H1, int off_W1,
-    int interpolation_mode) {
+    bool reflect_bounds, int patch_offset){
   CHECK_INPUT(grad_vid);
   CHECK_INPUT(grad_weights);
   CHECK_INPUT(grad_inds);
@@ -97,25 +135,11 @@ void non_local_stack_backward(
   CHECK_INPUT(inds);
   CHECK_INPUT(stack);
   CHECK_INPUT(counts);
-  if(interpolation_mode == 0){
-    non_local_stack_backward_cuda(grad_vid,grad_weights,grad_stack,
-                                  vid,weights,inds,stack,counts,
-                                  ps,pt,dilation,stride0,
-                                  use_adj,reflect_bounds,
-                                  off_H0,off_W0,off_H1,off_W1);
-  }else if(interpolation_mode == 1){
-    non_local_stack_bilin2d_backward_cuda(grad_vid,grad_weights,
-                                         grad_inds,grad_stack,
-                                         vid,weights,inds,stack,counts,
-                                         ps,pt,dilation,stride0,
-                                         use_adj,reflect_bounds,
-                                         off_H0,off_W0,off_H1,off_W1);
-  }else{
-    assert(0==1);
-  }
-
+  non_local_stack_bilin2d_backward_cuda(grad_vid,grad_weights,grad_inds,grad_stack,
+                                        vid,weights,inds,stack,counts,
+                                        ps,pt,dilation,stride0,
+                                        reflect_bounds,patch_offset);
 }
-
 
 
 // python bindings

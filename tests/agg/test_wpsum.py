@@ -1,7 +1,6 @@
 """
 
-Weighted-Patch (Inplace) Sum "Heads"
-
+Weighted Patch Sum
 
 Verbose Psuedo-Code:
 
