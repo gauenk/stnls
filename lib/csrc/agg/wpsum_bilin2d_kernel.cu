@@ -20,41 +20,35 @@ __global__ void wpsum_bilin2d_forward_kernel(
     torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> out_vidz,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
-    int ps, int stride0, int pt, int dilation, bool reflect_bounds, int psOffset,
-    int nH, int nW, int nHW, int q_per_thread, int f_per_thread){
+    int ps, int stride0, int pt, int dilation, bool reflect_bounds, int patch_offset,
+    int nH, int nW, int nHW, int q_per_thread){
 
     // -- shapes --
-    int nbatch = in_vid.size(0);
-    int nheads = in_vid.size(1);
-    int nframes = in_vid.size(2);
-    int nfeatures = in_vid.size(3);
-    int height = in_vid.size(4);
-    int width = in_vid.size(5);
-    int nq = inds.size(2);
+    int B = in_vid.size(0);
+    int HD = in_vid.size(1);
+    int T = in_vid.size(2);
+    int F = in_vid.size(3);
+    int H = in_vid.size(4);
+    int W = in_vid.size(5);
+    int Q = inds.size(2);
     int k = inds.size(3);
 
     // -- batching --
-    int query_start = blockIdx.x*q_per_thread;
+    int query_start = (threadIdx.x + blockDim.x*blockIdx.x)*q_per_thread;
     int ibatch = blockIdx.y;
     int ihead = blockIdx.z;
 
     // -- cuda threads --
     int pi = threadIdx.y;
     int pj = threadIdx.z;
-    int ftr_start = threadIdx.x*f_per_thread;
-    int ftr_end = min(nfeatures,ftr_start + f_per_thread);
 
     // -- pixel locations --
-    // int center_ti,center_hi,center_wi;
     int qi;
     bool valid,valid_ref;
     scalar_t pix,weight;
-    int ref_t,ref_h,ref_w;
-    int ref_ti,ref_hi,ref_wi;
-    int qloc[3];
-    scalar_t kloc[3];
+    int ref[3];
     int ti;
-    scalar_t hi,wi;
+    scalar_t nl[3];
     int h_interp,w_interp;
 
     // -- range --
@@ -62,71 +56,62 @@ __global__ void wpsum_bilin2d_forward_kernel(
 
       // -- query index --
       qi = query_start + _qi;
-      if (qi >= nq){ continue; }
-      get_query_loc(qloc,qi,nW,nHW);
-
-      // -- reference patch --
-      // ref_t = inds[ibatch][ihead][qi][0][0];
-      // ref_h = inds[ibatch][ihead][qi][0][1];
-      // ref_w = inds[ibatch][ihead][qi][0][2];
-      ref_t = qloc[0];
-      ref_h = stride0*qloc[1];
-      ref_w = stride0*qloc[2];
+      if (qi >= Q){ continue; }
+      get_pixel_loc<int>(ref,qi,stride0,nW,nHW,H,W);
 
       // -- reference pixel index --
-      ref_hi = ref_h+dilation*(pi + psOffset);
-      ref_wi = ref_w+dilation*(pj + psOffset);
-      ref_hi = reflect_bounds ? bounds(ref_hi,height) : ref_hi;
-      ref_wi = reflect_bounds ? bounds(ref_wi,width) : ref_wi;
+      ref[1] = ref[1]+dilation*(pi + patch_offset);
+      ref[2] = ref[2]+dilation*(pj + patch_offset);
+      // ref_hi = reflect_bounds ? bounds(ref_hi,H) : ref_hi;
+      // ref_wi = reflect_bounds ? bounds(ref_wi,W) : ref_wi;
 
       // -- valid reference only --
-      valid_ref = (ref_hi < height) && (ref_hi >= 0);
-      valid_ref = valid_ref && (ref_wi < width) && (ref_wi >= 0);
+      valid_ref = (ref_hi < H) && (ref_hi >= 0);
+      valid_ref = valid_ref && (ref_wi < W) && (ref_wi >= 0);
       if (not valid_ref){ continue;}
 
       for(int ki = 0; ki < k; ki++){
 
         // -- non-local patch center --
-        kloc[0] = inds[ibatch][ihead][qloc[0]][qloc[1]][qloc[2]][ki][0];
-        kloc[1] = inds[ibatch][ihead][qloc[0]][qloc[1]][qloc[2]][ki][1];
-        kloc[2] = inds[ibatch][ihead][qloc[0]][qloc[1]][qloc[2]][ki][2];
-        weight = dists[ibatch][ihead][qloc[0]][qloc[1]][qloc[2]][ki];
+        weight = dists[ibatch][ihead][qi][ki];
+        nl[0] = inds[ibatch][ihead][qi][ki][0];
+        nl[1] = inds[ibatch][ihead][qi][ki][1];
+        nl[2] = inds[ibatch][ihead][qi][ki][2];
 
         // -- non-local pixel index --
-        hi = kloc[1]+dilation*(pi + psOffset);
-        wi = kloc[2]+dilation*(pj + psOffset);
-        hi = reflect_bounds ? bounds(hi,height) : hi;
-        wi = reflect_bounds ? bounds(wi,width) : wi;
+        nl[1] = nl[1]+dilation*(pi + patch_offset);
+        nl[2] = nl[2]+dilation*(pj + patch_offset);
+        nl[1] = reflect_bounds ? bounds(nl[1],H) : nl[1];
+        nl[2] = reflect_bounds ? bounds(nl[2],W) : nl[2];
 
         // -- valid non-local patches only --
-        valid = (hi >= 0) && (hi < height);
-        valid = valid && (wi >= 0) && (wi < width);
+        valid = (hi >= 0) && (hi < H);
+        valid = valid && (wi >= 0) && (wi < W);
         if (not valid){ continue; }
 
         // -- iterate over loop --
         for(int pk = 0; pk < pt; pk++){
 
           // -- time is always valid --
-          ref_ti = bounds(ref_t + pk,nframes);
-          ti = bounds(__float2int_rd(kloc[0]) + pk,nframes);
+          ref_ti = bounds(ref_t + pk,T);
+          ti = bounds(__float2int_rd(kloc[0]) + pk,T);
 
           // -- channels --
-          for(int iftr = ftr_start; iftr < ftr_end; iftr++){
+          for(int iftr = 0; iftr < F; iftr++){
 
             // -- assign --
-            bilin2d_interpolate(pix,hi,wi,height,width,
-                                in_vid[ibatch][ihead][ti][iftr]);
+            bilin2d_interpolate(pix,nl[1],nl[2],H,W,in_vid[ibatch][ihead][ti][iftr]);
             pix = weight*pix;
 
             // -- accumulate
-            atomicAdd(&out_vid[ibatch][ihead][ref_ti][iftr][ref_hi][ref_wi],pix);
+            atomicAdd(&out_vid[ibatch][ihead][ref_ti][iftr][ref[1]][ref[2]],pix);
 
           } // channel-loop
         } // pt-loop
       } // k-loop
 
       // -- normalize --
-      if ((threadIdx.x==0) && (blockIdx.y == 0) && (blockIdx.z == 0) && (ref_t==0)){
+      if ((threadIdx.x==0) && (blockIdx.y == 0) && (blockIdx.z == 0) && (ref[0]==0)){
         if (valid_ref){
           atomicAdd(&out_vidz[0][0][0][0][ref_hi][ref_wi],1);
         }
@@ -140,40 +125,51 @@ void wpsum_bilin2d_forward_cuda(
     torch::Tensor out_vid,
     torch::Tensor out_vidz,
     torch::Tensor dists, torch::Tensor inds,
-    int ps, int pt, int dilation,
-    bool reflect_bounds, bool use_adj){
+    int ps, int stride0, int pt, int dilation,
+    bool reflect_bounds, int patch_offset){
 
-  // -- kernel blocks --
-  int nbatch = inds.size(0);
-  int nheads = inds.size(1);
-  int nqueries = inds.size(2);
+  // // -- kernel blocks --
+  // int B = inds.size(0);
+  // int HD = inds.size(1);
+  // int Queries = inds.size(2);
+  // int q_per_thread = 2;
+  // int qblocks = (Queries-1)/q_per_thread+1;
+  // dim3 nblocks(qblocks,B,HD);
+
+  // // -- kernel threads --
+  // int nftrs = in_vid.size(3);
+  // int MAX_THREADS = 1024;
+  // int dim = ps*ps;
+  // int f_per_block = MAX_THREADS/dim; // num of nftrs per block
+  // int f_per_thread = ((nftrs - 1)/f_per_block) + 1; // num of nftrs per thread
+  // dim3 nthreads(f_per_block,ps,ps);
+
+  // // -- viz --
+  // // fprintf(stdout,"qblocks,B,HD: %d,%d,%d\n",qblocks,B,HD);
+  // // fprintf(stdout,"f_per_block,ps,ps: %d,%d,%d\n",f_per_block,ps,ps);
+  
+  // // -- derived quantities --
+  // int nH = inds.size(3);
+  // int nW = inds.size(4);
+  // int nHW = nH * nW;
+  // int H = in_vid.size(4);
+  // int stride0 = ceil(H / nH);
+
+  // -- unpack --
+  int B = inds.size(0);
+  int HD = inds.size(1);
+  int Q = inds.size(2);
   int q_per_thread = 2;
-  int qblocks = (nqueries-1)/q_per_thread+1;
-  dim3 nblocks(qblocks,nbatch,nheads);
 
   // -- kernel threads --
   int nftrs = in_vid.size(3);
   int MAX_THREADS = 1024;
-  int dim = ps*ps;
-  int f_per_block = MAX_THREADS/dim; // num of nftrs per block
-  int f_per_thread = ((nftrs - 1)/f_per_block) + 1; // num of nftrs per thread
-  dim3 nthreads(f_per_block,ps,ps);
+  int q_threads = MAX_THREADS/(ps*ps); // num of queries threads per block
+  int q_blocks = (Q-1)/(q_per_thread*q_threads)+1;
+  dim3 nthreads(q_threads,ps,ps);
 
-  // -- viz --
-  // fprintf(stdout,"qblocks,nbatch,nheads: %d,%d,%d\n",qblocks,nbatch,nheads);
-  // fprintf(stdout,"f_per_block,ps,ps: %d,%d,%d\n",f_per_block,ps,ps);
-  
-  // -- derived quantities --
-  int nH = inds.size(3);
-  int nW = inds.size(4);
-  int nHW = nH * nW;
-  int H = in_vid.size(4);
-  int stride0 = ceil(H / nH);
-
-  // -- shared --
-  int psHalf = ps/2;
-  int adj = use_adj ? psHalf : 0;
-  int psOffset = adj - psHalf;
+  // -- kernel blocks --
+  dim3 nblocks(q_blocks,B,HD);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(in_vid.type(), "wpsum_bilin2d_forward_kernel", ([&] {
@@ -183,8 +179,8 @@ void wpsum_bilin2d_forward_cuda(
         out_vidz.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
-        ps, stride0, pt, dilation, reflect_bounds, psOffset,
-        nH, nW, nHW, q_per_thread, f_per_thread);
+        ps, stride0, pt, dilation, reflect_bounds, patch_offset,
+        nH, nW, nHW, q_per_thread);
     }));
 }
 
@@ -201,21 +197,19 @@ __global__ void wpsum_bilin2d_backward_vid_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> in_grad,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
-    int ps, int pt, int dilation,
-    bool reflect_bounds, int adj, int fpt){
+    int ps, int pt, int dilation, bool reflect_bounds, int patch_offset){
     // int qpt, int hpb, int cpt){
 
   // -- shape --
-  int nbatch = dists.size(0);
-  int nheads = dists.size(1);
-  int nq =    dists.size(2);
+  int B = dists.size(0);
+  int HD = dists.size(1);
+  int Q =    dists.size(2);
   int k =     dists.size(3);
-  int nframes = out_grad.size(2);
-  int nfeatures = out_grad.size(3);
-  int height = out_grad.size(4);
-  int width = out_grad.size(5);
+  int T = out_grad.size(2);
+  int F = out_grad.size(3);
+  int H = out_grad.size(4);
+  int W = out_grad.size(5);
   int psHalf = ps/2;
-  int psOffset = adj - psHalf;
 
   // -- pixel indexing --
   int ti,hi,wi;
@@ -229,15 +223,15 @@ __global__ void wpsum_bilin2d_backward_vid_kernel(
   // -- location to fill --
   int qi = blockIdx.x*blockDim.x+threadIdx.x;
   int ki = blockIdx.y*blockDim.y+threadIdx.y;
-  int ihead = blockIdx.z/nbatch;
-  int ibatch = (blockIdx.z-ihead*nbatch) % nbatch;
+  int ihead = blockIdx.z/B;
+  int ibatch = (blockIdx.z-ihead*B) % B;
 
   // -- feature chunk --
   int ftr_start = threadIdx.z * fpt;
-  int ftr_end = min(nfeatures,ftr_start + fpt);
+  int ftr_end = min(F,ftr_start + fpt);
 
   // -- fill --
-  if ((qi < nq) && (ki < k)) { // -- if valid --
+  if ((qi < Q) && (ki < k)) { // -- if valid --
 
     // -- reference --
     ref_t = inds[ibatch][ihead][qi][0][0];
@@ -256,23 +250,23 @@ __global__ void wpsum_bilin2d_backward_vid_kernel(
     
       for (int pi = 0; pi < ps; pi++){
     
-        hi = center_hi + dilation*(pi + psOffset);
-        hi = reflect_bounds ? bounds(hi,height) : hi;
-        valid_h = (hi >= 0) && (hi < height);
+        hi = center_hi + dilation*(pi + patch_offset);
+        hi = reflect_bounds ? bounds(hi,H) : hi;
+        valid_h = (hi >= 0) && (hi < H);
     
-        ref_hi = ref_h + dilation*(pi + psOffset);
-        ref_hi = reflect_bounds ? bounds(ref_hi,height) : ref_hi;
-        valid_ref_h = (ref_hi >= 0) && (ref_hi < height);
+        ref_hi = ref_h + dilation*(pi + patch_offset);
+        ref_hi = reflect_bounds ? bounds(ref_hi,H) : ref_hi;
+        valid_ref_h = (ref_hi >= 0) && (ref_hi < H);
     
         for (int pj = 0; pj < ps; pj++){
     
-          wi = center_wi + dilation*(pj + psOffset);
-          wi = reflect_bounds ? bounds(wi,width) : wi;
-          valid_w = (wi >= 0) && (wi < width);
+          wi = center_wi + dilation*(pj + patch_offset);
+          wi = reflect_bounds ? bounds(wi,W) : wi;
+          valid_w = (wi >= 0) && (wi < W);
     
-          ref_wi = ref_w + dilation*(pj + psOffset);
-          ref_wi = reflect_bounds ? bounds(ref_wi,width) : ref_wi;
-          valid_ref_w = (ref_wi >= 0) && (ref_wi < width);
+          ref_wi = ref_w + dilation*(pj + patch_offset);
+          ref_wi = reflect_bounds ? bounds(ref_wi,W) : ref_wi;
+          valid_ref_w = (ref_wi >= 0) && (ref_wi < W);
     
           valid = valid_h && valid_w;
           valid_ref = valid_ref_h && valid_ref_w;
@@ -298,15 +292,15 @@ void wpsum_bilin2d_backward_vid_cuda(
     bool reflect_bounds, bool use_adj){
 
   // -- launch parameters --
-  int nbatch = dists.size(0);
-  int nheads = dists.size(1);
-  int nq = dists.size(2);
+  int B = dists.size(0);
+  int HD = dists.size(1);
+  int Q = dists.size(2);
   int k = dists.size(3);
   int nftrs = in_grad.size(3);
   int ftr_threads = min(16,nftrs);
   dim3 threadsPerBlock(16,4,ftr_threads);
-  dim3 blocksPerGrid(1, 1, nheads*nbatch);
-  blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
+  dim3 blocksPerGrid(1, 1, HD*B);
+  blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
   int fpt = (nftrs-1)/ftr_threads+1;
 
@@ -339,18 +333,15 @@ __global__ void wpsum_backward_dists_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> in_grad,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
-    int ps, int pt, int dilation, bool reflect_bounds, int psOffset, int fpt){
+    int ps, int stride0, int pt, int dilation, bool reflect_bounds, int patch_offset){
 
   // -- shapes --
-  int nbatch = dists_grad.size(0);
-  int nq = dists_grad.size(2);
+  int B = dists_grad.size(0);
+  int Q = dists_grad.size(2);
   int k = dists_grad.size(3);
-  int nfeatures = in_grad.size(3);
-  int height = vid.size(4);
-  int width = vid.size(5);
-  // int psHalf = ps/2;
-  // int adj = use_adj ? psHalf : 0;
-  // int psOffset = adj - psHalf;
+  int F = in_grad.size(3);
+  int H = vid.size(4);
+  int W = vid.size(5);
 
   // -- init registers --
   int ti,hi,wi;
@@ -362,14 +353,10 @@ __global__ void wpsum_backward_dists_kernel(
   // -- location to fill --
   int qi = blockIdx.x*blockDim.x+threadIdx.x;
   int ki = blockIdx.y*blockDim.y+threadIdx.y;
-  int ihead = blockIdx.z/nbatch;
-  int ibatch = (blockIdx.z-ihead*nbatch) % nbatch;
+  int ihead = blockIdx.z/B;
+  int ibatch = (blockIdx.z-ihead*B) % B;
 
-  // -- feature chunk --
-  int ftr_start = threadIdx.z * fpt;
-  int ftr_end = min(nfeatures,ftr_start + fpt);
-
-  if ((qi < nq) && (ki < k)) { // -- if valid --
+  if ((qi < Q) && (ki < k)) { // -- if valid --
 
     // -- reference --
     int ref_t = inds[ibatch][ihead][qi][0][0];
@@ -387,23 +374,23 @@ __global__ void wpsum_backward_dists_kernel(
 
       for (int pi = 0; pi < ps; pi++){
 
-        hi = center_hi + dilation*(pi + psOffset);
-        hi = reflect_bounds ? bounds(hi,height) : hi;
-        valid_h = (hi >= 0) && (hi < height);
+        hi = center_hi + dilation*(pi + patch_offset);
+        hi = reflect_bounds ? bounds(hi,H) : hi;
+        valid_h = (hi >= 0) && (hi < H);
 
-        ref_hi = ref_h + dilation*(pi + psOffset);
-        ref_hi = reflect_bounds ? bounds(ref_hi,height) : ref_hi;
-        valid_ref_h = (ref_hi >= 0) && (ref_hi < height);
+        ref_hi = ref_h + dilation*(pi + patch_offset);
+        ref_hi = reflect_bounds ? bounds(ref_hi,H) : ref_hi;
+        valid_ref_h = (ref_hi >= 0) && (ref_hi < H);
 
         for (int pj = 0; pj < ps; pj++){
 
-          wi = center_wi + dilation*(pj + psOffset);
-          wi = reflect_bounds ? bounds(wi,width) : wi;
-          valid_w = (wi >= 0) && (wi < width);
+          wi = center_wi + dilation*(pj + patch_offset);
+          wi = reflect_bounds ? bounds(wi,W) : wi;
+          valid_w = (wi >= 0) && (wi < W);
 
-          ref_wi = ref_w + dilation*(pj + psOffset);
-          ref_wi = reflect_bounds ? bounds(ref_wi,width) : ref_wi;
-          valid_ref_w = (ref_wi >= 0) && (ref_wi < width);
+          ref_wi = ref_w + dilation*(pj + patch_offset);
+          ref_wi = reflect_bounds ? bounds(ref_wi,W) : ref_wi;
+          valid_ref_w = (ref_wi >= 0) && (ref_wi < W);
 
           valid = valid_h && valid_w;
           valid_ref = valid_ref_h && valid_ref_w;
@@ -411,7 +398,7 @@ __global__ void wpsum_backward_dists_kernel(
           // -- skip if invalid --
           if (not (valid && valid_ref)){ continue; }
 
-          for (int iftr = ftr_start; iftr < ftr_end; iftr++){
+          for (int iftr = 0; iftr < F; iftr++){
               pix_n = in_grad[ibatch][ihead][ref_ti][iftr][ref_hi][ref_wi];
               pix_m = vid[ibatch][ihead][ti][iftr][hi][wi];
               pix = pix_n * pix_m;
@@ -426,25 +413,18 @@ __global__ void wpsum_backward_dists_kernel(
 void wpsum_backward_dists_cuda(
     torch::Tensor dists_grad, torch::Tensor in_grad,
     torch::Tensor vid, torch::Tensor inds,
-    int ps, int pt, int dilation, bool reflect_bounds, bool use_adj){
+    int ps, int pt, int dilation, bool reflect_bounds, int patch_offset){
 
   // -- launch parameters --
-  int nbatch = dists_grad.size(0);
-  int nheads = dists_grad.size(1);
-  int nq = dists_grad.size(2);
+  int B = dists_grad.size(0);
+  int HD = dists_grad.size(1);
+  int Q = dists_grad.size(2);
   int k = dists_grad.size(3);
   int nftrs = vid.size(3);
-  int ftr_threads = min(16,nftrs);
-  dim3 threadsPerBlock(16,4,ftr_threads);
-  dim3 blocksPerGrid(1, 1, nheads*nbatch);
-  blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
+  dim3 threadsPerBlock(16,4);
+  dim3 blocksPerGrid(1, 1, HD*B);
+  blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
-  int fpt = (nftrs-1)/ftr_threads+1;
-
-  // -- shared --
-  int psHalf = ps/2;
-  int adj = use_adj ? psHalf : 0;
-  int psOffset = adj - psHalf;
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "wpsum_backward_dists_kernel", ([&] {
@@ -453,7 +433,7 @@ void wpsum_backward_dists_cuda(
         in_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-        ps, pt, dilation, reflect_bounds, psOffset, fpt);
+        ps, pt, dilation, reflect_bounds, patch_offset);
   }));
     
 }

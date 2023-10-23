@@ -22,12 +22,8 @@ import stnls
 from stnls.testing.non_local_stack_gt import non_local_stack_int
 from stnls.testing.non_local_stack_gt import non_local_stack_bilin2d
 
-# # -- test func --
-# from torch.nn.functional import fold,unfold,pad
-# from torchvision.transforms.functional import center_crop
-
 # -- paths --
-SAVE_DIR = Path("./output/tests/non_local_search")
+SAVE_DIR = Path("./output/tests/non_local_stack")
 
 def set_seed(seed):
     th.manual_seed(seed)
@@ -77,10 +73,11 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     reflect_bounds = True
     set_seed(seed)
     itype = "float"
+    itype = "int"
 
     # -- load data --
     K = 5
-    B,HD,T,F,H,W = 1,nheads,2,1,8,8
+    B,HD,T,F,H,W = 3,nheads,4,3,16,16
     vid = th.rand((B,T,F*HD,H,W),device=device).float()
 
     # -- load weights --
@@ -103,10 +100,10 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     flows = flows.to(vid.device)
 
     # -- exec fold fxns --
-    stacking = stnls.agg.NonLocalStack(ps=ps,stride0=stride0,
-                                       reflect_bounds=reflect_bounds,
-                                       itype=itype)
-    stack = stacking(vid,weights,flows)
+    agg = stnls.agg.NonLocalStack(ps=ps,stride0=stride0,
+                                  reflect_bounds=reflect_bounds,
+                                  itype=itype)
+    stack = agg(vid,weights,flows)
     stack_gt = stnls.testing.non_local_stack(vid,weights,flows,ps,stride0,itype=itype)
     assert th.allclose(stack,stack_gt,1e-3,1e-3,equal_nan=True)
 

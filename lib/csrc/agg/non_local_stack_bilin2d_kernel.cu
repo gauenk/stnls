@@ -80,7 +80,6 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
       for (int _idx=0; _idx < 3; _idx++){
         nl_patch[_idx] = ref_patch[_idx]+inds[ibatch][ihead_i][qi][ki][_idx];
       }
-
   
       //----------------------------------
       //      Fill Non-Local Patch

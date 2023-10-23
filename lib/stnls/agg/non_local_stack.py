@@ -135,6 +135,7 @@ class non_local_stack(th.autograd.Function):
                     ps, pt, dilation, stride0,
                     reflect_bounds, patch_offset)
         assert th.all(counts > 0).item()
+
         eps = 1e-10
         stack /= (counts.view((B,HD,1,1,1,H,W))+eps)
         assert not th.any(th.isnan(stack)).item()
@@ -253,8 +254,8 @@ class non_local_stack(th.autograd.Function):
 
 class NonLocalStack(th.nn.Module):
 
-    def __init__(self,ps=7,stride0=4,pt=1,reflect_bounds=True,
-                 dilation=1,use_adj=False,itype="int"):
+    def __init__(self,ps,stride0,pt=1,dilation=1,
+                 reflect_bounds=True,use_adj=False,itype="float"):
         super().__init__()
         _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
         self._vars = _vars

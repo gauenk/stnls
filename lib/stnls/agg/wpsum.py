@@ -23,52 +23,57 @@ def allocate_patches(b,nq,nhead,pt,c,ps,device):
     return patches
 
 class WeightedPatchSumFunction(th.autograd.Function):
-    # [video -> patches] @ inds
-
-    # vidz = fxn.apply(vid,dists,inds,self.ps,
-    #                  self.pt,self.dilation,
-    #                  self.reflect_bounds,self.use_adj,
-    #                  self.use_atomic)
 
     @staticmethod
-    def forward(ctx, vid, dists, inds, ps,
-                pt=1, dilation=1, reflect_bounds=True, use_adj=False):
+    def forward(ctx, vid, weights, inds, ps, stride0,
+                pt=1, dilation=1, reflect_bounds=True, use_adj=False, itype="int"):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
-        dists = [BatchSize,nHeads,NumQueries,K]
+        weights = [BatchSize,nHeads,NumQueries,K]
         inds = [BatchSize,nHeads or 1,NumQueries,K,3]
         ps = patchsize
         pt = patchsize_time (forward only)
         """
+
         # -- add head dim if 1 --
         vid_in_dim = vid.ndim
         total_color = vid.shape[-3]
-        bsize,nheads = dists.shape[:2]
+        bsize,nheads = weights.shape[:2]
         if vid.ndim == 5:
             if (total_color % nheads) == 0:
                 vid = rearrange(vid,'b t (H c) h w -> b H t c h w',H=nheads)
             else:
                 vid = rearrange(vid,'b t c h w -> b 1 t c h w')
         if inds.ndim == 4: inds = inds[:,None] # add heads dim
-        # print("dists.shape,inds.shape: " ,dists.shape,inds.shape)
+        # print("weights.shape,inds.shape: " ,weights.shape,inds.shape)
 
-        # if WpSumFunction.vid is None: WpSumFunction.vid = vid
-        device = dists.device
-        B,HD,T,nH,nW,k = dists.shape
+        # -- allocate --
+        device = weights.device
+        B,HD,T,nH,nW,K = weights.shape
         vid = vid.contiguous()
         inds = inds.contiguous()
         out_vid = th.zeros_like(vid)
-        out_vidz = th.zeros_like(vid[:,:,:1,:1,:,:]).type(th.int)
+        counts = th.zeros_like(vid[:1,:1,:1,:1,:,:]).type(th.int)
         patch_offset = 0 if use_adj else -(ps//2)
 
+        # -- view --
+        Q = T*nH*nW
+        weights = weights.view(B,HD,Q,K)
+        inds = inds.view(B,HD,Q,K,3)
+
+        # -- exec --
         if inds.dtype == th.int:
             fwd_fxn = stnls_cuda.wpsum_int_forward
         else:
             fwd_fxn = stnls_cuda.wpsum_bilin2d_forward
-        fwd_fxn(vid, out_vid, out_vidz, dists, inds,
-                ps, pt, dilation, reflect_bounds, patch_offset)
-        out_vid = out_vid / out_vidz
-        ctx.save_for_backward(dists,inds,vid)
+        fwd_fxn(out_vid, counts, vid, weights, inds,
+                ps, stride0, pt, dilation, reflect_bounds, patch_offset)
+        eps = 1e-10
+        out_vid = out_vid / (counts+eps)
+        assert th.all(counts>1e-3)
+
+        # -- backward --
+        ctx.save_for_backward(weights,inds,vid)
         ctx.vid_in_dim = vid_in_dim
         ctx.ps,ctx.pt = ps,pt
         ctx.vid_shape = vid.shape
@@ -77,76 +82,56 @@ class WeightedPatchSumFunction(th.autograd.Function):
         ctx.reflect_bounds = reflect_bounds
         ctx.nheads = nheads
 
-        # -- viz --
-        # print("fwd.")
-        # print("patches.shape: ",patches.shape)
-
-        # -- reshape --
-        out_vid = rearrange(out_vid,'b H t c h w -> b t (H c) h w')
-
         return out_vid
 
     @staticmethod
-    def backward(ctx, grad_in):
+    def backward(ctx, grad_out_vid):
 
         # -- unpack --
-        dists,inds,vid = ctx.saved_tensors
+        weights,inds,vid = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
         use_adj = ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         HD = ctx.nheads
-        grad_in = grad_in.contiguous()
+        patch_offset = 0 if use_adj else -(ps//2)
 
         # -- reshape --
-        grad_in = rearrange(grad_in,'b t (hd c) h w -> b hd t c h w',H=HD)
-        grad_in = grad_in.contiguous()
+        grad_out_vid = rearrange(grad_out_vid,'b t (hd c) h w -> b hd t c h w',H=HD)
+        grad_out_vid = grad_out_vid.contiguous()
 
         # -- video backward --
-        th.cuda.synchronize()
-        grad_out = th.zeros_like(grad_in)
-        stnls_cuda.wpsum_backward_vid(grad_out,grad_in,
-                                       dists,inds,ps,pt,
-                                       dilation,reflect_bounds,use_adj)
-        th.cuda.synchronize()
-
-        # -- distances backward --
-        grad_dists = th.zeros_like(dists)
-        stnls_cuda.wpsum_backward_dists(grad_dists,grad_in,
-                                         vid,inds,ps,pt,
-                                         dilation,reflect_bounds,use_adj)
-        th.cuda.synchronize()
+        grad_in_vid = th.zeros_like(grad_out_vid)
+        stnls_cuda.wpsum_int_backward(grad_in_vid,grad_weights,
+                                      grad_out_vid,weights,inds,ps,stride0,pt,
+                                      dilation,reflect_bounds,patch_offset)
 
         # -- final shaping --
         vid_in_dim = ctx.vid_in_dim
         if vid_in_dim == 5:
-            grad_out = rearrange(grad_out,'b hd t c h w -> b t (hd c) h w')
-            grad_out = grad_out.contiguous()
-            # print("grad_out.shape: ",grad_out.shape)
+            grad_in_vid = rearrange(grad_in_vid,'b hd t c h w -> b t (hd c) h w')
+            grad_in_vid = grad_in_vid.contiguous()
+            # print("grad_in_vid.shape: ",grad_in_vid.shape)
 
-        return grad_out,grad_dists,None,None,None,\
+        return grad_in_vid,grad_weights,None,None,None,None,\
             None,None,None,None,None,None,None,None,None
 
 class WeightedPatchSum(th.nn.Module):
     # [video -> patches] @ inds
 
-    def __init__(self, ps, pt=1, dilation=1,
-                 reflect_bounds=True, use_adj=False):
+    def __init__(self, ps, stride0, pt=1, dilation=1,
+                 reflect_bounds=True, use_adj=False, itype="float"):
         super().__init__()
+        _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
+        self._vars = _vars
+        for var in _vars:
+            setattr(self,var,eval(var))
 
-        self.ps = ps
-        self.pt = pt
-        self.dilation = int(dilation)
-        self.use_adj = use_adj
-        self.reflect_bounds = reflect_bounds
-
-    def forward(self, vid, dists, inds):
-        fxn = WeightedPatchSumFunction
-        vidz = fxn.apply(vid,dists,inds,self.ps,
-                         self.pt,self.dilation,
-                         self.reflect_bounds,self.use_adj)
-        return vidz
+    def forward(self, vid, weights, inds):
+        inputs = [getattr(self,var) for var in self._vars]
+        vid_out = WeightedPatchSumFunction.apply(vid,weights,inds,*inputs)
+        return vid_out
 
     def flops(self, nrefs, chnls_per_head, nheads, k):
 
@@ -166,34 +151,33 @@ class WeightedPatchSum(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#   [Direct API]  stnls.reducer.wpsum(...)
+#   [Direct API]  stnls.agg.wpsum(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def _apply(vid, dists, inds, ps,
+def _apply(vid, weights, inds, ps, stride0,
            pt=1, dilation=1,reflect_bounds=True, use_adj=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
-    # cfg = extract_config(kwargs)
     fxn = WeightedPatchSumFunction.apply
-    return fxn(vid,dists,inds,ps,
+    return fxn(vid,weights,inds,ps,stride0,
                pt,dilation,reflect_bounds,use_adj)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#   [Python Dict API] stnls.reducer.wpsum(pydict)
+#   [Python Dict API] stnls.agg.wpsum(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg):
-    pairs = {"ps":7,"pt":1,"dilation":1,
+    pairs = {"ps":7,"stride0":1,"pt":1,"dilation":1,
              "reflect_bounds":True, "use_adj":False}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
     cfg = extract_config(cfg)
     reducer = WeightedPatchSum(
-        cfg.ps, pt=cfg.pt, dilation=cfg.dilation,
+        cfg.ps, cfg.stride0, pt=cfg.pt, dilation=cfg.dilation,
         reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj)
     return reducer
 

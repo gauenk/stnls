@@ -32,8 +32,8 @@ setup(name='stnls',
               'lib/csrc/agg/non_local_stack.cpp', # Non-Local Stack
               'lib/csrc/agg/non_local_stack_int_kernel.cu',
               'lib/csrc/agg/non_local_stack_bilin2d_kernel.cu',
-              # 'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum
-              # 'lib/csrc/agg/wpsum_int_kernel.cu',
+              'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum
+              'lib/csrc/agg/wpsum_int_kernel.cu',
               # 'lib/csrc/agg/wpsum_bilin2d_kernel.cu',
               # 'lib/csrc/agg/wpsum_bwd_kernels.cu',
               # -- setup --
