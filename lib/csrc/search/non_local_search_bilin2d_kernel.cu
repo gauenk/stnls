@@ -94,7 +94,6 @@ __global__ void non_local_search_bilin2d_forward_kernel(
     n_hi = ref_patch[1] / stride0;
     n_wi = ref_patch[2] / stride0;
 
-
     // -- check bounds of pixel location --
     check_bounds<int>(valid_ref_patch,ref_patch,T,H,W);
 
@@ -120,8 +119,8 @@ __global__ void non_local_search_bilin2d_forward_kernel(
         auto flows_t = flows[ibatch][ihead_f][ref_patch[0]][st_i-st_offset];
         frame_anchor[0] = ref_patch[1] + flows_t[1][n_hi][n_wi];
         frame_anchor[1] = ref_patch[2] + flows_t[0][n_hi][n_wi];
-        // valid_H = (frame_anchor[0] >= 0) and (frame_anchor[0] < H);
-        // valid_W = (frame_anchor[1] >= 0) and (frame_anchor[1] < W);
+        // valid_H = (frame_anchor[0] >= 0) and (frame_anchor[0] <= (H-1));
+        // valid_W = (frame_anchor[1] >= 0) and (frame_anchor[1] <= (W-1));
         // reflect[ibatch][ihead_f][ti][si][n_hi][n_wi][1] = not valid_H;
         // reflect[ibatch][ihead_f][ti][si][n_hi][n_w][0] = not valid_W;
         frame_anchor[0] = bounds(frame_anchor[0],H);
@@ -169,6 +168,7 @@ __global__ void non_local_search_bilin2d_forward_kernel(
                            ps,pt,dilation,reflect_bounds,
                            patch_offset,invalid,T,C,H,W);
           }
+
 
           // -- assignent --
           if (!valid){ dist = invalid; }
@@ -489,6 +489,7 @@ __global__ void nls_bwd_vidflows_kernel(
   scalar_t iweight[2];
   int iftr;
 
+
   // -- location to fill --
   int i0 = blockIdx.x*blockDim.x+threadIdx.x;
   int i1 = blockIdx.y*blockDim.y+threadIdx.y;
@@ -516,6 +517,15 @@ __global__ void nls_bwd_vidflows_kernel(
     prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][i1][0];
     prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][i1][1];
     prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][i1][2];
+
+    // -- update sign --
+    // int signH = check_bound(prop_patch[1],H) ? 1 : -1;
+    // int signW = check_bound(prop_patch[2],W) ? 1 : -1;
+    prop_patch[0] = bounds(prop_patch[0],T);
+    prop_patch[1] = bounds(prop_patch[1],H);
+    prop_patch[2] = bounds(prop_patch[2],W);
+
+
     check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
     if (not valid_prop_patch){ return; }
 
@@ -533,6 +543,12 @@ __global__ void nls_bwd_vidflows_kernel(
       acc_dFlows[_idx] = static_cast<scalar_t>(0);
     }
 
+    scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
+    scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
+    int signH = 1;//check_bound(hi,H) ? 1 : -1;
+    int signW = 1;//check_bound(wi,W) ? 1 : -1;
+
+
     // -- update vid0,vid1,flows --
     update_bwd_bilin2d_vidflows<scalar_t,DIST_TYPE>(
                      grad_vid0[ibatch][ihead],grad_vid1[ibatch][ihead],
@@ -540,25 +556,24 @@ __global__ void nls_bwd_vidflows_kernel(
                      acc_dFlows,weight,ref_patch,prop_patch,
                      ps,pt,dilation,stride0,reflect_bounds,patch_offset,
                      iftr,ftr_start,ftr_end,ref,prop,prop_i,
-                     valid_ref,valid_prop,valid,T,H,W);
+                     valid_ref,valid_prop,valid,signH,signW,T,H,W);
+
 
 
     // -- update grad_flows from grad_dists,vid0,vid1 --
     if (dt==0){ return; }
-    scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
-    scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
-    // sH = reflect[ibatch][ihead_f][ti][si][nh][nw][1] ? -1 : 1 ;
-    // sW = reflect[ibatch][ihead_f][ti][si][nh][nw][0] ? -1 : 1 ;
-    int sH = ((hi >= 0) and (hi < H)) ? 1 : -1;
-    int sW = ((wi >= 0) and (wi < W)) ? 1 : -1;
-    bwd_flow_assign(acc_dFlows,nh,nw,sH,sW,
+    signH = check_bound(hi,H) ? 1 : -1;
+    signW = check_bound(wi,W) ? 1 : -1;
+    // signH = 1;
+    // signW = 1;
+    bwd_flow_assign(acc_dFlows,nh,nw,signH,signW,
                     grad_flows[ibatch][ihead_f][ref_patch[0]][si]);
 
 
     // -- update grad_flows from grad_inds --
     if (ftr_start == 0){
-      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][si][0][nh][nw]),sW*iweight[1]);
-      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][si][1][nh][nw]),sH*iweight[0]);
+      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][si][0][nh][nw]),signW*iweight[1]);
+      atomicAdd(&(grad_flows[ibatch][ihead_f][ti][si][1][nh][nw]),signH*iweight[0]);
     }
 
 

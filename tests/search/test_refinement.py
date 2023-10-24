@@ -388,7 +388,7 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
 
 
 def test_anchor_fwd(ws,wt,wr,ps,stride0,stride1,dilation,
-                    self_action,nheads,dist_type,itype,seed):
+                    nheads,dist_type,itype,seed):
 
     """
 
@@ -453,6 +453,7 @@ def test_anchor_fwd(ws,wt,wr,ps,stride0,stride1,dilation,
     HD = nheads
     vshape = (B,HD,T,nH,nW,W_t*k0)
     dists0,inds0 = search0(vid0,vid1,flows)
+    print(dists0.shape,vshape)
     dists0,inds0 = dists0.view(vshape),inds0.view(vshape+(3,))
 
     # -- exec refine --
@@ -466,8 +467,7 @@ def test_anchor_fwd(ws,wt,wr,ps,stride0,stride1,dilation,
     assert th.allclose(inds0,inds_r1,1e-3,1e-3,equal_nan=True)
 
 
-def test_fwd_topk(ws,wt,wr,ps,stride0,stride1,dilation,
-                  self_action,dist_type,seed):
+def test_fwd_topk(ws,wt,wr,ps,stride0,stride1,dilation,dist_type,seed):
 
     """
 

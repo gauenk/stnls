@@ -25,6 +25,7 @@ __global__ void non_local_stack_int_forward_kernel(
     int ps, int pt, int dilation, int stride0, bool reflect_bounds,
     int patch_offset, int nW0, int nHW0, int ftrs_per_thread){
 
+
     // -- unpack --
     int B = vid.size(0);
     int HD = vid.size(1);
@@ -41,7 +42,6 @@ __global__ void non_local_stack_int_forward_kernel(
     int nl_patch[3];
     int ref[3];
     int nl[3];
-    scalar_t pix;
     bool valid;
     bool valid_ref[4];
     bool valid_nl[4];
@@ -53,8 +53,8 @@ __global__ void non_local_stack_int_forward_kernel(
     int ibatch = (blockIdx.z-ihead*B) % B;
   
     // -- feature chunk --
-    int ftr_start = threadIdx.z * ftrs_per_thread;
-    int ftr_end = min(F,ftr_start + ftrs_per_thread);
+    int ftr_start = 0;//threadIdx.z * ftrs_per_thread;
+    int ftr_end = F;//min(F,ftr_start + ftrs_per_thread);
     
     // -- each region --
     if ((qi < Q) && (ki < K)){
@@ -71,19 +71,24 @@ __global__ void non_local_stack_int_forward_kernel(
       for (int _idx=0; _idx < 3; _idx++){
         nl_patch[_idx] = ref_patch[_idx] + inds[ibatch][ihead][qi][ki][_idx];
       }
+      nl_patch[0] = bounds(nl_patch[0],T);
+      nl_patch[1] = bounds(nl_patch[1],H);
+      nl_patch[2] = bounds(nl_patch[2],W);
+
   
       //----------------------------------
       //      Fill Non-Local Patch
       //----------------------------------
 
       fill_non_local_patch_int<scalar_t>(stack[ibatch][ihead][ki],
-                                         counts[ibatch][ihead],vid[ibatch][ihead],
+                                         counts[ibatch][ihead],
+                                         vid[ibatch][ihead],
                                          weights[ibatch][ihead][qi][ki],
                                          ps,pt,dilation,reflect_bounds,
                                          ref_patch,nl_patch,ref,nl,
                                          valid_ref,valid_nl,valid,
                                          patch_offset,iftr,ftr_start,ftr_end,
-                                         T,H,W,pix,qi,ki);
+                                         T,H,W,qi,ki);
 
     }
 
@@ -112,7 +117,7 @@ void non_local_stack_int_forward_cuda(
   int Q = inds.size(2);
   int K = inds.size(3);
   int ftr_threads = min(1,F);
-  dim3 threadsPerBlock(128,4,ftr_threads);
+  dim3 threadsPerBlock(156,4,ftr_threads);
   dim3 blocksPerGrid(1, 1, HD*B);
   blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));
@@ -138,7 +143,6 @@ void non_local_stack_int_forward_cuda(
           Backward Pass
 
 **************************************/
-
 
 template <typename scalar_t>
 __global__ void non_local_stack_int_backward_kernel(
@@ -169,7 +173,6 @@ __global__ void non_local_stack_int_backward_kernel(
     int nl_patch[3];
     int ref[3];
     int nl[3];
-    scalar_t pix;
     bool valid;
     bool valid_ref[4];
     bool valid_nl[4];
@@ -186,6 +189,7 @@ __global__ void non_local_stack_int_backward_kernel(
     
     // -- each region --
     if ((qi < Q) && (ki < K)){
+
   
       //----------------------------------
       //   Reference & Non-Local Pixel
@@ -199,6 +203,9 @@ __global__ void non_local_stack_int_backward_kernel(
       for (int _idx=0; _idx < 3; _idx++){
         nl_patch[_idx] = ref_patch[_idx]+inds[ibatch][ihead][qi][ki][_idx];
       }
+      nl_patch[0] = bounds(nl_patch[0],T);
+      nl_patch[1] = bounds(nl_patch[1],H);
+      nl_patch[2] = bounds(nl_patch[2],W);
   
       //----------------------------------
       //      Fill Non-Local Patch
@@ -214,7 +221,7 @@ __global__ void non_local_stack_int_backward_kernel(
                                              ref_patch,nl_patch,ref,nl,
                                              valid_ref,valid_nl,valid,
                                              patch_offset,iftr,ftr_start,ftr_end,
-                                             T,H,W,pix,qi,ki);
+                                             T,H,W,qi,ki);
 
     }
 

@@ -36,7 +36,7 @@ def nls_forward(vid0, vid1, flows,
     device = vid0.device
     B,HD,T,C,H,W = vid0.shape
     patch_offset = 0 if use_adj else -(ps//2)
-    # print(ps,k,dist_type,topk_mode,self_action)
+    # print(ps,k,dist_type,topk_mode,self_action,patch_offset)
 
     # -- derived shapes --
     nH0 = (H-1)//stride0+1

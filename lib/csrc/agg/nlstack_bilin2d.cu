@@ -22,8 +22,9 @@ void fill_non_local_patch_bilin2d(
     int* ref_patch, scalar_t* nl_patch, int* ref, scalar_t* nl, //int* nl_i,
     bool* valid_ref, bool* valid_nl, bool valid,
     int patch_offset, int ftr_start, int ftr_end,
-    int T, int H, int W, scalar_t pix, int qi, int ki){
+    int T, int H, int W, int qi, int ki){
 
+    scalar_t pix;
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
@@ -64,26 +65,22 @@ void fill_non_local_patch_bilin2d(
             valid_ref[3] = valid_ref[3] && valid_ref[bool_idx];
             valid_nl[3] = valid_nl[3] && valid_nl[bool_idx];
           }
-          valid = valid_ref[3] && valid_nl[3];
-          if (not valid) { continue; }
 
           // -- add count --
           if ((ki == 0) && (ftr_start == 0) && (valid_ref[3]) && (ref[0] == 0)){
             atomicAdd(&(counts[ref[1]][ref[2]]),1);
           }
 
+          // -- skip invalid pair --
+          valid = valid_ref[3] && valid_nl[3];
+          if (not valid) { continue; }
+
           // -- fill each channel --
           // nl_i[0] = __float2int_rn(round(nl[0]));
           int ti = __float2int_rn(round(nl[0]));
           for (int iftr = ftr_start; iftr < ftr_end; iftr++){
-
-            scalar_t pix = 0;
             bilin2d_interpolate(pix,nl[1],nl[2],H,W,vid[ti][iftr]);
-            // // scalar_t pix = vid[nl[0]][iftr][nl[1]][nl[2]];
             atomicAdd(&(stack[ref[0]][iftr][ref[1]][ref[2]]),weight*pix);
-            // atomicAdd(&(stack[0][0][ref[1]][ref[2]]),weight*pix);
-            // atomicAdd(&(stack[0][0][0][0]),static_cast<scalar_t>(1));//weight*pix);
-            // atomicAdd(&(stack[0][0][0][0]),weight*pix);
           }
 
         }
@@ -104,9 +101,10 @@ void fill_non_local_patch_bwd_bilin2d(
     int* ref_patch, scalar_t* nl_patch, int* ref, scalar_t* nl, int* nl_i,
     bool* valid_ref, bool* valid_nl, bool valid,
     int patch_offset, int iftr, int ftr_start, int ftr_end,
-    int T, int H, int W, scalar_t pix, int qi, int ki){
+    int signH, int signW, int T, int H, int W, int qi, int ki){
 
   int sH,sW; // sign of height,width interpolation
+  scalar_t pix;
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
@@ -164,6 +162,7 @@ void fill_non_local_patch_bwd_bilin2d(
 
             // -- grad to BP --
             scalar_t grad_stack_pix = grad_stack[ref[0]][iftr][ref[1]][ref[2]];
+            scalar_t weighted_grad = grad_stack_pix*weight;
 
             // -- handle continuous spatial indices --
             scalar_t igradH = 0;
@@ -210,11 +209,9 @@ void fill_non_local_patch_bwd_bilin2d(
                 igradH += leftH ? -gW*v : gW*v; // dF[0]/dF[0]; A(0)
                 
                 // -- video grad --
-                atomicAdd(&(grad_vid[nl_i[0]][iftr][nl_i[1]][nl_i[2]]),
-                          w*grad_stack_pix*weight);
+                atomicAdd(&(grad_vid[nl_i[0]][iftr][nl_i[1]][nl_i[2]]),w*weighted_grad);
 
               }
-
             }
 
             // -- update dists --
@@ -231,8 +228,8 @@ void fill_non_local_patch_bwd_bilin2d(
           atomicAdd(&(grad_weights[qi][ki]),acc_pix);
           
           // -- update inds --
-          atomicAdd(&(grad_inds[qi][ki][1]),iH);
-          atomicAdd(&(grad_inds[qi][ki][2]),iW);
+          atomicAdd(&(grad_inds[qi][ki][1]),iH*signH);
+          atomicAdd(&(grad_inds[qi][ki][2]),iW*signW);
 
 
         }

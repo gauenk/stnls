@@ -98,13 +98,13 @@ class non_local_stack(th.autograd.Function):
         # -- reshape --
         # nH = (H-1)//stride0+1
         # nW = (W-1)//stride0+1
-        weights = weights.view(B,HD,-1,K)
-        inds = inds.view(B,HD,-1,K,3)
+        weights = weights.view(B,HD,-1,K).clone()
+        inds = inds.view(B,HD,-1,K,3).clone()
 
         # -- non-local stacking --
-        vid = vid.contiguous()
-        weights = weights.contiguous()
-        inds = get_inds(inds,itype)
+        vid = vid.contiguous().clone()
+        weights = weights.contiguous().clone()
+        inds = get_inds(inds,itype).clone()
         imode = get_imode(itype)
         assert inds.shape[-1] == 3
 
@@ -135,6 +135,9 @@ class non_local_stack(th.autograd.Function):
                     ps, pt, dilation, stride0,
                     reflect_bounds, patch_offset)
         assert th.all(counts > 0).item()
+        # print(counts[0,0])
+        # print(counts[1,0])
+        # print(counts[2,0])
 
         eps = 1e-10
         stack /= (counts.view((B,HD,1,1,1,H,W))+eps)
@@ -220,11 +223,9 @@ class non_local_stack(th.autograd.Function):
         B,HD,T,C,H,W = grad_vid.shape
         eps = 1e-10
         grad_stack = grad_stack / (counts+eps)
-        # if imode == 0:
-        #     inds = inds.int()
         if ctx.itype == "int":
             fwd_fxn = stnls_cuda.non_local_stack_int_backward
-            fwd_fxn(grad_vid,grad_weights,grad_inds,grad_stack,
+            fwd_fxn(grad_vid,grad_weights,grad_stack,
                     vid,weights,inds,stack,counts,
                     ps,pt,dilation,stride0,reflect_bounds,patch_offset)
         else:

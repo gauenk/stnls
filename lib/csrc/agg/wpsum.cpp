@@ -17,7 +17,6 @@ void wpsum_int_forward_cuda(
   int ps, int stride0, int pt, int dilation,
   bool reflect_bounds, int patch_offset);
 
-
 void wpsum_int_backward_cuda(
     torch::Tensor in_vid_grad,
     torch::Tensor dists_grad,
@@ -31,19 +30,20 @@ void wpsum_int_backward_cuda(
 
  *************************************/
 
-// void wpsum_bilin2d_forward_cuda(
-//   torch::Tensor vid,
-//   torch::Tensor out_vid, torch::Tensor out_vidz,
-//   torch::Tensor dists, torch::Tensor inds,
-//   int ps, int pt, int dilation,
-//   bool reflect_bounds, bool use_adj);
+void wpsum_bilin2d_forward_cuda(
+  torch::Tensor out_vid, torch::Tensor counts,
+  const torch::Tensor in_vid,
+  const torch::Tensor dists, const torch::Tensor inds,
+  int ps, int stride0, int pt, int dilation,
+  bool reflect_bounds, int patch_offset);
 
-// void wpsum_bilin2d_backward_cuda(
-//     torch::Tensor out_vid_grad,
-//     torch::Tensor dists_grad, torch::Tensor inds_grad,
-//     const torch::Tensor in_vid_grad,
-//     const torch::Tensor dists, const torch::Tensor inds,
-//     int ps, int pt, int dilation, bool reflect_bounds, int patch_offset);
+void wpsum_bilin2d_backward_cuda(
+    torch::Tensor in_vid_grad,
+    torch::Tensor dists_grad,
+    torch::Tensor inds_grad,
+    const torch::Tensor out_vid_grad, const torch::Tensor vid,
+    const torch::Tensor dists, const torch::Tensor inds,
+    int ps, int stride0, int pt, int dilation, bool reflect_bounds, int patch_offset);
 
 
 // C++ interface
@@ -101,36 +101,40 @@ void wpsum_int_backward( // "in" and "out" w.r.t. forward pass
 
 ***********************/
 
-// void wpsum_bilin2d_forward(
-//   torch::Tensor in_vid,
-//   torch::Tensor out_vid, torch::Tensor out_vidz,
-//   torch::Tensor dists, torch::Tensor inds,
-//   int ps, int pt, int dilation, bool reflect_bounds, int patch_offset){
-//   CHECK_INPUT(in_vid);
-//   CHECK_INPUT(out_vid);
-//   CHECK_INPUT(out_vidz);
-//   CHECK_INPUT(dists);
-//   CHECK_INPUT(inds);
-//   wpsum_bilin2d_forward_cuda(in_vid,out_vid,out_vidz,dists,inds,
-//                               ps,pt,dilation,reflect_bounds,patch_offset);
-// }
+void wpsum_bilin2d_forward(
+  torch::Tensor out_vid, torch::Tensor counts,
+  const torch::Tensor in_vid,
+  const torch::Tensor dists,
+  const torch::Tensor inds,
+  int ps, int stride0, int pt, int dilation,
+  bool reflect_bounds, int patch_offset){
+  CHECK_INPUT(out_vid);
+  CHECK_INPUT(counts);
+  CHECK_INPUT(in_vid);
+  CHECK_INPUT(dists);
+  CHECK_INPUT(inds);
+  wpsum_bilin2d_forward_cuda(out_vid,counts,in_vid,dists,inds,
+                         ps,stride0,pt,dilation,reflect_bounds,patch_offset);
+}
 
-// void wpsum_bilin2d_backward(
-//   torch::Tensor out_vid_grad,
-//   torch::Tensor dists_grad, torch::Tensor inds_grad,
-//   const torch::Tensor in_vid_grad,
-//   const torch::Tensor dists, const torch::Tensor inds,
-//   int ps, int pt, int dilation, bool reflect_bounds, int patch_offset){
-//   CHECK_INPUT(out_vid_grad);
-//   CHECK_INPUT(dists_grad);
-//   CHECK_INPUT(inds_grad);
-//   CHECK_INPUT(in_vid_grad);
-//   CHECK_INPUT(dists);
-//   CHECK_INPUT(inds);
-//   wpsum_backward_cuda(out_vid_grad,dists_grad,inds_grad,
-//                       in_vid_grad,dists,inds,
-//                       ps,pt,dilation,reflect_bounds,patch_offset);
-// }
+void wpsum_bilin2d_backward( // "in" and "out" w.r.t. forward pass
+  torch::Tensor in_vid_grad,
+  torch::Tensor dists_grad, torch::Tensor inds_grad,
+  const torch::Tensor out_vid_grad, const torch::Tensor vid,
+  const torch::Tensor dists, const torch::Tensor inds,
+  int ps, int stride0, int pt, int dilation, bool reflect_bounds, int patch_offset){
+  CHECK_INPUT(in_vid_grad);
+  CHECK_INPUT(dists_grad);
+  CHECK_INPUT(inds_grad);
+  CHECK_INPUT(out_vid_grad);
+  CHECK_INPUT(vid);
+  CHECK_INPUT(dists);
+  CHECK_INPUT(inds);
+  wpsum_bilin2d_backward_cuda(in_vid_grad,dists_grad,
+                              inds_grad,
+                              out_vid_grad,vid,dists,inds,
+                              ps,stride0,pt,dilation,reflect_bounds,patch_offset);
+}
 
 /***********************
 
@@ -145,10 +149,10 @@ void init_wpsum(py::module &m){
         "WeightedPatchSum Forward (CUDA)");
   m.def("wpsum_int_backward", &wpsum_int_backward,
         "WeightedPatchSum Backward (CUDA)");
-  // m.def("wpsum_bilin2d_forward", &wpsum_bilin2d_forward,
-  //       "WeightedPatchSum Forward (CUDA)");
-  // m.def("wpsum_bilin2d_backward", &wpsum_bilin2d_backward,
-  //       "WeightedPatchSum Backward (CUDA)");
+  m.def("wpsum_bilin2d_forward", &wpsum_bilin2d_forward,
+        "WeightedPatchSum Forward (CUDA)");
+  m.def("wpsum_bilin2d_backward", &wpsum_bilin2d_backward,
+        "WeightedPatchSum Backward (CUDA)");
 
 }
 

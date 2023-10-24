@@ -15,7 +15,7 @@
 template <typename scalar_t>
 __global__ void wpsum_int_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> out_vid,
-    torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> counts,
+    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> in_vid,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
@@ -46,8 +46,7 @@ __global__ void wpsum_int_forward_kernel(
     bool valid;
     scalar_t pix,weight;
     int ref_ti,nl_ti;
-    int ref[3];
-    int nl[3];
+    int ref[3],ref_p[3],nl[3];
     int nW = (W-1)/stride0+1;
     int nHW = nW*((H-1)/stride0+1);
 
@@ -60,13 +59,18 @@ __global__ void wpsum_int_forward_kernel(
       get_pixel_loc<int>(ref,qi,stride0,nW,nHW,H,W);
 
       // -- reference pixel index --
-      ref[1] = ref[1]+dilation*(pi + patch_offset);
-      ref[2] = ref[2]+dilation*(pj + patch_offset);
+      ref_p[0] = ref[0];
+      ref_p[1] = ref[1]+dilation*(pi + patch_offset);
+      ref_p[2] = ref[2]+dilation*(pj + patch_offset);
 
       // -- valid ref pixel only --
-      valid = (ref[1] >= 0) && (ref[1] < H);
-      valid = valid && (ref[2] >= 0) && (ref[2] < W);
+      check_bounds(valid, ref_p, T,  H, W);
       if (not valid){ continue; }
+
+      // -- normalize --
+      if ((ref[0]==0) and (ibatch==0) and (ihead==0)){
+        atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
+      }
 
       for(int ki = 0; ki < K; ki++){
 
@@ -77,8 +81,9 @@ __global__ void wpsum_int_forward_kernel(
         }
   
         // -- always reflect anchor point --
-        // nl[1] = bounds(nl[1],H);
-        // nl[2] = bounds(nl[2],W);
+        nl[0] = bounds(nl[0],T);
+        nl[1] = bounds(nl[1],H);
+        nl[2] = bounds(nl[2],W);
 
         // -- non-local pixel index --
         nl[1] = nl[1]+dilation*(pi + patch_offset);
@@ -87,7 +92,8 @@ __global__ void wpsum_int_forward_kernel(
         nl[2] = reflect_bounds ? bounds(nl[2],W) : nl[2];
 
         // -- valid non-local patches only --
-        valid = (nl[1] >= 0) && (nl[1] < H);
+        valid = (nl[0] >= 0) && (nl[0] < T);
+        valid = valid && (nl[1] >= 0) && (nl[1] < H);
         valid = valid && (nl[2] >= 0) && (nl[2] < W);
         if (not valid){ continue; }
 
@@ -98,26 +104,21 @@ __global__ void wpsum_int_forward_kernel(
         for(int pk = 0; pk < pt; pk++){
 
           // -- time is always valid --
-          ref_ti = bounds(ref[0] + pk,T);
-          nl_ti = bounds(nl[0] + pk,T);
+          ref_ti = ref_p[0] + pk;
+          nl_ti = reflect_bounds ? bounds(nl[0]+pk,T) : (nl[0]+pk);
+          valid = (nl_ti >= 0) && (nl_ti < T) and (ref_ti < T);
+          if (not valid){ continue; }
 
           // -- channels --
           for(int iftr = 0; iftr < F; iftr++){
 
             // -- fill --
             pix = weight*in_vid[ibatch][ihead][nl_ti][iftr][nl[1]][nl[2]];
-            atomicAdd(&out_vid[ibatch][ihead][ref_ti][iftr][ref[1]][ref[2]],pix);
+            atomicAdd(&out_vid[ibatch][ihead][ref_ti][iftr][ref_p[1]][ref_p[2]],pix);
 
           } // nfeatures-loop
         } // pt-loop
       } // k-loop
-
-      // -- normalize --
-      if ((ref[0]==0) and (ibatch==0) and (ihead==0)){
-        atomicAdd(&counts[0][0][0][0][ref[1]][ref[2]],1);
-      }
-      // atomicAdd(&counts[0][0][0][0][ref[1]][ref[2]],1);
-
     } // query-loop
 }
 
@@ -137,8 +138,10 @@ void wpsum_int_forward_cuda(
   // -- kernel threads --
   int MAX_THREADS = 1024;
   int q_threads = MAX_THREADS/(ps*ps); // num of queries threads per block
+  q_threads = min(Q,q_threads);
   int q_blocks = (Q-1)/(q_per_thread*q_threads)+1;
   dim3 nthreads(q_threads,ps,ps);
+  // fprintf(stdout,"ps,reflect_bounds,patch_offset: %d,%d,%d\n",ps,reflect_bounds,patch_offset);
 
   // -- kernel blocks --
   dim3 nblocks(q_blocks,B,HD);
@@ -147,7 +150,7 @@ void wpsum_int_forward_cuda(
   AT_DISPATCH_FLOATING_TYPES(in_vid.type(), "wpsum_int_forward_kernel", ([&] {
     wpsum_int_forward_kernel<scalar_t><<<nblocks, nthreads>>>(
         out_vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-        counts.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
+        counts.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
         in_vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
@@ -187,17 +190,16 @@ __global__ void wpsum_int_backward_kernel(
 
   // -- pixel indexing --
   int qi,ki;
-  int ref[3];
-  scalar_t nl[3];
+  int ref[3],ref_p[3],nl[3];
   int ref_ti,nl_ti;
   bool valid;
   float weight,pix_n,pix_m;
 
   // -- location to fill --
-  int q_start = blockIdx.x*blockDim.x+threadIdx.x;
-  int k_start = blockIdx.y*blockDim.y+threadIdx.y;
-  int ihead = blockIdx.z/B;
-  int ibatch = (blockIdx.z-ihead*B) % B;
+  int q_start = q_per_thread*(blockIdx.x*blockDim.x+threadIdx.x);
+  int k_start = 0;
+  int ihead = blockIdx.y/B;
+  int ibatch = (blockIdx.y-ihead*B);
   int nW = (W-1)/stride0+1;
   int nHW = nW*((H-1)/stride0+1);
 
@@ -214,12 +216,12 @@ __global__ void wpsum_int_backward_kernel(
     get_pixel_loc<int>(ref,qi,stride0,nW,nHW,H,W);
 
     // -- reference pixel index --
-    ref[1] = ref[1]+dilation*(pi + patch_offset);
-    ref[2] = ref[2]+dilation*(pj + patch_offset);
+    ref_p[0] = ref[0];
+    ref_p[1] = ref[1]+dilation*(pi + patch_offset);
+    ref_p[2] = ref[2]+dilation*(pj + patch_offset);
 
     // -- valid ref pixel only --
-    valid = (ref[1] >= 0) && (ref[1] < H);
-    valid = valid && (ref[2] >= 0) && (ref[2] < W);
+    check_bounds(valid, ref_p, T,  H, W);
     if (not valid){ continue; }
 
     for(int _ki = 0; _ki < k_per_thread; _ki++){
@@ -232,6 +234,11 @@ __global__ void wpsum_int_backward_kernel(
         nl[_idx] = ref[_idx] + inds[ibatch][ihead][qi][ki][_idx];
       }
 
+      // -- reflect --
+      nl[0] = bounds(nl[0],T);
+      nl[1] = bounds(nl[1],H);
+      nl[2] = bounds(nl[2],W);
+
       // -- non-local pixel index --
       nl[1] = nl[1]+dilation*(pi + patch_offset);
       nl[1] = reflect_bounds ? bounds(nl[1],H) : nl[1];
@@ -239,8 +246,7 @@ __global__ void wpsum_int_backward_kernel(
       nl[2] = reflect_bounds ? bounds(nl[2],W) : nl[2];
 
       // -- valid non-local patches only --
-      valid = (nl[1] >= 0) && (nl[1] < H);
-      valid = valid && (nl[2] >= 0) && (nl[2] < W);
+      check_bounds(valid, nl, T,  H, W);
       if (not valid){ continue; }
 
       // -- non-local weight --
@@ -248,12 +254,16 @@ __global__ void wpsum_int_backward_kernel(
       scalar_t acc_dists_grad = 0;
 
       for (int pk = 0; pk < pt; pk++){
-        ref_ti = ref[0] + pk;
-        nl_ti = nl[0] + pk;
+
+        // -- time is always valid --
+        ref_ti = ref_p[0] + pk;
+        nl_ti = reflect_bounds ? bounds(nl[0]+pk,T) : (nl[0]+pk);
+        valid = (nl_ti >= 0) && (nl_ti < T) and (ref_ti < T);
+        if (not valid){ continue; }
   
         // -- num features --
         for (int iftr = 0; iftr < F; iftr++){
-          pix_n = out_vid_grad[ibatch][ihead][ref_ti][iftr][ref[1]][ref[2]];
+          pix_n = out_vid_grad[ibatch][ihead][ref_ti][iftr][ref_p[1]][ref_p[2]];
           pix_m = vid[ibatch][ihead][nl_ti][iftr][nl[1]][nl[2]];
           atomicAdd(&in_vid_grad[ibatch][ihead][nl_ti][iftr][nl[1]][nl[2]],weight*pix_n);
           acc_dists_grad += pix_n*pix_m;
@@ -279,16 +289,22 @@ void wpsum_int_backward_cuda(
   int HD = dists.size(1);
   int Q = dists.size(2);
   int K = dists.size(3);
-  int q_per_thread = 2;
+  int q_per_thread = 1;
   int k_per_thread = K;
+  // fprintf(stdout,
+  //         "ps,stride0,pt,dilation,reflect_bounds,patch_offset: %d,%d,%d,%d,%d,%d\n",
+  //         ps,stride0,pt,dilation,reflect_bounds,patch_offset);
   
   // -- kernel threads --
-  int MAX_THREADS = 1024;
+  int MAX_THREADS = 768;
   int q_threads = MAX_THREADS/(ps*ps); // num of queries threads per block
+  q_threads = min(Q,q_threads);
   int q_blocks = (Q-1)/(q_per_thread*q_threads)+1;
   int k_blocks = (K-1)/k_per_thread+1;
   dim3 nthreads(q_threads,ps,ps);
-  dim3 nblocks(q_blocks, k_blocks, HD*B);
+  dim3 nblocks(q_blocks, HD*B);
+
+  // fprintf(stdout,"q_threads: %d\n",q_threads);
 
   // launch kernel
   AT_DISPATCH_FLOATING_TYPES(in_vid_grad.type(), "wpsum_int_backward_vid_kernel", ([&] {

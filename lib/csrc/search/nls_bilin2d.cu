@@ -196,8 +196,9 @@ void update_bwd_bilin2d_vidflows(
     int ps, int pt, int dilation, int stride0, bool reflect_bounds,
     int patch_offset, int iftr, int ftr_start, int ftr_end,
     int* ref, scalar_t* prop, int* prop_i, bool* valid_ref, bool* valid_prop,
-    bool valid, int T, int H, int W){
+    bool valid, int signH_in, int signW_in, int T, int H, int W){
 
+  int signH,signW;
     scalar_t pix0,pix1;
     scalar_t dDists;
     for (int pk = 0; pk < pt; pk++){
@@ -220,6 +221,7 @@ void update_bwd_bilin2d_vidflows(
 
         // -- prop patch --
         prop[1] = prop_patch[1]+dilation*(pi + patch_offset);
+        signH = 1;//(check_interval(prop[1],0,H) and reflect_bounds) ? signH_in : -signH_in;
         prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
         valid_prop[1] = check_interval(prop[1],0,H);
 
@@ -232,6 +234,7 @@ void update_bwd_bilin2d_vidflows(
 
           // -- prop patch --
           prop[2] = prop_patch[2]+dilation*(pj + patch_offset);
+          signW = 1;//(check_interval(prop[2],0,W) and reflect_bounds) ? signW_in : -signW_in;
           prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
           valid_prop[2] = check_interval(prop[2],0,W);
 
@@ -274,9 +277,9 @@ void update_bwd_bilin2d_vidflows(
             }
             bilin2d_assign(dDists,prop[1],prop[2],H,W,grad_vid1[prop_i[0]][iftr]);
 
-
             // -- update accumulated dflows --
-            update_dFlows(acc_dFlows,dDists,prop[1],prop[2],H,W,vid1[prop_i[0]][iftr]);
+            update_dFlows(acc_dFlows,dDists,prop[1],prop[2],H,W,
+                          signH,signW,vid1[prop_i[0]][iftr]);
 
           }
 

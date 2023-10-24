@@ -30,7 +30,7 @@ __inline__ __device__ int bounds(int val, int lb, int ub ){
   int vval = val;
   if (val < lb){
     vval = 2*lb - val;
-  }else if (val >= ub){
+  }else if (val > (ub-1)){
     vval = 2*(ub-1) - val;
   }
   return vval;
@@ -90,7 +90,7 @@ void get_pixel_loc(itype* pix,  int qindex, int stride0,
     tmp = qindex;
     pix[0] = floor(tmp/nHW0);
     tmp = (tmp - pix[0]*nHW0); 
-    nH_index = tmp / nW0;
+    nH_index = floor(tmp / nW0);
     pix[1] = floor((nH_index*stride0) % H);
     tmp = tmp - nH_index*nW0;
     pix[2] = floor(((tmp % nW0) * stride0) % W);
@@ -758,18 +758,68 @@ void bilin2d_interpolate(scalar_t& pix, scalar_t hi, scalar_t wi, int H, int W,
       w = w*max(0.,1-fabs(w_interp-wi));
 
       // -- ensure legal bounds --
-      // if ((h_interp<0) or (h_interp >= H)){
-      //   continue;
-      // }
-      // if ((w_interp<0) or (w_interp >= W)){
-      //   continue;
-      // }
+      // if (not check_bound(h_interp,H)){ continue;}
+      // if (not check_bound(w_interp,W)){ continue;}
       h_interp = bounds(h_interp,H);
       w_interp = bounds(w_interp,W);
 
 
       // -- update --
       pix += w*vid[h_interp][w_interp];
+    }
+  }
+
+}
+
+template<typename scalar_t>
+__device__ __forceinline__ 
+void bilin2d_assign_bwd(scalar_t& igradW, scalar_t& igradH, scalar_t& pix,
+     scalar_t weighted_grad, scalar_t hi, scalar_t wi, int H, int W,
+     const torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> vid,
+     torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> grad_vid){
+
+  // -- init --
+  int hi_interp,wi_interp;
+  scalar_t interp_weight,vid_pix;
+  scalar_t gH,gW;
+  pix = 0;
+  igradW = 0;
+  igradH = 0;
+
+  // -- bilinear --
+  #pragma unroll
+  for (int ix=0;ix<2;ix++){
+    #pragma unroll
+    for (int jx=0;jx<2;jx++){
+
+      // -- interpolate weight --
+      hi_interp = __float2int_rz(hi+ix);
+      wi_interp = __float2int_rz(wi+jx);
+      gH = max(0.,1-fabs(hi-hi_interp));
+      gW = max(0.,1-fabs(wi-wi_interp));
+      interp_weight = gH * gW;
+
+      // -- check directions --
+      bool leftH = ix==0;
+      bool leftW = jx==0;
+
+      // -- legalize inds --
+      hi_interp = bounds(hi_interp,H);
+      wi_interp = bounds(wi_interp,W);
+      
+      // -- read video --
+      vid_pix = vid[hi_interp][wi_interp];
+
+      // -- dist grad --
+      pix += interp_weight*vid_pix;
+
+      // -- index grad --
+      igradW += leftW ? -gH*vid_pix : gH*vid_pix; // dF[0]/dF[0]; A(0) 
+      igradH += leftH ? -gW*vid_pix : gW*vid_pix; // dF[0]/dF[0]; A(0)
+      
+      // -- video grad --
+      atomicAdd(&(grad_vid[hi_interp][wi_interp]),interp_weight*weighted_grad);
+
     }
   }
 
@@ -797,12 +847,8 @@ void bilin2d_assign(scalar_t val, scalar_t hi, scalar_t wi, int H, int W,
       w = w*max(0.,1-fabs(w_interp-wi));
 
       // -- ensure legal bounds --
-      // if ((h_interp<0) or (h_interp >= H)){
-      //   continue;
-      // }
-      // if ((w_interp<0) or (w_interp >= W)){
-      //   continue;
-      // }
+      // if (not check_bound(h_interp,H)){ continue;}
+      // if (not check_bound(w_interp,W)){ continue;}
       h_interp = bounds(h_interp,H);
       w_interp = bounds(w_interp,W);
 
@@ -817,7 +863,7 @@ void bilin2d_assign(scalar_t val, scalar_t hi, scalar_t wi, int H, int W,
 template<typename scalar_t>
 __device__ __forceinline__ 
 void update_dFlows(scalar_t* dFlows, scalar_t dDists,
-                   scalar_t hi, scalar_t wi, int H, int W,
+                   scalar_t hi, scalar_t wi, int H, int W, int signH, int signW,
      const torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> vid1){
 
   // -- init --
@@ -846,6 +892,8 @@ void update_dFlows(scalar_t* dFlows, scalar_t dDists,
       gW = left_H ? -gW : gW;
 
       // -- ensure legal bounds --
+      // if (not check_bound(h_interp,H)){ continue;}
+      // if (not check_bound(w_interp,W)){ continue;}
       h_interp = bounds(h_interp,H);
       w_interp = bounds(w_interp,W);
 
@@ -854,8 +902,8 @@ void update_dFlows(scalar_t* dFlows, scalar_t dDists,
 
       // -- update --
       kx = ix * 4 + jx * 2;
-      dFlows[kx] += gH*pix*dDists;
-      dFlows[kx+1] += gW*pix*dDists;
+      dFlows[kx] += gH*pix*dDists*signW;
+      dFlows[kx+1] += gW*pix*dDists*signH;
 
     }
   }

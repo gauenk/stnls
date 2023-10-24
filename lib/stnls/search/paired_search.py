@@ -68,7 +68,7 @@ def paired_forward(frame0, frame1, flow,
 
     # -- forward --
     if itype == "int":
-        fwd_fxn = stnls_cuda.paired_search_forward
+        fwd_fxn = stnls_cuda.paired_search_int_forward
         stride1 = max(1,int(stride1))
     else:
         fwd_fxn = stnls_cuda.paired_search_bilin2d_forward

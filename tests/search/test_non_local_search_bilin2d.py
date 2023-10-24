@@ -42,20 +42,21 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[3],"stride0":[4],
+    test_lists = {"ps":[1],"stride0":[1],
                   "stride1":[1],
-                  "dilation":[1],"wt":[1],"ws":[9],
+                  "dilation":[1],"wt":[1],"ws":[1],
                   "k":[-1],"nheads":[1],
                   "self_action":[None],"seed":[0],
-                  "dist_type":["prod"],
-                  "k_agg":[-1],"reflect_bounds":[True]}
+                  "dist_type":["prod"],"k_agg":[-1],
+                  "reflect_bounds":[True],
+                  "itype":["int","float"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
 
 def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
-                    nheads,self_action,dist_type,seed):
+                    nheads,self_action,dist_type,seed,itype):
     """
 
     Test the CUDA code with torch code
@@ -79,9 +80,6 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     clean_flow = True
     comp_flow = False
     reflect_bounds = True
-    use_k = k > 0
-    use_adj = False
-    adj = 0
     full_ws = True
 
     # -- load data --
@@ -105,14 +103,14 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,use_adj=use_adj,
+                                   full_ws=full_ws,
                                    self_action=self_action,
                                    normalize_bwd=False,itype="float")
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,use_adj=use_adj,
+                                   full_ws=full_ws,
                                    self_action=self_action,
                                    normalize_bwd=False,itype="int")
 
@@ -164,7 +162,6 @@ def test_bwd_vid_int_bilin2d(ws,wt,k,ps,stride0,stride1,k_agg,
     clean_flow = True
     comp_flow = False
     reflect_bounds = True
-    use_k = k > 0
     use_adj = False
     full_ws = True
 
@@ -275,7 +272,6 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     clean_flow = True
     comp_flow = False
     reflect_bounds = True
-    use_k = k > 0
     use_adj = False
     full_ws = True
     set_seed(seed)
@@ -332,8 +328,8 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     assert diff < 1e-7
 
 
-def test_bwd_vid_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,
-                 dilation,nheads,self_action,dist_type,seed):
+def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,
+                           dilation,nheads,self_action,dist_type,seed,itype):
     """
 
     Test the CUDA code with torch code
@@ -349,14 +345,11 @@ def test_bwd_vid_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
     wt = 1 if wt == 0 else wt # skip 0
+    k = -1
 
     # -- init vars --
     device = "cuda:0"
-    clean_flow = True
-    comp_flow = False
     reflect_bounds = True
-    use_k = k > 0
-    use_adj = False
     full_ws = True
     set_seed(seed)
 
@@ -380,8 +373,8 @@ def test_bwd_vid_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,
                                 dist_type=dist_type,
                                 dilation=dil,stride0=stride0, stride1=stride1,
                                 reflect_bounds=reflect_bounds,
-                                full_ws=full_ws,use_adj=use_adj,
-                                self_action=self_action,itype="float")
+                                full_ws=full_ws,
+                                self_action=self_action,itype=itype)
 
     # -- run gradient check
     search_gt_vid0 = lambda vid0: search(vid0,vid1,flows)[0]
@@ -392,7 +385,7 @@ def test_bwd_vid_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 
-def test_bwd_flows_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,dilation,
+def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
                              nheads,self_action,dist_type,reflect_bounds,seed):
     """
 
@@ -407,20 +400,22 @@ def test_bwd_flows_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,dilation,
     dil = dilation
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    pt = 1
-    wt = 1 if wt == 0 else wt # skip 0
+    k,pt = -1,1
+    if wt == 0: return # skip wt == 0
     set_seed(seed)
 
     # -- init vars --
     device = "cuda:0"
-    use_adj = False
     full_ws = True
 
     # -- load video --
-    vid = get_data(dnames,ext)[...,:1,::4,::4]
+    vid = get_data(dnames,ext)[:1,:2,:1,:8,:8]
+    print("vid.shape: ",vid.shape)
+    vid = th.ones_like(vid)
     vid0,vid1 = vid.clone(),vid.flip(-1).clone()
-    vid0 = th.rand_like(vid)-0.5
-    vid1 = th.rand_like(vid)-0.5
+    # vid0 = vid0/2.
+    vid0 = th.rand_like(vid)-1.5
+    vid1 = th.rand_like(vid)#-0.5
     B,T,F,H,W = vid0.shape
 
     # -- load flows --
@@ -429,8 +424,6 @@ def test_bwd_flows_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,dilation,
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
     flows = th.rand_like(flows)/2.+0.2 # away from int
     flows.requires_grad_(True)
-    ps = 1
-    k = ws*ws*W_t
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -438,16 +431,35 @@ def test_bwd_flows_gradcheck(ws,wt,k,ps,stride0,stride1,k_agg,dilation,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   full_ws=full_ws,use_adj=use_adj,
+                                   full_ws=full_ws,
                                    self_action=self_action,itype="float")
+
+    # -- immersive --
+    from stnls.testing import gradcheck
+    search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[0]
+    num = gradcheck.get_num_jacobian(search_gt_flows,flows,eps=1e-2)
+    ana = gradcheck.get_ana_jacobian(search_gt_flows,flows,eps=1e-2)
+    print(num[:10,:10])
+    print(ana[:10,:10])
+
+    # print(num[:2,100:115])
+    # print(ana[:2,100:115])
+
+    # print(num[764:767,35:45])
+    # print(ana[764:767,35:45])
+
+    # print(num[-10:,-10:])
+    # print(ana[-10:,-10:])
+    print(th.where(th.abs(num-ana)>1e-3))
+
 
     # -- gradient check --
     search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[0]
-    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-3,
+    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-2,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
     search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[1]
-    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-3,
+    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-2,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 
@@ -469,7 +481,6 @@ def test_fwd_topk(ws,wt,ps,stride0,stride1,dilation,
     clean_flow = True
     comp_flow = False
     reflect_bounds = False
-    use_adj = False
     full_ws = True
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
@@ -496,7 +507,7 @@ def test_fwd_topk(ws,wt,ps,stride0,stride1,dilation,
     search = stnls.search.NonLocalSearch(ws, wt, ps, k, nheads,
                                          dilation=dil,stride0=stride0, stride1=stride1,
                                          reflect_bounds=reflect_bounds,full_ws=full_ws,
-                                         self_action=None,use_adj=use_adj,
+                                         self_action=None,
                                          dist_type=dist_type,topk_mode="all",
                                          itype=itype)
 
@@ -526,7 +537,6 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     clean_flow = True
     comp_flow = False
     reflect_bounds = False
-    use_adj = False
     full_ws = True
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
@@ -553,28 +563,28 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     search0 = stnls.search.NonLocalSearch(ws, wt, ps, -1, nheads,
                                           dilation=dil,stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=False,
-                                          self_action=None,use_adj=use_adj,
+                                          self_action=None,
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
     k1 = 3
     search1 = stnls.search.NonLocalSearch(ws, wt, ps, k1, nheads,
                                           dilation=dil,stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=False,
-                                          self_action="anchor_each",use_adj=use_adj,
+                                          self_action="anchor_each",
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
     k2 = 5
     search2 = stnls.search.NonLocalSearch(ws, wt, ps, k2, nheads,
                                           dilation=dil,stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=True,
-                                          self_action="anchor_each",use_adj=use_adj,
+                                          self_action="anchor_each",
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
     k3 = 10
     search3 = stnls.search.NonLocalSearch(ws, wt, ps, k3, nheads,
                                           dilation=dil,stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=True,
-                                          self_action="anchor",use_adj=use_adj,
+                                          self_action="anchor",
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
 

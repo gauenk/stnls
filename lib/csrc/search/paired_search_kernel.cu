@@ -31,6 +31,7 @@ __global__ void paired_search_int_forward_kernel(
   int B = frame0.size(0);
   int HD_frame = frame0.size(1);
   int HD_flow = flow.size(1);
+  int HD_search = inds.size(1);
   int C = frame0.size(2);
   int H = frame0.size(3);
   int W = frame0.size(4);
@@ -58,6 +59,7 @@ __global__ void paired_search_int_forward_kernel(
   int ihead = blockIdx.z;
   int ihead_fr = ihead % HD_frame;
   int ihead_fl = ihead % HD_flow;
+  int ihead_sr = ihead % HD_search;
   int q_start = blockIdx.x*q_per_thread;
   int qi,ws_i,ws_j;
 
@@ -71,9 +73,6 @@ __global__ void paired_search_int_forward_kernel(
   bool valid_ref_patch,valid_prop_patch;
   bool valid_ref[3];
   bool valid_prop[3];
-
-  // -- cleaner code --
-  // int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
 
   // -- indexing --
   scalar_t dist;
@@ -141,9 +140,9 @@ __global__ void paired_search_int_forward_kernel(
 
         // -- assignent --
         if (!valid){ dist = invalid; }
-        dists[ibatch][ihead_fl][qi][ws_i][ws_j] = dist;
-        inds[ibatch][ihead_fl][qi][ws_i][ws_j][0] = prop_patch[0]-ref_patch[0];
-        inds[ibatch][ihead_fl][qi][ws_i][ws_j][1] = prop_patch[1]-ref_patch[1];
+        dists[ibatch][ihead_sr][qi][ws_i][ws_j] = dist;
+        inds[ibatch][ihead_sr][qi][ws_i][ws_j][0] = prop_patch[0]-ref_patch[0];
+        inds[ibatch][ihead_sr][qi][ws_i][ws_j][1] = prop_patch[1]-ref_patch[1];
           
       }
     }
@@ -281,7 +280,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
   scalar_t frame_anchor[2];
   int ref_pix[2];
   scalar_t prop_pix[2];
-  int prop_i[2];
+  // int prop_i[2];
   bool valid;
   bool valid_ref_patch,valid_prop_patch;
   bool valid_ref[3];
@@ -333,7 +332,6 @@ __global__ void paired_search_bilin2d_forward_kernel(
         ws_j = threadIdx.y + blockDim.y*_yi;
         if (ws_j >= ws){ continue; }
 
-
         // -- compute proposed location --
         prop_patch[0] = frame_anchor[0] + stride1 * (ws_i - wsOff_h);
         prop_patch[1] = frame_anchor[1] + stride1 * (ws_j - wsOff_w);
@@ -344,11 +342,12 @@ __global__ void paired_search_bilin2d_forward_kernel(
         // -- init dist --
         dist = 0;
 
+
         //  -- compute patch difference --
         if (valid){
           compute_dist_bilin2d_2d<scalar_t,DIST_TYPE>(dist,
                        frame0[ibatch][ihead_fr],frame1[ibatch][ihead_fr],
-                       ref_patch, prop_patch, ref_pix, prop_pix, prop_i,
+                       ref_patch, prop_patch, ref_pix, prop_pix,// prop_i,
                        valid_ref, valid_prop, ps,dilation,reflect_bounds,
                        patch_offset,invalid,C,H,W);
         }
@@ -537,8 +536,8 @@ void paired_search_int_backward_cuda(
   int nbatch = grad_dists.size(0);
   int nq = grad_dists.size(2);
   int k = grad_dists.size(3);
-  int ftr_threads = min(15,F);
-  dim3 threadsPerBlock(10,4,ftr_threads);
+  int ftr_threads = min(1,F);
+  dim3 threadsPerBlock(128,4,ftr_threads);
   dim3 blocksPerGrid(1, 1, nbatch*HD);
   blocksPerGrid.x = ceil(double(nq)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(k)/double(threadsPerBlock.y));
@@ -652,6 +651,8 @@ __global__ void paired_search_bilin2d_backward_kernel(
     // -- proposed location --
     prop_patch[0] = ref_patch[0] + inds[ibatch][ihead_sr][qi][ki][0];
     prop_patch[1] = ref_patch[1] + inds[ibatch][ihead_sr][qi][ki][1];
+
+
     weight = grad_dists[ibatch][ihead_sr][qi][ki];
     iweight[0] = grad_inds[ibatch][ihead_sr][qi][ki][0];
     iweight[1] = grad_inds[ibatch][ihead_sr][qi][ki][1];
@@ -705,7 +706,7 @@ void paired_search_bilin2d_backward_cuda(
   int B = grad_dists.size(0);
   int Q = grad_dists.size(2);
   int K = grad_dists.size(3);
-  dim3 threadsPerBlock(384,2);
+  dim3 threadsPerBlock(288,2);
   dim3 blocksPerGrid(1, 1, B*HD);
   blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));

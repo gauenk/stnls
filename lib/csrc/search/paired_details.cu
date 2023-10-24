@@ -37,7 +37,7 @@ void compute_dist_2d(scalar_t& dist,
   int* ref_patch, int* prop_patch, int* ref, int* prop,
   bool* valid_ref, bool* valid_prop,
   int ps, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid, int C, int H, int W){
+  int patch_offset, scalar_t invalid, int F, int H, int W){
                   
   scalar_t pix0,pix1,_dist;
   for (int pi = 0; pi < ps; pi++){
@@ -74,7 +74,7 @@ void compute_dist_2d(scalar_t& dist,
       }
 
       // -- fill each channel --
-      for (int ci = 0; ci < C; ci++){
+      for (int ci = 0; ci < F; ci++){
 
         // -- get data --
         pix0 = valid_ref[2] ? frame0[ci][ref[0]][ref[1]] : (scalar_t)0.;
@@ -106,7 +106,7 @@ __device__ __forceinline__
 void compute_dist_bilin2d_2d(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame0,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame1,
-  int* ref_patch, scalar_t* prop_patch, int* ref, scalar_t* prop, int* prop_i,
+  int* ref_patch, scalar_t* prop_patch, int* ref, scalar_t* prop, //int* prop_i,
   bool* valid_ref, bool* valid_prop, int ps, int dilation, bool reflect_bounds,
   int patch_offset, scalar_t invalid, int C, int H, int W){
                   
@@ -152,29 +152,30 @@ void compute_dist_bilin2d_2d(scalar_t& dist,
         pix0 = valid_ref[2] ? frame0[ci][ref[0]][ref[1]] : 0;
 
         // -- interpolate pixel value --
-        pix1 = 0;
-        #pragma unroll
-        for (int ix=0;ix<2;ix++){
-          #pragma unroll
-          for (int jx=0;jx<2;jx++){
+        // pix1 = 0;
+        // #pragma unroll
+        // for (int ix=0;ix<2;ix++){
+        //   #pragma unroll
+        //   for (int jx=0;jx<2;jx++){
 
-            // -- interpolation weight --
-            prop_i[0] = __float2int_rz(prop[0]+ix);
-            interp[0] = max(0.,1-fabs(prop_i[0]-prop[0]));
-            prop_i[1] = __float2int_rz(prop[1]+jx);
-            interp[1] = max(0.,1-fabs(prop_i[1]-prop[1]));
-            w = interp[0] * interp[1];
+        //     // -- interpolation weight --
+        //     prop_i[0] = __float2int_rz(prop[0]+ix);
+        //     interp[0] = max(0.,1-fabs(prop_i[0]-prop[0]));
+        //     prop_i[1] = __float2int_rz(prop[1]+jx);
+        //     interp[1] = max(0.,1-fabs(prop_i[1]-prop[1]));
+        //     w = interp[0] * interp[1];
 
-            // -- ensure legal bounds --
-            prop_i[0] = bounds(prop_i[0],H);
-            prop_i[1] = bounds(prop_i[1],W);
+        //     // -- ensure legal bounds --
+        //     prop_i[0] = bounds(prop_i[0],H);
+        //     prop_i[1] = bounds(prop_i[1],W);
 
-            // -- update --
-            pix1 += valid_prop[2] ? w*frame1[ci][prop_i[0]][prop_i[1]] : 0;
-            // pix1 += w;
-          }
-        }
-        // pix1 = 1;
+        //     // -- update --
+        //     pix1 += valid_prop[2] ? w*frame1[ci][prop_i[0]][prop_i[1]] : 0;
+        //     // pix1 += w;
+        //   }
+        // }
+        // // pix1 = 1;
+        bilin2d_interpolate(pix1,prop[0],prop[1],H,W,frame1[ci]);
 
         // -- compute dist --
         if(DIST_TYPE == 0){ // product

@@ -22,15 +22,24 @@ def allocate_patches(b,nq,nhead,pt,c,ps,device):
     patches = th.zeros((b,nq,nhead,pt,c,ps,ps),device=device,dtype=th.float32)
     return patches
 
+def get_inds(inds,itype):
+    inds = inds.contiguous()
+    if itype == "int" and th.is_floating_point(inds):
+        return inds.round().int()
+    elif itype in ["float","2d","3d"] and not(th.is_floating_point(inds)):
+        return inds.float()
+    else:
+        return inds
+
 class WeightedPatchSumFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid, weights, inds, ps, stride0,
+    def forward(ctx, vid, weights, flows, ps, stride0,
                 pt=1, dilation=1, reflect_bounds=True, use_adj=False, itype="int"):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
         weights = [BatchSize,nHeads,NumQueries,K]
-        inds = [BatchSize,nHeads or 1,NumQueries,K,3]
+        flows = [BatchSize,nHeads or 1,NumQueries,K,3]
         ps = patchsize
         pt = patchsize_time (forward only)
         """
@@ -44,39 +53,50 @@ class WeightedPatchSumFunction(th.autograd.Function):
                 vid = rearrange(vid,'b t (H c) h w -> b H t c h w',H=nheads)
             else:
                 vid = rearrange(vid,'b t c h w -> b 1 t c h w')
-        if inds.ndim == 4: inds = inds[:,None] # add heads dim
-        # print("weights.shape,inds.shape: " ,weights.shape,inds.shape)
+        if flows.ndim == 4: flows = flows[:,None] # add heads dim
 
-        # -- allocate --
+        # -- unpack --
         device = weights.device
         B,HD,T,nH,nW,K = weights.shape
+        wshape = weights.shape
         vid = vid.contiguous()
-        inds = inds.contiguous()
+        flows = get_inds(flows,itype)
+
+        # -- allocate --
         out_vid = th.zeros_like(vid)
-        counts = th.zeros_like(vid[:1,:1,:1,:1,:,:]).type(th.int)
+        counts = th.zeros_like(vid[0,0,0,0,:,:]).type(th.int)
         patch_offset = 0 if use_adj else -(ps//2)
 
         # -- view --
         Q = T*nH*nW
         weights = weights.view(B,HD,Q,K)
-        inds = inds.view(B,HD,Q,K,3)
+        flows = flows.view(B,HD,Q,K,3)
 
         # -- exec --
-        if inds.dtype == th.int:
+        if flows.dtype == th.int:
             fwd_fxn = stnls_cuda.wpsum_int_forward
         else:
+            # flows[...,1:] = flows[...,1:].int()+1
             fwd_fxn = stnls_cuda.wpsum_bilin2d_forward
-        fwd_fxn(out_vid, counts, vid, weights, inds,
+        fwd_fxn(out_vid, counts, vid, weights, flows,
                 ps, stride0, pt, dilation, reflect_bounds, patch_offset)
         eps = 1e-10
+
+        # -- normalize --
+        H,W = vid.shape[-2:]
+        # print(counts)
+        counts = counts.view((1,1,1,1,H,W))
         out_vid = out_vid / (counts+eps)
         assert th.all(counts>1e-3)
 
         # -- backward --
-        ctx.save_for_backward(weights,inds,vid)
+        ctx.save_for_backward(weights,flows,vid,counts)
         ctx.vid_in_dim = vid_in_dim
+        ctx.itype = itype
         ctx.ps,ctx.pt = ps,pt
+        ctx.stride0 = stride0
         ctx.vid_shape = vid.shape
+        ctx.wshape = wshape
         ctx.dilation = dilation
         ctx.use_adj = use_adj
         ctx.reflect_bounds = reflect_bounds
@@ -88,49 +108,89 @@ class WeightedPatchSumFunction(th.autograd.Function):
     def backward(ctx, grad_out_vid):
 
         # -- unpack --
-        weights,inds,vid = ctx.saved_tensors
+        weights,flows,vid,counts = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
+        stride0 = ctx.stride0
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
         use_adj = ctx.use_adj
         reflect_bounds = ctx.reflect_bounds
         HD = ctx.nheads
+        itype = ctx.itype
         patch_offset = 0 if use_adj else -(ps//2)
 
-        # -- reshape --
-        grad_out_vid = rearrange(grad_out_vid,'b t (hd c) h w -> b hd t c h w',H=HD)
-        grad_out_vid = grad_out_vid.contiguous()
+        # -- normalize --
+        H,W = counts.shape[-2:]
+        grad_out_vid = grad_out_vid / counts.view(1,1,1,H,W)
+
+        # -- alloc --
+        grad_weights = th.zeros_like(weights)
+        grad_flows = th.zeros_like(flows) if itype == "float" else None
+        grad_in_vid = th.zeros_like(grad_out_vid)
+
+        # -- info --
+        # print("ps,stride0,pt,dilation,reflect_bounds,patch_offset: ",
+        #       ps,stride0,pt,dilation,reflect_bounds,patch_offset)
+
+        # th.cuda.synchronize()
+        # print(grad_out_vid[th.where(grad_out_vid>0)])
+        # print(grad_out_vid.sum())
+        # print(grad_weights[0,0])
 
         # -- video backward --
-        grad_in_vid = th.zeros_like(grad_out_vid)
-        stnls_cuda.wpsum_int_backward(grad_in_vid,grad_weights,
-                                      grad_out_vid,weights,inds,ps,stride0,pt,
-                                      dilation,reflect_bounds,patch_offset)
+        if itype == "int":
+            bwd_fxn = stnls_cuda.wpsum_int_backward
+            bwd_fxn(grad_in_vid,grad_weights,
+                    grad_out_vid,vid,weights,flows,
+                    ps,stride0,pt,dilation,
+                    reflect_bounds,patch_offset)
+        # elif not(flows.requires_grad):
+        #     bwd_fxn = stnls_cuda.wpsum_bilin2d_backward
+        #     bwd_fxn(grad_in_vid,grad_weights,
+        #             grad_out_vid,vid,weights,flows,
+        #             ps,stride0,pt,dilation,
+        #             reflect_bounds,patch_offset)
+        else:
+            bwd_fxn = stnls_cuda.wpsum_bilin2d_backward
+            bwd_fxn(grad_in_vid,grad_weights,grad_flows,
+                    grad_out_vid,vid,weights,flows,
+                    ps,stride0,pt,dilation,
+                    reflect_bounds,patch_offset)
 
-        # -- final shaping --
+        # print(th.where(grad_weights[0,0].abs()>0))
+        # print(grad_weights[th.where(grad_weights.abs()>0)])
+        # print(grad_out_vid.sum(),grad_weights.sum())
+
+        # -- shaping vid --
         vid_in_dim = ctx.vid_in_dim
         if vid_in_dim == 5:
             grad_in_vid = rearrange(grad_in_vid,'b hd t c h w -> b t (hd c) h w')
             grad_in_vid = grad_in_vid.contiguous()
-            # print("grad_in_vid.shape: ",grad_in_vid.shape)
 
-        return grad_in_vid,grad_weights,None,None,None,None,\
+        # -- shaping weight,flows --
+        grad_weights = grad_weights.reshape(ctx.wshape)
+        if ctx.itype == "float":
+            grad_flows = grad_flows.reshape(ctx.wshape+(3,))
+        else:
+            grad_flows = None
+
+        return grad_in_vid,grad_weights,grad_flows,None,None,None,\
             None,None,None,None,None,None,None,None,None
 
 class WeightedPatchSum(th.nn.Module):
-    # [video -> patches] @ inds
+    # [video -> patches] @ flows
 
     def __init__(self, ps, stride0, pt=1, dilation=1,
                  reflect_bounds=True, use_adj=False, itype="float"):
         super().__init__()
-        _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
+        _vars = ["ps","stride0","pt","dilation","reflect_bounds","use_adj","itype"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))
 
-    def forward(self, vid, weights, inds):
+    def forward(self, vid, weights, flows):
         inputs = [getattr(self,var) for var in self._vars]
-        vid_out = WeightedPatchSumFunction.apply(vid,weights,inds,*inputs)
+        vid_out = WeightedPatchSumFunction.apply(vid,weights,flows,*inputs)
         return vid_out
 
     def flops(self, nrefs, chnls_per_head, nheads, k):
@@ -155,12 +215,12 @@ class WeightedPatchSum(th.nn.Module):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def _apply(vid, weights, inds, ps, stride0,
+def _apply(vid, weights, flows, ps, stride0,
            pt=1, dilation=1,reflect_bounds=True, use_adj=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     fxn = WeightedPatchSumFunction.apply
-    return fxn(vid,weights,inds,ps,stride0,
+    return fxn(vid,weights,flows,ps,stride0,
                pt,dilation,reflect_bounds,use_adj)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-

@@ -22,8 +22,9 @@ void fill_non_local_patch_int(
     int* ref_patch, int* nl_patch, int* ref, int* nl, 
     bool* valid_ref, bool* valid_nl, bool valid,
     int patch_offset, int iftr, int ftr_start, int ftr_end,
-    int T, int H, int W, scalar_t pix, int qi, int ki){
+    int T, int H, int W, int qi, int ki){
 
+  scalar_t pix;
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
@@ -66,17 +67,19 @@ void fill_non_local_patch_int(
             valid_ref[3] = valid_ref[3] && valid_ref[bool_idx];
             valid_nl[3] = valid_nl[3] && valid_nl[bool_idx];
           }
-          valid = valid_ref[3] && valid_nl[3];
-          if (not valid) { continue; }
-          
+
           // -- add count --
           if ((ki == 0) && (ftr_start == 0) && (valid_ref[3]) && (ref[0] == 0)){
             atomicAdd(&(counts[ref[1]][ref[2]]),1);
           }
+          
+          // -- skip invalid pair --
+          valid = valid_ref[3] && valid_nl[3];
+          if (not valid) { continue; }
 
           // -- fill each channel --
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
-            scalar_t pix = weight*vid[nl[0]][iftr][nl[1]][nl[2]];
+            pix = weight*vid[nl[0]][iftr][nl[1]][nl[2]];
             atomicAdd(&(stack[ref[0]][iftr][ref[1]][ref[2]]),pix);
           }
 
@@ -102,8 +105,9 @@ void fill_non_local_patch_bwd_int(
     int* ref_patch, int* nl_patch, int* ref, int* nl, 
     bool* valid_ref, bool* valid_nl, bool valid,
     int patch_offset, int iftr, int ftr_start, int ftr_end,
-    int T, int H, int W, scalar_t pix, int qi, int ki){
+    int T, int H, int W, int qi, int ki){
 
+  scalar_t pix;
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
@@ -150,14 +154,16 @@ void fill_non_local_patch_bwd_int(
           if (not valid) { continue; }
           
           // -- fill each channel --
+          scalar_t acc = 0;
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
             scalar_t grad_stack_pix = grad_stack[ref[0]][iftr][ref[1]][ref[2]];//;/count;
             scalar_t pix = vid[nl[0]][iftr][nl[1]][nl[2]];///count;
             // scalar_t pix = stack[ref[0]][iftr][ref[1]][ref[2]];
             atomicAdd(&(grad_vid[nl[0]][iftr][nl[1]][nl[2]]),grad_stack_pix*weight);
-            atomicAdd(&(grad_weights[qi][ki]),grad_stack_pix*pix);
             // atomicAdd(&(grad_weights[qi][ki]),1);
+            acc += grad_stack_pix*pix;
           }
+          atomicAdd(&(grad_weights[qi][ki]),acc);
 
         }
       }

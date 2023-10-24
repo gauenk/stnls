@@ -15,6 +15,7 @@ stack # [B HD T F H W]
 
 
 # -- python --
+import math
 import torch as th
 import stnls
 from einops import rearrange
@@ -44,20 +45,27 @@ from einops import rearrange
 #     else:
 #         return inds
 
-def non_local_stack(vid,weights,flow,ps,stride0,itype="float"):
+def non_local_stack(vid,weights,flow,ps,stride0,reflect_bounds=True,itype="float"):
     # inds = stnls.utils.flow2inds(flow,stride0)
     if vid.ndim == 5:
         HD = flow.shape[1]
         vid = rearrange(vid,'b t (hd f) h w -> b hd t f h w',hd=HD)
     if itype == "int":
-        return non_local_stack_int(vid,weights,flow,ps,stride0)
+        return non_local_stack_int(vid,weights,flow,ps,stride0,reflect_bounds)
     else:
-        return non_local_stack_bilin2d(vid,weights,flow,ps,stride0)
+        return non_local_stack_bilin2d(vid,weights,flow,ps,stride0,reflect_bounds)
 
-def non_local_stack_int(vid,weights,inds,ps,stride0):
+def count_cond(bi,hi,ki,ti):
+    return (bi == 0) and (hi == 0) and (ki == 0) and (ti == 0)
+
+def illegal_hw(hi,wi,H,W):
+    return (hi > (H-1)) or (hi < 0) or (wi > (W-1)) or (wi < 0)
+
+def non_local_stack_int(vid,weights,inds,ps,stride0,reflect_bounds=True):
     B,HD,T,F,H,W = vid.shape
     B,HD,T,nH,nW,K,_ = inds.shape
     stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
+    counts = th.zeros((H,W))
     for bi in range(B):
         for hi in range(HD):
             for nt_i in range(T):
@@ -67,10 +75,16 @@ def non_local_stack_int(vid,weights,inds,ps,stride0):
                         ref_h = nh_i*stride0
                         ref_w = nw_i*stride0
                         for ki in range(K):
-                            prop_t = ref_t + inds[bi,hi,ti,nh_i,nw_i,ki,0]
+                            prop_t = ref_t + inds[bi,hi,nt_i,nh_i,nw_i,ki,0]
                             prop_t = int(prop_t)
-                            prop_h = ref_h + inds[bi,hi,ti,nh_i,nw_i,ki,1]
-                            prop_w = ref_w + inds[bi,hi,ti,nh_i,nw_i,ki,2]
+                            prop_h = ref_h + inds[bi,hi,nt_i,nh_i,nw_i,ki,1]
+                            prop_w = ref_w + inds[bi,hi,nt_i,nh_i,nw_i,ki,2]
+
+                            prop_t = bounds(prop_t,T)
+                            prop_h = bounds(prop_h,H)
+                            prop_w = bounds(prop_w,W)
+
+                            weight = weights[bi,hi,nt_i,nh_i,nw_i,ki]
 
                             for pi in range(ps):
                                 for pj in range(ps):
@@ -78,16 +92,29 @@ def non_local_stack_int(vid,weights,inds,ps,stride0):
                                     refW_ij = ref_w - (ps//2) + pj
                                     propH_ij = prop_h - (ps//2) + pi
                                     propW_ij = prop_w - (ps//2) + pj
-                                    val = vid[bi,hi,prop_t,:,propH_ij,propW_j]
-                                    stack[bi,hi,ki,ref_t,:,refH_ij,refW_ij] += val
+                                    if reflect_bounds:
+                                        propH_ij = bounds(propH_ij,H)
+                                        propW_ij = bounds(propW_ij,W)
+                                    if illegal_hw(refH_ij,refW_ij,H,W):
+                                        continue
+                                    if count_cond(bi,hi,ki,ref_t):
+                                        counts[refH_ij,refW_ij] += 1
+                                    if illegal_hw(propH_ij,propW_ij,H,W):
+                                        continue
+                                    val = vid[bi,hi,prop_t,:,propH_ij,propW_ij]
+                                    # val = read_bilin2d(vid[bi,hi,prop_t],
+                                    #                    propH_ij,propW_ij,H,W)
+                                    stack[bi,hi,ki,ref_t,:,refH_ij,refW_ij] += weight*val
 
+    stack = stack/counts.to(vid.device)
     return stack
 
 
-def non_local_stack_bilin2d(vid,weights,inds,ps,stride0):
+def non_local_stack_bilin2d(vid,weights,inds,ps,stride0,reflect_bounds=True):
     B,HD,T,nH,nW,K,_ = inds.shape
     B,HD,T,F,H,W = vid.shape
     stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
+    counts = th.zeros((H,W))
     for bi in range(B):
         for hi in range(HD):
             for nt_i in range(T):
@@ -102,22 +129,36 @@ def non_local_stack_bilin2d(vid,weights,inds,ps,stride0):
                             prop_w = ref_w + inds[bi,hi,nt_i,nh_i,nw_i,ki,2].item()
                             weight = weights[bi,hi,nt_i,nh_i,nw_i,ki]
 
+                            prop_t = bounds(prop_t,T)
+                            prop_h = bounds(prop_h,H)
+                            prop_w = bounds(prop_w,W)
+
                             for pi in range(ps):
                                 for pj in range(ps):
                                     refH_ij = ref_h - (ps//2) + pi
                                     refW_ij = ref_w - (ps//2) + pj
                                     propH_ij = prop_h - (ps//2) + pi
                                     propW_ij = prop_w - (ps//2) + pj
+                                    if reflect_bounds:
+                                        propH_ij = bounds(propH_ij,H)
+                                        propW_ij = bounds(propW_ij,W)
+                                    if illegal_hw(refH_ij,refW_ij,H,W):
+                                        continue
+                                    if count_cond(bi,hi,ki,ref_t):
+                                        counts[refH_ij,refW_ij] += 1
+                                    if illegal_hw(propH_ij,propW_ij,H,W):
+                                        continue
                                     val = read_bilin2d(vid[bi,hi,prop_t],
                                                        propH_ij,propW_ij,H,W)
                                     stack[bi,hi,ki,ref_t,:,refH_ij,refW_ij] += weight*val
 
+    stack = stack/counts.to(vid.device)
     return stack
 
 def bounds(val,lim):
     if val < 0:
         return -val
-    elif val >= lim:
+    elif val > (lim-1):
         return 2*(lim-1)-val
     else:
         return val
@@ -127,92 +168,15 @@ def read_bilin2d(vid,h,w,H,W):
     z = 0
     for i in range(2):
         for j in range(2):
-            hi = int(h + i)
-            wi = int(w + j)
+            hi = math.floor(h + i)
+            wi = math.floor(w + j)
             weight = (1 - abs(h - hi)) * (1 - abs(w - wi))
-            print(weight,hi,wi,h,w,abs(h-hi),abs(w-wi))
+            # print(weight,hi,wi,h,w,abs(h-hi),abs(w-wi))
+            z += weight
             hi = bounds(hi,H)
             wi = bounds(wi,W)
-            z += weight
             pix += weight * vid[:,hi,wi]
+    # print(z)
     assert z == 1
     return pix
 
-# class NonLocalStackGt(th.nn.Module):
-
-#     def __init__(self,ps=7,stride0=4,pt=1,reflect_bounds=True,dilation=1,use_adj=False,
-#                  off_H0=0,off_W0=0,off_H1=0,off_W1=0):
-#         super().__init__()
-#         _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj",
-#                  "off_H0","off_W0","off_H1","off_W1"]
-#         self._vars = _vars
-#         for var in _vars:
-#             setattr(self,var,eval(var))
-
-#     def forward(self, vid, weights, inds):
-
-#         # -- get 6-dim --
-#         HD = inds.shape[1]
-#         K = inds.shape[-2]
-#         # print("vid.shape,inds.shape: ",vid.shape,inds.shape)
-#         ndim = vid.ndim
-#         vid = ensure_ndim6(vid,HD)
-#         B,HD,T,F,H,W = vid.shape
-#         vshape = (B,T,F,H,W)
-#         # print("inds.shape: ",inds.shape)
-#         # print(vid[0,0,0,0,:5,:5])
-#         nH = (H-1)//self.stride0+1
-#         nW = (W-1)//self.stride0+1
-#         inds = get_inds(inds,"int")
-
-#         # -- get non-local patches --
-#         stack = []
-#         for hi in range(HD):
-
-#             # -- unfold --
-#             unfold = UnfoldK(ps=self.ps)
-#             # print("vid[:,hi].shape: ",vid[:,hi].shape)
-#             inds_h = inds[:,hi].contiguous()
-#             # shape_str = 'b (t nh nw) k tr -> b (t nw nh) k tr'
-#             # inds_h = rearrange(inds_h,shape_str,nh=nH,nw=nW)
-#             patches_h = unfold(vid[:,hi].contiguous(),inds_h)
-#             # print("patches_h.shape: ",patches_h.shape)
-#             # # print("vid[:,hi].shape,patches_h.shape: ",vid[:,hi].shape,patches_h.shape)
-#             # print(patches_h[0,0,0,0,0])
-#             # print(patches_h[0,1,0,0,0])
-#             # print(patches_h[0,2,0,0,0])
-
-#             # -- stack according to fold --
-#             stack_h = []
-#             for ki in range(K):
-
-#                 # -- pick weights --
-#                 _weights = weights[:,hi,:,ki,None,None,None,None]
-#                 # print("patches_h.shape: ",patches_h.shape)
-#                 # print("_weights.shape: ",_weights.shape)
-#                 wp = _weights * patches_h[:,:,ki]
-
-#                 # -- fold --
-#                 # fold = iFoldz(vshape,stride=self.stride0)
-#                 # _vid,_zvid = fold(wp[:,:,None].contiguous())
-
-#                 # -- fold v2 --
-#                 fold = NlFold(vshape,stride=self.stride0)
-#                 _vid = fold(wp)
-
-#                 # if ki == 0:
-#                 #     print("ki: ",ki)
-#                 #     print(_vid[0,0,0,30:34,30:34])
-#                 #     # print(_zvid[0,0,0,30:34,30:34])
-#                 # _vid = _vid / _zvid
-#                 # print("ki,p.shape,w.shape: ",
-#                 #       ki,patches_h[:,:,ki:ki+1].shape,_weights.shape)
-#                 stack_h.append(_vid)
-#             stack_h = th.stack(stack_h,1)
-#             stack.append(stack_h)
-
-#         stack = th.stack(stack,1)
-#         # stack = revert_ndim(stack,ndim)
-#         # print(stack.shape)
-
-#         return stack

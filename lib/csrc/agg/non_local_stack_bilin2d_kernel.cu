@@ -43,14 +43,12 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
 
     // -- indexing variables --
     int ref_patch[3];
-    scalar_t nl_patch[3];
     int ref[3];
+    scalar_t nl_patch[3];
     scalar_t nl[3];
-    scalar_t pix;
     bool valid;
     bool valid_ref[4];
     bool valid_nl[4];
-
   
     // -- location to fill --
     int qi = blockIdx.x*blockDim.x+threadIdx.x;
@@ -70,7 +68,6 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
       //----------------------------------
       //   Reference & Non-Local Pixel
       //----------------------------------
-
   
       // -- reference index --
       get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,H,W);
@@ -80,6 +77,10 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
       for (int _idx=0; _idx < 3; _idx++){
         nl_patch[_idx] = ref_patch[_idx]+inds[ibatch][ihead_i][qi][ki][_idx];
       }
+      nl_patch[0] = bounds(nl_patch[0],T);
+      nl_patch[1] = bounds(nl_patch[1],H);
+      nl_patch[2] = bounds(nl_patch[2],W);
+
   
       //----------------------------------
       //      Fill Non-Local Patch
@@ -94,7 +95,7 @@ __global__ void non_local_stack_bilin2d_forward_kernel(
                                              ref_patch,nl_patch,ref,nl,//nl_i,
                                              valid_ref,valid_nl,valid,
                                              patch_offset,ftr_start,ftr_end,
-                                             T,H,W,pix,qi,ki);
+                                             T,H,W,qi,ki);
 
     }
 
@@ -130,6 +131,7 @@ void non_local_stack_bilin2d_forward_cuda(
   blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));
   int ftrs_per_thread = (F-1)/ftr_threads+1;
 
+  // fprintf(stdout,"patch_offset: %d\n",patch_offset);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(vid.type(), "non_local_stack_bilin2d_forward_kernel", ([&] {
@@ -186,7 +188,6 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
     int ref[3];
     scalar_t nl[3];
     int nl_i[3];
-    scalar_t pix;
     bool valid;
     bool valid_nl[4];
     bool valid_ref[4];
@@ -220,6 +221,15 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
         nl_patch[_idx] = ref_patch[_idx]+inds[ibatch][ihead_i][qi][ki][_idx];
       }
 
+      // -- reflection with signs for backward step --
+      int signH,signW;
+      nl_patch[0] = bounds(nl_patch[0],T);
+      signH = check_bound(nl_patch[1],H) ? 1 : -1;
+      nl_patch[1] = bounds(nl_patch[1],H);
+      signW = check_bound(nl_patch[2],W) ? 1 : -1;
+      nl_patch[2] = bounds(nl_patch[2],W);
+
+
       //----------------------------------
       //      Fill Non-Local Patch
       //----------------------------------
@@ -235,7 +245,7 @@ __global__ void non_local_stack_bilin2d_backward_kernel(
                    ref_patch,nl_patch,ref,nl,nl_i,
                    valid_ref,valid_nl,valid,
                    patch_offset,iftr,ftr_start,ftr_end,
-                   T,H,W,pix,qi,ki);
+                   signH,signW,T,H,W,qi,ki);
 
 
     }

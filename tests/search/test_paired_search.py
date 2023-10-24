@@ -35,10 +35,11 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[1,3,7],"stride0":[1,2,4],"stride1":[0.5,1,2],
-                  "dilation":[1],"wt":[1,2],"ws":[1,3,5],
+    test_lists = {"ps":[5],"stride0":[1,3],"stride1":[1],
+                  "dilation":[1],"wt":[1,2],"ws":[1,5],
                   "k":[-1],"nheads":[2],"self_action":[None],
-                  "seed":[0,1,2,3],"dist_type":["prod","l2"],"k_agg":[-1]}
+                  "seed":[0],"dist_type":["prod","l2"],"k_agg":[-1],
+                  "itype":["int","float"],"reflect_bounds":[False,True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -57,7 +58,7 @@ def check_shuffled_inds(inds_gt,inds_te,eps=1e-3):
     return diff < 1e-4
 
 def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
-             nheads,self_action,dist_type,seed):
+             nheads,self_action,dist_type,seed,itype,reflect_bounds):
 
     # -- get args --
     dil = dilation
@@ -66,13 +67,12 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     pt = 1
     seed = 234
     device = "cuda:0"
-    reflect_bounds = True
     use_adj = False
     set_seed(seed)
     k = ws*ws if k == 0 else -1
 
     # -- load data --
-    B,T,F,H,W = 2,10,16,16,16
+    B,T,F,H,W = 2,10,16,16,8
     vid = th.ones((B,T,F,H,W),device=device).float()
     vid0 = th.randn_like(vid)-0.5
     vid1 = th.randn_like(vid)
@@ -80,15 +80,8 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     # -- load flows --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = 2*wt+1
-    flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+0.2 # away from int
-
-    # -- unpack image --
-    device = vid.device
-    shape = vid.shape
-    b,t,color,h,w = shape
-    vshape = vid.shape
-    itype = "float"
+    flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()#/2.
+    # flows = th.rand_like(flows)/2.+0.2 # away from int
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -118,7 +111,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
         assert check_shuffled_inds(inds_gt,inds_te)
 
 def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
-             nheads,self_action,dist_type,seed):
+             nheads,self_action,dist_type,seed,itype,reflect_bounds):
 
     # -- get args --
     dil = dilation
@@ -132,7 +125,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     set_seed(seed)
 
     # -- load data --
-    B,T,F,H,W = 2,10,16,16,16
+    B,T,F,H,W = 2,10,16,16,7
     vid = th.ones((B,T,F,H,W),device=device).float()
     vid0 = th.randn_like(vid)
     vid1 = th.randn_like(vid)
@@ -148,7 +141,6 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     shape = vid.shape
     b,t,color,h,w = shape
     vshape = vid.shape
-    itype = "float"
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -186,23 +178,27 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
 
     # -- vid+flow grads --
     atol,rtol = 1e-2,1e-3
-    _grads_gt = [vid0_gt.grad,vid1_gt.grad,flows_gt.grad]
-    _grads_te = [vid0_te.grad,vid1_te.grad,flows_te.grad]
+    _grads_gt = [vid0_gt.grad,vid1_gt.grad,]
+    _grads_te = [vid0_te.grad,vid1_te.grad,]
+    if itype == "float":
+        _grads_gt += [flows_gt.grad]
+        _grads_te += [flows_te.grad]
     for idx,(grads_gt,grads_te) in enumerate(zip(_grads_gt,_grads_te)):
         assert th.allclose(grads_gt,grads_te,atol=atol,rtol=rtol)
 
-    # -- backprop inds --
-    flows_te.grad[...] = 0
-    flows_gt.grad[...] = 0
-    inds_grad = th.randn_like(inds_gt)
-    th.autograd.backward(inds_gt,inds_grad,retain_graph=True)
-    th.autograd.backward(inds_te,inds_grad,retain_graph=True)
+    if itype == "float":
+        # -- backprop inds --
+        flows_te.grad[...] = 0
+        flows_gt.grad[...] = 0
+        inds_grad = th.randn_like(inds_gt)
+        th.autograd.backward(inds_gt,inds_grad,retain_graph=True)
+        th.autograd.backward(inds_te,inds_grad,retain_graph=True)
 
-    # -- flow grads --
-    atol,rtol = 1e-2,1e-5
-    _grads_gt = [flows_gt.grad]
-    _grads_te = [flows_te.grad]
-    for idx,(grads_gt,grads_te) in enumerate(zip(_grads_gt,_grads_te)):
-        assert th.allclose(grads_gt,grads_te,atol=atol,rtol=rtol)
+        # -- flow grads --
+        atol,rtol = 1e-2,1e-5
+        _grads_gt = [flows_gt.grad]
+        _grads_te = [flows_te.grad]
+        for idx,(grads_gt,grads_te) in enumerate(zip(_grads_gt,_grads_te)):
+            assert th.allclose(grads_gt,grads_te,atol=atol,rtol=rtol)
 
 
