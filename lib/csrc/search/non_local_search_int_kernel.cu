@@ -150,14 +150,12 @@ __global__ void non_local_search_int_forward_kernel(
 
           //  -- compute patch difference --
           if (valid){
-
             compute_dist_int<scalar_t,DIST_TYPE>(dist,
                          vid0[ibatch][ihead],vid1[ibatch][ihead],
                          ref_patch, prop_patch, 
                          ref_pix, prop_pix, valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
                          patch_offset,invalid,T,F,H,W);
-
           }
 
           // -- assignent --
@@ -215,6 +213,7 @@ void non_local_search_int_forward_cuda(
    // int patch_offset = adj - psHalf;
    int st_offset = W_t - flows.size(3);
    assert(st_offset <= 1);
+   // fprintf(stdout,"full_ws,reflect_bounds: %d,%d\n",full_ws,reflect_bounds);
 
    // launch kernel
    if (dist_type == 0){
@@ -311,10 +310,10 @@ __global__ void non_local_search_int_vid_backward_kernel(
     int nw = ref_patch[2]/stride0;
 
     // -- proposed location --
+    weight = grad_dists[ibatch][ihead][ti][nh][nw][ki];
     prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][ki][0];
     prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][ki][1];
     prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][ki][2];
-    weight = grad_dists[ibatch][ihead][ti][nh][nw][ki];
 
     // -- update patch --
     update_bwd_patch_int<scalar_t,DIST_TYPE>(
@@ -354,7 +353,7 @@ void non_local_search_int_vid_backward_cuda(
   // -- launch parameters --
   int ftr_threads = min(1,F);
   int ftrs_per_thread = (F-1)/ftr_threads+1;
-  dim3 threadsPerBlock(10,4,ftr_threads);
+  dim3 threadsPerBlock(32,16,ftr_threads);
   dim3 blocksPerGrid(1, 1, B*HD);
   blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));

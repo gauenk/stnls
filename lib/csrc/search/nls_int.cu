@@ -99,7 +99,6 @@ void update_bwd_patch_int(
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
-
       ref[0] = bounds(ref_patch[0]+pk,T);
       valid_ref[0] = check_interval(ref[0],0,T);
 

@@ -758,10 +758,10 @@ void bilin2d_interpolate(scalar_t& pix, scalar_t hi, scalar_t wi, int H, int W,
       w = w*max(0.,1-fabs(w_interp-wi));
 
       // -- ensure legal bounds --
-      // if (not check_bound(h_interp,H)){ continue;}
-      // if (not check_bound(w_interp,W)){ continue;}
-      h_interp = bounds(h_interp,H);
-      w_interp = bounds(w_interp,W);
+      if (not check_bound(h_interp,H)){ continue;}
+      if (not check_bound(w_interp,W)){ continue;}
+      // h_interp = bounds(h_interp,H);
+      // w_interp = bounds(w_interp,W);
 
 
       // -- update --
@@ -804,8 +804,10 @@ void bilin2d_assign_bwd(scalar_t& igradW, scalar_t& igradH, scalar_t& pix,
       bool leftW = jx==0;
 
       // -- legalize inds --
-      hi_interp = bounds(hi_interp,H);
-      wi_interp = bounds(wi_interp,W);
+      if (not check_bound(hi_interp,H)){ continue;}
+      if (not check_bound(wi_interp,W)){ continue;}
+      // hi_interp = bounds(hi_interp,H);
+      // wi_interp = bounds(wi_interp,W);
       
       // -- read video --
       vid_pix = vid[hi_interp][wi_interp];
@@ -847,10 +849,10 @@ void bilin2d_assign(scalar_t val, scalar_t hi, scalar_t wi, int H, int W,
       w = w*max(0.,1-fabs(w_interp-wi));
 
       // -- ensure legal bounds --
-      // if (not check_bound(h_interp,H)){ continue;}
-      // if (not check_bound(w_interp,W)){ continue;}
-      h_interp = bounds(h_interp,H);
-      w_interp = bounds(w_interp,W);
+      if (not check_bound(h_interp,H)){ continue;}
+      if (not check_bound(w_interp,W)){ continue;}
+      // h_interp = bounds(h_interp,H);
+      // w_interp = bounds(w_interp,W);
 
       atomicAdd(&tensor[h_interp][w_interp],w*val);
     }
@@ -892,10 +894,10 @@ void update_dFlows(scalar_t* dFlows, scalar_t dDists,
       gW = left_H ? -gW : gW;
 
       // -- ensure legal bounds --
-      // if (not check_bound(h_interp,H)){ continue;}
-      // if (not check_bound(w_interp,W)){ continue;}
-      h_interp = bounds(h_interp,H);
-      w_interp = bounds(w_interp,W);
+      if (not check_bound(h_interp,H)){ continue;}
+      if (not check_bound(w_interp,W)){ continue;}
+      // h_interp = bounds(h_interp,H);
+      // w_interp = bounds(w_interp,W);
 
       // -- read pixel --
       pix = vid1[h_interp][w_interp];

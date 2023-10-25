@@ -54,6 +54,9 @@ void compute_dist_bilin2d(scalar_t& dist,
           valid_ref[3] = valid_ref[3] && valid_ref[bool_idx];
           valid_prop[3] = valid_prop[3] && valid_prop[bool_idx];
         }
+        bool valid = valid_ref[3] && valid_prop[3];
+        if (not valid) { continue; }
+
 
         // -- set time --
         prop_i[0] = __float2int_rn(prop[0]);
@@ -65,7 +68,11 @@ void compute_dist_bilin2d(scalar_t& dist,
           pix0 = valid_ref[3] ? vid0[ref[0]][ci][ref[1]][ref[2]] : 0;
 
           // -- interpolate pixel value --
-          bilin2d_interpolate(pix1, prop[1], prop[2], H, W, vid1[prop_i[0]][ci]);
+          if (valid_prop[3]){
+            bilin2d_interpolate(pix1, prop[1], prop[2], H, W, vid1[prop_i[0]][ci]);
+          }else{
+            pix1 = 0;
+          }
 
           // -- compute dist --
           if(DIST_TYPE == 0){ // product
@@ -102,9 +109,7 @@ void update_bwd_patch_bilin2d(
     scalar_t dDists;
     for (int pk = 0; pk < pt; pk++){
 
-
       // -- ref patch --
-
       ref[0] = bounds(ref_patch[0]+pk,T);
       valid_ref[0] = check_interval(ref[0],0,T);
 
@@ -153,10 +158,8 @@ void update_bwd_patch_bilin2d(
           // -- fill each channel --
           for (iftr = ftr_start; iftr < ftr_end; iftr++){
             
-            // -- reference value --
+            // -- read --
             pix0 = vid0[ref[0]][iftr][ref[1]][ref[2]];
-  
-            // -- interpolate pixel value --
             bilin2d_interpolate(pix1, prop[1], prop[2], H, W, vid1[prop_i[0]][iftr]);
 
             // -- update vid0 --
@@ -171,7 +174,7 @@ void update_bwd_patch_bilin2d(
             if (DIST_TYPE == 0){ // prod
               dDists = weight * pix0;
             }else if(DIST_TYPE == 1){ // l2 norm
-              dDists = - dDists;
+              dDists = -dDists;
             }
             bilin2d_assign(dDists,prop[1],prop[2],H,W,grad_vid1[prop_i[0]][iftr]);
 
@@ -204,7 +207,6 @@ void update_bwd_bilin2d_vidflows(
     for (int pk = 0; pk < pt; pk++){
 
       // -- ref patch --
-
       ref[0] = bounds(ref_patch[0]+pk,T);
       valid_ref[0] = check_interval(ref[0],0,T);
 
@@ -221,7 +223,7 @@ void update_bwd_bilin2d_vidflows(
 
         // -- prop patch --
         prop[1] = prop_patch[1]+dilation*(pi + patch_offset);
-        signH = 1;//(check_interval(prop[1],0,H) and reflect_bounds) ? signH_in : -signH_in;
+        signH = check_interval(prop[1],0,H) ? signH_in : -signH_in;
         prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
         valid_prop[1] = check_interval(prop[1],0,H);
 
@@ -234,7 +236,7 @@ void update_bwd_bilin2d_vidflows(
 
           // -- prop patch --
           prop[2] = prop_patch[2]+dilation*(pj + patch_offset);
-          signW = 1;//(check_interval(prop[2],0,W) and reflect_bounds) ? signW_in : -signW_in;
+          signW = check_interval(prop[2],0,W) ? signW_in : -signW_in;
           prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
           valid_prop[2] = check_interval(prop[2],0,W);
 

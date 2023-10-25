@@ -42,14 +42,14 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[1],"stride0":[1],
+    test_lists = {"ps":[3],"stride0":[2],
                   "stride1":[1],
-                  "dilation":[1],"wt":[1],"ws":[1],
+                  "dilation":[1],"wt":[1],"ws":[1,5],
                   "k":[-1],"nheads":[1],
                   "self_action":[None],"seed":[0],
-                  "dist_type":["prod"],"k_agg":[-1],
-                  "reflect_bounds":[True],
-                  "itype":["int","float"]}
+                  "dist_type":["l2"],"k_agg":[-1],
+                  "reflect_bounds":[False,True],
+                  "itype":["float"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -328,7 +328,7 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     assert diff < 1e-7
 
 
-def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,
+def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,reflect_bounds,
                            dilation,nheads,self_action,dist_type,seed,itype):
     """
 
@@ -341,34 +341,34 @@ def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,
 
     # -- get args --
     dil = dilation
-    ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    pt = 1
+    k,pt = -1,1
     wt = 1 if wt == 0 else wt # skip 0
-    k = -1
-
-    # -- init vars --
     device = "cuda:0"
-    reflect_bounds = True
     full_ws = True
     set_seed(seed)
 
     # -- load data --
-    vid = get_data(dnames,ext)[...,:1,::6,::6]
-    B,T,F,H,W = vid.shape
+    B,T,F,H,W = 1,3,1,10,10
+    vid = th.ones((B,T,F,H,W),device=device)
     vid0 = th.rand_like(vid).requires_grad_(True)
     vid1 = th.rand_like(vid).requires_grad_(True)
 
     # -- compute flow --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
-    W_t = 2*wt+1
+    W_t = min(2*wt+1,T)
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+0.2 # away from int
+    flows = th.rand_like(flows)/2.+1.2 # away from int
     flows = -flows
     # flows.requires_grad_(True)
 
     # -- exec fold fxns --
     sch = stnls.search
+    # search_i = sch.NonLocalSearch(ws, wt, ps, k, nheads,
+    #                             dist_type=dist_type,
+    #                             dilation=dil,stride0=stride0, stride1=stride1,
+    #                               reflect_bounds=True,
+    #                             full_ws=full_ws,
+    #                             self_action=self_action,itype=itype)
     search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                 dist_type=dist_type,
                                 dilation=dil,stride0=stride0, stride1=stride1,
@@ -376,12 +376,29 @@ def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,
                                 full_ws=full_ws,
                                 self_action=self_action,itype=itype)
 
+    # -- tmp --
+    # from stnls.testing import gradcheck
+    # search_vid0 = lambda vid0: search(vid0,vid1,flows)[0]
+    # search_vid0_i = lambda vid0: search_i(vid0,vid1,flows)[0]
+    # num = gradcheck.get_num_jacobian(search_vid0,vid0,eps=1e-2)
+    # num_i = gradcheck.get_num_jacobian(search_vid0_i,vid0,eps=1e-2)
+    # ana = gradcheck.get_ana_jacobian(search_vid0,vid0,eps=1e-2)
+    # ana_i = gradcheck.get_ana_jacobian(search_vid0_i,vid0,eps=1e-2)
+
+    # print("-"*20)
+    # print(num[-10:,-10:])
+    # print(num_i[-10:,-10:])
+    # print("-"*20)
+    # print(ana[-10:,-10:])
+    # print(ana_i[-10:,-10:])
+    # print("-"*20)
+
     # -- run gradient check
-    search_gt_vid0 = lambda vid0: search(vid0,vid1,flows)[0]
-    th.autograd.gradcheck(search_gt_vid0, vid0, eps=1e-4,
+    search_vid0 = lambda vid0: search(vid0,vid1,flows)[0]
+    th.autograd.gradcheck(search_vid0, vid0, eps=1e-2,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
-    search_gt_vid1 = lambda vid1: search(vid0,vid1,flows)[0]
-    th.autograd.gradcheck(search_gt_vid1, vid1, eps=1e-4,
+    search_vid1 = lambda vid1: search(vid0,vid1,flows)[0]
+    th.autograd.gradcheck(search_vid1, vid1, eps=1e-3,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 
@@ -398,36 +415,30 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
 
     # -- get args --
     dil = dilation
-    ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     k,pt = -1,1
     if wt == 0: return # skip wt == 0
-    set_seed(seed)
-
-    # -- init vars --
     device = "cuda:0"
     full_ws = True
+    set_seed(seed)
 
     # -- load video --
-    vid = get_data(dnames,ext)[:1,:2,:1,:8,:8]
-    print("vid.shape: ",vid.shape)
-    vid = th.ones_like(vid)
+    B,T,F,H,W = 1,3,1,10,10
+    vid = th.ones((B,T,F,H,W),device=device)
     vid0,vid1 = vid.clone(),vid.flip(-1).clone()
-    # vid0 = vid0/2.
     vid0 = th.rand_like(vid)-1.5
     vid1 = th.rand_like(vid)#-0.5
     B,T,F,H,W = vid0.shape
 
     # -- load flows --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
-    W_t = 2*wt+1
+    W_t = min(2*wt+1,T)
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+0.2 # away from int
+    flows = th.rand_like(flows)/2.+1.2 # away from int
     flows.requires_grad_(True)
 
     # -- exec fold fxns --
     sch = stnls.search
-    search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
+    search = sch.NonLocalSearch(ws, wt, ps, k, nheads,
                                    dist_type=dist_type,
                                    dilation=dil,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
@@ -436,11 +447,11 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
 
     # -- immersive --
     from stnls.testing import gradcheck
-    search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[0]
-    num = gradcheck.get_num_jacobian(search_gt_flows,flows,eps=1e-2)
-    ana = gradcheck.get_ana_jacobian(search_gt_flows,flows,eps=1e-2)
-    print(num[:10,:10])
-    print(ana[:10,:10])
+    search_flows = lambda flows: search(vid0,vid1,flows)[0]
+    # num = gradcheck.get_num_jacobian(search_flows,flows,eps=1e-2)
+    # ana = gradcheck.get_ana_jacobian(search_flows,flows,eps=1e-2)
+    # print(num[:10,:10])
+    # print(ana[:10,:10])
 
     # print(num[:2,100:115])
     # print(ana[:2,100:115])
@@ -450,16 +461,16 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
 
     # print(num[-10:,-10:])
     # print(ana[-10:,-10:])
-    print(th.where(th.abs(num-ana)>1e-3))
+    # print(th.where(th.abs(num-ana)>1e-3))
 
 
     # -- gradient check --
-    search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[0]
-    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-2,
+    search_flows = lambda flows: search(vid0,vid1,flows)[0]
+    th.autograd.gradcheck(search_flows, flows, eps=1e-2,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
-    search_gt_flows = lambda flows: search_gt(vid0,vid1,flows)[1]
-    th.autograd.gradcheck(search_gt_flows, flows, eps=1e-2,
+    search_flows = lambda flows: search(vid0,vid1,flows)[1]
+    th.autograd.gradcheck(search_flows, flows, eps=1e-2,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 

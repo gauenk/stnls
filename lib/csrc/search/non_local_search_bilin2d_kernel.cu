@@ -89,13 +89,16 @@ __global__ void non_local_search_bilin2d_forward_kernel(
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
 
+
     // -- pixel location from query index --
     get_pixel_loc<int>(ref_patch,qi,stride0,nW,nHW,H,W);
     n_hi = ref_patch[1] / stride0;
     n_wi = ref_patch[2] / stride0;
 
+
     // -- check bounds of pixel location --
-    check_bounds<int>(valid_ref_patch,ref_patch,T,H,W);
+    // check_bounds<int>(valid_ref_patch,ref_patch,T,H,W);
+    valid_ref_patch = true;
 
     // -- temporal search bounds --
     set_time_range(t_max, ref_patch[0], T, wt);
@@ -141,6 +144,7 @@ __global__ void non_local_search_bilin2d_forward_kernel(
       //          spatial searching
       // ---------------------------------------
 
+
       // -- search across space --
       for (int _xi = 0; _xi < ws_per_thread; _xi++){
         ws_i = threadIdx.x + blockDim.x*_xi;
@@ -158,9 +162,9 @@ __global__ void non_local_search_bilin2d_forward_kernel(
           // -- init dist --
           dist = 0;
 
+
           //  -- compute patch difference --
           if (valid){
-
               compute_dist_bilin2d<scalar_t,DIST_TYPE>(dist,
                            vid0[ibatch][ihead],vid1[ibatch][ihead],
                            ref_patch, prop_patch, 
@@ -231,6 +235,7 @@ void non_local_search_bilin2d_forward_cuda(
    // fprintf(stdout,"ws_h,ws_w: %d,%d\n",ws_h,ws_w);
    // fprintf(stdout,"nquery_blocks,B,HD: %d,%d,%d\n",nquery_blocks,B,HD);
    // fprintf(stdout,"full_ws,full_ws_time: %d,%d\n",full_ws,full_ws_time);
+   // fprintf(stdout,"full_ws,reflect_bounds: %d,%d\n",full_ws,reflect_bounds);
 
    // launch kernel
    if (dist_type == 0){
@@ -313,10 +318,9 @@ __global__ void nls_bwd_vid_kernel(
   int iftr;
   bool valid_prop_patch;
 
-
   // -- location to fill --
-  int i0 = blockIdx.x*blockDim.x+threadIdx.x;
-  int i1 = blockIdx.y*blockDim.y+threadIdx.y;
+  int qi = blockIdx.x*blockDim.x+threadIdx.x;
+  int ki = blockIdx.y*blockDim.y+threadIdx.y;
   int ihead = blockIdx.z/B;
   int ibatch = (blockIdx.z-ihead*B) % B;
 
@@ -324,22 +328,23 @@ __global__ void nls_bwd_vid_kernel(
   int ftr_start = threadIdx.z * ftrs_per_thread;
   int ftr_end = min(F,ftr_start + ftrs_per_thread);
 
+
   // -- each region --
-  if ((i0 < Q) && (i1 < K)){
+  if ((qi < Q) && (ki < K)){
 
     // -- full-resolution video query index --
-    get_pixel_loc(ref_patch,i0,stride0,nW,nHW,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW,nHW,H,W);
     int ti = ref_patch[0];
     int nh = ref_patch[1]/stride0;
     int nw = ref_patch[2]/stride0;
 
     // -- read from tensors --
-    weight = grad_dists[ibatch][ihead][ti][nh][nw][i1];
-    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][i1][0];
-    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][i1][1];
-    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][i1][2];
-    check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
-    if (not valid_prop_patch){ return; }
+    weight = grad_dists[ibatch][ihead][ti][nh][nw][ki];
+    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][ki][0];
+    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][ki][1];
+    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][ki][2];
+    // check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
+    // if (not valid_prop_patch){ return; }
     
     // -- update vid0,vid1 --
     update_bwd_patch_bilin2d<scalar_t,DIST_TYPE>(
@@ -402,6 +407,7 @@ void non_local_search_bilin2d_vid_backward_cuda(
   //         BHD,nblocks_queries,chnls_nblocks);
   // fprintf(stdout,"query_nthreads,neigh_nthreads: %d,%d\n",
   //         query_nthreads,neigh_nthreads);
+  // fprintf(stdout,"reflect_bounds: %d\n",reflect_bounds);
   // int W_t = dists.size(3);
   // int wt = (W_t-1)/2;
 
@@ -489,10 +495,9 @@ __global__ void nls_bwd_vidflows_kernel(
   scalar_t iweight[2];
   int iftr;
 
-
   // -- location to fill --
-  int i0 = blockIdx.x*blockDim.x+threadIdx.x;
-  int i1 = blockIdx.y*blockDim.y+threadIdx.y;
+  int qi = blockIdx.x*blockDim.x+threadIdx.x;
+  int ki = blockIdx.y*blockDim.y+threadIdx.y;
   int ihead = blockIdx.z/B;
   int ihead_f = ihead % HD_f;
   int ibatch = (blockIdx.z-ihead*B) % B;
@@ -502,29 +507,28 @@ __global__ void nls_bwd_vidflows_kernel(
   int ftr_end = min(F,ftr_start + ftrs_per_thread);
 
   // -- each region --
-  if ((i0 < Q) && (i1 < K)){
+  if ((qi < Q) && (ki < K)){
 
     // -- full-resolution video query index --
-    get_pixel_loc(ref_patch,i0,stride0,nW,nHW,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW,nHW,H,W);
     int ti = ref_patch[0];
     int nh = ref_patch[1]/stride0;
     int nw = ref_patch[2]/stride0;
 
     // -- read from tensors --
-    weight = grad_dists[ibatch][ihead][ti][nh][nw][i1];
-    iweight[0] = grad_inds[ibatch][ihead][ti][nh][nw][i1][1];
-    iweight[1] = grad_inds[ibatch][ihead][ti][nh][nw][i1][2];
-    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][i1][0];
-    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][i1][1];
-    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][i1][2];
+    weight = grad_dists[ibatch][ihead][ti][nh][nw][ki];
+    iweight[0] = grad_inds[ibatch][ihead][ti][nh][nw][ki][1];
+    iweight[1] = grad_inds[ibatch][ihead][ti][nh][nw][ki][2];
+    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][ki][0];
+    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][ki][1];
+    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][ki][2];
 
     // -- update sign --
     // int signH = check_bound(prop_patch[1],H) ? 1 : -1;
     // int signW = check_bound(prop_patch[2],W) ? 1 : -1;
-    prop_patch[0] = bounds(prop_patch[0],T);
-    prop_patch[1] = bounds(prop_patch[1],H);
-    prop_patch[2] = bounds(prop_patch[2],W);
-
+    // prop_patch[0] = bounds(prop_patch[0],T);
+    // prop_patch[1] = bounds(prop_patch[1],H);
+    // prop_patch[2] = bounds(prop_patch[2],W);
 
     check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
     if (not valid_prop_patch){ return; }
@@ -568,6 +572,7 @@ __global__ void nls_bwd_vidflows_kernel(
     // signW = 1;
     bwd_flow_assign(acc_dFlows,nh,nw,signH,signW,
                     grad_flows[ibatch][ihead_f][ref_patch[0]][si]);
+
 
 
     // -- update grad_flows from grad_inds --

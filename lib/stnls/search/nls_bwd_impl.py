@@ -38,6 +38,7 @@ def nls_backward(ctx, grad_dists, grad_inds):
     # -- ensure contiguous & type --
     inds = get_inds(inds,ctx.itype)
     patch_offset = 0 if ctx.use_adj else -(ctx.ps//2)
+    reflect_bounds = ctx.reflect_bounds
 
     # -- backward pass with increasing complexity --
     if ctx.itype == "int":
@@ -45,20 +46,20 @@ def nls_backward(ctx, grad_dists, grad_inds):
         bwd_fxn(grad_vid0,grad_vid1,
                 vid0,vid1,grad_dists,inds,
                 ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
+                reflect_bounds,patch_offset,ctx.dist_type_i)
     elif not(flows.requires_grad):
         bwd_fxn = stnls_cuda.non_local_search_bilin2d_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,
                 grad_dists,inds,
                 ctx.wt,ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
+                reflect_bounds,patch_offset,ctx.dist_type_i)
     else:
         bwd_fxn = stnls_cuda.non_local_search_bilin2d_vidflows_backward
         bwd_fxn(grad_vid0,grad_vid1,grad_flows,
                 vid0,vid1,flows,
                 grad_dists,grad_inds,dists,inds,
                 ctx.wt,ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
+                reflect_bounds,patch_offset,ctx.dist_type_i)
 
     # -- finalize shape --
     grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')
