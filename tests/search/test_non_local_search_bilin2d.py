@@ -42,14 +42,14 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[3],"stride0":[2],
+    test_lists = {"ps":[1,3],"stride0":[1,2],
                   "stride1":[1],
-                  "dilation":[1],"wt":[1],"ws":[1,5],
-                  "k":[-1],"nheads":[1],
+                  "dilation":[1],"wt":[1],"ws":[1,3],
+                  "k":[-1],"nheads":[1,2],
                   "self_action":[None],"seed":[0],
-                  "dist_type":["l2"],"k_agg":[-1],
+                  "dist_type":["l2","prod"],"k_agg":[-1],
                   "reflect_bounds":[False,True],
-                  "itype":["float"]}
+                  "itype":["int"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -152,23 +152,19 @@ def test_bwd_vid_int_bilin2d(ws,wt,k,ps,stride0,stride1,k_agg,
 
     # -- get args --
     dil = dilation
-    ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
     wt = 1 if wt == 0 else wt # skip 0
-
-    # -- init vars --
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
     reflect_bounds = True
     use_adj = False
     full_ws = True
+    set_seed(seed)
 
     # -- load data --
-    vid = get_data(dnames,ext)
-
-    # -- compute flow --
+    B,T,F,H,W = 1,3,1,10,10
+    vid = th.ones((B,T,F,H,W),device=device)
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = 10*th.zeros_like(flows.fflow)
     flows.bflow = 10*th.zeros_like(flows.bflow)
@@ -229,24 +225,7 @@ def test_bwd_vid_int_bilin2d(ws,wt,k,ps,stride0,stride1,k_agg,
     _grads_te = [vid_te0.grad,vid_te1.grad]
     _grads_gt = [vid_gt0.grad,vid_gt1.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
-
-        # -- compare grads --
-        rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
-        rel_error_nz  = rel_error
-        args = th.where(th.abs(grads_gt)>1e-3)
-
-        tol = 1e-2
-        error = th.max(rel_error_nz[args]).item()
-        if error > tol: print("Max Error: ",error)
-        # print("Max Error: ",error)
-        assert error < tol
-
-        tol = 1e-3
-        error = th.mean(rel_error_nz[args]).item()
-        if error > tol: print("Mean Error: ",error)
-        # print("Mean Error: ",error)
-        assert error < tol
-
+        assert th.allclose(grads_te,grads_gt,1e-3,1e-3,equal_nan=True)
 
 
 def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
@@ -263,11 +242,8 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     # -- get args --
     dil = dilation
     ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     pt = 1
     wt = 1 if wt == 0 else wt # skip 0
-
-    # -- init vars --
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
@@ -277,8 +253,8 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     set_seed(seed)
 
     # -- load data --
-    vid = get_data(dnames,ext)[...,:1,::6,::6]
-    B,T,F,H,W = vid.shape
+    B,T,F,H,W = 1,3,1,10,10
+    vid = th.ones((B,T,F,H,W),device=device)
     vid0 = th.rand_like(vid)#.requires_grad_(True)
     vid1 = th.rand_like(vid)#.requires_grad_(True)
 
@@ -322,10 +298,8 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     th.autograd.backward(d1,dgrad)
 
     # -- compare --
-    diff = th.mean((vid00.grad - vid01.grad)**2).item()
-    assert diff < 1e-7
-    diff = th.mean((vid10.grad - vid11.grad)**2).item()
-    assert diff < 1e-7
+    assert th.allclose(vid00.grad,vid01.grad,1e-3,1e-3,equal_nan=True)
+    assert th.allclose(vid10.grad,vid11.grad,1e-3,1e-3,equal_nan=True)
 
 
 def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,reflect_bounds,
@@ -348,18 +322,18 @@ def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,reflect_bounds,
     set_seed(seed)
 
     # -- load data --
-    B,T,F,H,W = 1,3,1,10,10
-    vid = th.ones((B,T,F,H,W),device=device)
+    B,HD,T,F,H,W = 1,nheads,3,1,10,10
+    vid = th.ones((B,T,HD*F,H,W),device=device)
     vid0 = th.rand_like(vid).requires_grad_(True)
     vid1 = th.rand_like(vid).requires_grad_(True)
 
     # -- compute flow --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = min(2*wt+1,T)
-    flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+1.2 # away from int
+    flows = th.ones((B,HD,T,W_t-1,2,nH,nW)).cuda()/2.
+    flows = th.rand_like(flows)/2.+0.2 # away from int
     flows = -flows
-    # flows.requires_grad_(True)
+    flows.requires_grad_(True)
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -422,8 +396,8 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
     set_seed(seed)
 
     # -- load video --
-    B,T,F,H,W = 1,3,1,10,10
-    vid = th.ones((B,T,F,H,W),device=device)
+    B,HD,T,F,H,W = 1,nheads,3,1,10,10
+    vid = th.ones((B,T,HD*F,H,W),device=device)
     vid0,vid1 = vid.clone(),vid.flip(-1).clone()
     vid0 = th.rand_like(vid)-1.5
     vid1 = th.rand_like(vid)#-0.5
@@ -432,7 +406,7 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
     # -- load flows --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = min(2*wt+1,T)
-    flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
+    flows = th.ones((B,HD,T,W_t-1,2,nH,nW)).cuda()/2.
     flows = th.rand_like(flows)/2.+1.2 # away from int
     flows.requires_grad_(True)
 

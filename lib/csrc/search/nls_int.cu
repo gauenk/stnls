@@ -55,6 +55,9 @@ void compute_dist_int(scalar_t& dist,
           valid_prop[3] = valid_prop[3] && valid_prop[bool_idx];
         }
 
+        bool valid = valid_ref[3] && valid_prop[3];
+        if (not valid) { continue; }
+
         // -- fill each channel --
         for (int ci = 0; ci < C; ci++){
 

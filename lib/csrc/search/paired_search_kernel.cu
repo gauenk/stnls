@@ -286,9 +286,6 @@ __global__ void paired_search_bilin2d_forward_kernel(
   bool valid_ref[3];
   bool valid_prop[3];
 
-  // -- cleaner code --
-  // int center_offsets[4] = {off_H0,off_H1,off_W0,off_W1};
-
   // -- indexing --
   scalar_t dist,pix0,pix1;
 
@@ -341,7 +338,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
 
         // -- init dist --
         dist = 0;
-
+        // Z = 0;
 
         //  -- compute patch difference --
         if (valid){
@@ -350,6 +347,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
                        ref_patch, prop_patch, ref_pix, prop_pix,// prop_i,
                        valid_ref, valid_prop, ps,dilation,reflect_bounds,
                        patch_offset,invalid,C,H,W);
+          // dist /= Z;
         }
 
 

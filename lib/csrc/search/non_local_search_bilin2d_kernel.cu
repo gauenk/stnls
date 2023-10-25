@@ -78,7 +78,6 @@ __global__ void non_local_search_bilin2d_forward_kernel(
   // -- indexing --
   scalar_t dist;
 
-
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
     //---------------------------

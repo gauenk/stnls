@@ -101,7 +101,6 @@ __global__ void non_local_search_int_forward_kernel(
       int st_i = threadIdx.z + blockDim.z*_zi;
       if (st_i >= W_t){ continue; }
 
-
       // ---------------------------------------
       //       compute search center
       // ---------------------------------------

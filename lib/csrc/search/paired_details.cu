@@ -31,7 +31,7 @@ using namespace at;
 
 template<typename scalar_t, int DIST_TYPE>
 __device__ __forceinline__ 
-void compute_dist_2d(scalar_t& dist,
+void compute_dist_2d(scalar_t& dist, //int Z,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame0,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame1,
   int* ref_patch, int* prop_patch, int* ref, int* prop,
@@ -40,6 +40,7 @@ void compute_dist_2d(scalar_t& dist,
   int patch_offset, scalar_t invalid, int F, int H, int W){
                   
   scalar_t pix0,pix1,_dist;
+  // Z = 0;
   for (int pi = 0; pi < ps; pi++){
 
     // -- ref height --
@@ -72,6 +73,9 @@ void compute_dist_2d(scalar_t& dist,
         valid_ref[2] = valid_ref[2] && valid_ref[bool_idx];
         valid_prop[2] = valid_prop[2] && valid_prop[bool_idx];
       }
+      bool valid = valid_ref[2] and valid_prop[2];
+      if (not valid){ continue; }
+      // Z += 1;
 
       // -- fill each channel --
       for (int ci = 0; ci < F; ci++){
@@ -288,6 +292,7 @@ void update_bwd_bilin2d_patch_2d(
     int prop_i[2];
     scalar_t prop[2];
     int F = frame0.size(0);
+    int signH,signW;
 
     for (int pi = 0; pi < ps; pi++){
 
@@ -298,6 +303,7 @@ void update_bwd_bilin2d_patch_2d(
 
       // -- prop patch --
       prop[0] = prop_patch[0]+dilation*(pi + patch_offset);
+      signH = check_interval(prop[0],0,H) ? 1 : -1;
       prop[0] = reflect_bounds ? bounds(prop[0],H) : prop[0];
       valid_prop[0] = check_interval(prop[0],0,H);
 
@@ -310,6 +316,7 @@ void update_bwd_bilin2d_patch_2d(
 
         // -- prop patch --
         prop[1] = prop_patch[1]+dilation*(pj + patch_offset);
+        signW = check_interval(prop[1],0,W) ? 1 : -1;
         prop[1] = reflect_bounds ? bounds(prop[1],W) : prop[1];
         valid_prop[1] = check_interval(prop[1],0,W);
 
@@ -350,7 +357,7 @@ void update_bwd_bilin2d_patch_2d(
           bilin2d_assign(dDists,prop[0],prop[1],H,W,grad_frame1[iftr]);
 
           // -- update accumulated dflows --
-          update_dFlows(acc_dFlows,dDists,prop[0],prop[1],H,W,frame1[iftr]);
+          update_dFlows(acc_dFlows,dDists,prop[0],prop[1],H,W,signH,signW,frame1[iftr]);
 
         }
       }
