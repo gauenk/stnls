@@ -57,7 +57,10 @@ def nls_forward(vid0, vid1, flows,
 
     # -- forward --
     if itype == "int":
-        flows = flows.round().int()
+        if flows.dtype != th.int:
+            flows = flows.round().int()
+        else:
+            flows = flows.int()
         inds = inds.int()
         stride1 = max(1,int(stride1))
         fwd_fxn = stnls_cuda.non_local_search_int_forward
