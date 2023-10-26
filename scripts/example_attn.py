@@ -35,8 +35,8 @@ flows = stnls.nn.search_flow(fflow,bflow,wt,stride0)
 search = stnls.search.NonLocalSearch(ws,wt,ps,K,nheads=HD,
                                      stride0=stride0,stride1=stride1,
                                      self_action="anchor",itype="float")
-dists,inds = search(q_vid,k_vid,flows)
-# print(inds.shape) # B,HD,T,nH,nW,K,3
+dists,srch_flows = search(q_vid,k_vid,flows)
+# print(srch_flows.shape) # B,HD,T,nH,nW,K,3; nH=(H-1)//stride0+1
 
 # -- normalize --
 weights = th.nn.functional.softmax(10*dists,-1)
@@ -44,7 +44,7 @@ weights = th.nn.functional.softmax(10*dists,-1)
 # -- aggregate --
 ps = 5 # patch size can change for stacking
 stack = stnls.tile.NonLocalStack(ps,stride0)
-stacked = stack(v_vid,weights,inds)
+stacked = stack(v_vid,weights,srch_flows)
 # stacked.shape = (B,HD,K,T,F',H,W) where F' = F/HD
 V_out = rearrange(stacked,'b hd k t f h w -> (b t) (hd f) k h w')
 proj_weights = th.randn((F,F,K,1,1),device=device)
