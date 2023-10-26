@@ -222,7 +222,7 @@ class non_local_stack(th.autograd.Function):
         # print(grad_stack[0,0,0,0,0,30:34,30:34])
         B,HD,T,C,H,W = grad_vid.shape
         eps = 1e-10
-        grad_stack = grad_stack / (counts+eps)
+        grad_stack = grad_stack / (counts.view(B,HD,1,1,1,H,W)+eps)
         if ctx.itype == "int":
             fwd_fxn = stnls_cuda.non_local_stack_int_backward
             fwd_fxn(grad_vid,grad_weights,grad_stack,
