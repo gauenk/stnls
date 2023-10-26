@@ -72,7 +72,7 @@ class accumulate_flow_th(th.autograd.Function):
                                             fflow,bflow,pfflow,pbflow,
                                             ctx.stride0)
         grad_bflow = grad_bflow.flip(1)
-        print("none check: ",grad_fflow is None,grad_bflow is None)
+        # print("none check: ",grad_fflow is None,grad_bflow is None)
 
         return grad_fflow,grad_bflow,None
 

@@ -43,21 +43,21 @@ def run_compare(tensor_gt,tensor_te,mean_tol,max_tol,small_tol=1e-3):
     cond_b = tensor_gt.abs() > small_tol
     args0 = th.where(th.logical_and(cond_a,cond_b)) # remove all inf
     diff = th.abs(tensor_te - tensor_gt) / (tensor_gt.abs()+1e-4)
-    print("[a] num diff: ",diff.numel())
+    # print("[a] num diff: ",diff.numel())
     diff = diff[args0]
-    print("[b] num diff: ",diff.numel())
+    # print("[b] num diff: ",diff.numel())
     N = diff.numel()
 
     # -- viz --
     args1 = th.where(diff.abs() > 1e-3)
     if len(tensor_gt[args0][args1]) < max(20,int(N/100.)): # allow a few to be different
         diff = diff[th.where(diff.abs() < 1e-3)]
-    print(len(tensor_gt[args0][args1]))
-    print(tensor_gt[args0][args1])
-    print(tensor_te[args0][args1])
-    if len(tensor_gt[args0][args1]) > 0:
-        print(tensor_gt[args0][args1][0].item())
-        print(tensor_te[args0][args1][0].item())
+    # print(len(tensor_gt[args0][args1]))
+    # print(tensor_gt[args0][args1])
+    # print(tensor_te[args0][args1])
+    # if len(tensor_gt[args0][args1]) > 0:
+    #     print(tensor_gt[args0][args1][0].item())
+    #     print(tensor_te[args0][args1][0].item())
     # print(th.where(th.abs(tensor_gt[0] - tensor_te[0]) > 1e-1))
 
     # -- test --
@@ -118,7 +118,7 @@ def test_fwd(seed,b,t,h,w,wt,stride0):
     M = 2
     flows.fflow = th.clamp(flows.fflow,-M,M).round()
     flows.bflow = th.clamp(flows.bflow,-M,M).round()
-    print(flows.fflow.shape,flows.bflow.shape)
+    # print(flows.fflow.shape,flows.bflow.shape)
 
     # -- init data --
     fflow_gt = flows.fflow.clone().requires_grad_(True)
@@ -127,7 +127,7 @@ def test_fwd(seed,b,t,h,w,wt,stride0):
     bflow_te = flows.bflow.clone().requires_grad_(True)
     aflows_gt = stnls.nn.accumulate_flow(fflow_gt,bflow_gt)
     extract = stnls.nn.extract_search_from_accumulated
-    print(aflows_gt.fflow.shape)
+    # print(aflows_gt.fflow.shape)
     flows_gt = extract(aflows_gt.fflow,aflows_gt.bflow,wt,stride0)
     flows_te = stnls.nn.search_flow(fflow_te,bflow_te,wt,stride0)
 
@@ -202,15 +202,15 @@ def test_bwd(seed,b,t,h,w,wt,stride0):
     #     return flows_gt
     # print(th.autograd.gradcheck(fxn_gt,(fflow_gt)))
 
-    print(flows_te.shape)
-    print("="*30)
-    print(flows_te[0,0,0])
-    print("="*30)
-    print(flows_te[0,0,1])
-    print(th.mean((flows_te[0,0,1] - fflow[0,1])**2))
-    print("="*30)
-    print(flows_te[0,0,2])
-    print("="*30)
+    # print(flows_te.shape)
+    # print("="*30)
+    # print(flows_te[0,0,0])
+    # print("="*30)
+    # print(flows_te[0,0,1])
+    # print(th.mean((flows_te[0,0,1] - fflow[0,1])**2))
+    # print("="*30)
+    # print(flows_te[0,0,2])
+    # print("="*30)
 
     # -- run autograd --
     grad = th.randn_like(flows_gt)
@@ -240,10 +240,10 @@ def test_bwd(seed,b,t,h,w,wt,stride0):
         # grad_gt = grad_gt.round(decimals=2)
         # grad_te = grad_te.round(decimals=2)
 
-        print("-="*20)
-        print(grad_gt.shape)
-        print(grad_gt[0,0,:,:5,:5])
-        print(grad_te[0,0,:,:5,:5])
+        # print("-="*20)
+        # print(grad_gt.shape)
+        # print(grad_gt[0,0,:,:5,:5])
+        # print(grad_te[0,0,:,:5,:5])
         # print("-"*20)
 
         # print(grad_gt[0,0,:,5:10,5:10])
@@ -254,8 +254,8 @@ def test_bwd(seed,b,t,h,w,wt,stride0):
         # print(grad_gt[0,0,:,5:7,5:7])
         # print(grad_te[0,0,:,5:7,5:7])
 
-        print("-"*20)
-        print("-"*20)
+        # print("-"*20)
+        # print("-"*20)
 
         # print(grad_gt[0,1,:,:4,:4])
         # print(grad_te[0,1,:,:4,:4])
@@ -277,10 +277,10 @@ def test_bwd(seed,b,t,h,w,wt,stride0):
         # print(grad_te[0,6,:,:4,:4])
 
         # -- viz --
-        print("grad_gt.shape: ",grad_gt.shape)
+        # print("grad_gt.shape: ",grad_gt.shape)
         gdiff = th.abs(grad_gt[:,:] - grad_te[:,:]).mean(-3,keepdim=True)
         gdiff /= gdiff.max()
-        print(gdiff.shape)
+        # print(gdiff.shape)
         vid_io.save_video(gdiff,'output/tests/nn/search_flow/','gdiff')
 
         # -- run test --

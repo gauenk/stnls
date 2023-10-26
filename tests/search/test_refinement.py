@@ -37,13 +37,13 @@ def gradcheck_skip_nan_unstable(fxn,inputs, rtol=1e-05, atol=1e-08,
     args = th.where(th.logical_and(~th.isnan(num),num.abs()>0))
     args1 = th.where(th.abs(num[args]-ana[args])>1e-2)[0]
     # print("ana: ",ana[47,573:575])
-    print(num[:5,:5])
-    print(ana[:5,:5])
-    print(num[-5:,-5:])
-    print(ana[-5:,-5:])
-    # print(num.shape)
-    print(num[args][args1][:20])
-    print(ana[args][args1][:20])
+    # print(num[:5,:5])
+    # print(ana[:5,:5])
+    # print(num[-5:,-5:])
+    # print(ana[-5:,-5:])
+    # # print(num.shape)
+    # print(num[args][args1][:20])
+    # print(ana[args][args1][:20])
     # print([args[i][args1] for i in range(2)])
     return th.allclose(num[args],ana[args],atol=atol,rtol=rtol)
 
@@ -229,7 +229,7 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
     HD,K = nheads,k
 
     # -- load data --
-    B,T,F,H,W = 1,3,1,10,10
+    B,T,F,H,W = 1,3,1,8,8
     W_t = 2*wt+1
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     vid0 = int_spaced_vid(B,T,F,H,W)
@@ -268,12 +268,12 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
     ref_dists,ref_inds = refine(vid0,vid1,srch_inds)
 
     # -- autograd --
-    # fxn = lambda vid0: refine(vid0,vid1,srch_inds)[0]
-    # # assert gradcheck_skip_nan_unstable(fxn,vid0, atol=1e-02, num_eps=1e-5)
-    # assert gradcheck_skipnan(fxn,vid0, atol=1e-02, num_eps=1e-3)
-    # fxn = lambda vid1: refine(vid0,vid1,srch_inds)[0]
-    # assert gradcheck_skipnan(fxn,vid1, atol=1e-02, num_eps=1e-3)
-    # # assert gradcheck_skip_nan_unstable(fxn,vid1, atol=1e-02, num_eps=1e-5)
+    fxn = lambda vid0: refine(vid0,vid1,srch_inds)[0]
+    # assert gradcheck_skip_nan_unstable(fxn,vid0, atol=1e-02, num_eps=1e-5)
+    assert gradcheck_skipnan(fxn,vid0, atol=1e-02, num_eps=1e-3)
+    fxn = lambda vid1: refine(vid0,vid1,srch_inds)[0]
+    assert gradcheck_skipnan(fxn,vid1, atol=1e-02, num_eps=1e-3)
+    # assert gradcheck_skip_nan_unstable(fxn,vid1, atol=1e-02, num_eps=1e-5)
 
     # -- autograd check for indices --
     if itype == "float":

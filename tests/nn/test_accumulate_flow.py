@@ -47,12 +47,12 @@ def run_compare(tensor_gt,tensor_te,mean_tol,max_tol,small_tol=1e-3):
     args1 = th.where(diff.abs() > 1e-3)
     if len(tensor_gt[args0][args1]) < 100: # allow a few to be different
         diff = diff[th.where(diff.abs() < 1e-3)]
-    print(len(tensor_gt[args0][args1]))
-    print(tensor_gt[args0][args1])
-    print(tensor_te[args0][args1])
-    if len(tensor_gt[args0][args1]) > 0:
-        print(tensor_gt[args0][args1][0].item())
-        print(tensor_te[args0][args1][0].item())
+    # print(len(tensor_gt[args0][args1]))
+    # print(tensor_gt[args0][args1])
+    # print(tensor_te[args0][args1])
+    # if len(tensor_gt[args0][args1]) > 0:
+    #     print(tensor_gt[args0][args1][0].item())
+    #     print(tensor_te[args0][args1][0].item())
 
 
     # -- test --
