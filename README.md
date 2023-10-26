@@ -1,6 +1,6 @@
 # Space-Time Non-Local Search (stnls)
 
-A Pytorch-friendly C++/CUDA library to support Space-Time Attention with a Shifted Non-Local Search. The shifted non-local search corrects the small spatial inaccuracies from predicted, long-range offsets such as optical flow.
+A Pytorch-friendly C++/CUDA library to support Space-Time Attention with a Shifted Non-Local Search. The shifted non-local search corrects the small spatial inaccuracies from predicted, long-range offsets such as optical flow (as in Guided Deformable Attention).
 
 [arxiv](https://arxiv.org/pdf/2309.16849.pdf)
 
@@ -53,11 +53,20 @@ print("V_out.shape: ",V_out.shape) # B,T,F,H,W
 ```
 
 
-## Experiments
+## Snippet of Results 
 
-### Alignment Results
+### Video Alignment
+
+The Shifted Non-Local Search (Shifted-NLS) corrects the small spatial errors of predicted offsets such as optical flow. This section illustrates the significant impact of these small spatial errors through video alignment. This experiment uses the first 10 frames from the DAVIS training dataset. When searching and computing the TV-L1 optical flow, we add a small amount of Gaussian noise (σ = 15) to simulate the uncertainty of the trained query and key values of an attention module within a network during training
 
 ![shifted nls](https://github.com/gauenk/stnls/blob/master/figs/align_grid.png?raw=true)
+
+### Upgrading Existing Space-Time Attention
+
+We upgrade Guided Deformable Attention (GDA) with our Shifted Non-Local Search (Shifted-NLS) module to show the value of correcting the errors of predicted offsets for video denoising [rvrt](https://github.com/JingyunLiang/RVRT). GDA requires 9 offsets for each pixel in the image. In the original network, 9 offsets are output from a small convolution network whose input includes optical flow. Our method omits the small network and searches the local region surrounding the optical flow. In this experiment, our spatial window is 9x9 and the temporal window is fixed to 1 by architecture design. The most similar 9 locations are selected to replace the offsets from the network. Table 1 shows the denoising quality improves when using our search method compared to using predicted offsets. The improvement is between 0.20 - 0.40 dB across all noise levels, an increase often attributed to an entirely new architecture.
+
+![upgrading rvrt](https://github.com/gauenk/stnls/blob/master/figs/upgrade_rvrt.png?raw=true)
+
 
 
 
