@@ -2,7 +2,7 @@
 
 A Pytorch-friendly C++/CUDA library to support Space-Time Attention with a Shifted Non-Local Search. The shifted non-local search corrects the small spatial inaccuracies from predicted, long-range offsets such as optical flow (as in Guided Deformable Attention).
 
-[arxiv](https://arxiv.org/pdf/2309.16849.pdf)
+[[arxiv](https://arxiv.org/pdf/2309.16849.pdf)]
 
 ## Related Works & Module Summary
 

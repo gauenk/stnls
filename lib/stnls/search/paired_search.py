@@ -19,6 +19,8 @@ from .utils import get_ctx_shell,ensure_flow_shape
 from .shared import manage_self,reflect_bounds_warning
 from .paired_bwd_impl import paired_backward
 from .batching_utils import run_batched,batching_info
+from .paired_utils import paired_vids as _paired_vids
+
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -135,7 +137,7 @@ class PairedSearchFunction(th.autograd.Function):
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True,
                 full_ws=True, self_action=None,
-                use_adj=False, normalize_bwd=False, k_agg=-1, itype="int"):
+                use_adj=False, normalize_bwd=False, k_agg=-1, itype="float"):
 
         """
         Run the non-local search
@@ -199,11 +201,11 @@ class PairedSearchFunction(th.autograd.Function):
 class PairedSearch(th.nn.Module):
 
     def __init__(self, ws, ps, k, nheads=1,
-                 dist_type="prod", stride0=4, stride1=1,
+                 dist_type="l2", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
                  full_ws=True, self_action=None, use_adj=False,
                  normalize_bwd=False,k_agg=-1,
-                 itype="int"):
+                 itype="float"):
         super().__init__()
 
         # -- core search params --
@@ -232,54 +234,7 @@ class PairedSearch(th.nn.Module):
 
 
     def paired_vids(self, vid0, vid1, flows, wt, skip_self=False):
-        dists,inds = [],[]
-        T = vid0.shape[1]
-        zflow = th.zeros_like(flows[:,:,0,0])
-        for ti in range(T):
-            # if ti != 1: continue
-
-            swap = False
-            t_inc = 0
-            prev_t = ti
-            t_shift = min(0,ti-wt) + max(0,ti + wt - (T-1))
-            t_max = min(T-1,ti + wt - t_shift);
-            # print(t_shift,t_max)
-            tj = ti
-
-            dists_i,inds_i = [],[]
-            for _tj in range(2*wt+1):
-
-                # -- update search frame --
-                prev_t = tj
-                tj = prev_t + t_inc
-                swap = tj > t_max
-                t_inc = 1 if (t_inc == 0) else t_inc
-                t_inc = -1 if swap else t_inc
-                tj = ti-1 if swap else tj
-                prev_t = ti if swap else prev_t
-                # print(ti,tj,t_inc,swap)
-
-                if (ti == tj) and skip_self: continue
-                frame0 = vid0[:,ti]
-                frame1 = vid1[:,tj]
-                if _tj > 0: flow = flows[:,:,ti,_tj-1]
-                else: flow = zflow
-                flow = flow.float()
-                dists_ij,inds_ij = self.forward(frame0,frame1,flow)
-                inds_t = (tj-ti)*th.ones_like(inds_ij[...,[0]])
-                inds_ij = th.cat([inds_t,inds_ij],-1)
-                dists_i.append(dists_ij)
-                inds_i.append(inds_ij)
-            # -- stack across K --
-            dists_i = th.cat(dists_i,-1)
-            inds_i = th.cat(inds_i,-2)
-            dists.append(dists_i)
-            inds.append(inds_i)
-        # -- stack across time --
-        dists = th.cat(dists,-4)
-        inds = th.cat(inds,-5)
-        # print("inds.shape: ",inds.shape)
-        return dists,inds
+        return _paired_vids(self.forward, vid0, vid1, flows, wt, skip_self)
 
     # def paired_stacking(self, vid0, vid1, acc_flows, wt, stack_fxn):
     #     dists,inds = [],[]

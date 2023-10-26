@@ -24,7 +24,47 @@ def get_time_window_inds(ti,wt,T):
         inds.append(tj)
     return inds
 
-def paired_vids(forward, vid0, vid1, acc_flows, wt, skip_self=False):
+def get_flows(flows):
+    assert flows.ndim in [6,7]
+    if flows.ndim == 6:
+        flows = flows[:,None]
+    return flows
+
+def paired_vids(forward, vid0, vid1, flows, wt, skip_self=False):
+    dists,inds = [],[]
+    T = vid0.shape[1]
+    flows = get_flows(flows)
+    zflow = th.zeros_like(flows[:,:,0,0])
+    for ti in range(T):
+        t_grid = get_time_window_inds(ti,wt,T)
+        dists_i,inds_i = [],[]
+        for _tj in range(2*wt+1):
+
+            # -- update search frame --
+            tj = t_grid[_tj]
+            if (ti == tj) and skip_self: continue
+            frame0 = vid0[:,ti]
+            frame1 = vid1[:,tj]
+            if _tj > 0: flow = flows[:,:,ti,_tj-1]
+            else: flow = zflow
+            flow = flow.float()
+            dists_ij,inds_ij = forward(frame0,frame1,flow)
+            inds_t = (tj-ti)*th.ones_like(inds_ij[...,[0]])
+            inds_ij = th.cat([inds_t,inds_ij],-1)
+            dists_i.append(dists_ij)
+            inds_i.append(inds_ij)
+        # -- stack across K --
+        dists_i = th.cat(dists_i,-1)
+        inds_i = th.cat(inds_i,-2)
+        dists.append(dists_i)
+        inds.append(inds_i)
+    # -- stack across time --
+    dists = th.cat(dists,-4)
+    inds = th.cat(inds,-5)
+    # print("inds.shape: ",inds.shape)
+    return dists,inds
+
+def paired_vids_old(forward, vid0, vid1, acc_flows, wt, skip_self=False):
     dists,inds = [],[]
     T = vid0.shape[1]
     zflow = th.zeros_like(acc_flows.fflow[:,0,0])
