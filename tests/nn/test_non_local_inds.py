@@ -34,9 +34,9 @@ def pytest_generate_tests(metafunc):
     seed = 123
     th.manual_seed(seed)
     np.random.seed(seed)
-    test_lists = {"ws":[1],"wt":[1],
-                  "stride0":[1],"stride1":[1],
-                  "full_ws":[True],"seed":[0]}
+    test_lists = {"ws":[1,3],"wt":[1],
+                  "stride0":[1,2,4],"stride1":[1,1.1],
+                  "full_ws":[True],"seed":[0,1,2,3,4,5,6]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -76,24 +76,22 @@ def test_fwd(ws,wt,stride0,stride1,full_ws,seed):
     vid1 = th.randn_like(vid)
 
     # -- load flows --
-    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = 2*wt+1
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     flows = edict()
-    flows.fflow = th.ones((B,T,2,nH,nW)).to(device)
-    flows.bflow = th.ones((B,T,2,nH,nW)).to(device)
-    flows.fflow = th.rand_like(flows.fflow)/(2*T)+1./(2*T)
-    flows.bflow = th.rand_like(flows.bflow)/(2*T)+1./(2*T)
+    flows.fflow = th.ones((B,T,2,H,W)).to(device)
+    flows.bflow = th.ones((B,T,2,H,W)).to(device)
+    flows.fflow = 2*(th.rand_like(flows.fflow)-0.5)
+    flows.bflow = 2*(th.rand_like(flows.bflow)-0.5)
 
     # -- exec fold fxns --
     search = stnls.search.NonLocalSearch(ws, wt, ps, k,
                                          stride0=stride0, stride1=stride1,
                                          full_ws=full_ws, self_action=self_action)
-    _,inds_gt = search(vid,vid,flows.fflow,flows.bflow)
+    _,inds_gt = search(vid0,vid1,flows.fflow,flows.bflow)
     B,HD,T,nH,nW,K,_ = inds_gt.shape
     inds_gt = inds_gt.view(B*HD,T,nH,nW,K,3)
-    print(inds_gt.shape)
     inds_gt = stnls.utils.misc.flow2inds(inds_gt,stride0)
-    print(inds_gt.shape)
     inds_gt = inds_gt.view(B,HD,T*nH*nW,K,3)[:,0]
     # flow2inds(flow,stride0)
 
@@ -102,8 +100,7 @@ def test_fwd(ws,wt,stride0,stride1,full_ws,seed):
                                       stride0,stride1,full_ws)
     inds_te = inds_te.view(B,T*nH*nW,K,3)
 
-    print(th.cat([inds_gt,inds_te],-1))
+    # print(th.cat([inds_gt,inds_te],-1))
 
     # -- compare --
-    diff = th.mean(th.mean(1.*(inds_te != inds_gt))).item()
-    assert diff < 1e-10
+    assert th.allclose(inds_te,inds_gt,1e-3,1e-3)

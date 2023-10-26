@@ -56,6 +56,7 @@ __global__ void refinement_forward_kernel(
   int q_start = blockIdx.x*q_per_thread;
   int qi,ki,wh,ww;
 
+
   // -- fwd decls --
   int prop_center[2];
   int prop_patch[3];
@@ -97,8 +98,10 @@ __global__ void refinement_forward_kernel(
       prop_patch[0] = ref_patch[0] + flows[ibatch][ihead_f][ti][nh][nw][ki][0];
       prop_center[0] = ref_patch[1] + flows[ibatch][ihead_f][ti][nh][nw][ki][1];
       prop_center[1] = ref_patch[2] + flows[ibatch][ihead_f][ti][nh][nw][ki][2];
+      prop_patch[0] = bounds(prop_patch[0],T);
       prop_center[0] = bounds(prop_center[0],H);
       prop_center[1] = bounds(prop_center[1],W);
+
 
       // -- search region offsets --
       set_search_offsets(wrOff_h, wrOff_w,
@@ -134,9 +137,9 @@ __global__ void refinement_forward_kernel(
           prop_patch[2] = prop_center[1] + stride1 * (ww - wrOff_w);
 
           // -- check bounds of pixel location --
-          // check_bounds(valid_prop[3],prop_patch,T,H,W);
-          // valid = valid_ref[3] && valid_prop[3];
-          valid = true;//valid_prop[3];
+          check_bounds(valid_prop[3],prop_patch,T,H,W);
+          valid = valid_prop[3];// && valid_prop[3];
+          // valid = true;//valid_prop[3];
 
           //  -- compute patch difference --
           if (valid){

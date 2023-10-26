@@ -10,7 +10,6 @@ void compute_dist_bilin2d(scalar_t& dist,
   int ps, int pt, int dilation, bool reflect_bounds,
   int patch_offset, scalar_t invalid, int T, int C, int H, int W){
 
-                  
   scalar_t pix0,pix1,w;
   for (int pk = 0; pk < pt; pk++){
 
@@ -199,9 +198,9 @@ void update_bwd_bilin2d_vidflows(
     int ps, int pt, int dilation, int stride0, bool reflect_bounds,
     int patch_offset, int iftr, int ftr_start, int ftr_end,
     int* ref, scalar_t* prop, int* prop_i, bool* valid_ref, bool* valid_prop,
-    bool valid, int signH_in, int signW_in, int T, int H, int W){
+    bool valid, int T, int H, int W){
 
-  int signH,signW;
+    int signH,signW;
     scalar_t pix0,pix1;
     scalar_t dDists;
     for (int pk = 0; pk < pt; pk++){
@@ -223,7 +222,7 @@ void update_bwd_bilin2d_vidflows(
 
         // -- prop patch --
         prop[1] = prop_patch[1]+dilation*(pi + patch_offset);
-        signH = check_interval(prop[1],0,H) ? signH_in : -signH_in;
+        signH = check_interval(prop[1],0,H) ? 1 : -1;
         prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
         valid_prop[1] = check_interval(prop[1],0,H);
 
@@ -236,7 +235,7 @@ void update_bwd_bilin2d_vidflows(
 
           // -- prop patch --
           prop[2] = prop_patch[2]+dilation*(pj + patch_offset);
-          signW = check_interval(prop[2],0,W) ? signW_in : -signW_in;
+          signW = check_interval(prop[2],0,W) ? 1 : -1;
           prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
           valid_prop[2] = check_interval(prop[2],0,W);
 

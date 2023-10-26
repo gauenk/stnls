@@ -42,19 +42,16 @@ def ref_backward(ctx, grad_dists, grad_inds):
     # print("gvid0: ",grad_vid0.shape)
     # print(kselect.min().item(),kselect.max().item())
     if itype_bwd == "int":
-        # print("a.")
         bwd_fxn = stnls_cuda.non_local_search_int_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,grad_dists,inds,
                 ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
                 ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
     elif not(ctx.flows_requires_grad):
-        # print("b.")
         bwd_fxn = stnls_cuda.non_local_search_bilin2d_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,grad_dists,inds,
                 ctx.wt,ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
                 ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
     else:
-        # print("c.")
         bwd_fxn = stnls_cuda.refinement_bilin2d_vidflows_backward
         bwd_fxn(grad_vid0,grad_vid1,grad_flows,
                 vid0,vid1,grad_dists,grad_inds,inds,

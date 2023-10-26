@@ -246,10 +246,10 @@ __global__ void anchor_self_time_kernel(
     loc[0] = t_next - iloc[0];
     if (st_i >= st_offset){
       auto flows_t = flows[bi][hi_f][iloc[0]][st_i-st_offset];
-      loc[1] = flows_t[1][n_hi][n_wi];
-      loc[2] = flows_t[0][n_hi][n_wi];
-      loc[1] = bounds(loc[1],H);
-      loc[2] = bounds(loc[2],W);
+      loc[1] = iloc[1] + flows_t[1][n_hi][n_wi];
+      loc[2] = iloc[2] + flows_t[0][n_hi][n_wi];
+      loc[1] = bounds(loc[1],H)-iloc[1];
+      loc[2] = bounds(loc[2],W)-iloc[2];
     }else{
       loc[1] = 0;//1.*iloc[1];
       loc[2] = 0;//1.*iloc[2];
@@ -342,7 +342,6 @@ void anchor_self_time_forward_cuda(
   auto itype = get_type(inds);
   auto dtype = get_type(dists);
   if (itype == torch::kInt32){
-    fprintf(stdout,"int.\n");
     AT_DISPATCH_FLOATING_TYPES(dists.type(), "anchor_self_time_kernel", ([&] {
          anchor_self_time_kernel<scalar_t,int><<<nblocks, nthreads>>>(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
@@ -504,7 +503,6 @@ void anchor_self_refine_forward_cuda(
   auto itype = get_type(inds);
   auto dtype = get_type(dists);
   if (itype == torch::kInt32){
-    fprintf(stdout,"int.\n");
 
     AT_DISPATCH_FLOATING_TYPES(dists.type(), "anchor_self_refine_kernel", ([&] {
          anchor_self_refine_kernel<scalar_t,int><<<nblocks, nthreads>>>(

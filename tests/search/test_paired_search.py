@@ -35,11 +35,11 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[5],"stride0":[1,3],"stride1":[1],
+    test_lists = {"ps":[5],"stride0":[1,2],"stride1":[1.1],
                   "dilation":[1],"wt":[1,2],"ws":[1,5],
-                  "k":[-1],"nheads":[2],"self_action":[None],
-                  "seed":[0],"dist_type":["prod","l2"],"k_agg":[-1],
-                  "itype":["int","float"],"reflect_bounds":[False,True]}
+                  "k":[-1],"nheads":[1],"self_action":[None],
+                  "seed":[0,1,2],"dist_type":["prod","l2"],
+                  "itype":["int","float"],"reflect_bounds":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -57,7 +57,7 @@ def check_shuffled_inds(inds_gt,inds_te,eps=1e-3):
     diff = th.sum(mins).item()
     return diff < 1e-4
 
-def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
+def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
              nheads,self_action,dist_type,seed,itype,reflect_bounds):
 
     # -- get args --
@@ -81,7 +81,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = 2*wt+1
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()#/2.
-    # flows = th.rand_like(flows)/2.+0.2 # away from int
+    flows = th.rand_like(flows)/2.+th.randint_like(flows,-2,2)+0.2
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -110,7 +110,7 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     except:
         assert check_shuffled_inds(inds_gt,inds_te)
 
-def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
+def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
              nheads,self_action,dist_type,seed,itype,reflect_bounds):
 
     # -- get args --
@@ -134,7 +134,8 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = 2*wt+1
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+0.2 # away from int
+    flows = th.rand_like(flows)/2.+th.randint_like(flows,-2,2)+0.2
+    # flows = th.rand_like(flows)/2.+0.2 # away from int
 
     # -- unpack image --
     device = vid.device

@@ -55,7 +55,7 @@ def flow2inds(flow,stride0):
     ndim = flow.ndim
     if ndim == 7:
         flow = rearrange(flow,'b hd t nh nw k tr -> (b hd) t nh nw k tr')
-    B,T,nH,nW,K,three = flow.shape
+    _,T,nH,nW,K,three = flow.shape
     space_grid = stride0*get_space_grid(nH,nW).to(device)
     # print(space_grid.shape,space_grid[:,None,:,:,None].shape)
     inds = flow.clone()
@@ -66,3 +66,21 @@ def flow2inds(flow,stride0):
         inds = rearrange(inds,'(b hd) t nh nw k tr -> b hd t nh nw k tr',b=B)
 
     return inds
+
+def inds2flow(inds,stride0):
+    device = inds.device
+    B = inds.shape[0]
+    ndim = inds.ndim
+    if ndim == 7:
+        inds = rearrange(inds,'b hd t nh nw k tr -> (b hd) t nh nw k tr')
+    _,T,nH,nW,K,three = inds.shape
+    space_grid = stride0*get_space_grid(nH,nW).to(device)
+    flow = inds.clone()
+    flow[...,1:] = inds[...,1:] - space_grid[:,None,:,:,None].flip(-1)
+    flow[...,0] = inds[...,0] - th.arange(T).view(1,T,1,1,1).to(device)
+
+    if ndim == 7:
+        flow = rearrange(flow,'(b hd) t nh nw k tr -> b hd t nh nw k tr',b=B)
+
+    return flow
+

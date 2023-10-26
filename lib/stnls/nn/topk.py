@@ -23,6 +23,8 @@ def init(K,dim=1,anchor=False,descending=True,unqiue=False):
 
 def apply_topk(tensor,order,dim):
 
+    # -- edge case --
+    if order is None: return tensor
 
     # -- squash --
     shape = list(tensor.shape)

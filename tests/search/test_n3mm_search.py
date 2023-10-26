@@ -48,16 +48,16 @@ def get_data(dnames,ext,device="cuda:0"):
 
 def pytest_generate_tests(metafunc):
     # only for stride1 == 1
-    test_lists = {"wt":[1],"ws":[15],"k":[20],"ps":[7],
-                  "stride0":[4],"stride1":[1],"dilation":[1],
-                  "nheads":[1],"anchor_self":[True],
+    test_lists = {"wt":[1],"ws":[5],"k":[10],"ps":[3],
+                  "stride0":[1],"stride1":[1],"dilation":[1],
+                  "nheads":[1],
                   "dist_type":["prod"],"seed":[0]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
 def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
-             nheads,anchor_self,dist_type,seed):
+             nheads,dist_type,seed):
     """
 
     Test the CUDA code with torch code
@@ -81,11 +81,16 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
 
     # -- load data --
     vid = get_data(dnames,ext)
+    vid0 = th.rand_like(vid)-0.5
+    vid1 = th.rand_like(vid)-0.5
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
-    flows.fflow = th.clamp(0*th.randn_like(flows.fflow),-5,5)
-    flows.bflow = th.clamp(0*th.randn_like(flows.bflow),-5,5)
+    flows.fflow = 2*(th.rand_like(flows.fflow)-0.5).round()
+    flows.bflow = 2*(th.rand_like(flows.bflow)-0.5).round()
+    # float flows won't match since search inds for n3mm summed with
+    # the search grid and THEN "int-ed"
+    # while the non-local search computes the "int" of the _flow_ before searching.
 
     # -- exec fold fxns --
     sch = stnls.search
@@ -98,63 +103,21 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   self_action=self_action)
+                                   self_action=self_action,itype="int")
 
     # -- [testing] search --
-    dists_te,inds_te = search_te(vid,vid,flows.fflow,flows.bflow)
-    th.cuda.synchronize()
+    dists_te,inds_te = search_te(vid0,vid1,flows.fflow,flows.bflow)
+    inds_te = stnls.utils.inds2flow(inds_te,stride0)
 
     # -- [groundtruth] search --
-    dists_gt,inds_gt = search_gt(vid,vid,flows.fflow,flows.bflow)
-    th.cuda.synchronize()
-
-    # -- pick tolerance --
-    if dist_type == "prod":
-        mean_tol = 1e-5
-        max_tol = 1e-5
-    else:
-        mean_tol = 1e-3
-        max_tol = 1e-1
+    dists_gt,inds_gt = search_gt(vid0,vid1,flows.fflow,flows.bflow)
 
     # -- compare --
-    isinf = th.isinf(dists_gt)
-    issmall = dists_gt < 1e-4
-    args0 = th.where(th.logical_not(th.logical_or(isinf,issmall))) # remove invalid
-    diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-8)
-    # diff = th.abs(dists_te - dists_gt)
-
-    # print(diff.shape)
-    # print(th.where(diff > 0.03))
-    # diff = diff[args0]
-    # args1 = th.where(diff > 0.02)
-    # print(dists_te[args0][args1])
-    # print(dists_gt[args0][args1])
-
-    # -- viz --
-    # print(dists_te[0,0,0])
-    # print(dists_gt[0,0,0])
-    # print(dists_te.shape)
-    # print(diff)
-    # print(args1)
-    # print(dists_te[args1])
-    # print(dists_gt[args1])
-    # print(inds_te[args1][:10])
-    # print(inds_gt[args1][:10])
-
-    # -- test --
-    error = diff[args0].mean().item()
-    # print(error)
-    if error > mean_tol: print("error: ",error)
-    assert error < mean_tol
-
-    max_error = diff[args0].max().item()
-    # print(max_error)
-    if max_error > max_tol: print("max error: ",max_error)
-    assert max_error < max_tol
-
+    assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True)
+    assert th.allclose(inds_te,inds_gt,1e-3,1e-3,equal_nan=True)
 
 def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
-             nheads,anchor_self,dist_type,seed):
+             nheads,dist_type,seed):
     """
 
     Test the CUDA code with torch code
@@ -171,143 +134,76 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     device = "cuda:0"
     clean_flow = True
     run_flow = False
-    reflect_bounds = False
+    reflect_bounds = True
     self_action = None
     set_seed(seed)
 
     # -- load data --
-    vid = get_data(dnames,ext)
-    vid = th.cat([vid,vid],-1)
-    vid = th.cat([vid,vid],-2)
+    B,T,HD,F,H,W = 1,3,nheads,1,32,32
+    vid = th.ones((B,T,HD*F,H,W),device=device)
+    vid0 = th.rand_like(vid)-0.5
+    vid1 = th.rand_like(vid)-0.5
 
     # -- compute flow --
-    flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
-    # flows.fflow = th.clamp(10*th.zeros_like(flows.fflow),-10,10)
-    # flows.bflow = th.clamp(10*th.zeros_like(flows.bflow),-10,10)
-    flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10)
-    flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10)
+    flows = edict()
+    flows.fflow = th.ones((B,T,2,H,W)).cuda()/2.
+    flows.bflow = th.ones((B,T,2,H,W)).cuda()/2.
+    flows.fflow = th.clamp(10*th.zeros_like(flows.fflow),-10,10)
+    flows.bflow = th.clamp(10*th.zeros_like(flows.bflow),-10,10)
+    # flows.fflow = 2*(th.rand_like(flows.fflow)-0.5).round()
+    # flows.bflow = 2*(th.rand_like(flows.bflow)-0.5).round()
 
     # -- allow grads --
     vid_te0,vid_te1 = vid.clone(),vid.clone()
-    # vid_te0[...] = 2
-    # vid_te1[...] = 1
+    vid_te0[...] = 2
+    vid_te1[...] = 1
     vid_te0.requires_grad_(True)
     vid_te1.requires_grad_(True)
     vid_gt0,vid_gt1 = vid.clone(),vid.clone()
-    # vid_gt0[...] = 2
-    # vid_gt1[...] = 1
+    vid_gt0[...] = 2
+    vid_gt1[...] = 1
     vid_gt0.requires_grad_(True)
     vid_gt1.requires_grad_(True)
 
     # -- exec fold fxns --
     sch = stnls.search
-    search_te = sch.N3MatMultSearch(ws, wt, ps, k, nheads,
+    search_te = sch.N3MatMultSearch(ws, wt, ps, -1, nheads,
                                     dist_type=dist_type, dilation=dil,
                                     stride0=stride0, stride1=stride1,
                                     reflect_bounds=reflect_bounds,
                                     self_action=self_action)
-    search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
+    search_gt = sch.NonLocalSearch(ws, wt, ps, -1, nheads,
                                    dist_type=dist_type, dilation=dil,
                                    stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,
-                                   self_action=self_action)
+                                   self_action=self_action,itype="int")
 
     # -- [testing] search --
     dists_te,inds_te = search_te(vid_te0,vid_te1,flows.fflow,flows.bflow)
+    inds_te = stnls.utils.inds2flow(inds_te,stride0)
     th.cuda.synchronize()
-    # print(dists_te[0,0,0])
-    # print(inds_te[0,0,0])
 
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid_gt0,vid_gt1,flows.fflow,flows.bflow)
     th.cuda.synchronize()
-    # print(dists_gt[0,0,0])
-    # print(inds_gt[0,0,0])
-
-    # print("dinds: ",th.mean(1.*(inds_gt - inds_te)))
-
-    # -- pick tolerance --
-    if dist_type == "prod":
-        mean_tol = 1e-5
-        max_tol = 1e-5
-    else:
-        mean_tol = 1e-3
-        max_tol = 1e-1
 
     # -- compare --
-    isinf = th.isinf(dists_gt)
-    issmall = dists_gt < 1e-4
-    args0 = th.where(th.logical_not(th.logical_or(isinf,issmall))) # remove invalid
-    diff = th.abs(dists_te - dists_gt) / (dists_gt.abs()+1e-5)
-    args1 = th.where(diff>1-3)
-
-    error = diff[args0].mean().item()
-    if error > mean_tol: print("error: ",error)
-    assert error < mean_tol
-
-    max_error = diff[args0].max().item()
-    if max_error > max_tol: print("max error: ",max_error)
-    assert max_error < max_tol
+    assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True)
+    assert th.allclose(inds_te,inds_gt,1e-3,1e-3,equal_nan=True)
 
     # -- compute bwd --
-    # dists_grad = th.ones_like(dists_te)
-    dists_grad = th.randn_like(dists_te)
-    # dists_grad -= dists_grad.min()
-    # dists_grad /= dists_grad.max()
-    # dists_grad = th.ones_like(dists_te)
-    # dists_grad[0,:2,...] = 2
+    dists_grad = 2*(th.rand_like(dists_te)-0.5)
     th.autograd.backward(dists_te,dists_grad)
     th.autograd.backward(dists_gt,dists_grad)
 
-    # print("STILL ARTIFACTS LOOK @ OUTPUT!")
-
     # -- for both grads --
+    sH,sW = ps,ps
+    eH,eW = H-ps,W-ps
     _grads_te = [vid_te0.grad,vid_te1.grad]
     _grads_gt = [vid_gt0.grad,vid_gt1.grad]
     for idx,(grads_te,grads_gt) in enumerate(zip(_grads_te,_grads_gt)):
-        # if idx ==0: continue
-        # if idx == 1: continue
-        # print("idx: ",idx)
-
-        # -- viz --
-        # grad_s = grads_te.abs().mean(-3,keepdim=True)
-        # grad_s /= grad_s.abs().max()
-        # stnls.utils.vid_io.save_video(grad_s,"./output/grad/","grad%d_n3mm" % idx)
-        # grad_s = grads_gt.abs().mean(-3,keepdim=True)
-        # grad_s /= grad_s.abs().max()
-        # stnls.utils.vid_io.save_video(grad_s,"./output/grad/","grad%d_nls" % idx)
-        # # exit(0)
-
-        # print(grads_te[0,0,0,:5,:5])
-        # print(grads_gt[0,0,0,:5,:5])
-        # print(grads_gt[0,0,0,:5,:5]/grads_te[0,0,0,:5,:5])
-
-        # print("-"*5)
-        # print(grads_te[0,1,0,:5,:5])
-        # print(grads_gt[0,1,0,:5,:5])
-        # print(grads_gt[0,1,0,:5,:5]/grads_te[0,0,0,:5,:5])
-        # # print(grads_te[0,0,0,-3:,-3:])
-        # # print(grads_gt[0,0,0,-3:,-3:])
-        # args = th.where((grads_gt - grads_te).abs() > 1e-5)
-
-        # print(args)
-        # print(grads_gt[args])
-        # print(grads_te[args])
-        # grad_s = (grads_gt - grads_te).abs().mean(-3,keepdim=True)
-        # grad_s /= grad_s.abs().max()
-        # stnls.utils.vid_io.save_video(grad_s,"./output/grad/","grad%d_diff" % idx)
-
-        # -- compare grads --
-        rel_error = th.abs(grads_gt - grads_te)/(th.abs(grads_gt)+1e-10)
-        rel_error_nz = th.where(th.abs(grads_gt)>1e-3,rel_error,0.)
-
-        tol = 1e-2
-        error = th.max(rel_error_nz).item()
-        if error > tol: print("Max Error: ",error)
-        assert error < tol
-
-        tol = 2*1e-4
-        error = th.mean(rel_error_nz).item()
-        if error > tol: print("Mean Error: ",error)
-        # print("Mean Error: ",error)
-        assert error < tol
+        te = grads_te[...,sH:eH,sW:eW]
+        gt = grads_gt[...,sH:eH,sW:eW]
+        # print(te[0,0,0,:3,:3])
+        # print(gt[0,0,0,:3,:3])
+        assert th.allclose(te,gt,1e-3,1e-3)

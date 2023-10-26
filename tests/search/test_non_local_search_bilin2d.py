@@ -42,20 +42,20 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[1,3],"stride0":[1,2],
-                  "stride1":[1],
-                  "dilation":[1],"wt":[1],"ws":[1,3],
-                  "k":[-1],"nheads":[1,2],
+    test_lists = {"ps":[3],"stride0":[1],
+                  "stride1":[1.1],
+                  "dilation":[1],"wt":[1],"ws":[3],
+                  "k":[-1],"nheads":[2],
                   "self_action":[None],"seed":[0],
-                  "dist_type":["l2","prod"],"k_agg":[-1],
-                  "reflect_bounds":[False,True],
-                  "itype":["int"]}
+                  "dist_type":["l2","prod"],
+                  "reflect_bounds":[True],
+                  "itype":["float","int"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
 
-def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
+def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,reflect_bounds,
                     nheads,self_action,dist_type,seed,itype):
     """
 
@@ -79,16 +79,19 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    reflect_bounds = True
     full_ws = True
+    stride1 = int(stride1) # no fractional stride1 for this test
 
     # -- load data --
-    vid = get_data(dnames,ext)
+    B,T,HD,F,H,W = 1,3,nheads,1,10,10
+    vid = th.ones((B,T,HD*F,H,W),device=device)
+    vid = th.rand_like(vid)
 
     # -- compute flow --
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
     flows.fflow = th.clamp(10*th.randn_like(flows.fflow),-10,10).round()
     flows.bflow = th.clamp(10*th.randn_like(flows.bflow),-10,10).round()
+    # flows = stnls.nn.search_flows(flows.fflow,flows.bflow,wt,stride0)
 
     # -- unpack image --
     device = vid.device
@@ -139,7 +142,7 @@ def test_fwd_vs_int(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     assert max_error < tol
 
 
-def test_bwd_vid_int_bilin2d(ws,wt,k,ps,stride0,stride1,k_agg,
+def test_bwd_vid_int_bilin2d(ws,wt,k,ps,stride0,stride1,
                              dilation,nheads,self_action,dist_type,seed):
     """
 
@@ -160,14 +163,16 @@ def test_bwd_vid_int_bilin2d(ws,wt,k,ps,stride0,stride1,k_agg,
     reflect_bounds = True
     use_adj = False
     full_ws = True
+    stride1 = int(stride1) # no fraction for this test
     set_seed(seed)
 
     # -- load data --
-    B,T,F,H,W = 1,3,1,10,10
-    vid = th.ones((B,T,F,H,W),device=device)
+    B,T,HD,F,H,W = 1,3,nheads,1,10,10
+    vid = th.ones((B,T,HD*F,H,W),device=device)
+    vid = th.rand_like(vid)
     flows = stnls.flow.get_flow_batch(comp_flow,clean_flow,vid,vid,0.)
-    flows.fflow = 10*th.zeros_like(flows.fflow)
-    flows.bflow = 10*th.zeros_like(flows.bflow)
+    flows.fflow = flows.fflow.round()
+    flows.bflow = flows.bflow.round()
 
     # -- allow grads --
     vid_te0,vid_te1 = vid.clone(),vid.clone()
@@ -228,7 +233,7 @@ def test_bwd_vid_int_bilin2d(ws,wt,k,ps,stride0,stride1,k_agg,
         assert th.allclose(grads_te,grads_gt,1e-3,1e-3,equal_nan=True)
 
 
-def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
+def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,reflect_bounds,
                                      dilation,nheads,self_action,dist_type,seed):
     """
 
@@ -247,14 +252,13 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    reflect_bounds = True
     use_adj = False
     full_ws = True
     set_seed(seed)
 
     # -- load data --
-    B,T,F,H,W = 1,3,1,10,10
-    vid = th.ones((B,T,F,H,W),device=device)
+    B,T,HD,F,H,W = 1,3,nheads,1,10,10
+    vid = th.ones((B,T,HD*F,H,W),device=device)
     vid0 = th.rand_like(vid)#.requires_grad_(True)
     vid1 = th.rand_like(vid)#.requires_grad_(True)
 
@@ -262,7 +266,7 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = 2*wt+1
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+0.2 # away from int
+    flows = th.rand_like(flows)/2.+th.randint_like(flows,-3,3)+0.2
     # flows.requires_grad_(True)
 
     # -- exec fold fxns --
@@ -302,7 +306,7 @@ def test_bwd_vid_flowgrad_noflowgrad(ws,wt,k,ps,stride0,stride1,k_agg,
     assert th.allclose(vid10.grad,vid11.grad,1e-3,1e-3,equal_nan=True)
 
 
-def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,reflect_bounds,
+def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,reflect_bounds,
                            dilation,nheads,self_action,dist_type,seed,itype):
     """
 
@@ -331,8 +335,7 @@ def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,reflect_bounds,
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = min(2*wt+1,T)
     flows = th.ones((B,HD,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+0.2 # away from int
-    flows = -flows
+    flows = th.rand_like(flows)/2.+th.randint_like(flows,-3,3)+0.2
     flows.requires_grad_(True)
 
     # -- exec fold fxns --
@@ -376,7 +379,7 @@ def test_bwd_vid_gradcheck(ws,wt,ps,stride0,stride1,k_agg,reflect_bounds,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 
-def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
+def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,dilation,
                              nheads,self_action,dist_type,reflect_bounds,seed):
     """
 
@@ -396,7 +399,7 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
     set_seed(seed)
 
     # -- load video --
-    B,HD,T,F,H,W = 1,nheads,3,1,10,10
+    B,HD,T,F,H,W = 1,nheads,5,1,10,10
     vid = th.ones((B,T,HD*F,H,W),device=device)
     vid0,vid1 = vid.clone(),vid.flip(-1).clone()
     vid0 = th.rand_like(vid)-1.5
@@ -407,7 +410,13 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     W_t = min(2*wt+1,T)
     flows = th.ones((B,HD,T,W_t-1,2,nH,nW)).cuda()/2.
-    flows = th.rand_like(flows)/2.+1.2 # away from int
+    flows = th.rand_like(flows)/5.+th.randint_like(flows,-2,2)+0.5
+    not_int = th.all(th.abs(flows.round() - flows)>1e-5).item()
+    assert not_int,"Gradcheck only works _not_ near an int."
+    # unstable at any "ints" including the search; if stride1 is not int,
+    # then an false alarm is raised
+
+    # away from int
     flows.requires_grad_(True)
 
     # -- exec fold fxns --
@@ -420,12 +429,16 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
                                    self_action=self_action,itype="float")
 
     # -- immersive --
-    from stnls.testing import gradcheck
-    search_flows = lambda flows: search(vid0,vid1,flows)[0]
-    # num = gradcheck.get_num_jacobian(search_flows,flows,eps=1e-2)
-    # ana = gradcheck.get_ana_jacobian(search_flows,flows,eps=1e-2)
+    # from stnls.testing import gradcheck
+    # search_flows = lambda flows: search(vid0,vid1,flows)[0]
+    # num = gradcheck.get_num_jacobian(search_flows,flows,eps=1e-3)
+    # ana = gradcheck.get_ana_jacobian(search_flows,flows,eps=1e-4)
+    # args = th.where(th.abs(num - ana)>1e-2)
     # print(num[:10,:10])
     # print(ana[:10,:10])
+    # print(args)
+    # print(num[args][:10])
+    # print(ana[args][:10])
 
     # print(num[:2,100:115])
     # print(ana[:2,100:115])
@@ -448,8 +461,8 @@ def test_bwd_flows_gradcheck(ws,wt,ps,stride0,stride1,k_agg,dilation,
                           atol=1e-2, nondet_tol=1e-7, raise_exception=True)
 
 
-def test_fwd_topk(ws,wt,ps,stride0,stride1,dilation,
-                    self_action,dist_type,seed):
+def test_fwd_topk(ws,wt,ps,stride0,stride1,dilation,reflect_bounds,
+                  self_action,dist_type,seed):
 
     """
 
@@ -465,7 +478,6 @@ def test_fwd_topk(ws,wt,ps,stride0,stride1,dilation,
     device = "cuda:0"
     clean_flow = True
     comp_flow = False
-    reflect_bounds = False
     full_ws = True
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
@@ -505,7 +517,7 @@ def test_fwd_topk(ws,wt,ps,stride0,stride1,dilation,
         assert th.all(delta<=0).item()
 
 def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
-                    self_action,dist_type,seed):
+                    self_action,dist_type,reflect_bounds,seed):
 
     """
 
@@ -516,23 +528,19 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     """
 
     # -- init vars --
-    dil = dilation
-    pt = 1
     device = "cuda:0"
-    clean_flow = True
-    comp_flow = False
-    reflect_bounds = False
-    full_ws = True
     ext = "jpg"
     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
     topk_mode = "each"
     itype = "float"
-    nheads = 1
+    pt,nheads = 1,1
+    full_ws = True
+    set_seed(seed)
 
     # -- load data --
     vid = stnls.testing.data.load_burst_batch("./data/",dnames,ext=ext)
     vid = vid.to(device)[:,:5,:3,::2,::2].contiguous()
-    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:32].contiguous()
+    vid = repeat(vid,'b t c h w -> b t (r c) h w',r=12)[:,:,:32].contiguous()
     vid /= vid.max()
     vid0 = th.rand_like(vid)-0.5
     vid1 = th.rand_like(vid)-0.5
@@ -542,32 +550,37 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     W_t = 2*wt+1
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     flows = 2*th.rand((B,T,W_t-1,2,nH,nW)).to(vid0.device)
+    # flows = th.zeros_like(flows)
 
     # -- exec fold fxns --
     k0 = ws*ws
     search0 = stnls.search.NonLocalSearch(ws, wt, ps, -1, nheads,
-                                          dilation=dil,stride0=stride0, stride1=stride1,
+                                          dilation=dilation,
+                                          stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=False,
                                           self_action=None,
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
     k1 = 3
     search1 = stnls.search.NonLocalSearch(ws, wt, ps, k1, nheads,
-                                          dilation=dil,stride0=stride0, stride1=stride1,
+                                          dilation=dilation,
+                                          stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=False,
                                           self_action="anchor_each",
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
     k2 = 5
     search2 = stnls.search.NonLocalSearch(ws, wt, ps, k2, nheads,
-                                          dilation=dil,stride0=stride0, stride1=stride1,
+                                          dilation=dilation,
+                                          stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=True,
                                           self_action="anchor_each",
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
-    k3 = 10
+    k3 = 8
     search3 = stnls.search.NonLocalSearch(ws, wt, ps, k3, nheads,
-                                          dilation=dil,stride0=stride0, stride1=stride1,
+                                          dilation=dilation,
+                                          stride0=stride0, stride1=stride1,
                                           reflect_bounds=reflect_bounds,full_ws=True,
                                           self_action="anchor",
                                           dist_type=dist_type,topk_mode=topk_mode,
@@ -599,6 +612,9 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     dists3 = dists3[...,:,0]
     inds3= inds3[...,:,0,:]
 
+    # print(th.stack([dists0[...,0],dists1[...,0],dists2[...,0],dists3[...,0]],-1))
+    # print(th.stack([inds0[...,0,:],inds1[...,0,:],inds2[...,0,:],inds3[...,0,:]],-2))
+
     # -- check all pairwise --
     dists = [dists0,dists1,dists2]
     inds = [inds0,inds1,inds2]
@@ -615,10 +631,10 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
 
     # -- check against flow --
     def reflect_bounds(flow,i,L):
-        args = th.where(flow[:,i] >= L)
-        flow[:,i][args] = 2*L - flow[:,i][args]
-        args = th.where(flow[:,i] < 0)
-        flow[:,i][args] = -flow[:,i][args]
+        args0 = th.where(flow[:,i] > (L-1))
+        args1 = th.where(flow[:,i] < 0)
+        flow[:,i][args0] = 2*(L-1) - flow[:,i][args0]
+        flow[:,i][args1] = -flow[:,i][args1]
     grid = stnls.nn.index_grid(nH,nW).flip(1)*stride0
     for i in range(3):
         inds_i = inds[i]
@@ -626,15 +642,16 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
             for si in range(W_t):
                 ind = inds_i[:,0,ti,:,:,si,1:]
                 if si > 0:
-                    flow = flows[:,ti,si-1].flip(1) + grid
+                    flow = flows[:,ti,si-1].flip(1).clone() + grid
                 else:
                     flow = th.zeros_like(flows[:,ti,0]).flip(1) + grid
+
                 # -- reflect --
                 reflect_bounds(flow,0,H)
                 reflect_bounds(flow,1,W)
 
                 # -- normalize --
-                flow -= grid
+                flow = flow - grid
 
                 # -- shaping --
                 flow = rearrange(flow,'b i h w -> b h w i')

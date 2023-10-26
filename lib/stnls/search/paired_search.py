@@ -16,7 +16,7 @@ from stnls.utils import extract_pairs
 # -- local --
 from .utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
 from .utils import get_ctx_shell,ensure_flow_shape
-from .shared import manage_self
+from .shared import manage_self,reflect_bounds_warning
 from .paired_bwd_impl import paired_backward
 from .batching_utils import run_batched,batching_info
 
@@ -68,8 +68,10 @@ def paired_forward(frame0, frame1, flow,
 
     # -- forward --
     if itype == "int":
-        fwd_fxn = stnls_cuda.paired_search_int_forward
+        flow = flow.round()
+        inds = inds.int()
         stride1 = max(1,int(stride1))
+        fwd_fxn = stnls_cuda.paired_search_int_forward
     else:
         fwd_fxn = stnls_cuda.paired_search_bilin2d_forward
         stride1 = float(stride1)
@@ -152,6 +154,7 @@ class PairedSearchFunction(th.autograd.Function):
         # flow = ensure_flow_shape(flow)
         B,HD,F,H,W = frame0.shape
         flow = flow.contiguous()
+        reflect_bounds_warning(reflect_bounds)
 
         # -- run [optionally batched] forward function --
         dists,inds = paired_forward(frame0, frame1, flow,

@@ -16,7 +16,7 @@ from stnls.utils import extract_pairs
 # -- local --
 from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
 from .utils import get_ctx_shell,ensure_flow_shape,shape_flows
-from .shared import manage_self
+from .shared import manage_self,reflect_bounds_warning
 from .nls_bwd_impl import nls_backward
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -57,10 +57,10 @@ def nls_forward(vid0, vid1, flows,
 
     # -- forward --
     if itype == "int":
-        flows = flows.int()
+        flows = flows.round().int()
         inds = inds.int()
-        fwd_fxn = stnls_cuda.non_local_search_int_forward
         stride1 = max(1,int(stride1))
+        fwd_fxn = stnls_cuda.non_local_search_int_forward
     else:
         fwd_fxn = stnls_cuda.non_local_search_bilin2d_forward
         stride1 = float(stride1)
@@ -135,6 +135,7 @@ class NonLocalSearchFunction(th.autograd.Function):
         device = vid0.device
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
+        reflect_bounds_warning(reflect_bounds)
 
         # -- manage forward shape --
         flow_ndim = flows.ndim

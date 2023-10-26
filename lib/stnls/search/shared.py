@@ -26,6 +26,14 @@ def manage_self(dists,inds,anchor_self,remove_self,qshift,stride0,H,W):
         inds=inds.reshape(B,HD,T,nH0,nW0,W_t,ws*ws,d2or3)
     return dists,inds
 
+def reflect_bounds_warning(reflect_bounds):
+    if reflect_bounds: return
+    print("Note: when \"reflect_bounds\" is False, the \"dists\" along"
+    "smaller along the boarder since patch locations are skipped. "
+    "Thus the subsequent \"topk\" will favor edges which is conceptually"
+    " inconsistent with the core functionality.")
+
+
 
 # def manage_self(dists,inds,kselect,anchor_self,remove_self,wr):
 #     assert not(remove_self and anchor_self)

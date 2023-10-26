@@ -245,6 +245,7 @@ __global__ void paired_search_bilin2d_forward_kernel(
   int HD = max(HD_frame,HD_flow);
   scalar_t stride1 = static_cast<scalar_t>(_stride1);
 
+
   // -- invalid constant --
   scalar_t invalid = (scalar_t)__int_as_float(0x7f800000);
   if(DIST_TYPE == 0){ // prod
@@ -493,6 +494,8 @@ __global__ void paired_search_int_backward_kernel(
     // -- proposed location --
     prop_patch[0] = ref_patch[0] + inds[ibatch][ihead_fl][qi][ki][0];
     prop_patch[1] = ref_patch[1] + inds[ibatch][ihead_fl][qi][ki][1];
+    prop_patch[0] = bounds(prop_patch[0],H);
+    prop_patch[1] = bounds(prop_patch[1],W);
     weight = grad_dists[ibatch][ihead_fl][qi][ki];
 
     // -- update patch --
@@ -649,7 +652,8 @@ __global__ void paired_search_bilin2d_backward_kernel(
     // -- proposed location --
     prop_patch[0] = ref_patch[0] + inds[ibatch][ihead_sr][qi][ki][0];
     prop_patch[1] = ref_patch[1] + inds[ibatch][ihead_sr][qi][ki][1];
-
+    prop_patch[0] = bounds(prop_patch[0],H);
+    prop_patch[1] = bounds(prop_patch[1],W);
 
     weight = grad_dists[ibatch][ihead_sr][qi][ki];
     iweight[0] = grad_inds[ibatch][ihead_sr][qi][ki][0];
@@ -669,8 +673,8 @@ __global__ void paired_search_bilin2d_backward_kernel(
     // -- update grad_flow from grad_dists,vid0,vid1 --
     scalar_t wi = ref_patch[1] + flow[ibatch][ihead_fl][0][nh][nw];
     scalar_t hi = ref_patch[0] + flow[ibatch][ihead_fl][1][nh][nw];
-    int signW = ((wi >= 0) and (wi < W)) ? 1 : -1; // untested move from "W-1" to "W"
-    int signH = ((hi >= 0) and (hi < H)) ? 1 : -1;
+    int signW = ((wi >= 0) and (wi <= (W-1))) ? 1 : -1;
+    int signH = ((hi >= 0) and (hi <= (H-1))) ? 1 : -1;
     bwd_flow_assign(acc_dFlows,nh,nw,signH,signW,grad_flow[ibatch][ihead_fl]);
 
     // -- update flows --

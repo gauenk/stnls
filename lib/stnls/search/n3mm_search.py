@@ -46,15 +46,15 @@ def n3mm_fwd_main(vid0, vid1, fflow, bflow,
     # dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
     # -- compute indices --
-    inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,stride0,stride1).int()
+    inds = stnls.nn.non_local_inds(fflow,bflow,ws,wt,stride0,stride1).round().int()
 
     # -- boundary --
     # inds = th.where(inds<0,-inds,inds)
     # inds[...,1] = th.where(inds[...,1]>=H,2*(H-1)-inds[...,1],inds[...,1])
     # inds[...,2] = th.where(inds[...,2]>=W,2*(W-1)-inds[...,2],inds[...,2])
     assert th.all(inds>=0)
-    assert th.all(inds[...,1]<H)
-    assert th.all(inds[...,2]<W)
+    assert th.all(inds[...,1]<=(H-1))
+    assert th.all(inds[...,2]<=(W-1))
 
     # -- prepare shaping --
     assert inds.shape[1] == Q
@@ -100,7 +100,8 @@ class N3MatMultSearchFunction(th.autograd.Function):
                 ws, wt, ps, k, nheads=1, batchsize=-1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True,
-                self_action=None, use_adj=False, normalize_bwd=True):
+                self_action=None, use_adj=False,
+                topk_mode="all", normalize_bwd=False):
 
         """
         Run the non-local search
@@ -117,6 +118,11 @@ class N3MatMultSearchFunction(th.autograd.Function):
         B,T,F,H,W = vid0.shape
         HD = nheads
 
+        # -- derived shapes --
+        W_t = 2*wt+1
+        nH0 = (H-1)//stride0+1
+        nW0 = (W-1)//stride0+1
+
         # -- run, optionally batched, forward function --
         dists,inds = n3mm_fwd_main(vid0, vid1, fflow, bflow,
                                    nheads, ws, wt, ps, dist_type,
@@ -130,16 +136,55 @@ class N3MatMultSearchFunction(th.autograd.Function):
         dists=dists.view(B,HD,T,nH,nW,-1)
         inds=inds.view(B,HD,T,nH,nW,-1,3)
 
-        # -- manage self dists --
-        qshift = 0
-        anchor_self = not(self_action is None) and "anchor" in self_action
-        remove_self = not(self_action is None) and "remove" in self_action
-        dists,inds = manage_self(dists,inds,anchor_self,
-                                 remove_self,qshift,stride0,H,W)
+        # -- anchor --
+        assert self_action in [None,"anchor","anchor_each","remove","remove_ref_frame"]
+        anchor_self = False if self_action is None else "anchor" in self_action
+        if self_action == "anchor":
+            stnls.nn.anchor_self(dists,inds,stride0,H,W)
+        elif self_action == "anchor_each":
+            stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
+        elif self_action == "remove":
+            raise NotImplementedError("Not implemented self_action [remove].")
+        elif self_action == "remove_ref_frame":
+            assert wt > 0,"Cannot remove ref frame if not searching across time."
+            dists = dists[...,1:,:,:].contiguous()
+            inds = inds[...,1:,:,:,:].contiguous()
+        elif self_action is None:
+            pass
+        else:
+            raise ValueError(f"Uknown option for self_action [{self_action}]")
+
         # -- topk --
-        descending = descending_menu(dist_type)
-        dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
-                                   descending=descending,unique=False)
+        descending = dist_type == "prod"
+        if topk_mode == "all":
+            dim = 3
+            dists=dists.view(B,HD,Q,W_t*ws*ws)
+            inds=inds.view(B,HD,Q,W_t*ws*ws,3)
+            dists,inds = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
+                                       descending=descending)
+        elif topk_mode == "each":
+            dists = rearrange(dists,'... wh ww -> ... (wh ww)')
+            inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
+            dists,inds = stnls.nn.topk_each(dists,inds,k,descending,
+                                            anchor_self=anchor_self)
+        else:
+            raise ValueError(f"Unknown topk_mode [{topk_mode}]")
+
+        # -- reshape --
+        dists=dists.view(B,HD,T,nH0,nW0,-1)
+        inds=inds.view(B,HD,T,nH0,nW0,-1,3)
+
+        # # -- manage self dists --
+        # qshift = 0
+        # anchor_self = not(self_action is None) and "anchor" in self_action
+        # remove_self = not(self_action is None) and "remove" in self_action
+        # dists,inds = manage_self(dists,inds,anchor_self,
+        #                          remove_self,qshift,stride0,H,W)
+
+        # # -- topk --
+        # descending = descending_menu(dist_type)
+        # dists,inds = stnls.nn.topk(dists,inds,k,dim=3,anchor=anchor_self,
+        #                            descending=descending,unique=False)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -216,7 +261,8 @@ class N3MatMultSearch(th.nn.Module):
     def __init__(self, ws, wt, ps, k, nheads=1,
                  dist_type="prod", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
-                 self_action=None, use_adj=False, normalize_bwd=True):
+                 self_action=None, use_adj=False,
+                 topk_mode="all", normalize_bwd=False):
         super().__init__()
 
         # -- core search params --
@@ -233,6 +279,7 @@ class N3MatMultSearch(th.nn.Module):
         self.normalize_bwd = normalize_bwd
 
         # -- manage patch and search boundaries --
+        self.topk_mode = topk_mode
         self.reflect_bounds = reflect_bounds
         self.use_adj = use_adj
 
@@ -248,7 +295,7 @@ class N3MatMultSearch(th.nn.Module):
                                              self.stride1,self.dilation,self.pt,
                                              self.reflect_bounds,
                                              self.self_action,self.use_adj,
-                                             self.normalize_bwd)
+                                             self.topk_mode,self.normalize_bwd)
 
     def flops(self,T,F,H,W):
         return 0
@@ -284,7 +331,7 @@ def _apply(vid0, vid1, fflow, bflow,
            ws, wt, ps, k, nheads=1, batchsize=-1,
            dist_type="prod", stride0=4, stride1=1,
            dilation=1, pt=1, reflect_bounds=True,
-           self_action=None, use_adj=False, normalize_bwd=True):
+           self_action=None, use_adj=False, topk_mode="all", normalize_bwd=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -292,7 +339,7 @@ def _apply(vid0, vid1, fflow, bflow,
     return fxn(vid0,vid1,fflow,bflow,ws,wt,ps,k,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
-               self_action,use_adj,normalize_bwd)
+               self_action,use_adj,topk_mode,normalize_bwd)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -306,7 +353,7 @@ def extract_config(cfg,restrict=True):
              "nheads":1,"dist_type":"prod",
              "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True,"self_action":None,
-             "use_adj":False,"normalize_bwd":True}
+             "use_adj":False,"topk_mode":True,"normalize_bwd":False}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
@@ -316,5 +363,6 @@ def init(cfg):
                              stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
                              reflect_bounds=cfg.reflect_bounds,
                              self_action=cfg.self_action,use_adj=cfg.use_adj,
+                             topk_mode=cfg.topk_mode,
                              normalize_bwd=cfg.normalize_bwd)
     return search

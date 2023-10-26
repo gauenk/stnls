@@ -32,7 +32,7 @@ __global__ void refinement_bilin2d_forward_kernel(
   int HD = vid0.size(1);
   int HD_f = flows.size(1);
   int T = vid0.size(2);
-  int C = vid0.size(3);
+  int F = vid0.size(3);
   int H = vid0.size(4);
   int W = vid0.size(5);
   int nH = dists.size(3);
@@ -105,18 +105,12 @@ __global__ void refinement_bilin2d_forward_kernel(
       prop_patch[0] = ref_patch[0] + floor(flows[ibatch][ihead_f][ti][nh][nw][ki][0]+0.5);
       prop_center[0] = ref_patch[1] + flows[ibatch][ihead_f][ti][nh][nw][ki][1];
       prop_center[1] = ref_patch[2] + flows[ibatch][ihead_f][ti][nh][nw][ki][2];
+      prop_patch[0] = bounds(prop_patch[0],T);
 
-      if (!check_bound(prop_patch[0],T)){ // skip invalid times
-        continue;
-      }
-      if (!check_bound(prop_center[0],H)){
-        reflect[ibatch][ihead_f][ti][nh][nw][ki][0] = 1;
-        prop_center[0] = bounds(prop_center[0],H);
-      }
-      if (!check_bound(prop_center[1],W)){
-        reflect[ibatch][ihead_f][ti][nh][nw][ki][1] = 1;
-        prop_center[1] = bounds(prop_center[1],W);
-      }
+      reflect[ibatch][ihead_f][ti][nh][nw][ki][0] = not check_bound(prop_center[0],H);
+      reflect[ibatch][ihead_f][ti][nh][nw][ki][1] = not check_bound(prop_center[1],W);
+      prop_center[0] = bounds(prop_center[0],H);
+      prop_center[1] = bounds(prop_center[1],W);
 
       // -- search region offsets --
       set_search_offsets(wrOff_h, wrOff_w,
@@ -151,7 +145,8 @@ __global__ void refinement_bilin2d_forward_kernel(
 
           // -- check bounds of pixel location --
           check_bounds(valid_prop[3],prop_patch,T,H,W);
-          valid = valid_ref[3] && valid_prop[3];
+          valid = valid_prop[3];//valid_ref[3] && valid_prop[3];
+
 
           //  -- compute patch difference --
           if (valid){
@@ -160,7 +155,7 @@ __global__ void refinement_bilin2d_forward_kernel(
                          ref_patch, prop_patch, ref_pix, prop_pix,
                          prop_i, valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
-                         patch_offset,invalid,T,C,H,W);
+                         patch_offset,invalid,T,F,H,W);
           }
 
           // -- assignent --
@@ -426,11 +421,10 @@ __global__ void refinement_vidflows_backward_kernel(
       prop_patch[_idx] = ref_patch[_idx]+inds[ibatch][ihead][ti][nh][nw][ki][_idx];
     }
 
-    if (!check_bound(prop_patch[0],T)){ // skip invalid times
-      assert(1==0);
-      return;
-    }
-
+    // if (!check_bound(prop_patch[0],T)){ // skip invalid times
+    //   assert(1==0);
+    //   return;
+    // }
 
 
     // -- get source kj from shuffled ki--
@@ -443,7 +437,6 @@ __global__ void refinement_vidflows_backward_kernel(
       atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][1]),signH*iweight[0]);
       atomicAdd(&(grad_flows[ibatch][ihead_f][ti][nh][nw][kj][2]),signW*iweight[1]);
     }
-
 
     // -- accumulate optical flow update --
     scalar_t acc_dFlows[8];

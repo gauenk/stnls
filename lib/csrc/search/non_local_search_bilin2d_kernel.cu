@@ -546,11 +546,6 @@ __global__ void nls_bwd_vidflows_kernel(
       acc_dFlows[_idx] = static_cast<scalar_t>(0);
     }
 
-    scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
-    scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
-    int signH = 1;//check_bound(hi,H) ? 1 : -1;
-    int signW = 1;//check_bound(wi,W) ? 1 : -1;
-
 
     // -- update vid0,vid1,flows --
     update_bwd_bilin2d_vidflows<scalar_t,DIST_TYPE>(
@@ -559,20 +554,17 @@ __global__ void nls_bwd_vidflows_kernel(
                      acc_dFlows,weight,ref_patch,prop_patch,
                      ps,pt,dilation,stride0,reflect_bounds,patch_offset,
                      iftr,ftr_start,ftr_end,ref,prop,prop_i,
-                     valid_ref,valid_prop,valid,signH,signW,T,H,W);
-
-
+                     valid_ref,valid_prop,valid,T,H,W);
 
     // -- update grad_flows from grad_dists,vid0,vid1 --
     if (dt==0){ return; }
-    signH = check_bound(hi,H) ? 1 : -1;
-    signW = check_bound(wi,W) ? 1 : -1;
-    // signH = 1;
-    // signW = 1;
+
+    scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
+    scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
+    int signH = check_bound(hi,H) ? 1 : -1;
+    int signW = check_bound(wi,W) ? 1 : -1;
     bwd_flow_assign(acc_dFlows,nh,nw,signH,signW,
                     grad_flows[ibatch][ihead_f][ref_patch[0]][si]);
-
-
 
     // -- update grad_flows from grad_inds --
     if (ftr_start == 0){

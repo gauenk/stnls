@@ -17,7 +17,7 @@ from .utils import filter_k
 from .utils import shape_vids,dist_type_select
 from .utils import allocate_pair,allocate_vid
 from .utils import get_ctx_qinds
-from .shared import manage_self
+from .shared import manage_self,reflect_bounds_warning
 # from .nls_bwd_impl import nls_backward
 from .ref_bwd_impl import ref_backward
 
@@ -66,7 +66,7 @@ def refine_forward(vid0, vid1, flows,
         fwd_fxn = stnls_cuda.refinement_int_forward
         fwd_fxn(vid0, vid1, flows, dists, inds,
                 ws, ps, stride0, stride1, dilation, pt,
-                reflect_bounds, full_ws, restricted_radius,
+                restricted_radius, reflect_bounds, full_ws,
                 patch_offset, dist_type_i)
     else:
         stride1 = float(stride1)
@@ -74,7 +74,7 @@ def refine_forward(vid0, vid1, flows,
         fwd_fxn(vid0, vid1, flows, dists, inds,
                 kselect, reflect,
                 ws, ps, stride0, stride1, dilation, pt,
-                reflect_bounds, full_ws, restricted_radius,
+                restricted_radius, reflect_bounds, full_ws,
                 patch_offset, dist_type_i)
 
     # print(inds[0,0,0,0,0,:2])
@@ -109,18 +109,19 @@ def refine_forward(vid0, vid1, flows,
         dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
                                          descending=descending,unique=False,
                                          return_order=True)
-        if not(kselect is None) and not(order is None):
+        if kselect.ndim > 1:
             # print("kselect.shape: ",kselect.shape,order.shape)
             kselect = kselect.view(B,HD,Q,Ks*wr*wr) if not(kselect is None) else kselect
             # print("kselect.shape: ",kselect.shape,order.shape)
             kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
     elif topk_mode == "each":
+        # print(dists.shape,kselect.shape)
         dists = rearrange(dists,'... wh ww -> ... (wh ww)')
         inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
-        kselect = rearrange(kselect,'... wh ww -> ... (wh ww)')
-        # print(kselect.shape,reflect.shape)
         dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
-        kselect = kselect[...,:k] # all same across dim
+        if kselect.ndim > 1:
+            kselect = rearrange(kselect,'... wh ww -> ... (wh ww)')
+            kselect = kselect[...,:k] # all same across dim
     else:
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
 
@@ -148,7 +149,7 @@ class RefineSearchFunction(th.autograd.Function):
                 ws, wt, wr, k, kr=-1, ps=1, nheads=1,
                 stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
                 restricted_radius=False, reflect_bounds=True,
-                full_ws=False, topk_mode="all", self_action=None,
+                full_ws=True, topk_mode="all", self_action=None,
                 use_adj=False, normalize_bwd=False, k_agg=-1,
                 itype_fwd="int", itype_bwd="int"):
         """
@@ -171,6 +172,7 @@ class RefineSearchFunction(th.autograd.Function):
         flows_requires_grad = flows.requires_grad
         assert flows.shape[1] == HD
         patch_offset = 0 if use_adj else -(ps//2)
+        reflect_bounds_warning(reflect_bounds)
 
         # -- filter only to kr --
         flows = filter_k(flows,kr)
@@ -219,8 +221,8 @@ class RefineSearch(th.nn.Module):
 
     def __init__(self, ws, wt, wr, k, kr, ps, nheads=1,
                  stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
-                 restricted_radius=False, reflect_bounds=True,
-                 full_ws=False, topk_mode="all", self_action=None,
+                 restricted_radius=True, reflect_bounds=True,
+                 full_ws=True, topk_mode="all", self_action=None,
                  use_adj=False, normalize_bwd=False, k_agg=-1,
                  itype_fwd="int", itype_bwd="int"):
         super().__init__()
@@ -289,7 +291,7 @@ def _apply(vid0, vid1, flows,
            ws, wr, k, kr=-1, ps=1, stride0=4, stride1=1, dilation=1, pt=1,
            # ws, ps, k, wr, kr=-1, nheads=1, stride0=4, stride1=1,
            # dilation=1, pt=1,
-           dist_type="l2", restricted_radius=False, reflect_bounds=True, full_ws=False,
+           dist_type="l2", restricted_radius=False, reflect_bounds=True, full_ws=True,
            topk_mode="all", self_action=None, use_adj=False,
            normalize_bwd=False, k_agg=-1, itype_fwd="int", itype_bwd="int"):
     # wrap "new (2018) apply function
@@ -314,7 +316,7 @@ def extract_config(cfg,restrict=True):
     pairs = {"ws":-1,"wt":-1,"ps":1,"k":10,"wr":1,"kr":-1,
              "nheads":1, "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "dist_type":"l2", "restricted_radius":False,
-             "reflect_bounds":True, "full_ws":False,
+             "reflect_bounds":True, "full_ws":True,
              "topk_mode": "all", "self_action":None,
              "use_adj":False, "normalize_bwd": False, "k_agg":-1,
              "itype_fwd":"int", "itype_bwd":"int"}

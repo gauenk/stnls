@@ -207,7 +207,7 @@ def index_grid(H,W,dtype=th.float,device="cuda"):
     # -- create mesh grid --
     grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
                                  th.arange(0, W, dtype=dtype, device=device))
-    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
+    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 1, 2, W(x), H(y)
     grid.requires_grad = False
     return grid
 

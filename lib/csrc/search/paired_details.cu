@@ -149,6 +149,9 @@ void compute_dist_bilin2d_2d(scalar_t& dist,
         valid_prop[2] = valid_prop[2] && valid_prop[bool_idx];
       }
 
+      bool valid = valid_ref[2] and valid_prop[2];
+      if (not valid){ continue; }
+
       // -- fill each channel --
       for (int ci = 0; ci < C; ci++){
 
