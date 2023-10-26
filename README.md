@@ -4,9 +4,13 @@ A Pytorch-friendly C++/CUDA library to support Space-Time Attention with a Shift
 
 [arxiv](https://arxiv.org/pdf/2309.16849.pdf)
 
-![related works](https://github.com/gauenk/stnls/blob/master/figs/compare_search.png?raw=true)
-![shifted nls](https://github.com/gauenk/stnls/blob/master/figs/shifted_nls.png?raw=true)
+## Related Works & Module Summary
 
+Our module adds a correction step to long-range predicted offsets to correct small spatial errors. The module executes a small grid search surrounding the predicted offset locations. The first figure compares our search method with other recent attention modules. The second figure outlines each conceptual step of our Shifted Non-Local Search.
+
+![related works](https://github.com/gauenk/stnls/blob/master/figs/compare_search.png?raw=true)
+
+![shifted nls](https://github.com/gauenk/stnls/blob/master/figs/shifted_nls.png?raw=true)
 
 ## Install & Usage
 
