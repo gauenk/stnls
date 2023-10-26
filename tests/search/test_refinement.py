@@ -169,8 +169,7 @@ def test_refine_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
                                        dilation=dil,stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=True,
                                        self_action=self_action,use_adj=use_adj,
-                                       dist_type=dist_type,
-                                       itype_fwd=itype,itype_bwd=itype)
+                                       dist_type=dist_type,itype=itype)
 
     # -- test api --
     dists_gt,inds_gt = search(vid,vid,fflow,bflow)
@@ -249,8 +248,7 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
                                        dilation=dil,stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=full_ws,
                                        self_action=self_action,use_adj=use_adj,
-                                       dist_type=dist_type,
-                                       itype_fwd=itype,itype_bwd=itype,topk_mode="all")
+                                       dist_type=dist_type,itype=itype,topk_mode="all")
 
     # -- create inds --
     srch_inds = th.ones((B,HD,T,nH,nW,K,3))+0.1
@@ -345,15 +343,13 @@ def test_anchor_fwd(ws,wt,wr,ps,stride0,stride1,dilation,
                                         dilation=dil,stride0=stride0, stride1=stride1,
                                         reflect_bounds=reflect_bounds,full_ws=False,
                                         self_action="anchor_each",use_adj=use_adj,
-                                        dist_type=dist_type,topk_mode="each",
-                                        itype_fwd=itype,itype_bwd=itype)
+                                        dist_type=dist_type,topk_mode="each",itype=itype)
     k = 1
     refine1 = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads,
                                         dilation=dil,stride0=stride0, stride1=stride1,
                                         reflect_bounds=reflect_bounds,full_ws=True,
                                         self_action="anchor_each",use_adj=use_adj,
-                                        dist_type=dist_type,topk_mode="each",
-                                        itype_fwd=itype,itype_bwd=itype)
+                                        dist_type=dist_type,topk_mode="each",itype=itype)
 
 
     # -- exec search --
@@ -431,8 +427,7 @@ def test_fwd_topk(ws,wt,wr,ps,stride0,stride1,dilation,dist_type,seed,reflect_bo
                                        dilation=dil,stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=True,
                                        self_action=None,use_adj=use_adj,
-                                       dist_type=dist_type,topk_mode="all",
-                                       itype_fwd=itype,itype_bwd=itype)
+                                       dist_type=dist_type,topk_mode="all",itype=itype)
 
     # -- exec --
     _dists,_inds = search(vid0,vid1,flows)

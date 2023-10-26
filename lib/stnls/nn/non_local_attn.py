@@ -75,7 +75,7 @@ class NonLocalAttention(nn.Module):
         # -- init attn fxns --
         self.search = stnls.search.init(search_cfg)
         self.normz = stnls.normz.init(normz_cfg)
-        self.agg = stnls.reducer.init(agg_cfg)
+        self.agg = stnls.agg.init(agg_cfg)
 
         # -- init vars of interest --
         self.use_norm_layer = attn_cfg.use_norm_layer

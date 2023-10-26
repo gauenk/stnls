@@ -35,7 +35,7 @@ class WeightedPatchSumFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid, weights, flows, ps, stride0,
-                pt=1, dilation=1, reflect_bounds=True, use_adj=False, itype="int"):
+                pt=1, dilation=1, reflect_bounds=True, use_adj=False, itype="float"):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
         weights = [BatchSize,nHeads,NumQueries,K]
@@ -230,15 +230,15 @@ def _apply(vid, weights, flows, ps, stride0,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg):
-    pairs = {"ps":7,"stride0":1,"pt":1,"dilation":1,
-             "reflect_bounds":True, "use_adj":False}
+    pairs = {"ps":3,"stride0":1,"pt":1,"dilation":1,
+             "reflect_bounds":True, "use_adj":False, "itype":"float"}
     return extract_pairs(pairs,cfg)
 
 def init(cfg):
     cfg = extract_config(cfg)
     reducer = WeightedPatchSum(
         cfg.ps, cfg.stride0, pt=cfg.pt, dilation=cfg.dilation,
-        reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj)
+        reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,itype=cfg.itype)
     return reducer
 
 

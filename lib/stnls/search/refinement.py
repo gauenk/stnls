@@ -150,8 +150,7 @@ class RefineSearchFunction(th.autograd.Function):
                 stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
                 restricted_radius=False, reflect_bounds=True,
                 full_ws=True, topk_mode="all", self_action=None,
-                use_adj=False, normalize_bwd=False, k_agg=-1,
-                itype_fwd="int", itype_bwd="int"):
+                use_adj=False, normalize_bwd=False, k_agg=-1,itype="float"):
         """
         Run the refinement search
 
@@ -185,7 +184,7 @@ class RefineSearchFunction(th.autograd.Function):
                                             ws, wr, k, kr, ps, stride0, stride1,
                                             dilation, pt, dist_type, restricted_radius,
                                             reflect_bounds, full_ws, topk_mode,
-                                            self_action, patch_offset, itype_fwd)
+                                            self_action, patch_offset, itype)
 
         # -- reshape --
         dists=dists.view(B,HD,T,nH,nW,-1)
@@ -194,14 +193,14 @@ class RefineSearchFunction(th.autograd.Function):
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
         ctx.save_for_backward(inds,vid0,vid1,kselect,reflect)
-        if itype_bwd == "int":
+        if itype == "int":
             ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
         ctx_vars = {"stride0":stride0,"stride1":stride1,
                     "ps":ps,"pt":pt,"dil":dilation,"ws":ws,"wt":wt,
                     "reflect_bounds":reflect_bounds,"k_agg":k_agg,
                     "use_adj":use_adj,"normalize_bwd":normalize_bwd,
-                    "itype_bwd":itype_bwd,"dist_type_i":dist_type_i,
+                    "itype_bwd":itype,"dist_type_i":dist_type_i,
                     "flows_shape":flows_shape,"flows_requires_grad":flows_requires_grad}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
@@ -223,8 +222,7 @@ class RefineSearch(th.nn.Module):
                  stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
                  restricted_radius=True, reflect_bounds=True,
                  full_ws=True, topk_mode="all", self_action=None,
-                 use_adj=False, normalize_bwd=False, k_agg=-1,
-                 itype_fwd="int", itype_bwd="int"):
+                 use_adj=False, normalize_bwd=False, k_agg=-1, itype="float"):
         super().__init__()
 
         # -- core search params --
@@ -251,8 +249,7 @@ class RefineSearch(th.nn.Module):
         self.self_action = self_action
 
         # -- with/without grads --
-        self.itype_fwd = itype_fwd
-        self.itype_bwd = itype_bwd
+        self.itype = itype
 
         # -- searching offsets --
         self.use_adj = use_adj
@@ -272,7 +269,7 @@ class RefineSearch(th.nn.Module):
                                           self.reflect_bounds,self.full_ws,
                                           self.topk_mode,self.self_action,
                                           self.use_adj,self.normalize_bwd,
-                                          self.k_agg,self.itype_fwd,self.itype_bwd)
+                                          self.k_agg,self.itype)
 
     def flops(self,T,F,H,W):
         return 0
@@ -293,7 +290,7 @@ def _apply(vid0, vid1, flows,
            # dilation=1, pt=1,
            dist_type="l2", restricted_radius=False, reflect_bounds=True, full_ws=True,
            topk_mode="all", self_action=None, use_adj=False,
-           normalize_bwd=False, k_agg=-1, itype_fwd="int", itype_bwd="int"):
+           normalize_bwd=False, k_agg=-1, itype="float"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -303,7 +300,7 @@ def _apply(vid0, vid1, flows,
                # ws, ps, k, wr, kr, nheads, stride0, stride1, dilation, pt,
                dist_type, restricted_radius, reflect_bounds,
                full_ws, topk_mode, self_action, use_adj,
-               normalize_bwd, k_agg, itype_fwd, itype_bwd)
+               normalize_bwd, k_agg, itype)
 
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -318,8 +315,7 @@ def extract_config(cfg,restrict=True):
              "dist_type":"l2", "restricted_radius":False,
              "reflect_bounds":True, "full_ws":True,
              "topk_mode": "all", "self_action":None,
-             "use_adj":False, "normalize_bwd": False, "k_agg":-1,
-             "itype_fwd":"int", "itype_bwd":"int"}
+             "use_adj":False, "normalize_bwd": False, "k_agg":-1, "itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
@@ -330,7 +326,7 @@ def init(cfg):
                           reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
                           topk_mode=cfg.topk_mode, self_action=cfg.self_action,
                           use_adj=cfg.use_adj, normalize_bwd=cfg.normalize_bwd,
-                          k_agg=cfg.k_agg,itype_fwd=cfg.itype_fwd,itype_bwd=cfg.itype_bwd)
+                          k_agg=cfg.k_agg,itype=cfg.itype)
 
     return search
 

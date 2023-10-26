@@ -77,7 +77,7 @@ class non_local_stack(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid, weights, inds,
                 ps=7,stride0=4,pt=1,reflect_bounds=True,
-                dilation=1,use_adj=False, itype="int"):
+                dilation=1, use_adj=False, itype="int"):
 
         # -- init --
         HD = inds.shape[1]
@@ -289,8 +289,8 @@ def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ps":7,"stride0":4,"pt":1,"reflect_bounds":True,
-             "dilation":1, "use_adj":False,"itype":"int"}
+    pairs = {"ps":3,"stride0":1,"pt":1,"reflect_bounds":True,
+             "dilation":1, "use_adj":False,"itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):

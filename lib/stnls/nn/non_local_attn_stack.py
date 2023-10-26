@@ -51,7 +51,7 @@ def default_pairs():
              "attn_proj_ngroups":"ngroups",
              "attn_nres":2,
              "attn_nres_ksize":"3",
-             "itype_fwd":"int","itype_bwd":"int"}
+             "itype":"float"}
     return pairs
 
 def extract_config(cfg,restrict=True):
@@ -87,22 +87,18 @@ class NonLocalAttentionStack(nn.Module):
         self.agg_cfg = agg_cfg
 
         # -- mangling [remove me when exps are done] --
-        itype_fwd = search_cfg.itype_fwd
+        itype = search_cfg.itype
         if search_cfg.search_name in ["ref","refine"]:
-            if "ref_itype_fwd" in search_cfg and not(search_cfg.ref_itype_fwd is None):
-                search_cfg.itype_fwd = search_cfg.ref_itype_fwd
+            if "ref_itype" in search_cfg and not(search_cfg.ref_itype is None):
+                search_cfg.itype = search_cfg.ref_itype
 
         # -- init attn fxns --
         self.search = stnls.search.init(search_cfg)
         self.normz = stnls.normz.init(normz_cfg)
-        # self.agg = stnls.reducer.init(agg_cfg)
-        search_cfg.itype_fwd = itype_fwd
-        self.stacking = stnls.tile.NonLocalStack(ps=search_cfg.ps,
-                                                 stride0=search_cfg.stride0,
-                                                 itype_fwd=search_cfg.itype_fwd,
-                                                 itype_bwd=search_cfg.itype_bwd)
-        # self.stacking = stnls.tile.non_local_stack(ps=search_cfg.ps,
-        #                                            stride0=search_cfg.stride0)
+        # self.agg = stnls.agg.init(agg_cfg)
+        self.stacking = stnls.agg.NonLocalStack(ps=search_cfg.ps,
+                                                stride0=search_cfg.stride0,
+                                                itype=search_cfg.itype)
 
         # -- init vars of interest --
         self.proj_version = attn_cfg.attn_proj_version

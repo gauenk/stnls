@@ -204,8 +204,7 @@ class PairedSearch(th.nn.Module):
                  dist_type="l2", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
                  full_ws=True, self_action=None, use_adj=False,
-                 normalize_bwd=False,k_agg=-1,
-                 itype="float"):
+                 normalize_bwd=False, k_agg=-1, itype="float"):
         super().__init__()
 
         # -- core search params --
@@ -356,9 +355,9 @@ def _apply(frame0, frame1, flow,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ws":-1,"ps":7,"k":10,
+    pairs = {"ws":-1,"ps":3,"k":10,
              "nheads":1,"dist_type":"l2",
-             "stride0":4, "stride1":1, "dilation":1, "pt":1,
+             "stride0":1, "stride1":1, "dilation":1, "pt":1,
              "reflect_bounds":True, "full_ws":True,
              "self_action":None,"use_adj":False,
              "normalize_bwd": False, "k_agg":-1,
