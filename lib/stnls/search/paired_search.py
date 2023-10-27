@@ -365,7 +365,7 @@ def extract_config(cfg,restrict=True):
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
-    cfg = extract_config(cfg)
+    cfg = extract_config(cfg,False)
     search = PairedSearch(cfg.ws, cfg.ps, cfg.k, nheads=cfg.nheads,
                           dist_type=cfg.dist_type, stride0=cfg.stride0,
                           stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,

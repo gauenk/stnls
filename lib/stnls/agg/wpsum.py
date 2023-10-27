@@ -229,13 +229,13 @@ def _apply(vid, weights, flows, ps, stride0,
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def extract_config(cfg):
+def extract_config(cfg,restrict=True):
     pairs = {"ps":3,"stride0":1,"pt":1,"dilation":1,
              "reflect_bounds":True, "use_adj":False, "itype":"float"}
-    return extract_pairs(pairs,cfg)
+    return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
-    cfg = extract_config(cfg)
+    cfg = extract_config(cfg,False)
     reducer = WeightedPatchSum(
         cfg.ps, cfg.stride0, pt=cfg.pt, dilation=cfg.dilation,
         reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,itype=cfg.itype)

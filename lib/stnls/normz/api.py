@@ -24,7 +24,7 @@ def extract_config(cfg,restrict=True):
 def init_normz(cfg):
 
     # -- unpack --
-    cfg = extract_config(cfg)
+    cfg = extract_config(cfg,False)
 
     # -- menu --
     modules = {"softmax":softmax}

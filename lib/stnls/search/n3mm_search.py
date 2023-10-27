@@ -11,7 +11,7 @@ import stnls_cuda
 import stnls
 
 # -- api --
-from .utils import extract_pairs
+from stnls.utils import extract_pairs
 
 # -- local --
 from .utils import shape_vids,allocate_inds,dist_type_select,allocate_vid
@@ -357,7 +357,7 @@ def extract_config(cfg,restrict=True):
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
-    cfg = extract_config(cfg)
+    cfg = extract_config(cfg,False)
     search = N3MatMultSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
                              dist_type=cfg.dist_type, stride0=cfg.stride0,
                              stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,

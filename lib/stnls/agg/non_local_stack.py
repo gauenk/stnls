@@ -20,6 +20,7 @@ Example:
 # -- python --
 import torch as th
 from einops import rearrange
+from stnls.utils import extract_pairs
 
 # -- cpp cuda kernel --
 import stnls_cuda
@@ -78,6 +79,8 @@ class non_local_stack(th.autograd.Function):
     def forward(ctx, vid, weights, inds,
                 ps=7,stride0=4,pt=1,reflect_bounds=True,
                 dilation=1, use_adj=False, itype="int"):
+
+        # print("[stack]: ",ps,stride0,itype)
 
         # -- init --
         HD = inds.shape[1]
@@ -284,7 +287,7 @@ def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#        [Python Dict API] stnls.tile.init(pydict)
+#        [Python Dict API] stnls.agg.init(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -294,7 +297,7 @@ def extract_config(cfg,restrict=True):
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
-    cfg = extract_config(cfg)
+    cfg = extract_config(cfg,False)
     search = NonLocalStack(cfg.ps,cfg.stride0,cfg.pt,cfg.reflect_bounds,
                            cfg.dilation,cfg.use_adj,cfg.itype)
     return search

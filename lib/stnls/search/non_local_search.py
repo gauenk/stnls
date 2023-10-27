@@ -132,6 +132,8 @@ class NonLocalSearchFunction(th.autograd.Function):
         ws = search Window Spatial (ws)
         wt = search Window Time (wt)
         """
+        # print("[nls_search]: ",ws,wt,ps,k,nheads,stride0,stride1,
+        #       dist_type,itype,topk_mode)
 
         # -- reshape with heads --
         dtype = vid0.dtype
@@ -258,7 +260,6 @@ class NonLocalSearch(th.nn.Module):
                                             self.k_agg,self.itype)
 
     def flops(self,T,F,H,W):
-        print("hi.")
         return 0
 
         # -- unpack --
@@ -323,7 +324,7 @@ def extract_config(cfg,restrict=True):
 
 
 def init(cfg):
-    cfg = extract_config(cfg)
+    cfg = extract_config(cfg,False)
     search = NonLocalSearch(cfg.ws, cfg.wt, cfg.ps, cfg.k, nheads=cfg.nheads,
                             stride0=cfg.stride0, stride1=cfg.stride1,
                             dist_type=cfg.dist_type, dilation=cfg.dilation, pt=cfg.pt,

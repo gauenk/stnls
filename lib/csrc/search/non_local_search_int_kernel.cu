@@ -189,7 +189,7 @@ void non_local_search_int_forward_cuda(
    int nqueries = dists.size(2);
 
    int ws = dists.size(4);
-   int ws_threads = std::min(ws,15);
+   int ws_threads = std::min(ws,13);
    int ws_per_thread = ((ws-1)/ws_threads) + 1;
 
    int W_t = dists.size(3);

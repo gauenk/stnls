@@ -35,7 +35,9 @@ from stnls.utils.timer import ExpTimer,ExpTimerList
 from .utils import rescale_flows
 
 def default_pairs():
-    pairs = {"qk_frac":1.,"qkv_bias":True,
+    pairs = {"nheads":1,"inner_mult":1,
+             "embed_dim":16,
+             "qk_frac":1.,"qkv_bias":True,
              "qkv_ngroups":1,
              "use_attn_projection":True,
              "drop_rate_proj":0.,

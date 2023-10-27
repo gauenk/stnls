@@ -177,7 +177,8 @@ class RefineSearchFunction(th.autograd.Function):
         ws = search Window Spatial (ws)
         wt = search Window Time (wt)
         """
-
+        # print("[ref_search]: ",ws,wt,wr,ps,k,kr,nheads,stride0,stride1,
+        #       dist_type,itype,topk_mode)
 
         # -- reshape with heads --
         dtype = vid0.dtype
@@ -305,7 +306,7 @@ class RefineSearch(th.nn.Module):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def _apply(vid0, vid1, flows,
-           ws, wt, wr, k, kr=-1, ps=1, nheads=1, 
+           ws, wt, wr, k, kr=-1, ps=1, nheads=1,
            stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
            restricted_radius=False, reflect_bounds=True, full_ws=True,
            topk_mode="all", self_action=None, use_adj=False,
@@ -315,9 +316,9 @@ def _apply(vid0, vid1, flows,
     # cfg = extract_config(kwargs)
     fxn = RefineSearchFunction.apply
     return fxn(vid0, vid1, flows,
-               ws, wt, wr, k, kr, ps, nheads, 
-               stride0, stride1, dilation, pt, dist_type, 
-               restricted_radius, reflect_bounds, full_ws, 
+               ws, wt, wr, k, kr, ps, nheads,
+               stride0, stride1, dilation, pt, dist_type,
+               restricted_radius, reflect_bounds, full_ws,
                topk_mode, self_action, use_adj,
                normalize_bwd, k_agg, itype)
 
@@ -337,6 +338,7 @@ def extract_config(cfg,restrict=True):
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
+    cfg = extract_config(cfg,False)
     search = RefineSearch(cfg.ws, cfg.wt, cfg.wr, cfg.k, kr=cfg.kr, ps=cfg.ps,
                           nheads=cfg.nheads, stride0=cfg.stride0, stride1=cfg.stride0,
                           dilation=cfg.dilation, pt=cfg.pt, dist_type=cfg.dist_type,

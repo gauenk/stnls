@@ -39,18 +39,11 @@ from stnls.utils.timer import ExpTimer,ExpTimerList
 
 
 def default_pairs():
-    pairs = {"qk_frac":1.,"qkv_bias":True,
-             "qkv_ngroups":1,
-             "use_attn_projection":True,
-             "drop_rate_proj":0.,
+    pairs = {"nheads":1,"embed_dim":16,
+             "qk_frac":1.,"qkv_bias":True,
+             "qkv_ngroups":1,"drop_rate_proj":0.,
              "attn_timer":False,"use_attn_flow":True,
              "use_norm_layer":False,"share_kv":False,
-             "attn_proj_version":"v1",
-             "attn_proj_ksize":-1,
-             "attn_proj_stride":"k_ps_ps",
-             "attn_proj_ngroups":"ngroups",
-             "attn_nres":2,
-             "attn_nres_ksize":"3",
              "itype":"float"}
     return pairs
 
@@ -69,7 +62,7 @@ class NonLocalAttentionStack(nn.Module):
         # for k,v in pairs.items():
         #     if not(k in attn_cfg):
         #         attn_cfg[k] = v
-        attn_cfg = extract_config(dcopy(attn_cfg))
+        attn_cfg = extract_config(dcopy(attn_cfg),False)
         # print(attn_cfg)
 
         # -- unpack --
@@ -93,23 +86,21 @@ class NonLocalAttentionStack(nn.Module):
                 search_cfg.itype = search_cfg.ref_itype
 
         # -- init attn fxns --
+        # print(search_cfg)
+        # exit()
         self.search = stnls.search.init(search_cfg)
         self.normz = stnls.normz.init(normz_cfg)
-        # self.agg = stnls.agg.init(agg_cfg)
-        self.stacking = stnls.agg.NonLocalStack(ps=search_cfg.ps,
-                                                stride0=search_cfg.stride0,
-                                                itype=search_cfg.itype)
+        self.agg = stnls.agg.init(agg_cfg)
 
         # -- init vars of interest --
-        self.proj_version = attn_cfg.attn_proj_version
+        # self.proj_version = attn_cfg.attn_proj_version
         self.use_norm_layer = attn_cfg.use_norm_layer
         self.use_flow = attn_cfg.use_attn_flow
         self.use_state_update = search_cfg.use_state_update
-        self.ps = search_cfg.ps
         self.search_name = search_cfg.search_name
-        self.stride0 = search_cfg.stride0
-        self.dilation = search_cfg.dilation
-        self.k = search_cfg.k
+        self.ps = self.search.ps
+        self.stride0 = self.search.stride0
+        self.k = self.search.k
         self.k_agg = normz_cfg.k_agg
         kagg = self.k if self.k_agg <= 0 else self.k_agg
 
@@ -117,131 +108,6 @@ class NonLocalAttentionStack(nn.Module):
         self.qkv = ConvQKV(io_dim,nheads,embed_dim,
                            attn_cfg.qk_frac,bias=attn_cfg.qkv_bias,
                            ngroups=attn_cfg.qkv_ngroups,share_kv=share_kv)
-
-        # -- projection layer --
-        if attn_cfg.attn_proj_version == "v1":
-            ps = 3#search_cfg.ps
-            self.proj = nn.Conv3d(io_dim*inner_mult,io_dim,
-                                  # kernel_size=(1,1,1),
-                                  # stride=(1,1,1),padding=(0,0,0),
-                                  kernel_size=(kagg,ps,ps),
-                                  stride=(kagg,1,1),
-                                  padding=(0,ps//2,ps//2),
-                                  groups=search_cfg.nheads)
-            self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
-        elif attn_cfg.attn_proj_version == "v2":
-            ps = 3
-            mid_dim = 2*io_dim
-            if attn_cfg.attn_proj_ngroups == "nheads":
-                ngroups = search_cfg.nheads
-            elif isinstance(attn_cfg.attn_proj_ngroups,int):
-                ngroups = attn_cfg.attn_proj_ngroups
-            else:
-                raise ValueError("Uknown proj ngroups [%s]" % attn_cfg.attn_proj_ngroups)
-            self.proj = nn.Sequential(nn.Conv3d(io_dim*inner_mult,mid_dim,
-                                                # kernel_size=(1,1,1),
-                                                # stride=(1,1,1),padding=(0,0,0),
-                                                kernel_size=(kagg,ps,ps),
-                                                stride=(kagg,1,1),
-                                                padding=(0,ps//2,ps//2),
-                                                groups=ngroups),
-                                      nn.GELU(),
-                                      nn.Conv3d(mid_dim,io_dim,
-                                                kernel_size=(1,1,1),
-                                                stride=(1,1,1),
-                                                padding=(0,0,0),
-                                                groups=ngroups)
-            )
-            self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
-            # self.proj = nn.Conv3d(io_dim*inner_mult,io_dim,
-            #                       (1,1,1),stride=1,
-            #                       padding="same",groups=1)
-            # self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
-        elif attn_cfg.attn_proj_version == "v3":
-
-            # print(attn_cfg.attn_proj_ksize,
-            #       attn_cfg.attn_proj_stride)
-            if "_" in attn_cfg.attn_proj_ksize:
-                ksizes = []
-                for ksize_str in attn_cfg.attn_proj_ksize.split("_"):
-                    if ksize_str == "k": ksizes.append(kagg)
-                    elif ksize_str == "ps": ksizes.append(self.ps)
-                    elif ksize_str == "ps//2": ksizes.append(self.ps//2)
-                    else: ksizes.append(int(ksize_str))
-            else:
-                msg = "Uknown proj kernel size. [%s]"
-                raise ValueError(msg % attn_cfg.attn_proj_ksize)
-            pads = [0,ksizes[1]//2,ksizes[2]//2]
-
-            if "_" in attn_cfg.attn_proj_stride:
-                strides = []
-                for stride_str in attn_cfg.attn_proj_stride.split("_"):
-                    if stride_str == "k": strides.append(kagg)
-                    elif stride_str == "ps": strides.append(self.ps)
-                    elif stride_str == "ps//2": strides.append(self.ps//2)
-                    else: strides.append(int(stride_str))
-            else:
-                msg = "Uknown proj kernel size. [%s]"
-                raise ValueError(msg % attn_cfg.attn_proj_ksize)
-
-            if attn_cfg.attn_proj_ngroups == "nheads":
-                ngroups = search_cfg.nheads
-            elif isinstance(attn_cfg.attn_proj_ngroups,int):
-                ngroups = attn_cfg.attn_proj_ngroups
-            else:
-                raise ValueError("Uknown proj ngroups [%s]" % attn_cfg.attn_proj_ngroups)
-
-            self.proj = nn.Conv3d(io_dim*inner_mult,io_dim,
-                                  kernel_size=ksizes,stride=strides,
-                                  padding=pads,groups=ngroups)
-            self.proj_drop = nn.Dropout(attn_cfg.drop_rate_proj)
-        elif attn_cfg.attn_proj_version == "v4":
-            nres = attn_cfg.attn_nres
-            ksize = int(attn_cfg.attn_nres_ksize)
-            in_dim = io_dim*inner_mult#*self.k_agg
-            out_dim = io_dim
-            ps = 3#search_cfg.ps
-            self.proj = nn.Sequential(*[
-                Rearrange('b t k c h w -> b t (k c) h w',k=self.k_agg),
-                ChannelAttention(in_dim*self.k_agg),
-                Rearrange('b t (k c) h w -> (b t) c k h w',k=self.k_agg),
-                nn.Conv3d(in_dim,out_dim,kernel_size=(kagg,ps,ps),
-                          stride=(kagg,1,1),padding=(0,ps//2,ps//2),groups=1),
-                # Rearrange('(b t) c h w -> b t c h w',b=B),
-                # ResBlockList(nres, out_dim, ksize),
-            ])
-            self.proj_drop = nn.Identity()
-        elif attn_cfg.attn_proj_version == "v5":
-            nres = attn_cfg.attn_nres
-            ngroups = search_cfg.nheads
-            ksize = int(attn_cfg.attn_nres_ksize)
-            in_dim = io_dim*inner_mult#*self.k_agg
-            out_dim = io_dim
-            ps0 = 1#search_cfg.ps
-            ps = 3
-            self.proj = nn.Sequential(*[
-                Rearrange('b t k c h w -> (b t) c k h w',k=self.k_agg),
-                nn.Conv3d(in_dim,in_dim*self.k_agg,kernel_size=(kagg,ps0,ps0),
-                          stride=(1,1,1),padding=(0,ps0//2,ps0//2),groups=ngroups),
-                Rearrange('bt (k c) 1 h w -> bt c k h w',k=self.k_agg),
-                nn.Conv3d(in_dim,out_dim,kernel_size=(kagg,ps,ps),
-                          stride=(kagg,1,1),padding=(0,ps//2,ps//2),groups=ngroups),
-            ])
-            self.proj_drop = nn.Identity()
-        elif attn_cfg.attn_proj_version == "v6":
-            """
-            Create patch embeddings of dimension: t k F h w -> t k' (f ps ps) nh nw
-              -> maybe t k F h w -> t (k F) h w
-                 with ngroups being both "k" and "1"? or "k" followed by "1"?
-            Then it folds the output: (f ps ps) nh nw -> fold -> f h w
-            Then it projects it back to standard embed dim: f h w -> F h w
-            """
-            raise NotImplementedError("")
-        else:
-            raise NotImplementedError("")
-
-            # self.proj = nn.Identity()
-            # self.proj_drop = nn.Identity()
 
         # -- normzliation --
         self.norm_layer = LayerNorm2D(io_dim) if self.use_norm_layer else nn.Identity()
@@ -274,10 +140,7 @@ class NonLocalAttentionStack(nn.Module):
         weights,inds = self.run_normalize(dists,inds)
 
         # -- aggregate --
-        vid = self.run_aggregation(v_vid,weights,inds)
-
-        # -- projection --
-        vid = self.run_projection(vid)
+        vid = self.agg(v_vid,weights,inds)
 
         # -- timing --
         self.timer.sync_stop("attn")
@@ -318,35 +181,6 @@ class NonLocalAttentionStack(nn.Module):
         dists,inds = self.normz(dists,inds)
         self.timer.sync_stop("normz")
         return dists,inds
-
-    def run_aggregation(self,v_vid,weights,inds):
-
-        # -- aggregate patches --
-        self.timer.sync_start("agg")
-        stack = self.stacking(v_vid,weights,inds)
-        # print("stack.shape: ",stack.shape)
-        # vid = self.agg(v_vid,dists,inds)
-        # stack = rearrange(stack,'b hd k t c h w -> b t (hd c) k h w')
-        stack = rearrange(stack,'b hd k t c h w -> b t k (hd c) h w')
-        self.timer.sync_stop("agg")
-
-        return stack
-
-    def run_projection(self,vid):
-        self.timer.sync_start("trans")
-        B = vid.shape[0]
-        if self.proj_version in ["v1","v2","v3"]:
-            vid = rearrange(vid,'b t k c h w -> (b t) c k h w')
-            vid = self.proj(vid)
-            vid = self.proj_drop(vid)
-            vid = th.mean(vid,2,keepdim=True)
-            vid = rearrange(vid,'(b t) c 1 h w -> b t c h w',b=B)
-        else:
-            vid = self.proj(vid)
-            vid = self.proj_drop(vid)
-            vid = rearrange(vid,'(b t) c 1 h w -> b t c h w',b=B)
-        self.timer.sync_stop("trans")
-        return vid
 
     def update_state(self,state,dists,inds,vshape):
         if not(self.use_state_update): return
@@ -402,8 +236,8 @@ class NonLocalAttentionStack(nn.Module):
         # -- weighted patch sum --
         flops += self.agg.flops()
 
-        # -- projection --
-        flops += nrefs * self.dim * self.dim
+        # # -- projection --
+        # flops += nrefs * self.dim * self.dim
 
         return flops
 
