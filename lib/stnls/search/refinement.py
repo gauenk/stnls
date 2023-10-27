@@ -136,6 +136,24 @@ def refine_forward(vid0, vid1, flows,
 
     return dists,inds,kselect,reflect
 
+def shape_flows(nheads,flows,B,nH,nW):
+    # print(flows.shape)
+    if flows.ndim == 4:
+        B,HD,Q,tr = flows.shape
+        flows=rearrange(flows,'b hd (t nh nw) thr -> b hd t nh nw thr',nh=nH,nw=nW)
+    # elif flows.ndim == 3:
+    #     BHD,Q,tr = flows.shape
+    #     shape_str = '(b hd) (t nh nw) k thr -> b hd t nh nw k thr'
+    #     flows=rearrange(flows,,b=B,nh=nH,nw=nW)
+    elif flows.ndim == 5:
+        B,HD,Q,K,tr = flows.shape
+        shape_str = 'b hd (t nh nw) k thr -> b hd t nh nw k thr'
+        flows=rearrange(flows,shape_str,b=B,nh=nH,nw=nW)
+    elif flows.ndim == 6:
+        flows=rearrange(flows,'(b hd) t nh nw thr -> (b hd) t nh nw thr',b=B)
+    assert flows.ndim == 7
+    return flows
+
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
 #     Pytorch Function
@@ -143,6 +161,7 @@ def refine_forward(vid0, vid1, flows,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 class RefineSearchFunction(th.autograd.Function):
+
 
     @staticmethod
     def forward(ctx, vid0, vid1, flows,
@@ -166,9 +185,10 @@ class RefineSearchFunction(th.autograd.Function):
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
         nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
-        assert flows.ndim in [6,7]
+        flows = shape_flows(nheads,flows,B,nH,nW)
         flows_shape = flows.shape
         flows_requires_grad = flows.requires_grad
+        # print("HD,nheads,flows.shape[1]: ",HD,nheads,flows.shape[1])
         assert flows.shape[1] == HD
         patch_offset = 0 if use_adj else -(ps//2)
         reflect_bounds_warning(reflect_bounds)
@@ -285,10 +305,9 @@ class RefineSearch(th.nn.Module):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def _apply(vid0, vid1, flows,
-           ws, wr, k, kr=-1, ps=1, stride0=4, stride1=1, dilation=1, pt=1,
-           # ws, ps, k, wr, kr=-1, nheads=1, stride0=4, stride1=1,
-           # dilation=1, pt=1,
-           dist_type="l2", restricted_radius=False, reflect_bounds=True, full_ws=True,
+           ws, wt, wr, k, kr=-1, ps=1, nheads=1, 
+           stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
+           restricted_radius=False, reflect_bounds=True, full_ws=True,
            topk_mode="all", self_action=None, use_adj=False,
            normalize_bwd=False, k_agg=-1, itype="float"):
     # wrap "new (2018) apply function
@@ -296,12 +315,11 @@ def _apply(vid0, vid1, flows,
     # cfg = extract_config(kwargs)
     fxn = RefineSearchFunction.apply
     return fxn(vid0, vid1, flows,
-               ws, wr, k, kr, ps, stride0, stride1, dilation, pt,
-               # ws, ps, k, wr, kr, nheads, stride0, stride1, dilation, pt,
-               dist_type, restricted_radius, reflect_bounds,
-               full_ws, topk_mode, self_action, use_adj,
+               ws, wt, wr, k, kr, ps, nheads, 
+               stride0, stride1, dilation, pt, dist_type, 
+               restricted_radius, reflect_bounds, full_ws, 
+               topk_mode, self_action, use_adj,
                normalize_bwd, k_agg, itype)
-
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -320,7 +338,7 @@ def extract_config(cfg,restrict=True):
 
 def init(cfg):
     search = RefineSearch(cfg.ws, cfg.wt, cfg.wr, cfg.k, kr=cfg.kr, ps=cfg.ps,
-                          stride0=cfg.stride0, stride1=cfg.stride0,
+                          nheads=cfg.nheads, stride0=cfg.stride0, stride1=cfg.stride0,
                           dilation=cfg.dilation, pt=cfg.pt, dist_type=cfg.dist_type,
                           restricted_radius=cfg.restricted_radius,
                           reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,

@@ -54,5 +54,5 @@ def extract_config(_cfg,restrict=True):
 def init(cfg):
     cfg = extract_config(cfg)
     pkg_name = from_search_menu(cfg.search_name)
-    init_s = importlib.import_module("stnls.pytorch.search.%s" % pkg_name).init
+    init_s = importlib.import_module("stnls.search.%s" % pkg_name).init
     return init_s(cfg)
