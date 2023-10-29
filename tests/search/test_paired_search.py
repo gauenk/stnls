@@ -69,7 +69,8 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     device = "cuda:0"
     use_adj = False
     set_seed(seed)
-    k = ws*ws if k == 0 else -1
+    W_t = 2*wt+1
+    k = W_t*ws*ws if k == 0 else -1
 
     # -- load data --
     B,T,F,H,W = 2,10,16,16,8
@@ -79,7 +80,6 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
 
     # -- load flows --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
-    W_t = 2*wt+1
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()#/2.
     flows = th.rand_like(flows)/2.+th.randint_like(flows,-2,2)+0.2
 

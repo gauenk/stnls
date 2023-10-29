@@ -30,6 +30,8 @@ MENU = edict({"exact":"non_local_search",
               "refine":"refinement",
               "pair":"paired_search",
               "paired":"paired_search",
+              "paired_refine":"paired_refine",
+              "paired_ref":"paired_refine",
               "rand_inds":"rand_inds",
               "n3mm":"n3mm_search"})
 

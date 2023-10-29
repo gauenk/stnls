@@ -20,15 +20,24 @@ def run(dists,inds,stride0,H,W,qstart=0):
     # -- view --
     # print(dists.shape)
     B,HD,Q,Ks,ws,ws = dists.shape
+    d2or3 = inds.shape[-1]
     dshape,ishape = list(dists.shape),list(inds.shape)
     dists = dists.view(B*HD,Q,Ks*ws*ws)
-    inds = inds.view(B*HD,Q,Ks*ws*ws,3)
+    inds = inds.view(B*HD,Q,Ks*ws*ws,d2or3)
+
+    # -- [patchwork] --
+    if d2or3 == 2:
+        inds = th.cat([th.zeros_like(inds[...,[0]]),inds],-1)
 
     # -- allocate --
     order = th.zeros_like(dists[...,0]).int()
 
     # -- run --
     stnls_cuda.anchor_self(dists,inds,order,stride0,H,W)
+
+    # -- [patchwork] --
+    if d2or3 == 2:
+        inds = inds[...,1:].contiguous()
 
     # -- return --
     dists = dists.reshape(dshape)

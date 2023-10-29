@@ -15,8 +15,10 @@ setup(name='stnls',
               'lib/csrc/search/refinement.cpp', # Search over K offsets
               'lib/csrc/search/refinement_int_kernel.cu',
               'lib/csrc/search/refinement_bilin2d_kernel.cu',
-              'lib/csrc/search/paired_search.cpp', # Space-Time Search (Pair of Frames)
+              'lib/csrc/search/paired_search.cpp', # Paired Search
               'lib/csrc/search/paired_search_kernel.cu',
+              'lib/csrc/search/paired_refine.cpp', # Paired Refinement
+              'lib/csrc/search/paired_refine_kernel.cu',
               'lib/csrc/search/mat_mult1.cpp', # Space-Time Search (Pair of Frames)
               'lib/csrc/search/mat_mult1_kernel.cu',
               # -- nn --

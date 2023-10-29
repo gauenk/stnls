@@ -4,6 +4,7 @@
 void init_non_local_search(py::module &);
 void init_refinement(py::module &);
 void init_paired_search(py::module &);
+void init_paired_refine(py::module &);
 void init_n3net_matmult1(py::module &);
 
 
@@ -23,6 +24,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_non_local_search(m);
   init_refinement(m);
   init_paired_search(m);
+  init_paired_refine(m);
   init_n3net_matmult1(m);
 
   // -- nn --
