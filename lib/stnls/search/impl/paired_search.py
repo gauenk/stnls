@@ -67,7 +67,7 @@ def forward(frame0, frame1, flow,
     if self_action is None: pass
     elif "anchor" in self_action:
         dists,inds = dists[...,None,:,:],inds[...,None,:,:,:]
-        flow = flow[:,:,None]
+        flow = flow[...,None,:]
         stnls.nn.anchor_self_paired(dists,inds,flow,stride0,H,W)
     else:
         raise ValueError(f"Uknown option for self_action [{self_action}]")
@@ -76,8 +76,8 @@ def forward(frame0, frame1, flow,
     # -- topk --
     if k > 0:
         dim = 3
-        dists=dists.view(B,HD,Q,ws*ws)
-        inds=inds.view(B,HD,Q,ws*ws,2)
+        dists=dists.view(B,HD,Q,-1)
+        inds=inds.view(B,HD,Q,-1,2)
         dists,inds = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
                                    descending=descending)
 

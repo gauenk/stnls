@@ -18,7 +18,7 @@ from stnls.search.utils import filter_k,shape_vids,dist_type_select
 from stnls.search.utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
 from stnls.search.utils import get_ctx_shell,ensure_flow_shape,ensure_paired_flow_dim
 from stnls.search.shared import reflect_bounds_warning
-from stnls.search.utils import paired_vids as _paired_vids
+from stnls.search.utils import paired_vids_refine as _paired_vids
 
 # -- implementation --
 from stnls.search.impl.paired_refine import forward,backward
@@ -35,7 +35,7 @@ class PairedRefineFunction(th.autograd.Function):
     def forward(ctx, frame0, frame1, flow,
                 ws, wr, k, kr, ps, nheads=1,
                 dist_type="prod", stride0=4, stride1=1,
-                dilation=1, pt=1, reflect_bounds=True,
+                dilation=1, restricted_radius=False, reflect_bounds=True,
                 full_ws=True, self_action=None, use_adj=False,
                 normalize_bwd=False, k_agg=-1, topk_mode="each", itype="float"):
 
@@ -64,8 +64,9 @@ class PairedRefineFunction(th.autograd.Function):
         # -- run [optionally batched] forward function --
         dists,inds = forward(frame0, frame1, flow,
                              ws, wr, k, kr, ps, nheads, dist_type,
-                             stride0, stride1, dilation, pt,
-                             self_action, reflect_bounds, full_ws,
+                             stride0, stride1, dilation,
+                             self_action, restricted_radius,
+                             reflect_bounds, full_ws,
                              use_adj, topk_mode, itype)
 
         # -- setup ctx --
@@ -75,7 +76,7 @@ class PairedRefineFunction(th.autograd.Function):
         if itype == "int": ctx.mark_non_differentiable(inds)
         ctx.vid_shape = frame0.shape
         ctx_vars = {"stride0":stride0,"stride1":stride1,
-                    "wr":wr,"ps":ps,"pt":pt,"ws":ws,"dil":dilation,
+                    "wr":wr,"ps":ps,"ws":ws,"dil":dilation,
                     "reflect_bounds":reflect_bounds,
                     "normalize_bwd":normalize_bwd,
                     "k_agg":k_agg,"use_adj":use_adj,
@@ -104,7 +105,7 @@ class PairedRefine(th.nn.Module):
 
     def __init__(self, ws, wr, k, kr, ps, nheads=1,
                  dist_type="l2", stride0=4, stride1=1,
-                 dilation=1, pt=1, reflect_bounds=True,
+                 dilation=1, restricted_radius=False, reflect_bounds=True,
                  full_ws=True, self_action=None, use_adj=False,
                  normalize_bwd=False, k_agg=-1, topk_mode="each", itype="float"):
         super().__init__()
@@ -120,10 +121,10 @@ class PairedRefine(th.nn.Module):
         self.stride0 = stride0
         self.stride1 = stride1
         self.dilation = dilation
-        self.pt = pt
         self.itype = itype
 
         # -- manage patch and search boundaries --
+        self.restricted_radius = restricted_radius
         self.reflect_bounds = reflect_bounds
         self.full_ws = full_ws
         self.use_adj = use_adj
@@ -146,7 +147,7 @@ class PairedRefine(th.nn.Module):
                                           self.ws, self.wr, self.k, self.kr,
                                           self.ps, self.nheads, self.dist_type,
                                           self.stride0,self.stride1,
-                                          self.dilation,self.pt,
+                                          self.dilation,self.restricted_radius,
                                           self.reflect_bounds,self.full_ws,
                                           self.self_action,self.use_adj,
                                           self.normalize_bwd,self.k_agg,
@@ -158,13 +159,13 @@ class PairedRefine(th.nn.Module):
         return 0
 
         # -- unpack --
-        ps,pt = self.ps,self.pt
+        ps = self.ps
 
         # -- compute search --
         nrefs_hw = ((H-1)//self.stride0+1) * ((W-1)//self.stride0+1)
         nrefs = T * HD * nrefs_hw
         nsearch = ws_h * ws_w
-        flops_per_search = 2 * F * ps * ps * pt
+        flops_per_search = 2 * F * ps * ps
         search_flops = nrefs * nsearch * flops_per_search
         flops = search_flops
 
@@ -187,8 +188,8 @@ class PairedRefine(th.nn.Module):
 def _apply(frame0, frame1, flow,
            wr, ws, ps, k, nheads=1, batchsize=-1,
            dist_type="l2", stride0=4, stride1=1,
-           dilation=1, pt=1, reflect_bounds=True,
-           full_ws=True,self_action=None,
+           dilation=1, restricted_radius=False,
+           reflect_bounds=True, full_ws=True, self_action=None,
            use_adj=False, normalize_bwd=False, k_agg=-1,
            topk_mode="each",itype="float"):
     # wrap "new (2018) apply function
@@ -197,7 +198,7 @@ def _apply(frame0, frame1, flow,
     fxn = PairedRefineFunction.apply
     return fxn(frame0,frame1,flow,wr,ws,ps,k,
                nheads,batchsize,dist_type,
-               stride0,stride1,dilation,pt,reflect_bounds,
+               stride0,stride1,dilation,restricted_radius,reflect_bounds,
                full_ws,self_action,use_adj,normalize_bwd,k_agg,
                topk_mode,itype)
 
@@ -210,7 +211,8 @@ def _apply(frame0, frame1, flow,
 def extract_config(cfg,restrict=True):
     pairs = {"wr":1,"ws":-1,"ps":3,"k":10,
              "nheads":1,"dist_type":"l2",
-             "stride0":1, "stride1":1, "dilation":1, "pt":1,
+             "stride0":1, "stride1":1, "dilation":1,
+             "restricted_radius":False,
              "reflect_bounds":True, "full_ws":True,
              "self_action":None,"use_adj":False,
              "normalize_bwd": False, "k_agg":-1,
@@ -221,7 +223,8 @@ def init(cfg):
     cfg = extract_config(cfg,False)
     search = PairedRefine(cfg.wr, cfg.ws, cfg.ps, cfg.k, nheads=cfg.nheads,
                           dist_type=cfg.dist_type, stride0=cfg.stride0,
-                          stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
+                          stride1=cfg.stride1, dilation=cfg.dilation,
+                          restricted_radius=cfg.restricted_radius,
                           reflect_bounds=cfg.reflect_bounds,
                           full_ws=cfg.full_ws, self_action=cfg.self_action,
                           use_adj=cfg.use_adj,normalize_bwd=cfg.normalize_bwd,

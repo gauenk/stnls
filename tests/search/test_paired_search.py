@@ -77,8 +77,7 @@ def test_fwd(ws,wt,ps,pt,stride0,stride1,dilation,
     search_te = sch.PairedSearch(ws, ps, k, nheads, dist_type=dist_type,
                                  dilation=dilation,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=True,
-                                 self_action=self_action,
-                                 itype=itype)
+                                 self_action=self_action,itype=itype)
 
     # -- [groundtruth] search --
     dists_gt,inds_gt = search_gt(vid0,vid1,flows)

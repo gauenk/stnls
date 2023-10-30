@@ -367,6 +367,47 @@ def paired_vids(forward, vid0, vid1, flows, wt, skip_self=False):
     # print("inds.shape: ",inds.shape)
     return dists,inds
 
+def paired_vids_refine(forward, vid0, vid1, flows, wt, skip_self=False):
+    """
+
+    Only really for testing...
+
+    """
+    dists,inds = [],[]
+    T = vid0.shape[1]
+    flows = get_flows(flows)
+    zflow = th.zeros_like(flows[:,:,0,0])
+    K_total = flows.shape[-2]
+    assert (K_total % T == 0),"Must be divisible by T."
+    K_each = K_total // T
+    for ti in range(T):
+        t_grid = get_time_window_inds(ti,wt,T)
+        dists_i,inds_i = [],[]
+        for _tj in range(2*wt+1):
+            # -- update search frame --
+            tj = t_grid[_tj]
+            if (ti == tj) and skip_self: continue
+            frame0 = vid0[:,ti]
+            frame1 = vid1[:,tj]
+            ks0,ks1 = _tj*K_each,(_tj+1)*K_each
+            flow = flows[:,:,ti,:,:,ks0:ks1,:].float()
+            assert th.all(flow[...,0] == (tj-ti)),"Must all be same frame."
+            dists_ij,inds_ij = forward(frame0,frame1,flow[...,1:])
+            inds_t = (tj-ti)*th.ones_like(inds_ij[...,[0]])
+            inds_ij = th.cat([inds_t,inds_ij],-1)
+            dists_i.append(dists_ij)
+            inds_i.append(inds_ij)
+        # -- stack across K --
+        dists_i = th.cat(dists_i,-1)
+        inds_i = th.cat(inds_i,-2)
+        dists.append(dists_i)
+        inds.append(inds_i)
+    # -- stack across time --
+    dists = th.cat(dists,-4)
+    inds = th.cat(inds,-5)
+    # print("inds.shape: ",inds.shape)
+    return dists,inds
+
 def paired_vids_old(forward, vid0, vid1, acc_flows, wt, skip_self=False):
     dists,inds = [],[]
     T = vid0.shape[1]

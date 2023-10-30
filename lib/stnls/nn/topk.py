@@ -222,7 +222,7 @@ def run_each(dists,inds,K,descending,anchor_self=False):
     if anchor_self:
         dists0 = dists[...,[0]]
         inds0 = inds[...,[0],:]
-        if K > 1:
+        if K > 1 and dists.shape[-1] > 1:
             dists_k,inds_k = topk_each_impl(dists[...,1:],inds[...,1:,:],K-1,descending)
             dists = th.cat([dists0,dists_k],-1)
             inds = th.cat([inds0,inds_k],-2)

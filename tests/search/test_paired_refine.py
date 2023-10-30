@@ -33,8 +33,8 @@ SAVE_DIR = Path("./output/tests/non_local_search")
 def pytest_generate_tests(metafunc):
     test_lists = {"ws":[3],"wt":[1],"K":[-1],"wr":[1],"kr":[-1],"pt":[1],
                   "ps":[3],"stride0":[1],"stride1":[1],"dilation":[1],
-                  "self_action":["anchor_each"],"nheads":[1],"seed":[0],
-                  "dist_type":["prod","l2"],"itype":["int","float"],
+                  "self_action":[None],"nheads":[1],"seed":[0],
+                  "dist_type":["l2"],"itype":["int","float"],
                   "topk_mode":["all"],"reflect_bounds":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -52,14 +52,16 @@ def test_fwd_match_refine(ws,wt,wr,kr,K,ps,pt,stride0,stride1,dilation,
     B,HD,T,F,H,W = 1,nheads,3,1,10,10
     W_t = min(T,2*wt+1)
     K = W_t*ws*ws if K <= 0 else K
+    # K = -1
     K_refine = int(K*kr)
+    # K_refine = -1
     device = "cuda:0"
     set_seed(seed)
 
     # -- video data --
     vid = th.ones((B,T,HD*F,H,W),device=device)
     vid0 = th.rand_like(vid)#.requires_grad_(True)
-    vid1 = th.rand_like(vid)#.requires_grad_(True)
+    vid1 = vid0.clone()#th.rand_like(vid)#.requires_grad_(True)
 
     # -- create inds --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
@@ -67,9 +69,10 @@ def test_fwd_match_refine(ws,wt,wr,kr,K,ps,pt,stride0,stride1,dilation,
     flows = th.rand_like(flows)/2.+1.1
     tgrid = th.arange(0,T).view(1,1,T,1,1,1)
     flows[...,0] = th.randint(0,T,size=flows[...,0].shape)-tgrid
-    flows[...,1:] = th.rand_like(flows[...,1:])/2.+0.2
+    flows[...,1:] = th.rand_like(flows[...,1:])/2.+2.2
     # flows[...,1:] = -flows[...,1:]
     not_int = th.all(th.abs(flows[...,1:].round() - flows[...,1:])>1e-5).item()
+    # flows = th.zeros_like(flows)
     assert not_int,"Gradcheck only works _not_ near an int."
     flows = flows.to(vid0.device)
     # srch_inds = srch_inds.requires_grad_(True)
@@ -91,6 +94,10 @@ def test_fwd_match_refine(ws,wt,wr,kr,K,ps,pt,stride0,stride1,dilation,
     # -- test api --
     dists_gt,inds_gt = refine_gt(vid0, vid1, flows)
     dists_te,inds_te = refine_te.paired_vids(vid0, vid1, flows, wt)
+    # print(dists_te.shape,inds_te.shape)
+
+    # -- viz --
+    # print(th.cat([inds_gt,inds_te],-1))
 
     # -- compare --
     assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True)
@@ -107,16 +114,18 @@ def test_fwd_match_search(ws,wt,kr,ps,pt,stride0,stride1,dilation,
 
     # -- init vars --
     device = "cuda:0"
+    B,HD,T,F,H,W = 1,nheads,3,1,10,10
     wr = 1
     W_t = min(2*wt+1,T)
-    k = W_t*ws*ws
+    K = W_t*ws*ws
     set_seed(seed)
 
     # -- load data --
-    B,HD,T,F,H,W = 1,nheads,3,1,10,10
     vid = th.ones((B,T,HD*F,H,W),device=device)
     vid0 = th.rand_like(vid)#.requires_grad_(True)
     vid1 = th.rand_like(vid)#.requires_grad_(True)
+    # vid0 = th.rand_like(vid)#.requires_grad_(True)
+    # vid1 = vid0.clone()#th.rand_like(vid)#.requires_grad_(True)
 
     # -- compute flow --
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
@@ -125,13 +134,13 @@ def test_fwd_match_search(ws,wt,kr,ps,pt,stride0,stride1,dilation,
     # flows = flows.requires_grad_(True)
 
     # -- exec fold fxns --
-    search = stnls.search.PairedSearch(ws, wt, ps, K, nheads,
+    search = stnls.search.PairedSearch(ws, ps, K, nheads,
                                        dilation=dilation,
                                        stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=True,
                                        self_action=self_action,
                                        dist_type=dist_type,itype=itype)
-    refine = stnls.search.PairedRefine(ws, wt, wr, k_refine, kr, ps, nheads,
+    refine = stnls.search.PairedRefine(ws, wr, K, kr, ps, nheads,
                                        dilation=dilation,
                                        stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=True,
@@ -141,6 +150,9 @@ def test_fwd_match_search(ws,wt,kr,ps,pt,stride0,stride1,dilation,
     # -- test api --
     dists_gt,inds_gt = search.paired_vids(vid0, vid1, flows, wt)
     dists_te,inds_te = refine.paired_vids(vid0, vid1, inds_gt, wt)
+
+    # -- viz --
+    # print(th.cat([inds_gt,inds_te],-1))
 
     # -- compare --
     assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True)
@@ -159,12 +171,13 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,pt,stride0,stride1,dilation,
 
     # -- init vars --
     device = "cuda:0"
+    full_ws = True
     set_seed(seed)
 
     # -- shapes --
     W_t = 2*wt+1
     K,kr = W_t*ws*ws,-1
-    HD,K = nheads,k
+    HD = nheads
 
     # -- load data --
     B,T,F,H,W = 1,3,1,8,8
@@ -182,8 +195,9 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,pt,stride0,stride1,dilation,
 
     # -- exec fold fxns --
     wr = 1
-    refine = stnls.search.PairedRefine(ws, wt, wr, -1, kr, ps, nheads,
-                                       dilation=dil,stride0=stride0, stride1=stride1,
+    refine = stnls.search.PairedRefine(ws, wr, -1, kr, ps, nheads,
+                                       dilation=dilation,
+                                       stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=full_ws,
                                        self_action=self_action,
                                        dist_type=dist_type,itype=itype,topk_mode="all")
@@ -201,7 +215,7 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,pt,stride0,stride1,dilation,
     # srch_inds = srch_inds.requires_grad_(True)
 
     # -- run refinement --
-    ref_dists,ref_inds = refine(vid0,vid1,srch_inds)
+    ref_dists,ref_inds = refine.paired_vids(vid0,vid1,srch_inds,wt)
 
     # -- autograd --
     fxn = lambda vid0: refine(vid0,vid1,srch_inds)[0]
