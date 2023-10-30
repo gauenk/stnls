@@ -14,10 +14,11 @@ import stnls
 from stnls.utils import extract_pairs
 
 # -- local --
-from .utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
-from .utils import get_ctx_shell,ensure_flow_shape,ensure_paired_flow_dim
-from .shared import reflect_bounds_warning
-from .utils import paired_vids as _paired_vids
+from stnls.search.utils import filter_k,shape_vids,dist_type_select
+from stnls.search.utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
+from stnls.search.utils import get_ctx_shell,ensure_flow_shape,ensure_paired_flow_dim
+from stnls.search.shared import reflect_bounds_warning
+from stnls.search.utils import paired_vids as _paired_vids
 
 # -- implementation --
 from stnls.search.impl.paired_refine import forward,backward
@@ -57,15 +58,15 @@ class PairedRefineFunction(th.autograd.Function):
         reflect_bounds_warning(reflect_bounds)
 
         # -- filter only to kr --
-        flows = filter_k(flows,kr)
-        flows = flows.contiguous()
+        flow = filter_k(flow,kr)
+        flow = flow.contiguous()
 
         # -- run [optionally batched] forward function --
         dists,inds = forward(frame0, frame1, flow,
-                                           ws, wr, k, kr, ps, nheads, dist_type,
-                                           stride0, stride1, dilation, pt,
-                                           self_action, reflect_bounds, full_ws,
-                                           use_adj, topk_mode, itype)
+                             ws, wr, k, kr, ps, nheads, dist_type,
+                             stride0, stride1, dilation, pt,
+                             self_action, reflect_bounds, full_ws,
+                             use_adj, topk_mode, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
