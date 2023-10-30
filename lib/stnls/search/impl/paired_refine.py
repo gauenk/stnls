@@ -21,10 +21,10 @@ from stnls.search.utils import get_inds,allocate_grad_flows
 from stnls.search.shared import manage_self
 
 def forward(frame0, frame1, flow,
-            ws, ps, k, dist_type,
+            ws, wr, k, kr, ps, nheads, dist_type,
             stride0, stride1, dilation, pt,
-            self_action, reflect_bounds,
-            full_ws, use_adj, itype):
+            self_action, reflect_bounds, full_ws,
+            use_adj, topk_mode, itype):
 
     # -- unpack --
     device = frame0.device
@@ -44,34 +44,55 @@ def forward(frame0, frame1, flow,
     dist_type_i,descending,idist_val = dist_type_select(dist_type)
 
     # -- allocate results --
-    base_shape = (B,HD,Q,ws,ws)
+    base_shape = (B,HD,Q,wr,wr)
     dists,inds = allocate_pair_2d(base_shape,device,frame0.dtype,idist_val,itype)
     # print("inds.shape: ",inds.shape)
 
     # -- forward --
     if itype == "int":
-        flow = flow.round().int()
+        flow = flow.round()
         inds = inds.int()
         stride1 = max(1,int(stride1))
-        fwd_fxn = stnls_cuda.paired_search_int_forward
+        fwd_fxn = stnls_cuda.paired_refine_int_forward
     else:
-        fwd_fxn = stnls_cuda.paired_search_bilin2d_forward
+        fwd_fxn = stnls_cuda.paired_refine_bilin2d_forward
         stride1 = float(stride1)
+    # print(frame0.shape,flow.shape,dists.shape,inds.shape)
     fwd_fxn(frame0, frame1, flow, dists, inds,
-            ps, k, stride0, stride1, dilation,
+            ws, ps, k, stride0, stride1, dilation,
             reflect_bounds, full_ws, patch_offset, dist_type_i)
 
-    # -- anchor --
+    # print(frame0.shape,frame1.shape,flow.shape,inds.shape)
+    # -- compress search region --
+    dists=dists.view(B,HD,Q,-1)
+    inds=inds.view(B,HD,Q,-1,2)
+    # th.cuda.synchronize()
+
+    # -- topk --
     assert self_action in [None,"anchor","anchor_each"]
     anchor_self = False if self_action is None else "anchor" in self_action
-    if self_action is None: pass
-    elif "anchor" in self_action:
-        dists,inds = dists[...,None,:,:],inds[...,None,:,:,:]
-        flow = flow[:,:,None]
-        stnls.nn.anchor_self_paired(dists,inds,flow,stride0,H,W)
+    if topk_mode == "all":
+        dim = 3
+        dists=dists.view(B,HD,Q,Ks*wr*wr)
+        inds=inds.view(B,HD,Q,Ks*wr*wr,3)
+        dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
+                                         descending=descending,unique=False,
+                                         return_order=True)
+        if kselect.ndim > 1:
+            # print("kselect.shape: ",kselect.shape,order.shape)
+            kselect = kselect.view(B,HD,Q,Ks*wr*wr) if not(kselect is None) else kselect
+            # print("kselect.shape: ",kselect.shape,order.shape)
+            kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
+    elif topk_mode == "each":
+        # print(dists.shape,kselect.shape)
+        dists = rearrange(dists,'... wh ww -> ... (wh ww)')
+        inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
+        dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
+        if kselect.ndim > 1:
+            kselect = rearrange(kselect,'... wh ww -> ... (wh ww)')
+            kselect = kselect[...,:k] # all same across dim
     else:
-        raise ValueError(f"Uknown option for self_action [{self_action}]")
-
+        raise ValueError(f"Unknown topk_mode [{topk_mode}]")
 
     # -- topk --
     if k > 0:
@@ -86,6 +107,7 @@ def forward(frame0, frame1, flow,
     inds=inds.reshape(B,HD,1,nH0,nW0,-1,2)
 
     return dists,inds
+
 
 
 

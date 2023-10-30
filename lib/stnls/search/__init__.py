@@ -5,7 +5,8 @@ from . import refinement as refinement_f
 from . import paired_search as paired_f
 from . import n3mm_search as n3mm_search_f
 from .utils import empty_flow,search_wrap
-from .paired_utils import get_time_window_inds
+from .utils import get_time_window_inds
+# from .paired_utils import get_time_window_inds
 
 # -- api to programatically access search functions --
 from . import api # access uniformly

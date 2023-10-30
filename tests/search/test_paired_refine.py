@@ -20,8 +20,7 @@ import stnls
 import stnls.utils.gpu_mem as gpu_mem
 from stnls.utils.pads import comp_pads
 from stnls.testing.gradcheck import gradcheck_skipnan,gradcheck_skip_nan_unstable
-from stnls.testing.gradcheck import check_shuffled_inds
-from stnls.testing import int_spaced_vid
+from stnls.testing import check_shuffled_inds,int_spaced_vid
 
 # -- test func --
 from torch.nn.functional import fold,unfold,pad
@@ -32,9 +31,6 @@ SAVE_DIR = Path("./output/tests/non_local_search")
 
 
 def pytest_generate_tests(metafunc):
-    seed = 123
-    th.manual_seed(seed)
-    np.random.seed(seed)
     test_lists = {"ws":[3],"wt":[1],"k":[-1],"wr":[1],"kr":[-1],"pt":[1],
                   "ps":[3],"stride0":[1],"stride1":[1],"dilation":[1],
                   "self_action":["anchor_each"],"nheads":[1],"seed":[0],
@@ -93,7 +89,7 @@ def test_fwd_match_refine(ws,wt,wr,kr,k,ps,pt,stride0,stride1,dilation,
     # -- compare --
     assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True)
 
-def test_fwd_match_search(ws,wt,kr,k,ps,pt,stride0,stride1,dilation,
+def test_fwd_match_search(ws,wt,kr,ps,pt,stride0,stride1,dilation,
                           self_action,nheads,dist_type,itype,seed,reflect_bounds):
     """
 
@@ -106,7 +102,8 @@ def test_fwd_match_search(ws,wt,kr,k,ps,pt,stride0,stride1,dilation,
     # -- init vars --
     device = "cuda:0"
     wr = 1
-    k_refine = -1
+    W_t = 2*wt+1
+    k = W_t*ws*ws
     set_seed(seed)
 
     # -- load data --
