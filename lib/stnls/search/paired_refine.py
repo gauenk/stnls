@@ -17,7 +17,6 @@ from stnls.utils import extract_pairs
 from .utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
 from .utils import get_ctx_shell,ensure_flow_shape,ensure_paired_flow_dim
 from .shared import reflect_bounds_warning
-from .paired_bwd_impl import paired_refine_backward
 from .utils import paired_vids as _paired_vids
 
 # -- implementation --
