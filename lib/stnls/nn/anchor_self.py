@@ -49,11 +49,19 @@ def run(dists,inds,stride0,H,W,qstart=0):
 def run_refine(dists,inds,flows,stride0,H,W):
 
     # -- view --
-    B,HD,T,nH,nW,Ks,ws,ws = dists.shape
-    dists = dists.view(B,HD,T*nH*nW,Ks,ws*ws)
-    inds = inds.view(B,HD,T*nH*nW,Ks,ws*ws,3)
     HD_f = flows.shape[1]
-    flows = flows.view(B,HD_f,T*nH*nW,Ks,3)
+    if dists.ndim == 8:
+        B,HD,T,nH,nW,Ks,ws,ws = dists.shape
+        dists = dists.view(B,HD,T*nH*nW,Ks,ws*ws)
+        inds = inds.view(B,HD,T*nH*nW,Ks,ws*ws,3)
+        flows = flows.view(B,HD_f,T*nH*nW,Ks,3)
+    assert inds.shape[-1] == 3,"Index must be size 3."
+    # elif dists.ndim == 6:
+    #     B,HD,T,nH,nW,Ks,ws,ws = dists.shape
+    #     dists = dists.view(B,HD,T*nH*nW,Ks,ws*ws)
+    #     inds = inds.view(B,HD,T*nH*nW,Ks,ws*ws,3)
+    #     flows = flows.view(B,HD_f,T*nH*nW,Ks,3)
+    # print("dists.shape,inds.shape,flows.shape: ",dists.shape,inds.shape,flows.shape)
 
     # -- run --
     stnls_cuda.anchor_self_refine(dists,inds,flows,stride0,H,W)
@@ -65,7 +73,21 @@ def run_time(dists,inds,flows,wt,stride0,H,W):
     d2or3 = inds.shape[-1]
     dists = dists.view(B,HD,Q,W_t,ws*ws)
     inds = inds.view(B,HD,Q,W_t,ws*ws,d2or3)
+    assert d2or3 == 3,"Index must be size 3."
 
     # -- run --
     stnls_cuda.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
+
+def run_paired(dists,inds,flows,stride0,H,W):
+
+    # -- view --
+    B,HD,Q,G,ws,ws = dists.shape
+    d2or3 = inds.shape[-1]
+    dists = dists.view(B,HD,Q,G,ws*ws)
+    inds = inds.view(B,HD,Q,G,ws*ws,d2or3)
+    assert d2or3 == 2,"Index must be size 2."
+
+    # -- run --
+    stnls_cuda.anchor_self_paired(dists,inds,flows,stride0,H,W)
+
 

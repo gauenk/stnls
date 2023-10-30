@@ -16,98 +16,12 @@ from stnls.utils import extract_pairs
 # -- local --
 from .utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
 from .utils import get_ctx_shell,ensure_flow_shape
+from .utils import ensure_paired_flow_dim as ensure_flow_dim
 from .shared import manage_self,reflect_bounds_warning
-from .paired_bwd_impl import paired_backward
-from .batching_utils import run_batched,batching_info
-from .paired_utils import paired_vids as _paired_vids
+from .utils import paired_vids as _paired_vids
 
-
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#
-#       Forward Logic
-#
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-def paired_forward(batchsize,*args):
-    qshift,nqueries = 0,-1
-    return paired_fwd_main(qshift,nqueries,*args)
-
-def ensure_flow_dim(flow):
-    if flow.ndim == 4:
-        flow = flow[:,None] # add nheads
-    return flow
-
-def paired_forward(frame0, frame1, flow,
-                    ws, ps, k, dist_type,
-                    stride0, stride1, dilation, pt,
-                    self_action, reflect_bounds,
-                    full_ws, use_adj, itype):
-
-    # -- unpack --
-    device = frame0.device
-    B,HD_fr,C,H,W = frame0.shape
-    HD_flow = flow.shape[1]
-    # print(frame0.shape,flow.shape)
-    assert flow.ndim == 5
-    HD = max(HD_flow,HD_fr)
-    patch_offset = 0 if use_adj else -(ps//2)
-
-    # -- derived shapes --
-    nH0 = (H-1)//stride0+1
-    nW0 = (W-1)//stride0+1
-    Q = nH0*nW0
-
-    # -- settings from distance type --
-    dist_type_i,descending,idist_val = dist_type_select(dist_type)
-
-    # -- allocate results --
-    base_shape = (B,HD,Q,ws,ws)
-    dists,inds = allocate_pair_2d(base_shape,device,frame0.dtype,idist_val,itype)
-    # print("inds.shape: ",inds.shape)
-
-    # -- forward --
-    if itype == "int":
-        flow = flow.round()
-        inds = inds.int()
-        stride1 = max(1,int(stride1))
-        fwd_fxn = stnls_cuda.paired_search_int_forward
-    else:
-        fwd_fxn = stnls_cuda.paired_search_bilin2d_forward
-        stride1 = float(stride1)
-    # print(frame0.shape,flow.shape,dists.shape,inds.shape)
-    fwd_fxn(frame0, frame1, flow, dists, inds,
-            ps, k, stride0, stride1, dilation,
-            reflect_bounds, full_ws, patch_offset, dist_type_i)
-
-    # print(frame0.shape,frame1.shape,flow.shape,inds.shape)
-    # -- compress search region --
-    # dists=dists.view(B,HD,Q,-1)
-    # inds=inds.view(B,HD,Q,-1,2)
-    # # th.cuda.synchronize()
-
-    # -- anchor --
-    assert self_action in [None,"anchor","anchor_each"]
-    anchor_self = False if self_action is None else "anchor" in self_action
-    if self_action is None: pass
-    elif "anchor" in self_action:
-        stnls.nn.anchor_self(dists[...,None,:,:],inds[...,None,:,:,:],stride0,H,W)
-    else:
-        raise ValueError(f"Uknown option for self_action [{self_action}]")
-
-
-    # -- topk --
-    if k > 0:
-        dim = 3
-        dists=dists.view(B,HD,Q,ws*ws)
-        inds=inds.view(B,HD,Q,ws*ws,2)
-        dists,inds = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
-                                   descending=descending)
-
-    # -- reshape --
-    dists=dists.reshape(B,HD,1,nH0,nW0,-1)
-    inds=inds.reshape(B,HD,1,nH0,nW0,-1,2)
-
-    return dists,inds
+# -- implementation --
+from stnls.search.impl.paired_search import forward,backward
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -146,11 +60,11 @@ class PairedSearchFunction(th.autograd.Function):
         reflect_bounds_warning(reflect_bounds)
 
         # -- run [optionally batched] forward function --
-        dists,inds = paired_forward(frame0, frame1, flow,
-                                    ws, ps, k, dist_type,
-                                    stride0, stride1, dilation, pt,
-                                    self_action, reflect_bounds, full_ws,
-                                    use_adj, itype)
+        dists,inds = forward(frame0, frame1, flow,
+                             ws, ps, k, dist_type,
+                             stride0, stride1, dilation, pt,
+                             self_action, reflect_bounds, full_ws,
+                             use_adj, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -173,7 +87,7 @@ class PairedSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
-        grad0,grad1,gflow = paired_backward(ctx, grad_dists, grad_inds)
+        grad0,grad1,gflow = backward(ctx, grad_dists, grad_inds)
         return grad0,grad1,gflow,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,None

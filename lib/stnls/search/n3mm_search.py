@@ -17,10 +17,7 @@ from stnls.utils import extract_pairs
 from .utils import shape_vids,allocate_inds,dist_type_select,allocate_vid
 from .utils import descending_menu
 from .shared import manage_self,run_fold
-# from .nls_bwd_impl import nls_backward
-# from .batching_utils import run_batched,batching_info
-# from .n3mm_utils import IndexedMatmul1Efficient
-from .n3mm_utils import matmult_fwd,matmult_bwd,raster_indices,vid2patches
+from .impl.n3mm_utils import matmult_fwd,matmult_bwd,raster_indices,vid2patches
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #

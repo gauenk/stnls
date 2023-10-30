@@ -14,100 +14,12 @@ import stnls
 from stnls.utils import extract_pairs
 
 # -- local --
-from .utils import shape_vids,allocate_pair,dist_type_select,allocate_vid
-from .utils import get_ctx_shell,ensure_flow_shape,shape_flows
-from .shared import manage_self,reflect_bounds_warning
-from .nls_bwd_impl import nls_backward
+from stnls.search.utils import shape_vids,dist_type_select
+from stnls.search.utils import get_ctx_shell,shape_flows
+from stnls.search.shared import reflect_bounds_warning
 
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#
-#       Forward Logic
-#
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-def nls_forward(vid0, vid1, flows,
-                ws, wt, ps, k, stride0, stride1,
-                dist_type, dilation, pt,
-                topk_mode, self_action,
-                reflect_bounds, full_ws, use_adj, itype):
-
-    # -- unpack --
-    # itype = "int"
-    device = vid0.device
-    B,HD,T,C,H,W = vid0.shape
-    patch_offset = 0 if use_adj else -(ps//2)
-    # print(ps,k,dist_type,topk_mode,self_action,patch_offset)
-
-    # -- derived shapes --
-    nH0 = (H-1)//stride0+1
-    nW0 = (W-1)//stride0+1
-    Q = T*nH0*nW0
-    # print(vid0.shape,nH0,nW0,Q)
-
-    # -- settings from distance type --
-    dist_type_i,descending,idist_val = dist_type_select(dist_type)
-
-    # -- allocate results --
-    W_t = min(2*wt+1,T)
-    base_shape = (B,HD,Q,W_t,ws,ws)
-    dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val,itype)
-
-    # -- check flows --
-    assert flows.shape[3] in [W_t-1,W_t]
-
-    # -- forward --
-    if itype == "int":
-        if flows.dtype != th.int:
-            flows = flows.round().int()
-        else:
-            flows = flows.int()
-        inds = inds.int()
-        stride1 = max(1,int(stride1))
-        fwd_fxn = stnls_cuda.non_local_search_int_forward
-    else:
-        fwd_fxn = stnls_cuda.non_local_search_bilin2d_forward
-        stride1 = float(stride1)
-    fwd_fxn(vid0, vid1, flows, dists, inds,
-            ps, k, stride0, stride1, dilation, pt,
-            reflect_bounds, full_ws, patch_offset,  dist_type_i)
-
-    # -- anchor --
-    assert self_action in [None,"anchor","anchor_each","remove","remove_ref_frame"]
-    anchor_self = False if self_action is None else "anchor" in self_action
-    if self_action == "anchor":
-        stnls.nn.anchor_self(dists,inds,stride0,H,W)
-    elif self_action == "anchor_each":
-        stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
-    elif self_action == "remove":
-        raise NotImplementedError("Not implemented self_action [remove].")
-    elif self_action == "remove_ref_frame":
-        assert wt > 0,"Cannot remove ref frame if not searching across time."
-        dists = dists[...,1:,:,:].contiguous()
-        inds = inds[...,1:,:,:,:].contiguous()
-    elif self_action is None:
-        pass
-    else:
-        raise ValueError(f"Uknown option for self_action [{self_action}]")
-
-    # -- topk --
-    if topk_mode == "all":
-        dim = 3
-        dists=dists.view(B,HD,Q,W_t*ws*ws)
-        inds=inds.view(B,HD,Q,W_t*ws*ws,3)
-        dists,inds = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
-                                   descending=descending)
-    elif topk_mode == "each":
-        dists = rearrange(dists,'... wh ww -> ... (wh ww)')
-        inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
-        dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
-    else:
-        raise ValueError(f"Unknown topk_mode [{topk_mode}]")
-
-    # -- reshape --
-    dists=dists.view(B,HD,T,nH0,nW0,-1)
-    inds=inds.view(B,HD,T,nH0,nW0,-1,3)
-
-    return dists,inds
+# -- implementation --
+from stnls.search.impl.non_local_search import forward,backward
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -153,11 +65,11 @@ class NonLocalSearchFunction(th.autograd.Function):
         assert (fH == nH) and (fW == nW)
 
         # -- run [optionally batched] forward function --
-        dists,inds = nls_forward(vid0, vid1, flows,
-                                 ws, wt, ps, k, stride0, stride1,
-                                 dist_type, dilation, pt,
-                                 topk_mode, self_action,
-                                 reflect_bounds, full_ws, use_adj, itype)
+        dists,inds = forward(vid0, vid1, flows,
+                             ws, wt, ps, k, stride0, stride1,
+                             dist_type, dilation, pt,
+                             topk_mode, self_action,
+                             reflect_bounds, full_ws, use_adj, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -182,12 +94,7 @@ class NonLocalSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
-        # # -- reshape --
-        # dists=dists.view(B,HD,T,nH0,nW0,-1)
-        # inds=inds.view(B,HD,T,nH0,nW0,-1,3)
-
-        grad0,grad1,gfflow = nls_backward(ctx, grad_dists, grad_inds)
-
+        grad0,grad1,gfflow = backward(ctx, grad_dists, grad_inds)
         return grad0,grad1,gfflow,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,None

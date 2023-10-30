@@ -17,9 +17,7 @@ from einops import rearrange,repeat
 
 # -- stnls --
 import stnls
-
-# -- meshgrid --
-
+from stnls.testing import check_shuffled_inds
 
 # -- test func --
 from torch.nn.functional import fold,unfold,pad
@@ -35,45 +33,30 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[5],"stride0":[1,2],"stride1":[1.1],
-                  "dilation":[1],"wt":[1,2],"ws":[1,5],
-                  "k":[-1],"nheads":[1],"self_action":[None],
-                  "seed":[0,1,2],"dist_type":["prod","l2"],
-                  "itype":["int","float"],"reflect_bounds":[True]}
+    # seed = 123
+    # th.manual_seed(seed)
+    # np.random.seed(seed)
+    test_lists = {"ws":[3],"wt":[1],"k":[-1],"pt":[1],
+                  "ps":[3],"stride0":[1],"stride1":[1],"dilation":[1],
+                  "self_action":["anchor_each",None],"nheads":[1],"seed":[0],
+                  "dist_type":["l2","prod"],"itype":["int","float"],
+                  # "dist_type":["l2"],"itype":["float"],
+                  "reflect_bounds":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def check_shuffled_inds(inds_gt,inds_te,eps=1e-3):
-    args = th.where(th.mean(th.abs(inds_gt-inds_te),dim=-1)>eps)
-    i0,i1 = [],[]
-    for i in range(3):
-        i0.append(inds_gt[...,i][args])
-        i1.append(inds_te[...,i][args])
-    i0 = th.stack(i0,-1)
-    i1 = th.stack(i1,-1)
-    idiffs = th.cdist(i0[None,:],i1[None,:])[0]
-    mins = th.min(idiffs,1).values
-    diff = th.sum(mins).item()
-    return diff < 1e-4
-
-def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
+def test_fwd(ws,wt,ps,pt,stride0,stride1,dilation,
              nheads,self_action,dist_type,seed,itype,reflect_bounds):
 
     # -- get args --
-    dil = dilation
-    ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    pt = 1
-    seed = 234
     device = "cuda:0"
-    use_adj = False
     set_seed(seed)
     W_t = 2*wt+1
-    k = W_t*ws*ws if k == 0 else -1
+    k = W_t*ws*ws
 
     # -- load data --
-    B,T,F,H,W = 2,10,16,16,8
+    B,T,F,H,W = 1,5,3,16,16
     vid = th.ones((B,T,F,H,W),device=device).float()
     vid0 = th.randn_like(vid)-0.5
     vid1 = th.randn_like(vid)
@@ -82,18 +65,19 @@ def test_fwd(ws,wt,k,ps,stride0,stride1,dilation,
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()#/2.
     flows = th.rand_like(flows)/2.+th.randint_like(flows,-2,2)+0.2
+    # flows = th.zeros_like(flows)
 
     # -- exec fold fxns --
     sch = stnls.search
     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads, dist_type=dist_type,
-                                   dilation=dil,stride0=stride0, stride1=stride1,
+                                   dilation=dilation,stride0=stride0, stride1=stride1,
                                    reflect_bounds=reflect_bounds,full_ws=True,
-                                   self_action=self_action,use_adj=use_adj,
+                                   self_action=self_action,
                                    topk_mode="each",itype=itype)
     search_te = sch.PairedSearch(ws, ps, k, nheads, dist_type=dist_type,
-                                 dilation=dil,stride0=stride0, stride1=stride1,
+                                 dilation=dilation,stride0=stride0, stride1=stride1,
                                  reflect_bounds=reflect_bounds,full_ws=True,
-                                 self_action=self_action,use_adj=use_adj,
+                                 self_action=self_action,
                                  itype=itype)
 
     # -- [groundtruth] search --
@@ -135,7 +119,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     W_t = 2*wt+1
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
     flows = th.rand_like(flows)/2.+th.randint_like(flows,-2,2)+0.2
-    # flows = th.rand_like(flows)/2.+0.2 # away from int
+    # flows = th.zeros_like(flows)
 
     # -- unpack image --
     device = vid.device

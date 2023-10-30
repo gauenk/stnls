@@ -3,7 +3,7 @@ import torch as th
 import numpy as np
 from einops import rearrange
 import stnls_cuda
-from .shared import run_unfold
+from ..shared import run_unfold
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #

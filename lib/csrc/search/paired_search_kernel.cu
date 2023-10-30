@@ -20,7 +20,7 @@ template <typename scalar_t, int DIST_TYPE>
 __global__ void paired_search_int_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> frame0,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> frame1,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> flow,
+    const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> flow,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,6,torch::RestrictPtrTraits> inds,
     int ws, int ps, int stride0, int stride1, int dilation,
@@ -193,7 +193,7 @@ void paired_search_int_forward_cuda(
        paired_search_int_forward_kernel<scalar_t,0><<<nblocks, nthreads>>>(
             frame0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             frame1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            flow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            flow.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
             ws, ps, stride0, stride1, dilation, reflect_bounds, full_ws,
@@ -204,7 +204,7 @@ void paired_search_int_forward_cuda(
        paired_search_int_forward_kernel<scalar_t,1><<<nblocks, nthreads>>>(
             frame0.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             frame1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-            flow.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            flow.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
             ws, ps, stride0, stride1, dilation, reflect_bounds, full_ws,

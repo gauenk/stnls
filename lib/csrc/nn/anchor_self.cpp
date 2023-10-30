@@ -34,6 +34,9 @@ void anchor_self_refine_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
      torch::Tensor flows, int stride0, int H, int W);
 
+void anchor_self_paired_forward_cuda(
+     torch::Tensor dists, torch::Tensor inds,
+     torch::Tensor flows, int stride0, int H, int W);
 
 // C++ interface
 
@@ -68,6 +71,15 @@ void anchor_self_refine_forward(
   anchor_self_refine_forward_cuda(dists,inds,flows,stride0,H,W);
 }
 
+void anchor_self_paired_forward(
+     torch::Tensor dists, torch::Tensor inds,
+     torch::Tensor flows, int stride0, int H, int W){
+  CHECK_INPUT(dists);
+  CHECK_INPUT(inds);
+  CHECK_INPUT(flows);
+  anchor_self_paired_forward_cuda(dists,inds,flows,stride0,H,W);
+}
+
 // python bindings
 void init_anchor_self(py::module &m){
   m.def("anchor_self", &anchor_self_forward,
@@ -75,6 +87,8 @@ void init_anchor_self(py::module &m){
   m.def("anchor_self_time", &anchor_self_time_forward,
         "anchor_self (CUDA)");
   m.def("anchor_self_refine", &anchor_self_refine_forward,
+        "anchor_self (CUDA)");
+  m.def("anchor_self_paired", &anchor_self_paired_forward,
         "anchor_self (CUDA)");
 
 }

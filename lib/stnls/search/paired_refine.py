@@ -15,33 +15,22 @@ from stnls.utils import extract_pairs
 
 # -- local --
 from .utils import shape_frames,allocate_pair_2d,dist_type_select,allocate_vid
-from .utils import get_ctx_shell,ensure_flow_shape
-from .shared import manage_self,reflect_bounds_warning
+from .utils import get_ctx_shell,ensure_flow_shape,ensure_paired_flow_dim
+from .shared import reflect_bounds_warning
 from .paired_bwd_impl import paired_refine_backward
-from .batching_utils import run_batched,batching_info
-from .paired_utils import paired_vids as _paired_vids
-
+from ..utils import paired_vids as _paired_vids
+# from .paired_utils import paired_vids as _paired_vids
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
 #       Forward Logic
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-def paired_forward(batchsize,*args):
-    qshift,nqueries = 0,-1
-    return paired_fwd_main(qshift,nqueries,*args)
-
-def ensure_flow_dim(flow):
-    if flow.ndim == 4:
-        flow = flow[:,None] # add nheads
-    return flow
-
 def paired_refine_forward(frame0, frame1, flow,
-                          wr, ws, ps, k, dist_type,
+                          ws, wr, k, kr, ps, nheads, dist_type,
                           stride0, stride1, dilation, pt,
-                          self_action, reflect_bounds,
-                          full_ws, use_adj, topk_mode, itype):
+                          self_action, reflect_bounds, full_ws,
+                          use_adj, topk_mode, itype):
 
     # -- unpack --
     device = frame0.device
@@ -133,20 +122,20 @@ def paired_refine_forward(frame0, frame1, flow,
 
 class PairedRefineFunction(th.autograd.Function):
 
-
     @staticmethod
     def forward(ctx, frame0, frame1, flow,
-                wr, ws, ps, k, nheads=1,
+                ws, wr, k, kr, ps, nheads=1,
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, pt=1, reflect_bounds=True,
                 full_ws=True, self_action=None, use_adj=False,
                 normalize_bwd=False, k_agg=-1, topk_mode="each", itype="float"):
 
         """
+
         Run the non-local search
 
         frame0 = [B,T,C,H,W] or [B,HD,T,C,H,W]
-        ws = search Window Spatial (ws)
+
         """
 
         # -- reshape with heads --
@@ -154,16 +143,18 @@ class PairedRefineFunction(th.autograd.Function):
         device = frame0.device
         ctx.in_ndim = frame0.ndim
         frame0,frame1 = shape_frames(nheads,[frame0,frame1])
-        # print("frame0.shape: ",frame0.shape)
-        flow = ensure_flow_dim(flow)
-        # flow = ensure_flow_shape(flow)
+        flow = ensure_paired_flow_dim(flow)
         B,HD,F,H,W = frame0.shape
         flow = flow.contiguous()
         reflect_bounds_warning(reflect_bounds)
 
+        # -- filter only to kr --
+        flows = filter_k(flows,kr)
+        flows = flows.contiguous()
+
         # -- run [optionally batched] forward function --
         dists,inds = paired_refine_forward(frame0, frame1, flow,
-                                           ws, ps, k, dist_type,
+                                           ws, wr, k, kr, ps, nheads, dist_type,
                                            stride0, stride1, dilation, pt,
                                            self_action, reflect_bounds, full_ws,
                                            use_adj, topk_mode, itype)
@@ -172,8 +163,7 @@ class PairedRefineFunction(th.autograd.Function):
         dist_type_i = dist_type_select(dist_type)[0]
         flow = get_ctx_shell(flow,itype=="int")
         ctx.save_for_backward(inds,frame0,frame1,flow)
-        if itype == "int":
-            ctx.mark_non_differentiable(inds)
+        if itype == "int": ctx.mark_non_differentiable(inds)
         ctx.vid_shape = frame0.shape
         ctx_vars = {"stride0":stride0,"stride1":stride1,
                     "wr":wr,"ps":ps,"pt":pt,"ws":ws,"dil":dilation,
@@ -203,7 +193,7 @@ class PairedRefineFunction(th.autograd.Function):
 
 class PairedRefine(th.nn.Module):
 
-    def __init__(self, wr, ws, ps, k, nheads=1,
+    def __init__(self, ws, wr, k, kr, ps, nheads=1,
                  dist_type="l2", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
                  full_ws=True, self_action=None, use_adj=False,
@@ -211,10 +201,11 @@ class PairedRefine(th.nn.Module):
         super().__init__()
 
         # -- core search params --
-        self.wr = wr
         self.ws = ws
-        self.ps = ps
+        self.wr = wr
         self.k = k
+        self.kr = kr
+        self.ps = ps
         self.nheads = nheads
         self.dist_type = dist_type
         self.stride0 = stride0
@@ -243,13 +234,16 @@ class PairedRefine(th.nn.Module):
     def forward(self, frame0, frame1, flow):
         assert self.ws > 0,"Must have nonzero spatial search window"
         return PairedRefineFunction.apply(frame0,frame1,flow,
-                                          self.wr,self.ws,self.ps,self.k,
-                                          self.nheads,self.dist_type,self.stride0,
-                                          self.stride1,self.dilation,self.pt,
+                                          self.ws, self.wr, self.k, self.kr,
+                                          self.ps, self.nheads, self.dist_type,
+                                          self.stride0,self.stride1,
+                                          self.dilation,self.pt,
                                           self.reflect_bounds,self.full_ws,
                                           self.self_action,self.use_adj,
                                           self.normalize_bwd,self.k_agg,
                                           self.topk_mode,self.itype)
+
+
 
     def flops(self,T,F,H,W):
         return 0

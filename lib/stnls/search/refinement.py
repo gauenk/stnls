@@ -13,146 +13,12 @@ import stnls
 from stnls.utils import extract_pairs
 
 # -- local --
-from .utils import filter_k
-from .utils import shape_vids,dist_type_select
-from .utils import allocate_pair,allocate_vid
-from .utils import get_ctx_qinds
-from .shared import manage_self,reflect_bounds_warning
-# from .nls_bwd_impl import nls_backward
-from .ref_bwd_impl import ref_backward
+from stnls.search.utils import filter_k,shape_vids,dist_type_select
+from stnls.search.utils import shape_refinement_flows as shape_flows
+from stnls.search.shared import reflect_bounds_warning
 
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#
-#       Forward Logic
-#
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-def refine_forward(vid0, vid1, flows,
-                   ws, wr, k, kr, ps, stride0, stride1, dilation, pt,
-                   dist_type, restricted_radius,
-                   reflect_bounds, full_ws,
-                   topk_mode, self_action, patch_offset, itype_fwd):
-
-    # -- fix negative Q --
-    # if Q > 0:
-    #     flows = flows[:,:,qshift:qshift+Q].contiguous()
-    B,HD,T,nH,nW,Ks,_ = flows.shape
-    Q = T*nH*nW
-
-    # -- settings from distance type --
-    dist_type_i,descending,idist_val = dist_type_select(dist_type)
-
-    # -- allocate results --
-    device = flows.device
-    B,HD,T,nH,nW,Ks = flows.shape[:-1]
-    base_shape = (B,HD,T,nH,nW,Ks,wr,wr)
-    # print(base_shape,flows.shape)
-    dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val,itype_fwd)
-
-    # -- allow for int fwd when actually float --
-    if itype_fwd == "int":
-        inds = inds.int()
-        if flows.dtype == th.float:
-            flows = flows.round().int()
-        kselect = th.zeros(0,device=flows.device)
-        reflect = th.zeros(0,device=flows.device)
-    else:
-        kselect = th.ones_like(dists).int()
-        reflect = th.zeros_like(flows[...,:2]).bool()
-
-    # -- run --
-    if itype_fwd == "int":
-        stride1 = int(max(1,int(stride1)))
-        fwd_fxn = stnls_cuda.refinement_int_forward
-        fwd_fxn(vid0, vid1, flows, dists, inds,
-                ws, ps, stride0, stride1, dilation, pt,
-                restricted_radius, reflect_bounds, full_ws,
-                patch_offset, dist_type_i)
-    else:
-        stride1 = float(stride1)
-        fwd_fxn = stnls_cuda.refinement_bilin2d_forward
-        fwd_fxn(vid0, vid1, flows, dists, inds,
-                kselect, reflect,
-                ws, ps, stride0, stride1, dilation, pt,
-                restricted_radius, reflect_bounds, full_ws,
-                patch_offset, dist_type_i)
-
-    # print(inds[0,0,0,0,0,:2])
-    # -- no negative --
-    # if th.any(flows[0]<0):
-    #     print(flows[0])
-    #     print(inds[0])
-
-    # -- manage self dists --
-    # # H,W = vid0.shape[-2:]
-    # anchor_self = self_action == "anchor"
-    # remove_self = self_action == "remove"
-    # assert anchor_self is False
-    # assert remove_self is False
-    # return_order = not(kselect is None)
-    # dists,inds,kselect = manage_self_ksel(dists,inds,kselect,self_action,wr)
-    # # kselect = kselect[...,1:] if remove_self else kselect
-    # # dists.shape = (B,H,Q,Ks,wr*wr)
-    if not(self_action is None) and "anchor" in self_action:
-        H,W = vid0.shape[-2:]
-        stnls.nn.anchor_self_refine(dists,inds,flows,stride0,H,W)
-    else:
-        assert self_action == None
-
-    # -- topk --
-    assert self_action in [None,"anchor","anchor_each"]
-    anchor_self = False if self_action is None else "anchor" in self_action
-    if topk_mode == "all":
-        dim = 3
-        dists=dists.view(B,HD,Q,Ks*wr*wr)
-        inds=inds.view(B,HD,Q,Ks*wr*wr,3)
-        dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
-                                         descending=descending,unique=False,
-                                         return_order=True)
-        if kselect.ndim > 1:
-            # print("kselect.shape: ",kselect.shape,order.shape)
-            kselect = kselect.view(B,HD,Q,Ks*wr*wr) if not(kselect is None) else kselect
-            # print("kselect.shape: ",kselect.shape,order.shape)
-            kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
-    elif topk_mode == "each":
-        # print(dists.shape,kselect.shape)
-        dists = rearrange(dists,'... wh ww -> ... (wh ww)')
-        inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
-        dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
-        if kselect.ndim > 1:
-            kselect = rearrange(kselect,'... wh ww -> ... (wh ww)')
-            kselect = kselect[...,:k] # all same across dim
-    else:
-        raise ValueError(f"Unknown topk_mode [{topk_mode}]")
-
-
-    # -- reshape for output --
-    dists=dists.view(B,HD,T,nH,nW,-1)
-    inds=inds.view(B,HD,T,nH,nW,-1,3)
-    kselect = kselect.view(B,HD,T,nH,nW,-1) if not(kselect is None) else kselect
-    # print("kselect.shape,reflect.shape: ",kselect.shape,reflect.shape)
-    # print(flows.shape,inds.shape,kselect.shape)
-    # print(th.cat([flows[0,0,...,[0]],inds[0,0,...,[0]],kselect[0,0,...,None]],-1))
-
-    return dists,inds,kselect,reflect
-
-def shape_flows(nheads,flows,B,nH,nW):
-    # print(flows.shape)
-    if flows.ndim == 4:
-        B,HD,Q,tr = flows.shape
-        flows=rearrange(flows,'b hd (t nh nw) thr -> b hd t nh nw thr',nh=nH,nw=nW)
-    # elif flows.ndim == 3:
-    #     BHD,Q,tr = flows.shape
-    #     shape_str = '(b hd) (t nh nw) k thr -> b hd t nh nw k thr'
-    #     flows=rearrange(flows,,b=B,nh=nH,nw=nW)
-    elif flows.ndim == 5:
-        B,HD,Q,K,tr = flows.shape
-        shape_str = 'b hd (t nh nw) k thr -> b hd t nh nw k thr'
-        flows=rearrange(flows,shape_str,b=B,nh=nH,nw=nW)
-    elif flows.ndim == 6:
-        flows=rearrange(flows,'(b hd) t nh nw thr -> (b hd) t nh nw thr',b=B)
-    assert flows.ndim == 7
-    return flows
+# -- implementation --
+from stnls.search.impl.refinement import forward,backward
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -201,11 +67,11 @@ class RefineSearchFunction(th.autograd.Function):
         # flows_t[...,0] = flows_t[...,0].round()
 
         # -- run fwd pass --
-        dists,inds,kselect,reflect = refine_forward(vid0, vid1, flows,
-                                            ws, wr, k, kr, ps, stride0, stride1,
-                                            dilation, pt, dist_type, restricted_radius,
-                                            reflect_bounds, full_ws, topk_mode,
-                                            self_action, patch_offset, itype)
+        dists,inds,kselect,reflect = forward(vid0, vid1, flows,
+                                             ws, wr, k, kr, ps, stride0, stride1,
+                                             dilation, pt, dist_type, restricted_radius,
+                                             reflect_bounds, full_ws, topk_mode,
+                                             self_action, patch_offset, itype)
 
         # -- reshape --
         dists=dists.view(B,HD,T,nH,nW,-1)
@@ -231,8 +97,7 @@ class RefineSearchFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
-        # print(grad_inds.abs().mean())
-        grad0,grad1,grad_flows = ref_backward(ctx, grad_dists, grad_inds)
+        grad0,grad1,grad_flows = backward(ctx, grad_dists, grad_inds)
         return grad0,grad1,grad_flows,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None
