@@ -387,7 +387,7 @@ __global__ void anchor_self_paired_kernel(
   int Q = dists.size(2);
   int W_t = dists.size(3);
   int K = dists.size(4);
-  int T = flows.size(2);
+  // int G = flows.size(2);
   int bi = blockIdx.y;
   int hi = blockIdx.z;
   int hi_f = hi % HD_f;

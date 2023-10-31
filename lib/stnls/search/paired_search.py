@@ -34,10 +34,9 @@ class PairedSearchFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, frame0, frame1, flow,
-                ws, ps, k, nheads=1,
-                dist_type="prod", stride0=4, stride1=1,
-                dilation=1, pt=1, reflect_bounds=True,
-                full_ws=True, self_action=None,
+                ws, ps, k, nheads=1, dist_type="prod",
+                stride0=4, stride1=1, dilation=1, pt=1,
+                reflect_bounds=True,full_ws=True, self_action=None,
                 use_adj=False, normalize_bwd=False, k_agg=-1, itype="float"):
 
         """
@@ -144,8 +143,7 @@ class PairedSearch(th.nn.Module):
                                           self.stride1,self.dilation,self.pt,
                                           self.reflect_bounds,self.full_ws,
                                           self.self_action,self.use_adj,
-                                          self.normalize_bwd,
-                                          self.k_agg,self.itype)
+                                          self.normalize_bwd,self.k_agg,self.itype)
 
     def flops(self,T,F,H,W):
         print("hi.")

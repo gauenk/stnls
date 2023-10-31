@@ -86,6 +86,7 @@ def run_paired(dists,inds,flows,stride0,H,W):
     dists = dists.view(B,HD,Q,G,ws*ws)
     inds = inds.view(B,HD,Q,G,ws*ws,d2or3)
     assert d2or3 == 2,"Index must be size 2."
+    # flows.shape = B,HD,G,two,nH,nW
 
     # -- run --
     stnls_cuda.anchor_self_paired(dists,inds,flows,stride0,H,W)

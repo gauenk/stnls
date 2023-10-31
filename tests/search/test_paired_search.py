@@ -46,8 +46,8 @@ def pytest_generate_tests(metafunc):
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
 
-def test_fwd(ws,wt,ps,pt,stride0,stride1,dilation,
-             nheads,self_action,dist_type,seed,itype,reflect_bounds):
+def test_fwd_match_search(ws,wt,ps,pt,stride0,stride1,dilation,
+                          nheads,self_action,dist_type,seed,itype,reflect_bounds):
 
     # -- get args --
     device = "cuda:0"
@@ -92,6 +92,143 @@ def test_fwd(ws,wt,ps,pt,stride0,stride1,dilation,
         assert th.allclose(inds_gt,inds_te,atol=atol,rtol=rtol)
     except:
         assert check_shuffled_inds(inds_gt,inds_te)
+
+def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
+                    nheads,dist_type,reflect_bounds,itype,seed):
+
+    """
+
+    Test the CUDA code with torch code
+
+    Forward Pass
+
+    """
+
+    # -- get args --
+    set_seed(seed)
+    device = "cuda:0"
+    W_t = 2*wt+1
+    k = W_t*ws*ws
+    self_action = "anchor"
+
+    # -- load data --
+    B,T,F,H,W = 1,5,3,16,16
+    vid = th.ones((B,T,F,H,W),device=device).float()
+    vid0 = th.randn_like(vid)-0.5
+    vid1 = th.randn_like(vid)
+
+    # -- load flows --
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()#/2.
+    flows = th.rand_like(flows)/2.+th.randint_like(flows,-2,2)+0.2
+
+    # -- exec fold fxns --
+    k0 = ws*ws
+    search0 = stnls.search.PairedSearch(ws, ps, -1, nheads,
+                                        dilation=dilation,
+                                        stride0=stride0, stride1=stride1,
+                                        reflect_bounds=reflect_bounds,full_ws=False,
+                                        self_action=None, dist_type=dist_type,
+                                        itype=itype)
+    k1 = 3
+    search1 = stnls.search.PairedSearch(ws, ps, k1, nheads, dilation=dilation,
+                                        stride0=stride0, stride1=stride1,
+                                        reflect_bounds=reflect_bounds,full_ws=False,
+                                        self_action="anchor_each",dist_type=dist_type,
+                                        itype=itype)
+    k2 = 5
+    search2 = stnls.search.PairedSearch(ws, ps, k2, nheads,
+                                        dilation=dilation,
+                                        stride0=stride0, stride1=stride1,
+                                        reflect_bounds=reflect_bounds,full_ws=True,
+                                        self_action="anchor_each", dist_type=dist_type,
+                                        itype=itype)
+    k3 = 8
+    search3 = stnls.search.PairedSearch(ws, ps, k3, nheads,
+                                        dilation=dilation,
+                                        stride0=stride0, stride1=stride1,
+                                        reflect_bounds=reflect_bounds,full_ws=True,
+                                        self_action="anchor",dist_type=dist_type,
+                                        itype=itype)
+
+
+    # -- exec --
+    HD = nheads
+    vshape = (B,HD,T,nH,nW,W_t)
+
+    dists0,inds0 = search0.paired_vids(vid0,vid1,flows,wt)
+    dists0,inds0 = dists0.view(vshape+(k0,)),inds0.view(vshape+(k0,3,))
+    dists0 = dists0[...,:,ws//2*ws+ws//2]
+    inds0= inds0[...,:,ws//2*ws+ws//2,:]
+
+    dists1,inds1 = search1.paired_vids(vid0,vid1,flows,wt)
+    dists1,inds1 = dists1.view(vshape+(k1,)),inds1.view(vshape+(k1,3,))
+    dists1 = dists1[...,:,0]
+    inds1= inds1[...,:,0,:]
+
+    dists2,inds2 = search2.paired_vids(vid0,vid1,flows,wt)
+    dists2,inds2 = dists2.view(vshape+(k2,)),inds2.view(vshape+(k2,3,))
+    dists2 = dists2[...,:,0]
+    inds2= inds2[...,:,0,:]
+
+    dists3,inds3 = search3.paired_vids(vid0,vid1,flows,wt)
+    dists3,inds3 = dists3.view(vshape+(k3,)),inds3.view(vshape+(k3,3,))
+    dists3 = dists3[...,:,0]
+    inds3= inds3[...,:,0,:]
+
+    # print(th.stack([dists0[...,0],dists1[...,0],dists2[...,0],dists3[...,0]],-1))
+    # print(th.stack([inds0[...,0,:],inds1[...,0,:],inds2[...,0,:],inds3[...,0,:]],-2))
+
+    # -- viz --
+    args = th.where(th.abs(dists0-dists1)>1e-3)
+    print(dists0[args][:10])
+    print(dists1[args][:10])
+
+    # -- check all pairwise --
+    dists = [dists0,dists1,dists2]
+    inds = [inds0,inds1,inds2]
+    for i in range(3):
+        for j in range(3):
+            if i == j: continue
+            print(i,j)
+            assert th.allclose(dists[i],dists[j],1e-3,1e-3,equal_nan=True)
+            assert th.allclose(inds[i],inds[j],1e-3,1e-3,equal_nan=True)
+
+    # -- check all against "anchor" --
+    for i in range(3):
+        assert th.allclose(dists[i][...,0],dists3[...,0],1e-3,1e-3,equal_nan=True)
+        assert th.allclose(inds[i][...,0,:],inds3[...,0,:],1e-3,1e-3,equal_nan=True)
+
+    # -- check against flow --
+    def reflect_bounds(flow,i,L):
+        args0 = th.where(flow[:,i] > (L-1))
+        args1 = th.where(flow[:,i] < 0)
+        flow[:,i][args0] = 2*(L-1) - flow[:,i][args0]
+        flow[:,i][args1] = -flow[:,i][args1]
+    grid = stnls.nn.index_grid(nH,nW).flip(1)*stride0
+    for i in range(3):
+        inds_i = inds[i]
+        for ti in range(T):
+            for si in range(W_t):
+                ind = inds_i[:,0,ti,:,:,si,1:]
+                if si > 0:
+                    flow = flows[:,ti,si-1].flip(1).clone() + grid
+                else:
+                    flow = th.zeros_like(flows[:,ti,0]).flip(1) + grid
+
+                # -- reflect --
+                reflect_bounds(flow,0,H)
+                reflect_bounds(flow,1,W)
+
+                # -- normalize --
+                flow = flow - grid
+
+                # -- shaping --
+                flow = rearrange(flow,'b i h w -> b h w i')
+
+                diff = th.mean(th.abs(ind - flow)).item()
+                assert th.allclose(ind,flow,1e-3,1e-3,equal_nan=True)
+
 
 def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
              nheads,self_action,dist_type,seed,itype,reflect_bounds):
