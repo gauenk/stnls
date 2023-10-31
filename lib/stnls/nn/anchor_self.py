@@ -86,8 +86,9 @@ def run_paired(dists,inds,flows,stride0,H,W):
     dists = dists.view(B,HD,Q,G,ws*ws)
     inds = inds.view(B,HD,Q,G,ws*ws,d2or3)
     assert d2or3 == 2,"Index must be size 2."
-    nH,nW = flows.shape[2:4]
-    assert flows.shape == (B,HD,nH,nW,G,2)
+    HD_f,nH,nW = flows.shape[1:4]
+    msg = "Must match "+str(flows.shape)+" "+str((B,HD_f,nH,nW,G,2))
+    assert flows.shape == (B,HD_f,nH,nW,G,2),msg
     # flows.shape = B,HD,nH,nW,G,two
 
     # -- run --
