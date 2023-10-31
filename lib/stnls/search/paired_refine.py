@@ -63,7 +63,7 @@ class PairedRefineFunction(th.autograd.Function):
 
         # -- run [optionally batched] forward function --
         dists,inds = forward(frame0, frame1, flow,
-                             ws, wr, k, kr, ps, nheads, dist_type,
+                             ws, wr, k, ps, nheads, dist_type,
                              stride0, stride1, dilation,
                              self_action, restricted_radius,
                              reflect_bounds, full_ws,

@@ -387,7 +387,6 @@ __global__ void anchor_self_paired_kernel(
   int Q = dists.size(2);
   int W_t = dists.size(3);
   int K = dists.size(4);
-  // int G = flows.size(2);
   int bi = blockIdx.y;
   int hi = blockIdx.z;
   int hi_f = hi % HD_f;
@@ -419,9 +418,9 @@ __global__ void anchor_self_paired_kernel(
     int n_wi = iloc[2]/stride0;
 
     // -- get anchor index --
-    auto flows_t = flows[bi][hi_f][gi];
-    loc[0] = iloc[1] + flows_t[1][n_hi][n_wi];
-    loc[1] = iloc[2] + flows_t[0][n_hi][n_wi];
+    auto flows_t = flows[bi][hi_f];
+    loc[0] = iloc[1] + flows_t[n_hi][n_wi][gi][0];
+    loc[1] = iloc[2] + flows_t[n_hi][n_wi][gi][1];
     loc[0] = bounds(loc[0],H)-iloc[1];
     loc[1] = bounds(loc[1],W)-iloc[2];
 

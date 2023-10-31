@@ -21,7 +21,7 @@ from stnls.search.utils import get_inds,allocate_grad_flows
 from stnls.search.shared import manage_self
 
 def forward(frame0, frame1, flow,
-            ws, wr, k, kr, ps, nheads, dist_type,
+            ws, wr, k, ps, nheads, dist_type,
             stride0, stride1, dilation, self_action,
             restricted_radius, reflect_bounds, full_ws,
             use_adj, topk_mode, itype):
@@ -68,6 +68,7 @@ def forward(frame0, frame1, flow,
                 ws, ps, stride0, stride1, dilation,
                 restricted_radius, reflect_bounds, full_ws,
                 patch_offset, dist_type_i)
+        flow = flow.int()
     else:
         fwd_fxn(frame0, frame1, flow, dists, inds,
                 kselect, ws, ps, stride0, stride1, dilation,
@@ -85,6 +86,7 @@ def forward(frame0, frame1, flow,
     anchor_self = False if self_action is None else "anchor" in self_action
     if self_action is None: pass
     elif "anchor" in self_action:
+        # print(dists.shape,inds.shape,flow.shape)
         stnls.nn.anchor_self_paired(dists,inds,flow,stride0,H,W)
     else:
         raise ValueError(f"Uknown option for self_action [{self_action}]")
