@@ -179,10 +179,6 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     # print(th.stack([dists0[...,0],dists1[...,0],dists2[...,0],dists3[...,0]],-1))
     # print(th.stack([inds0[...,0,:],inds1[...,0,:],inds2[...,0,:],inds3[...,0,:]],-2))
 
-    # -- viz --
-    args = th.where(th.abs(dists0-dists1)>1e-3)
-    print(dists0[args][:10])
-    print(dists1[args][:10])
 
     # -- check all pairwise --
     dists = [dists0,dists1,dists2]
@@ -190,7 +186,6 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     for i in range(3):
         for j in range(3):
             if i == j: continue
-            print(i,j)
             assert th.allclose(dists[i],dists[j],1e-3,1e-3,equal_nan=True)
             assert th.allclose(inds[i],inds[j],1e-3,1e-3,equal_nan=True)
 
@@ -210,11 +205,13 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
         inds_i = inds[i]
         for ti in range(T):
             for si in range(W_t):
-                ind = inds_i[:,0,ti,:,:,si,1:]
+                ind = 1.*inds_i[:,0,ti,:,:,si,1:]
                 if si > 0:
-                    flow = flows[:,ti,si-1].flip(1).clone() + grid
+                    flow = flows[:,0,ti,si-1].flip(1).clone() + grid
                 else:
-                    flow = th.zeros_like(flows[:,ti,0]).flip(1) + grid
+                    flow = th.zeros_like(flows[:,0,ti,0]).flip(1) + grid
+                if itype == "int":
+                    flow = flow.round()
 
                 # -- reflect --
                 reflect_bounds(flow,0,H)
