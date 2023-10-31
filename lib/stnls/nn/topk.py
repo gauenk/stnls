@@ -199,7 +199,13 @@ def standard_topk(dists,inds,K,descending):
     Q,S = dists.shape
     d2or3 = inds.shape[-1]
 
-    # -- order --
+    # -- [testing only] --
+    # import numpy.random as npr
+    # npr.seed(123)
+    # order_k = th.from_numpy(npr.permutation(int(dists.shape[1]))).to(dists.device)
+    # order_k = order_k.view(1,-1).repeat(dists.shape[0],1)
+
+    # -- reorder --
     order_k = th.argsort(dists,dim=1,descending=descending)[:,:K]
     K = order_k.shape[1]
 

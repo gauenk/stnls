@@ -336,13 +336,14 @@ def get_flows(flows):
 def paired_vids(forward, vid0, vid1, flows, wt, skip_self=False):
     dists,inds = [],[]
     T = vid0.shape[1]
+    # print("[a] flows.shape: ",flows.shape)
     flows = get_flows(flows)
+    # print("[b] flows.shape: ",flows.shape)
     zflow = th.zeros_like(flows[:,:,0,0])
     for ti in range(T):
         t_grid = get_time_window_inds(ti,wt,T)
         dists_i,inds_i = [],[]
         for _tj in range(2*wt+1):
-
             # -- update search frame --
             tj = t_grid[_tj]
             if (ti == tj) and skip_self: continue
@@ -362,9 +363,8 @@ def paired_vids(forward, vid0, vid1, flows, wt, skip_self=False):
         dists.append(dists_i)
         inds.append(inds_i)
     # -- stack across time --
-    dists = th.cat(dists,-4)
-    inds = th.cat(inds,-5)
-    # print("inds.shape: ",inds.shape)
+    dists = th.stack(dists,-4)
+    inds = th.stack(inds,-5)
     return dists,inds
 
 def paired_vids_refine(forward, vid0, vid1, flows, wt, skip_self=False):
@@ -403,8 +403,8 @@ def paired_vids_refine(forward, vid0, vid1, flows, wt, skip_self=False):
         dists.append(dists_i)
         inds.append(inds_i)
     # -- stack across time --
-    dists = th.cat(dists,-4)
-    inds = th.cat(inds,-5)
+    dists = th.stack(dists,-4)
+    inds = th.stack(inds,-5)
     # print("inds.shape: ",inds.shape)
     return dists,inds
 

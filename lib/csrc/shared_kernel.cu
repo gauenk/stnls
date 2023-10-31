@@ -975,3 +975,28 @@ void bwd_flow_assign_v2(scalar_t* acc_dFlows, int signH, int signW,
 }
 
 
+template<typename scalar_t>
+__device__ __forceinline__ 
+void bwd_flow_assign_v3(scalar_t* acc_dFlows, int signH, int signW,
+     torch::TensorAccessor<scalar_t,1,torch::RestrictPtrTraits,int32_t> gflows){
+
+  // -- assignment from accumulated dFlows --
+  int kx;
+  #pragma unroll
+  for (int ix=0;ix<2;ix++){
+    #pragma unroll
+    for (int jx=0;jx<2;jx++){
+
+      // -- read --
+      kx = ix * 4 + jx * 2;
+
+      // -- update --
+      atomicAdd(&(gflows[1]),signW*acc_dFlows[kx]); // w
+      atomicAdd(&(gflows[0]),signH*acc_dFlows[kx+1]); // h
+
+    }
+  }
+
+}
+
+

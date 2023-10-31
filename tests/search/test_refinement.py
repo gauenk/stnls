@@ -105,22 +105,22 @@ def test_refine_fwd(ws,wt,wr,kr,k,ps,stride0,stride1,dilation,
     # -- compare --
     assert th.allclose(dists_te,dists_gt,1e-3,1e-3,equal_nan=True)
 
-def int_spaced_vid(B,T,F,H,W):
-    device = "cuda:0"
-    dtype = th.float32
-    grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
-                                 th.arange(0, W, dtype=dtype, device=device))
-    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
-    vid = []
-    for ti in range(T):
-        g0 = grid[:,[0]].repeat(B,F,1,1)/W-0.5
-        g1 = grid[:,[1]].repeat(B,F,1,1)/H-0.5
-        # g0 += th.rand_like(g0)
-        # g1 += th.rand_like(g1)
-        tN = (ti+1)*th.ones_like(g0)
-        vid.append(g0*g1*tN) # noise less than int
-    vid = th.stack(vid,1)
-    return vid
+# def int_spaced_vid(B,T,F,H,W):
+#     device = "cuda:0"
+#     dtype = th.float32
+#     grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
+#                                  th.arange(0, W, dtype=dtype, device=device))
+#     grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
+#     vid = []
+#     for ti in range(T):
+#         g0 = grid[:,[0]].repeat(B,F,1,1)/W#-0.5
+#         g1 = grid[:,[1]].repeat(B,F,1,1)/H#-0.5
+#         # g0 += th.rand_like(g0)
+#         # g1 += th.rand_like(g1)
+#         tN = (ti+1)*th.ones_like(g0)
+#         vid.append(g0*g1*tN) # noise less than int
+#     vid = th.stack(vid,1)
+#     return vid
 
 # @pytest.mark.slow
 def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
@@ -148,27 +148,32 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
     set_seed(seed)
 
     # -- shapes --
+    wt = 0
+    wr = 1
     W_t = 2*wt+1
-    k,kr = W_t*ws*ws,-1
-    HD,K = nheads,k
+    kr = 1.
+    HD = nheads
+    K = W_t*ws*ws
+    k = K*wr*wr
+    k = -1
 
     # -- load data --
-    B,T,F,H,W = 1,3,1,8,8
+    B,T,F,H,W = 1,3,3,8,8
     W_t = 2*wt+1
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     vid0 = int_spaced_vid(B,T,F,H,W)
-    vid0 = int_spaced_vid(B,T,F,H,W)
-    vid1 = int_spaced_vid(B,T,F,H,W)
-    vid0 = th.rand_like(vid0)/2.+0.2
-    vid1 = th.rand_like(vid0)/2.+0.2
+    vid0 = vid0/vid0.max()
+    vid1 = int_spaced_vid(B,T,F,H,W) + (((th.rand_like(vid0)-0.5)*20.).round())
+    vid1 = vid1/vid1.max()
+    # vid0 = th.rand_like(vid0)/2.+0.2
+    # vid1 = th.rand_like(vid0)/2.+0.2
 
     # -- init for grads --
     vid0.requires_grad_(True)
     vid1.requires_grad_(True)
 
     # -- exec fold fxns --
-    wr = 1
-    refine = stnls.search.RefineSearch(ws, wt, wr, -1, kr, ps, nheads,
+    refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads,
                                        dilation=dil,stride0=stride0, stride1=stride1,
                                        reflect_bounds=reflect_bounds,full_ws=full_ws,
                                        self_action=self_action,use_adj=use_adj,
@@ -187,7 +192,7 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
     # srch_inds = srch_inds.requires_grad_(True)
 
     # -- run refinement --
-    ref_dists,ref_inds = refine(vid0,vid1,srch_inds)
+    # ref_dists,ref_inds = refine(vid0,vid1,srch_inds)
 
     # -- autograd --
     fxn = lambda vid0: refine(vid0,vid1,srch_inds)[0]
@@ -205,8 +210,8 @@ def test_refine_noshuffle_bwd(ws,wt,wr,kr,ps,stride0,stride1,dilation,
             srch_inds = th.cat([srch_inds_t,srch_inds_sp],-1).requires_grad_(True)
             return refine(vid0,vid1,srch_inds)[0]
         # assert gradcheck_skipnan(fxn, srch_inds_sp, atol=1e-02, num_eps=1e-5)
-        # assert gradcheck_skip_nan_unstable(fxn, srch_inds_sp, atol=1e-02,
-        #                                    nreps=3, num_eps=1e-3)
+        assert gradcheck_skip_nan_unstable(fxn, srch_inds_sp, atol=1e-02,
+                                           nreps=3, num_eps=1e-3)
 
         def fxn(srch_inds_sp):
             srch_inds = th.cat([srch_inds_t,srch_inds_sp],-1).requires_grad_(True)

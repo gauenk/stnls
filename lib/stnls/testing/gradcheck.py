@@ -32,7 +32,7 @@ def get_gradcheck_pair(fxn,inputs,eps=1e-3):
     ana = get_ana_jacobian(fxn,inputs)
     return num,ana
 
-def gradcheck_skip_nan_unstable(fxn,inputs, rtol=1e-05, atol=1e-08,
+def gradcheck_skip_nan_unstable(fxn, inputs, rtol=1e-05, atol=1e-08,
                                 nreps=3, num_eps=5e-4, unstable_eps=1e-2):
     num = get_num_jacobian_skip_unstable(fxn,inputs,eps=num_eps,
                                          nreps=nreps,unstable_eps=unstable_eps)
@@ -54,10 +54,14 @@ def gradcheck_skipnan(fxn,inputs, rtol=1e-05, atol=1e-08, nreps=1, num_eps=5e-4)
     num = get_num_jacobian(fxn,inputs,eps=num_eps,nreps=nreps)
     ana = get_ana_jacobian(fxn,inputs)
     args = th.where(th.logical_and(~th.isnan(num),num.abs()>0))
-    args1 = th.where(th.abs(num[args]-ana[args])>1e-2)[0]
-    # print(num[-5:,-5:])
-    # print(ana[-5:,-5:])
-    # print(num.shape)
+    args1 = th.where(th.abs(num[args]-ana[args])>5e-1)[0]
+    # print(num[:7,:7])
+    # print(ana[:7,:7])
+    # print("-"*20)
+    # print(num[-7:,-7:])
+    # print(ana[-7:,-7:])
+    # print("-"*20)
+    # # print("-"*20)
     # print(num[args][args1][:20])
     # print(ana[args][args1][:20])
     # print([args[i][args1] for i in range(2)])

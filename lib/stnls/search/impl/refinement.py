@@ -1,5 +1,4 @@
 
-
 # -- python --
 import torch as th
 import numpy as np
@@ -83,6 +82,7 @@ def forward(vid0, vid1, flows,
         dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
                                          descending=descending,unique=False,
                                          return_order=True)
+        # print(order)
         if kselect.ndim > 1:
             # print("kselect.shape: ",kselect.shape,order.shape)
             kselect = kselect.view(B,HD,Q,Ks*wr*wr) if not(kselect is None) else kselect

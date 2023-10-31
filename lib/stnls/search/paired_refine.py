@@ -62,17 +62,17 @@ class PairedRefineFunction(th.autograd.Function):
         flow = flow.contiguous()
 
         # -- run [optionally batched] forward function --
-        dists,inds = forward(frame0, frame1, flow,
-                             ws, wr, k, ps, nheads, dist_type,
-                             stride0, stride1, dilation,
-                             self_action, restricted_radius,
-                             reflect_bounds, full_ws,
-                             use_adj, topk_mode, itype)
+        dists,inds,kselect = forward(frame0, frame1, flow,
+                                     ws, wr, k, ps, nheads, dist_type,
+                                     stride0, stride1, dilation,
+                                     self_action, restricted_radius,
+                                     reflect_bounds, full_ws,
+                                     use_adj, topk_mode, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
         flow = get_ctx_shell(flow,itype=="int")
-        ctx.save_for_backward(inds,frame0,frame1,flow)
+        ctx.save_for_backward(inds,frame0,frame1,flow,kselect)
         if itype == "int": ctx.mark_non_differentiable(inds)
         ctx.vid_shape = frame0.shape
         ctx_vars = {"stride0":stride0,"stride1":stride1,

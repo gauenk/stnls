@@ -40,7 +40,6 @@ def pytest_generate_tests(metafunc):
                   "ps":[3],"stride0":[1],"stride1":[1],"dilation":[1],
                   "self_action":["anchor_each",None],"nheads":[1],"seed":[0],
                   "dist_type":["l2","prod"],"itype":["int","float"],
-                  # "dist_type":["l2"],"itype":["float"],
                   "reflect_bounds":[True]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -242,7 +241,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     set_seed(seed)
 
     # -- load data --
-    B,T,F,H,W = 2,10,16,16,7
+    B,T,F,H,W = 2,10,3,16,10
     vid = th.ones((B,T,F,H,W),device=device).float()
     vid0 = th.randn_like(vid)
     vid1 = th.randn_like(vid)
@@ -253,6 +252,7 @@ def test_bwd(ws,wt,k,ps,stride0,stride1,dilation,
     flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
     flows = th.rand_like(flows)/2.+th.randint_like(flows,-2,2)+0.2
     # flows = th.zeros_like(flows)
+    # print("flows.shape: ",flows.shape)
 
     # -- unpack image --
     device = vid.device

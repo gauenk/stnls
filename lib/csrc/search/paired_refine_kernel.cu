@@ -530,12 +530,12 @@ __global__ void paired_refine_vidflows_backward_kernel(
     scalar_t wi = ref_patch[1] + flow[ibatch][ihead_fl][nh][nw][kj][1];
     int signH = ((hi >= 0) and (hi <= (H-1))) ? 1 : -1;
     int signW = ((wi >= 0) and (wi <= (W-1))) ? 1 : -1;
-    bwd_flow_assign_v2(acc_dFlows,signH,signW,
+    bwd_flow_assign_v3(acc_dFlows,signH,signW,
                        grad_flow[ibatch][ihead_fl][nh][nw][kj]);
 
     // -- update flows --
-    atomicAdd(&(grad_flow[ibatch][ihead_fl][nh][nw][kj][0]),signW*iweight[0]);
-    atomicAdd(&(grad_flow[ibatch][ihead_fl][nh][nw][kj][1]),signH*iweight[1]);
+    atomicAdd(&(grad_flow[ibatch][ihead_fl][nh][nw][kj][0]),signH*iweight[0]);
+    atomicAdd(&(grad_flow[ibatch][ihead_fl][nh][nw][kj][1]),signW*iweight[1]);
 
   }
 }
