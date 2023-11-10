@@ -322,7 +322,7 @@ void anchor_self_time_forward_cuda(
   int nH = (H-1)/stride0+1;
   int nW = (W-1)/stride0+1;
   int nHW = nH*nW;
-  assert(W_t == 2*wt+1);
+  assert((W_t == 2*wt+1) or (W_t == 2*wt));
   int st_offset = W_t - flows.size(3);
 
   // -- num 2 run --

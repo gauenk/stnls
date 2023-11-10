@@ -14,7 +14,7 @@ using namespace at;
 
 template<typename scalar_t>
 __device__ __forceinline__ 
-void fill_non_local_patch_bilin2d(
+void gather_patch_fwd_bilin2d(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> stack,
     torch::TensorAccessor<int,2,torch::RestrictPtrTraits,int32_t> counts,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid,
@@ -91,7 +91,7 @@ void fill_non_local_patch_bilin2d(
 
 template<typename scalar_t>
 __device__ __forceinline__ 
-void fill_non_local_patch_bwd_bilin2d(
+void gather_patch_bwd_bilin2d(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid,
     torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> grad_weights,
     torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> grad_inds,

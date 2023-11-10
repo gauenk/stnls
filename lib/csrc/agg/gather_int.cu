@@ -14,7 +14,7 @@ using namespace at;
 
 template<typename scalar_t>
 __device__ __forceinline__ 
-void fill_non_local_patch_int(
+void gather_patch_fwd_int(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> stack,
     torch::TensorAccessor<int,2,torch::RestrictPtrTraits,int32_t> counts,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid,
@@ -93,7 +93,7 @@ void fill_non_local_patch_int(
 
 template<typename scalar_t>
 __device__ __forceinline__ 
-void fill_non_local_patch_bwd_int(
+void gather_patch_bwd_int(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> grad_vid,
     torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> grad_weights,
     torch::TensorAccessor<int,2,torch::RestrictPtrTraits,int32_t> counts,

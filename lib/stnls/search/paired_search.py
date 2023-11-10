@@ -31,7 +31,6 @@ from stnls.search.impl.paired_search import forward,backward
 
 class PairedSearchFunction(th.autograd.Function):
 
-
     @staticmethod
     def forward(ctx, frame0, frame1, flow,
                 ws, ps, k, nheads=1, dist_type="prod",
@@ -52,7 +51,7 @@ class PairedSearchFunction(th.autograd.Function):
         ctx.in_ndim = frame0.ndim
         frame0,frame1 = shape_frames(nheads,[frame0,frame1])
         # print("frame0.shape: ",frame0.shape)
-        flow = ensure_flow_dim(flow)
+        flow = ensure_flow_dim(flow,4)
         # flow = ensure_flow_shape(flow)
         B,HD,F,H,W = frame0.shape
         flow = flow.contiguous()

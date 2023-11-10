@@ -6,7 +6,7 @@ Stack Non-Local Patches
 vid # [B HD T F H W] or [B T F' H W] with F' = (HD F) and HD = inds.shape[1]
 inds.shape # B,HD,Q,K
 
-stack = stnls.non_local_stack(vid,inds,ps=ps,stride0=stride0)
+stack = stnls.non_local_gather(vid,inds,ps=ps,stride0=stride0)
 
 stack # [B HD T F H W]
 
@@ -45,15 +45,15 @@ from einops import rearrange
 #     else:
 #         return inds
 
-def non_local_stack(vid,weights,flow,ps,stride0,reflect_bounds=True,itype="float"):
+def non_local_gather(vid,weights,flow,ps,stride0,reflect_bounds=True,itype="float"):
     # inds = stnls.utils.flow2inds(flow,stride0)
     if vid.ndim == 5:
         HD = flow.shape[1]
         vid = rearrange(vid,'b t (hd f) h w -> b hd t f h w',hd=HD)
     if itype == "int":
-        return non_local_stack_int(vid,weights,flow,ps,stride0,reflect_bounds)
+        return non_local_gather_int(vid,weights,flow,ps,stride0,reflect_bounds)
     else:
-        return non_local_stack_bilin2d(vid,weights,flow,ps,stride0,reflect_bounds)
+        return non_local_gather_bilin2d(vid,weights,flow,ps,stride0,reflect_bounds)
 
 def count_cond(bi,hi,ki,ti):
     return (bi == 0) and (hi == 0) and (ki == 0) and (ti == 0)
@@ -61,7 +61,7 @@ def count_cond(bi,hi,ki,ti):
 def illegal_hw(hi,wi,H,W):
     return (hi > (H-1)) or (hi < 0) or (wi > (W-1)) or (wi < 0)
 
-def non_local_stack_int(vid,weights,inds,ps,stride0,reflect_bounds=True):
+def non_local_gather_int(vid,weights,inds,ps,stride0,reflect_bounds=True):
     B,HD,T,F,H,W = vid.shape
     B,HD,T,nH,nW,K,_ = inds.shape
     stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
@@ -110,7 +110,7 @@ def non_local_stack_int(vid,weights,inds,ps,stride0,reflect_bounds=True):
     return stack
 
 
-def non_local_stack_bilin2d(vid,weights,inds,ps,stride0,reflect_bounds=True):
+def non_local_gather_bilin2d(vid,weights,inds,ps,stride0,reflect_bounds=True):
     B,HD,T,nH,nW,K,_ = inds.shape
     B,HD,T,F,H,W = vid.shape
     stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)

@@ -16,7 +16,7 @@ void init_non_local_inds(py::module &);
 
 // -- agg --
 void init_wpsum(py::module &);
-void init_non_local_stack(py::module &);
+void init_gather(py::module &);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
@@ -35,7 +35,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
   // -- agg --
   init_wpsum(m);
-  init_non_local_stack(m);
+  init_gather(m);
 
 }
 

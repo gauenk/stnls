@@ -60,6 +60,9 @@ class RefineSearchFunction(th.autograd.Function):
         patch_offset = 0 if use_adj else -(ps//2)
         reflect_bounds_warning(reflect_bounds)
 
+        # -- input checking --
+        assert isinstance(ps,int) and (ps>0),f"patch size is invalid [{ps}]"
+
         # -- filter only to kr --
         flows = filter_k(flows,kr)
         flows = flows.contiguous()

@@ -1,22 +1,21 @@
 """
 
-Stack Non-Local Patches
+Scatter According to Flow
 
-Usage: see scripts/example_attn.py
-
+Usage: see scripts/example_scatter_attn.py
 
 Example:
 
     vid # [B HD T F H W] or [B T F' H W] with F' = (HD F) and HD = inds.shape[1]
-    weights.shape # B,HD,Q,K
-    inds.shape # B,HD,Q,K,3
-    stacking = NonLocalStack(ps=1)
-    stack = stacking(vid,weights,inds)
-    stack # [B HD K T F H W]
+    weights.shape # B,HD,T,nH,nW,K
+    flows.shape # B,HD,T,nH,nW,K,3
+    scatter = Scatter(ps=1)
+    svid = scatter(vid,weights,flows)
+    svid # [B HD R T F H W]; R = estimated max number of contained neigbhorhoods
+
+  From feature_vid,weights ->
 
 """
-
-
 # -- python --
 import torch as th
 from einops import rearrange
@@ -67,7 +66,7 @@ def get_imode(itype):
     elif itype in ["float","2d"]: return 1
     elif itype in ["3d"]: return 2
 
-class non_local_stack(th.autograd.Function):
+class non_local_scatter(th.autograd.Function):
     """
 
     Stack the non-local patches according to inds
@@ -128,12 +127,12 @@ class non_local_stack(th.autograd.Function):
         # print(weights[0,0,0,0])
         # print(inds,imode)
         if inds.dtype == th.int:
-            fwd_fxn = stnls_cuda.non_local_stack_int_forward
+            fwd_fxn = stnls_cuda.scatter_int_forward
             fwd_fxn(vid, weights, inds, stack, counts,
                     ps, pt, dilation, stride0,
                     reflect_bounds, patch_offset)
         else:
-            fwd_fxn = stnls_cuda.non_local_stack_bilin2d_forward
+            fwd_fxn = stnls_cuda.scatter_bilin2d_forward
             fwd_fxn(vid, weights, inds, stack, counts,
                     ps, pt, dilation, stride0,
                     reflect_bounds, patch_offset)
@@ -218,7 +217,7 @@ class non_local_stack(th.autograd.Function):
         # stnls.utils.vid_io.save_video(counts_s,"./output/tests/tile/","counts_nlstack")
 
         # -- backward --
-        # print("non_local_stack")
+        # print("scatter")
         # print(counts[30:34,30:34])
         # H,W = counts.shape
         # print(grad_stack.abs().mean())
@@ -227,12 +226,12 @@ class non_local_stack(th.autograd.Function):
         eps = 1e-10
         grad_stack = grad_stack / (counts.view(B,HD,1,1,1,H,W)+eps)
         if ctx.itype == "int":
-            fwd_fxn = stnls_cuda.non_local_stack_int_backward
+            fwd_fxn = stnls_cuda.scatter_int_backward
             fwd_fxn(grad_vid,grad_weights,grad_stack,
                     vid,weights,inds,stack,counts,
                     ps,pt,dilation,stride0,reflect_bounds,patch_offset)
         else:
-            fwd_fxn = stnls_cuda.non_local_stack_bilin2d_backward
+            fwd_fxn = stnls_cuda.scatter_bilin2d_backward
             fwd_fxn(grad_vid,grad_weights,grad_inds,grad_stack,
                     vid,weights,inds,stack,counts,
                     ps,pt,dilation,stride0,reflect_bounds,patch_offset)
@@ -256,19 +255,19 @@ class non_local_stack(th.autograd.Function):
         return grad_vid,grad_weights,grad_inds,None,None,\
             None,None,None,None,None,None,None,None,None,None
 
-class NonLocalStack(th.nn.Module):
+class NonLocalScatter(th.nn.Module):
 
-    def __init__(self,ps,stride0,pt=1,dilation=1,
+    def __init__(self,ws,ps,stride0,pt=1,dilation=1,
                  reflect_bounds=True,use_adj=False,itype="float"):
         super().__init__()
-        _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
+        _vars = ["ws","ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))
 
     def forward(self, vid, weights, inds):
         inputs = [getattr(self,var) for var in self._vars]
-        stack = non_local_stack.apply(vid, weights, inds, *inputs)
+        stack = non_local_scatter.apply(vid, weights, inds, *inputs)
         return stack
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -282,7 +281,7 @@ def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
-    fxn = NonLocalSearchFunction.apply
+    fxn = NonLocalScatter.apply
     return fxn(vid,weights,flows,ps,stride0,pt,reflect_bounds,dilation,use_adj,itype)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -292,13 +291,13 @@ def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ps":3,"stride0":1,"pt":1,"reflect_bounds":True,
+    pairs = {"ps":3,"ws":-1,"stride0":1,"pt":1,"reflect_bounds":True,
              "dilation":1, "use_adj":False,"itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     cfg = extract_config(cfg,False)
-    search = NonLocalStack(cfg.ps,cfg.stride0,cfg.pt,cfg.reflect_bounds,
+    search = NonLocalScatter(cfg.ws,cfg.ps,cfg.stride0,cfg.pt,cfg.reflect_bounds,
                            cfg.dilation,cfg.use_adj,cfg.itype)
     return search
 

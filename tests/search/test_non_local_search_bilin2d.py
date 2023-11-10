@@ -585,6 +585,14 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
                                           self_action="anchor",
                                           dist_type=dist_type,topk_mode=topk_mode,
                                           itype=itype)
+    k4 = 8
+    search4 = stnls.search.NonLocalSearch(ws, wt, ps, k4, nheads,
+                                          dilation=dilation,
+                                          stride0=stride0, stride1=stride1,
+                                          reflect_bounds=reflect_bounds,full_ws=True,
+                                          self_action="anchor_and_remove_ref_frame",
+                                          dist_type=dist_type,topk_mode="each",
+                                          itype=itype)
 
 
 
@@ -611,6 +619,12 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     dists3,inds3 = dists3.view(vshape+(k3,)),inds3.view(vshape+(k3,3,))
     dists3 = dists3[...,:,0]
     inds3= inds3[...,:,0,:]
+
+    vshape = (B,HD,T,nH,nW,W_t-1)
+    dists4,inds4 = search4(vid0,vid1,flows)
+    dists4,inds4 = dists4.view(vshape+(k4,)),inds4.view(vshape+(k4,3,))
+    dists4 = dists4[...,:,0]
+    inds4 = inds4[...,:,0,:]
 
     # print(th.stack([dists0[...,0],dists1[...,0],dists2[...,0],dists3[...,0]],-1))
     # print(th.stack([inds0[...,0,:],inds1[...,0,:],inds2[...,0,:],inds3[...,0,:]],-2))
@@ -655,6 +669,25 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
 
                 # -- shaping --
                 flow = rearrange(flow,'b i h w -> b h w i')
-
-                diff = th.mean(th.abs(ind - flow)).item()
                 assert th.allclose(ind,flow,1e-3,1e-3,equal_nan=True)
+
+    inds_i = inds4
+    for ti in range(T):
+        for si in range(W_t-1):
+            ind = inds_i[:,0,ti,:,:,si,1:]
+            flow = flows[:,ti,si].flip(1).clone() + grid
+
+            # -- reflect --
+            reflect_bounds(flow,0,H)
+            reflect_bounds(flow,1,W)
+
+            # -- normalize --
+            flow = flow - grid
+
+            # -- shaping --
+            flow = rearrange(flow,'b i h w -> b h w i')
+            print(th.cat([ind,flow],-1))
+
+            diff = th.mean(th.abs(ind - flow)).item()
+            assert th.allclose(ind,flow,1e-3,1e-3,equal_nan=True)
+

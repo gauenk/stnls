@@ -52,7 +52,7 @@ class PairedRefineFunction(th.autograd.Function):
         device = frame0.device
         ctx.in_ndim = frame0.ndim
         frame0,frame1 = shape_frames(nheads,[frame0,frame1])
-        flow = ensure_paired_flow_dim(flow)
+        flow = ensure_paired_flow_dim(flow,5)
         B,HD,F,H,W = frame0.shape
         flow = flow.contiguous()
         reflect_bounds_warning(reflect_bounds)
@@ -104,7 +104,7 @@ class PairedRefineFunction(th.autograd.Function):
 class PairedRefine(th.nn.Module):
 
     def __init__(self, ws, wr, k, kr, ps, nheads=1,
-                 dist_type="l2", stride0=4, stride1=1,
+                 dist_type="l2", stride0=1, stride1=1,
                  dilation=1, restricted_radius=False, reflect_bounds=True,
                  full_ws=True, self_action=None, use_adj=False,
                  normalize_bwd=False, k_agg=-1, topk_mode="each", itype="float"):
@@ -187,7 +187,7 @@ class PairedRefine(th.nn.Module):
 
 def _apply(frame0, frame1, flow,
            wr, ws, ps, k, nheads=1, batchsize=-1,
-           dist_type="l2", stride0=4, stride1=1,
+           dist_type="l2", stride0=1, stride1=1,
            dilation=1, restricted_radius=False,
            reflect_bounds=True, full_ws=True, self_action=None,
            use_adj=False, normalize_bwd=False, k_agg=-1,

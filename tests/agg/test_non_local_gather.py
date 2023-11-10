@@ -19,7 +19,7 @@ from einops import rearrange,repeat
 import stnls
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/non_local_stack")
+SAVE_DIR = Path("./output/tests/non_local_gather")
 
 def set_seed(seed):
     th.manual_seed(seed)
@@ -75,12 +75,12 @@ def test_fwd(ps,stride0,K,nheads,reflect_bounds,itype,seed):
     flows = flows.to(vid.device)
 
     # -- exec fold fxns --
-    agg = stnls.agg.NonLocalStack(ps=ps,stride0=stride0,
+    agg = stnls.agg.NonLocalGather(ps=ps,stride0=stride0,
                                   reflect_bounds=reflect_bounds,
                                   itype=itype)
     stack = agg(vid,weights,flows)
-    stack_gt = stnls.testing.non_local_stack(vid,weights,flows,ps,stride0,
-                                             reflect_bounds=reflect_bounds,itype=itype)
+    stack_gt = stnls.testing.non_local_gather(vid,weights,flows,ps,stride0,
+                                              reflect_bounds=reflect_bounds,itype=itype)
 
     assert th.allclose(stack,stack_gt,1e-2,1e-2,equal_nan=True)
 
@@ -122,7 +122,7 @@ def test_bwd(ps,stride0,K,nheads,reflect_bounds,itype,seed):
         flows = flows.round().int()
 
     # -- exec fold fxns --
-    stacking = stnls.agg.NonLocalStack(ps=ps,stride0=stride0,
+    stacking = stnls.agg.NonLocalGather(ps=ps,stride0=stride0,
                                        reflect_bounds=reflect_bounds,
                                        itype=itype)
     stack = stacking(vid,weights,flows)

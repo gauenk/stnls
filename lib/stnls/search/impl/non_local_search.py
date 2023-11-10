@@ -67,7 +67,9 @@ def forward(vid0, vid1, flows,
             reflect_bounds, full_ws, patch_offset,  dist_type_i)
 
     # -- anchor --
-    assert self_action in [None,"anchor","anchor_each","remove","remove_ref_frame"]
+    menu = [None,"anchor","anchor_each","remove",]
+    menu += ["remove_ref_frame","anchor_and_remove_ref_frame"]
+    assert self_action in menu
     anchor_self = False if self_action is None else "anchor" in self_action
     if self_action == "anchor":
         stnls.nn.anchor_self(dists,inds,stride0,H,W)
@@ -79,6 +81,11 @@ def forward(vid0, vid1, flows,
         assert wt > 0,"Cannot remove ref frame if not searching across time."
         dists = dists[...,1:,:,:].contiguous()
         inds = inds[...,1:,:,:,:].contiguous()
+    elif self_action == "anchor_and_remove_ref_frame":
+        assert wt > 0,"Cannot remove ref frame if not searching across time."
+        dists = dists[...,1:,:,:].contiguous()
+        inds = inds[...,1:,:,:,:].contiguous()
+        stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
     elif self_action is None:
         pass
     else:

@@ -123,11 +123,11 @@ def filter_k(inds,kr,k=None):
     return inds[...,:Ks,:].contiguous()
 
 
-def ensure_paired_flow_dim(flow):
-    if flow.ndim == 4:
+def ensure_paired_flow_dim(flow,num):
+    if flow.ndim == num:
         flow = flow[:,None] # add nheads
+    assert flow.ndim == (num+1)
     return flow
-
 
 def ensure_flow_shape(flow):
     if flow.ndim == 5:

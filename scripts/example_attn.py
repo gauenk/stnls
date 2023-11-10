@@ -43,7 +43,7 @@ weights = th.nn.functional.softmax(10*dists,-1)
 
 # -- aggregate --
 ps = 5 # patch size can change for stacking
-stack = stnls.agg.NonLocalStack(ps,stride0)
+stack = stnls.agg.NonLocalGather(ps,stride0)
 stacked = stack(v_vid,weights,srch_flows)
 # stacked.shape = (B,HD,K,T,F',H,W) where F' = F/HD
 V_out = rearrange(stacked,'b hd k t f h w -> (b t) (hd f) k h w')

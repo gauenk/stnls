@@ -1,4 +1,6 @@
-from .non_local_stack_gt import non_local_stack
+
+# -- local imports --
+from .non_local_gather_gt import non_local_gather
 from . import data
 from . import find_duplicate_inds as find_duplicate_inds_f
 from . import gradcheck

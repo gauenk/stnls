@@ -31,13 +31,15 @@ setup(name='stnls',
               'lib/csrc/nn/non_local_inds.cpp', # Compute Non-Local Indices from Params
               'lib/csrc/nn/non_local_inds_kernel.cu',
               # -- agg --
-              'lib/csrc/agg/non_local_stack.cpp', # Non-Local Stack
-              'lib/csrc/agg/non_local_stack_int_kernel.cu',
-              'lib/csrc/agg/non_local_stack_bilin2d_kernel.cu',
+              'lib/csrc/agg/gather.cpp', # Non-Local Gather
+              'lib/csrc/agg/gather_int_kernel.cu',
+              'lib/csrc/agg/gather_bilin2d_kernel.cu',
+              # 'lib/csrc/agg/scatter.cpp', # Non-Local Scatter
+              # 'lib/csrc/agg/scatter_int_kernel.cu',
+              # 'lib/csrc/agg/scatter_bilin2d_kernel.cu',
               'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum
               'lib/csrc/agg/wpsum_int_kernel.cu',
               'lib/csrc/agg/wpsum_bilin2d_kernel.cu',
-              # 'lib/csrc/agg/wpsum_bwd_kernels.cu',
               # -- setup --
               'lib/csrc/pybind.cpp',
           ],

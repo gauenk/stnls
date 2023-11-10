@@ -53,6 +53,8 @@ class NonLocalSearchFunction(th.autograd.Function):
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
         B,HD,T,F,H,W = vid0.shape
         reflect_bounds_warning(reflect_bounds)
+        W_t = 2*wt+1
+        assert T >= W_t,f"Num Frames [{T}] must be >= Temporal Window [{W_t}]"
 
         # -- manage forward shape --
         flow_ndim = flows.ndim
@@ -90,6 +92,8 @@ class NonLocalSearchFunction(th.autograd.Function):
             setattr(ctx,name,val)
 
         # -- return --
+        # dists.shape = (B,HD,T,nH,nW,K)
+        # inds.shape = (B,HD,T,nH,nW,K,3)
         return dists,inds
 
     @staticmethod

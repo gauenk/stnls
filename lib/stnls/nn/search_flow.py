@@ -25,8 +25,8 @@ def empty_flows(fflow,wt,stride0):
     B,T,_,H,W = fflow.shape
     nH = (H-1)//stride0+1
     nW = (W-1)//stride0+1
-    W_t = 2*wt
-    flows = th.zeros((B,T,W_t,2,nH,nW),
+    W_t = 2*wt+1
+    flows = th.zeros((B,T,W_t-1,2,nH,nW),
                      device=fflow.device,dtype=fflow.dtype)
     return flows
 
