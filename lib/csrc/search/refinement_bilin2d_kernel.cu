@@ -426,7 +426,6 @@ __global__ void refinement_vidflows_backward_kernel(
     //   return;
     // }
 
-
     // -- get source kj from shuffled ki--
     int kj = kselect[ibatch][ihead][ti][nh][nw][ki];
 

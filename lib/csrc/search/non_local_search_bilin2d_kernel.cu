@@ -49,7 +49,6 @@ __global__ void non_local_search_bilin2d_forward_kernel(
 
   // -- search window params --
   scalar_t wsHalf = (ws-1)/2;
-  // scalar_t wsMax = stride1*(ws-1-wsHalf);
   scalar_t wsOff_h,wsOff_w;
   int W_t = 2*wt+1;
   int t_max;
@@ -462,7 +461,7 @@ __global__ void nls_bwd_vidflows_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     const torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> inds,
     int wt, int ps, int pt, int stride0, int dilation,
-    bool reflect_bounds, int patch_offset, int ftrs_per_thread) {
+    bool reflect_bounds, int patch_offset, int st_offset, int ftrs_per_thread) {
 
   // -- shape --
   int B = grad_dists.size(0);
@@ -532,12 +531,12 @@ __global__ void nls_bwd_vidflows_kernel(
     check_bounds<scalar_t>(valid_prop_patch,prop_patch,T,H,W);
     if (not valid_prop_patch){ return; }
 
-    // -- accumulated temporal index from frame difference --
+    // -- search flow from difference --
     int t_max;
     set_time_range(t_max, ti, T, wt);
     int dt = static_cast<int>(prop_patch[0]) - ti;
     int dto = t_max - ti;
-    int si = dt > 0 ? (dt-1) : dto - dt - 1;
+    int si = dt >= 0 ? (dt-st_offset) : dto - dt - st_offset;
 
     // -- accumulate optical flow update --
     scalar_t acc_dFlows[8];
@@ -557,8 +556,9 @@ __global__ void nls_bwd_vidflows_kernel(
                      valid_ref,valid_prop,valid,T,H,W);
 
     // -- update grad_flows from grad_dists,vid0,vid1 --
-    if (dt==0){ return; }
-
+    if (si<0){ return; } // aka same frame
+    // if (dt==0){ return; } // aka same frame.
+    
     scalar_t hi = ref_patch[1] + flows[ibatch][ihead_f][ti][si][1][nh][nw];
     scalar_t wi = ref_patch[2] + flows[ibatch][ihead_f][ti][si][0][nh][nw];
     int signH = check_bound(hi,H) ? 1 : -1;
@@ -619,6 +619,11 @@ void non_local_search_bilin2d_vidflows_backward_cuda(
   blocksPerGrid.x = ceil(double(Q)/double(threadsPerBlock.x));
   blocksPerGrid.y = ceil(double(K)/double(threadsPerBlock.y));
 
+  // -- compute st --
+  int W_t = 2*wt+1;
+  int st_offset = W_t - flows.size(3);
+  assert((st_offset == 1) or (st_offset == 0));
+
   // -- view launch info --
   // fprintf(stdout,"BHD,nblocks_queries,chnls_nblocks: %d,%d,%d\n",
   //         BHD,nblocks_queries,chnls_nblocks);
@@ -643,7 +648,7 @@ void non_local_search_bilin2d_vidflows_backward_cuda(
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
             wt, ps, pt, stride0, dilation, reflect_bounds, patch_offset, 
-            ftrs_per_thread);}));
+            st_offset, ftrs_per_thread);}));
   }else if (dist_type == 1){ // l2
       AT_DISPATCH_FLOATING_TYPES(vid0.type(),"nls_bwd_vidflows_kernel", ([&] {
       nls_bwd_vidflows_kernel<scalar_t,1>
@@ -659,7 +664,7 @@ void non_local_search_bilin2d_vidflows_backward_cuda(
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
             wt, ps, pt, stride0, dilation, reflect_bounds, patch_offset, 
-            ftrs_per_thread);}));
+            st_offset, ftrs_per_thread);}));
   }else{
     throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");
   }

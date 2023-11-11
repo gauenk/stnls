@@ -75,65 +75,67 @@ class non_local_scatter(th.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, vid, weights, inds,
+    def forward(ctx, vid, weights, flows_k, labels,
                 ps=7,stride0=4,pt=1,reflect_bounds=True,
                 dilation=1, use_adj=False, itype="int"):
 
         # print("[stack]: ",ps,stride0,itype)
 
         # -- init --
-        HD = inds.shape[1]
-        K = inds.shape[-2]
+        HD = flows_k.shape[1]
+        K = flows_k.shape[-2]
         q_start=0
         ndim = vid.ndim
         vid = ensure_ndim6(vid,HD)
         B,HD_v,T,F,H,W = vid.shape
-        HD_i = inds.shape[1]
+        HD_i = flows_k.shape[1]
         HD = max(HD_v,HD_i)
         wshape = weights.shape
         stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
         counts = th.zeros((B,HD,H,W),device=vid.device,dtype=th.int32)
         # print("B,HD,K,T,F,H,W: ",B,HD,K,T,F,H,W)
-        # print("stack [weights.shape,inds.shape]: ",weights.shape,inds.shape)
+        # print("stack [weights.shape,flows_k.shape]: ",weights.shape,flows_k.shape)
         patch_offset = 0 if use_adj else -(ps//2)
 
         # -- reshape --
         # nH = (H-1)//stride0+1
         # nW = (W-1)//stride0+1
         weights = weights.view(B,HD,-1,K).clone()
-        inds = inds.view(B,HD,-1,K,3).clone()
+        flows_k = flows_k.view(B,HD,-1,K,3).clone()
 
         # -- non-local stacking --
         vid = vid.contiguous().clone()
         weights = weights.contiguous().clone()
-        inds = get_inds(inds,itype).clone()
+        flows_k = get_inds(flows_k,itype).clone()
         imode = get_imode(itype)
-        assert inds.shape[-1] == 3
+        assert flows_k.shape[-1] == 3
 
         # -- all same num of heads --
-        assert vid.shape[1] == inds.shape[1]
-        assert inds.shape[1] == weights.shape[1]
+        assert vid.shape[1] == flows_k.shape[1]
+        assert flows_k.shape[1] == weights.shape[1]
         # print(vid.shape)
-        # print(inds[0,0,9])
-        # inds_n = rearrange(inds,'b HD (H W) k two -> b (HD k) two H W',H=H,W=W)
-        # print(inds_n[0,0])
-        # for i in range(inds_n.shape[1]):
-        #     print(inds_n[0,i,:,:3,:3])
+        # print(flows_k[0,0,9])
+        # flows_k_n = rearrange(flows_k,'b HD (H W) k two -> b (HD k) two H W',H=H,W=W)
+        # print(flows_k_n[0,0])
+        # for i in range(flows_k_n.shape[1]):
+        #     print(flows_k_n[0,i,:,:3,:3])
         # print(stride0,use_adj,ps)
         assert not th.any(th.isnan(weights)).item()
         # print(vid.shape)
 
-        # print(vid.shape,weights.shape,inds.shape,stack.shape,counts.shape)
+        # print(vid.shape,weights.shape,flows_k.shape,stack.shape,counts.shape)
         # print(weights[0,0,0,0])
-        # print(inds,imode)
-        if inds.dtype == th.int:
+        # print(flows_k,imode)
+        if flows_k.dtype == th.int:
             fwd_fxn = stnls_cuda.scatter_int_forward
-            fwd_fxn(vid, weights, inds, stack, counts,
+            fwd_fxn(vid, weights, flows_k,
+                    labels, stack, counts,
                     ps, pt, dilation, stride0,
                     reflect_bounds, patch_offset)
         else:
             fwd_fxn = stnls_cuda.scatter_bilin2d_forward
-            fwd_fxn(vid, weights, inds, stack, counts,
+            fwd_fxn(vid, weights, flows_k,
+                    labels, stack, counts,
                     ps, pt, dilation, stride0,
                     reflect_bounds, patch_offset)
         assert th.all(counts > 0).item()
@@ -146,7 +148,7 @@ class non_local_scatter(th.autograd.Function):
         assert not th.any(th.isnan(stack)).item()
 
         # -- save for back-prop --
-        ctx.save_for_backward(vid,stack,weights,inds,counts)
+        ctx.save_for_backward(vid,stack,weights,flows_k,counts)
         ctx.stride0 = stride0
         ctx.dilation = dilation
         ctx.use_adj = use_adj
@@ -163,7 +165,7 @@ class non_local_scatter(th.autograd.Function):
     def backward(ctx, grad_stack):
 
         # -- unpack ctx --
-        vid,stack,weights,inds,counts = ctx.saved_tensors
+        vid,stack,weights,flows_k,counts = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
         dilation = ctx.dilation
         stride0 = ctx.stride0
@@ -178,8 +180,8 @@ class non_local_scatter(th.autograd.Function):
         grad_vid = th.zeros_like(vid)
         grad_weights = th.zeros_like(weights)
         grad_stack = grad_stack.contiguous()
-        if itype != "int": grad_inds = th.zeros_like(inds)
-        else: grad_inds = th.zeros((1,)*5).to(inds.device).int()
+        if itype != "int": grad_flows_k = th.zeros_like(flows_k)
+        else: grad_flows_k = th.zeros((1,)*5).to(flows_k.device).int()
 
         # print(grad_stack[0,0,0,0,:,:2,:2])
         # print(th.all(grad_stack==0))
@@ -190,7 +192,7 @@ class non_local_scatter(th.autograd.Function):
         # print("grad_weights.shape: ",grad_weights.shape)
         # print("vid.shape: ",vid.shape)
         # print("weights.shape: ",weights.shape)
-        # print("inds.shape: ",inds.shape)
+        # print("flows_k.shape: ",flows_k.shape)
         # print("stack.shape: ",stack.shape)
         # print("counts.shape: ",counts.shape)
         # print("ps,pt,dilation,stride0: ",ps,pt,dilation,stride0)
@@ -228,12 +230,12 @@ class non_local_scatter(th.autograd.Function):
         if ctx.itype == "int":
             fwd_fxn = stnls_cuda.scatter_int_backward
             fwd_fxn(grad_vid,grad_weights,grad_stack,
-                    vid,weights,inds,stack,counts,
+                    vid,weights,flows_k,stack,counts,
                     ps,pt,dilation,stride0,reflect_bounds,patch_offset)
         else:
             fwd_fxn = stnls_cuda.scatter_bilin2d_backward
-            fwd_fxn(grad_vid,grad_weights,grad_inds,grad_stack,
-                    vid,weights,inds,stack,counts,
+            fwd_fxn(grad_vid,grad_weights,grad_flows_k,grad_stack,
+                    vid,weights,flows_k,stack,counts,
                     ps,pt,dilation,stride0,reflect_bounds,patch_offset)
 
         # -- info --
@@ -245,14 +247,14 @@ class non_local_scatter(th.autograd.Function):
         grad_vid = revert_ndim(grad_vid,ndim)
 
         # -- don't propogate "int" --
-        if itype == "int": grad_inds = None
+        if itype == "int": grad_flows_k = None
         else:
-            grad_inds = grad_inds.reshape(ctx.wshape+(3,))
+            grad_flows_k = grad_flows_k.reshape(ctx.wshape+(3,))
 
         # -- reshape --
         grad_weights = grad_weights.reshape(ctx.wshape)
 
-        return grad_vid,grad_weights,grad_inds,None,None,\
+        return grad_vid,grad_weights,grad_flows_k,None,None,None,\
             None,None,None,None,None,None,None,None,None,None
 
 class NonLocalScatter(th.nn.Module):
@@ -265,9 +267,9 @@ class NonLocalScatter(th.nn.Module):
         for var in _vars:
             setattr(self,var,eval(var))
 
-    def forward(self, vid, weights, inds):
+    def forward(self, vid, weights, flows_k, labels):
         inputs = [getattr(self,var) for var in self._vars]
-        stack = non_local_scatter.apply(vid, weights, inds, *inputs)
+        stack = non_local_scatter.apply(vid, weights, flows_k, labels, *inputs)
         return stack
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-

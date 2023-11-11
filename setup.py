@@ -34,8 +34,9 @@ setup(name='stnls',
               'lib/csrc/agg/gather.cpp', # Non-Local Gather
               'lib/csrc/agg/gather_int_kernel.cu',
               'lib/csrc/agg/gather_bilin2d_kernel.cu',
-              # 'lib/csrc/agg/scatter.cpp', # Non-Local Scatter
-              # 'lib/csrc/agg/scatter_int_kernel.cu',
+              'lib/csrc/agg/scatter.cpp', # Non-Local Scatter
+              'lib/csrc/agg/scatter_labels_kernel.cu',
+              'lib/csrc/agg/scatter_int_kernel.cu',
               # 'lib/csrc/agg/scatter_bilin2d_kernel.cu',
               'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum
               'lib/csrc/agg/wpsum_int_kernel.cu',
