@@ -65,6 +65,7 @@ def set_search_offsets(wsOff_h, wsOff_w, hi, wi,
 def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
               stride1,ws,wsHalf,wsOff_h,wsOff_w,full_ws):
 
+    print((hi,wi),(nl_hi,nl_wi))
     # -- check spatial coordinates --
     ws_i_tmp = (nl_hi - hi)//stride1# + wsHalf
     ws_j_tmp = (nl_wi - wi)//stride1# + wsHalf
@@ -88,29 +89,68 @@ def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
     oob_i = (delta_h != 0) and (abs(delta_h) >= delta_i)
     delta_j = (ws-1-ws_j) if (delta_w > 0) else (ws_j if (delta_w<0) else ws)
     oob_j = (delta_w != 0) and (abs(delta_w) >= delta_j)
-    print("oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp): ",
-          oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp),(delta_i,delta_j))
+    oob_i = abs(ws_i_tmp) > wsHalf
+    oob_j = abs(ws_j_tmp) > wsHalf
+
     ws_i_noadj = ws_i_tmp + wsHalf
     ws_j_noadj = ws_j_tmp + wsHalf
+
+    print((delta_i,delta_j),(delta_h,delta_w),(oob_i,oob_j),
+          (ws_i_noadj,ws_j_noadj),(ws_i_tmp,ws_j_tmp))
+    # print("oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp): ",
+    #       oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp),(delta_i,delta_j))
+    verbose = True
+
     if oob_i and oob_j:
-        ws_j = (ws-1)//2+1
-        ws_i = 0
+        print((ws-1)//2+1)
+        di = wsHalf - abs(delta_h)
+        dj = wsHalf - abs(delta_w)
+        mi = di + wsHalf*dj
+        ws_i = mi % ws
+        ws_j = mi // ws + (ws-1)
+        # ws_i = (ws-1) - (di + wsHalf*dj)
+        # ws_j = ws-1
+
+        print(di,dj,di + wsHalf*dj)
+        # ws_i = delta_j
+        # ws_j = (ws-1)//2+1
     elif oob_i and not(oob_j):
-        # ws_i = ws_j
-        ws_i = ws-1-ws_j_noadj
-        ws_j = 0
-        # ws_i = ws_i + ws
-        # if ws_i_tmp < 0:
-        #     ws_i = abs((ws_i_tmp - ws))
-        # else:
-        #     ws_i = abs((ws_i_tmp - ws))
+        ws_j = abs(ws_i_tmp)-((ws+1)//2)
+        ws_i = ws_j_tmp+wsHalf
+        # wsHalf - delta_h
+        # ws_i = ws-1-ws_j_noadj
+        # ws_j = wsHalf-delta_h
+        verbose = True
     elif oob_j and not(oob_i):
-        print("oob_j: ",oob_j,ws_i_noadj,ws_j_noadj)
-        ti = ws_i_noadj + ws_j_noadj * ws
-        print(ti)
-        ws_j = 1#ws_j
-        ws_i = ws-1-ws_i_noadj
-    print("(ws_i,ws_j): ",(ws_i,ws_j))
+        verbose = True
+        # ti = ws_i_noadj + ws_j_noadj * ws
+        # print("oob_j: ",oob_j,ws_i_noadj,ws_j_noadj,ti)
+        ws_j = abs(ws_j_tmp) -((ws+1)//2) + (wsHalf)
+        ws_i = ws_i_tmp+wsHalf# + wsHalf # shift down 2 rows
+        # ws_j = wsHalf - delta_w + wsHalf # shift down 2 rows
+
+    # if oob_i and oob_j:
+    #     print((ws-1)//2+1)
+    #     ti = (wsHalf+1)*(wsHalf-delta_h)+(wsHalf-delta_w)
+    #     print(ti)
+    #     ws_i = ti // (wsHalf+1)
+    #     ws_j = ti % (wsHalf+1) + (wsHalf+1)
+    #     # ws_i = delta_j
+    #     # ws_j = (ws-1)//2+1
+    # elif oob_i and not(oob_j):
+    #     ws_i = ws-1-ws_j_noadj
+    #     ws_j = wsHalf-delta_h
+    #     verbose = True
+    # elif oob_j and not(oob_i):
+    #     verbose = True
+    #     ti = ws_i_noadj + ws_j_noadj * ws
+    #     print("oob_j: ",oob_j,ws_i_noadj,ws_j_noadj,ti)
+    #     # print(ti,ws_i_noadj,ws_j_noadj)
+    #     # ws_j = 1#ws_j
+    #     ws_j = wsHalf-delta_w
+    #     ws_i = ws-1-ws_i_noadj
+
+    # print("(ws_i,ws_j): ",(ws_i,ws_j))
     if wsHalf != wsOff_h and not(oob_i or oob_j):
         ws_i = ws_i_tmp+wsHalf
     if wsHalf != wsOff_w and not(oob_i or oob_j):
@@ -147,8 +187,12 @@ def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
     # if gt_j:
     #     ws_j = 2*(wMax-1-wi) - ws_j
 
-    print((ws_i,ws_j),(hMax,wMax))
-    return ws_i,ws_j,oob,gt_i,gt_j
+    if verbose:
+        print((ws_i,ws_j))
+    if not(oob_i and oob_j):
+        assert (ws_i >= 0) and (ws_i < ws)
+        assert (ws_j >= 0) and (ws_j < ws)
+    return ws_i,ws_j,oob,gt_i,gt_j,verbose
 
 
 def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,full_ws,names,counts,flows_k):
@@ -167,7 +211,12 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,full_ws,names,counts,flows_k):
     # if not((wi == 0) or (hi == 0)): return
     # if not((nl_hi == 1) and (nl_wi == 0)): return
     # if not((nl_hi == 0) and (nl_wi == 2)): return
+    # if not((nl_hi == 0) and (nl_wi == 2)): return
     # if not((nl_hi == 2) and (nl_wi == 2)): return
+    # if not((nl_hi == 0) and (nl_wi == 3)): return
+    # if not((nl_hi == 4) and (nl_wi == 4)): return
+    # if not((nl_hi == 0) and (nl_wi == 5)): return
+    # if not((nl_hi == 6) and (nl_wi == 6)): return
 
 
     # -- offset search offsets --
@@ -181,18 +230,19 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,full_ws,names,counts,flows_k):
     ws_j_orig = ws_j
 
     # -- handle oob --
-    ws_i,ws_j,oob,gt_i,gt_j = check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,stride1,ws,
+    ws_i,ws_j,oob,gt_i,gt_j,verb = check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,stride1,ws,
                                         wsHalf,wsOff_h,wsOff_w,full_ws)
     # if not(oob): return
 
     # -- get unique index --
+    # li = (ws_i) + (ws_j)*ws
     li = (ws_i) + (ws_j)*ws
-    li_off = ws-1 if (ws_i_orig < ws_j_orig) else 0
-    print(gt_i,gt_j)
+    # li_off = ws-1 if (ws_i_orig < ws_j_orig) else 0
+    # print(gt_i,gt_j)
     li_off = 0
     # li = li + ws*ws + li_off if oob else li
     li = li + ws*ws + li_off if oob else li
-    print("Ref/NonLocal: ",(hi,wi),(nl_hi,nl_wi),li,oob)
+    print("Ref/NonLocal: ",(hi,wi),(nl_hi,nl_wi),li,oob,stride1,ws)
 
     # -- update --
     if np.any(names[li,ti,hi,wi]<0):
@@ -201,6 +251,7 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,full_ws,names,counts,flows_k):
     names[li,nl_ti,nl_hi,nl_wi,1] = hi
     names[li,nl_ti,nl_hi,nl_wi,2] = wi
     if counts[li,nl_ti,nl_hi,nl_wi] == 0:
+        print("already here.")
         exit()
     if li < ws*ws and oob:
         exit()
@@ -212,12 +263,12 @@ def set_seed(seed):
     random.seed(seed)
 
 def main():
-    ws = 3
+    ws = 15
     wt = 0
     full_ws = True
-    T,H,W = 1,8,8
+    T,H,W = 1,32,32
     stride0,stride1 = 1,1
-    S = 2*ws*ws
+    S = ws*ws + 2*(ws//2)*ws + (ws//2)**2
     vals = np.zeros((T,H,W,ws,ws))
     names = -np.ones((S,T,H,W,3))
     counts = -np.ones((S,T,H,W))
@@ -236,5 +287,6 @@ def main():
     # for i in range(S):
     #     print(counts[i,0])
     print(np.sum(counts>=0),T*H*W*K)
+    print(np.sum(counts==0),T*H*W*K)
 if __name__ == "__main__":
     main()
