@@ -27,7 +27,7 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"nheads":[1],"ws":[3],"wt":[1],
+    test_lists = {"nheads":[1],"ws":[3],"wt":[0],
                   "stride0":[1],"stride1":[1],
                   "full_ws":[True],"seed":[123]}
     for key,val in test_lists.items():
@@ -48,29 +48,33 @@ def test_labels(nheads,ws,wt,stride0,stride1,full_ws,seed):
     device = "cuda:0"
     set_seed(seed)
     W_t = 2*wt+1
-    B,HD,T,F,H,W = 1,nheads,2,1,8,8
+    B,HD,T,F,H,W = 1,nheads,3,3,8,8
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
-    K = 10
+    K = ws*ws*W_t
     itype = "int"
 
     # -- load flows --
-    flows = th.ones((B,1,T,W_t-1,2,nH,nW)).cuda()/2.
+    flows = th.ones((B,HD,T,W_t-1,2,nH,nW)).cuda()/2.
     flows = th.rand_like(flows)/2.+th.randint_like(flows,-3,3)+0.2
+    flows = th.zeros_like(flows)
     flows = flows.round().int()
 
-    # -- load flows from search --
-    flows_k = th.ones((B,HD,T,nH,nW,K,3)).to(device)+0.1
-    flows_k = th.rand_like(flows_k)/2.+1.1
-    tgrid = th.arange(0,T).view(1,1,T,1,1,1)
-    flows_k[...,0] = th.randint(0,T,size=flows_k[...,0].shape)-tgrid
-    flows_k[...,1:] = th.rand_like(flows_k[...,1:])/2.+0.2
-    flows_k[...,1:] += th.randint_like(flows_k[...,1:],-3,3)
-    not_int = th.all(th.abs(flows_k[...,1:].round() - flows_k[...,1:])>1e-5).item()
-    flows_k = flows_k.round().int()
+    # -- load top-k flows --
+    ps = 3
+    search = stnls.search.NonLocalSearch(ws, wt, ps, K, nheads, dist_type="l2",
+                                         stride0=stride0, stride1=stride1,
+                                         reflect_bounds=True,self_action="anchor",
+                                         itype="int",full_ws=full_ws)
+    vid = th.rand((B,HD,T,F,H,W)).to(device)
+    _,flows_k = search(vid,vid,flows)
+    # flows_k[ibatch][ihead][ti][hi][wi][ki][_idx]
+    # print(flows_k[0,0,0,:2,:2])
 
     # -- run --
     labels = stnls.agg.scatter_labels(flows,flows_k,ws,wt,stride0,stride1,full_ws)
     print(labels)
+    print(labels[0,0,:3])
+    print(labels[0,0,-3:])
     print(labels.shape)
 
 # def test_fwd(ps,stride0,K,nheads,reflect_bounds,itype,seed):

@@ -18,7 +18,9 @@ from easydict import EasyDict as edict
 from stnls.utils import extract_pairs
 
 MENU = edict({"wpsum":"wpsum",
-              "nlstack":"nlstack"})
+              "nlstack":"gather",
+              "nlgather":"gather",
+              "gather":"gather"})
 
 def from_agg_menu(name):
     if name in MENU:

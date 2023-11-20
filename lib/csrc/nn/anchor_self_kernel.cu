@@ -71,7 +71,7 @@ __global__ void anchor_self_kernel(
       eq_loc = true;
       for (int ix=0; ix<3; ix++){
         if (is_same_v<itype,int>){
-          eq_loc = eq_loc && (inds[bi][qi][self_index][ix]);
+          eq_loc = eq_loc && (inds[bi][qi][self_index][ix]==0);
         }else{
           delta += fabs(inds[bi][qi][self_index][ix]);
         }

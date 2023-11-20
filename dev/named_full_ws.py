@@ -19,6 +19,7 @@ def get_data(ws,wt,T,H,W,stride0,stride1,full_ws):
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     K = ws*ws*W_t
     itype = "int"
+    # K = -1
 
     # -- load flows --
     flows = th.ones((B,HD,T,W_t-1,2,nH,nW)).cuda()/2.
@@ -30,7 +31,8 @@ def get_data(ws,wt,T,H,W,stride0,stride1,full_ws):
     ps = 3
     search = stnls.search.NonLocalSearch(ws, wt, ps, K, nheads, dist_type="l2",
                                          stride0=stride0, stride1=stride1,
-                                         reflect_bounds=True,self_action="anchor",
+                                         reflect_bounds=True,
+                                         self_action="anchor",
                                          itype="int",full_ws=full_ws)
     vid = th.rand((B,HD,T,F,H,W)).to(device)
     _,flows_k = search(vid,vid,flows)
@@ -65,7 +67,7 @@ def set_search_offsets(wsOff_h, wsOff_w, hi, wi,
 def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
               stride1,ws,wsHalf,wsOff_h,wsOff_w,full_ws):
 
-    print((hi,wi),(nl_hi,nl_wi))
+    # print((hi,wi),(nl_hi,nl_wi))
     # -- check spatial coordinates --
     ws_i_tmp = (nl_hi - hi)//stride1# + wsHalf
     ws_j_tmp = (nl_wi - wi)//stride1# + wsHalf
@@ -95,14 +97,14 @@ def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
     ws_i_noadj = ws_i_tmp + wsHalf
     ws_j_noadj = ws_j_tmp + wsHalf
 
-    print((delta_i,delta_j),(delta_h,delta_w),(oob_i,oob_j),
-          (ws_i_noadj,ws_j_noadj),(ws_i_tmp,ws_j_tmp))
+    # print((delta_i,delta_j),(delta_h,delta_w),(oob_i,oob_j),
+    #       (ws_i_noadj,ws_j_noadj),(ws_i_tmp,ws_j_tmp))
     # print("oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp): ",
     #       oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp),(delta_i,delta_j))
     verbose = True
 
     if oob_i and oob_j:
-        print((ws-1)//2+1)
+        # print((ws-1)//2+1)
         di = wsHalf - abs(delta_h)
         dj = wsHalf - abs(delta_w)
         mi = di + wsHalf*dj
@@ -111,7 +113,7 @@ def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
         # ws_i = (ws-1) - (di + wsHalf*dj)
         # ws_j = ws-1
 
-        print(di,dj,di + wsHalf*dj)
+        # print(di,dj,di + wsHalf*dj)
         # ws_i = delta_j
         # ws_j = (ws-1)//2+1
     elif oob_i and not(oob_j):
@@ -187,17 +189,25 @@ def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
     # if gt_j:
     #     ws_j = 2*(wMax-1-wi) - ws_j
 
-    if verbose:
-        print((ws_i,ws_j))
+    # if verbose:
+    #     print((ws_i,ws_j))
     if not(oob_i and oob_j):
         assert (ws_i >= 0) and (ws_i < ws)
         assert (ws_j >= 0) and (ws_j < ws)
     return ws_i,ws_j,oob,gt_i,gt_j,verbose
 
 
-def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,full_ws,names,counts,flows_k):
+def get_tlims(ti, T, wt):
+  t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1));
+  t_min = max(ti - wt - t_shift,0);
+  t_max = min(T-1,ti + wt - t_shift);
+  return t_max,t_min
+
+def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,st_offset,
+               full_ws,names,counts,flows_k):
 
     # -- unpack --
+    W_t = 2*wt+1
     S,T,H,W,_ = names.shape
     wsHalf = (ws-1)//2
     wsOff_h,wsOff_w = wsHalf,wsHalf
@@ -219,6 +229,15 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,full_ws,names,counts,flows_k):
     # if not((nl_hi == 6) and (nl_wi == 6)): return
 
 
+    # -- search flow from difference --
+    t_max,t_min = get_tlims(ti, T, wt)
+    dt = nl_ti - ti
+    # si = nl_ti - t_min
+    dto = t_max - ti
+    si = (dt-st_offset) if (dt >= 0) else (dto - dt - st_offset)
+    si = (ti+nl_ti) % T
+    # print(si,dt,st_offset,nl_ti,ti)
+
     # -- offset search offsets --
     wsOff_h,wsOff_w = set_search_offsets(wsOff_h, wsOff_w, hi, wi,
                                          stride1, wsHalf, ws, H, W, full_ws)
@@ -235,16 +254,13 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,full_ws,names,counts,flows_k):
     # if not(oob): return
 
     # -- get unique index --
-    # li = (ws_i) + (ws_j)*ws
-    li = (ws_i) + (ws_j)*ws
-    # li_off = ws-1 if (ws_i_orig < ws_j_orig) else 0
-    # print(gt_i,gt_j)
-    li_off = 0
-    # li = li + ws*ws + li_off if oob else li
-    li = li + ws*ws + li_off if oob else li
-    print("Ref/NonLocal: ",(hi,wi),(nl_hi,nl_wi),li,oob,stride1,ws)
+    li_off = si*(ws*ws+2*(ws//2)*ws+(ws//2)**2)
+    li = (ws_i) + (ws_j)*ws + li_off
+    li = li + ws*ws if oob else li
+    print("Ref/NonLocal: ",(ti,hi,wi),(nl_ti,nl_hi,nl_wi),si,dt,li,oob,stride1,ws)
 
     # -- update --
+    assert((si >= 0) and (si <= (W_t-1)))
     if np.any(names[li,ti,hi,wi]<0):
         names[li,ti,hi,wi,...] = 0
     names[li,nl_ti,nl_hi,nl_wi,0] = ti
@@ -263,24 +279,26 @@ def set_seed(seed):
     random.seed(seed)
 
 def main():
-    ws = 15
-    wt = 0
+    ws = 5
+    wt = 2
+    W_t = 2*wt+1
     full_ws = True
-    T,H,W = 1,32,32
+    T,H,W = 5,16,16
     stride0,stride1 = 1,1
-    S = ws*ws + 2*(ws//2)*ws + (ws//2)**2
+    S = W_t*(ws*ws + 2*(ws//2)*ws + (ws//2)**2)
     vals = np.zeros((T,H,W,ws,ws))
     names = -np.ones((S,T,H,W,3))
     counts = -np.ones((S,T,H,W))
     flows_k = get_data(ws,wt,T,H,W,stride0,stride1,full_ws)
     K = flows_k.shape[-2]
+    st_offset = 1
     print("flows_k.shape: ",flows_k.shape)
     for ti in range(T):
         for hi in range(H):
             for wi in range(W):
                 for ki in range(K):
                     fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,
-                               full_ws,names,counts,flows_k)
+                               st_offset,full_ws,names,counts,flows_k)
 
     print(counts[:,0,2,2])
     print(counts[:,0,:3,:3].T)
