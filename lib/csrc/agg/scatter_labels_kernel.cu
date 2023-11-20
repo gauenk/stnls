@@ -13,53 +13,56 @@
 
 **************************************/
 
-template<typename itype=int>
 __device__ __forceinline__
-void handle_oob(int& ws_i, int& ws_j, bool& oob, int* nl_patch,
-                int* ref_patch, int stride1, int ws, int wsHalf,
-                int wsOff_h, int wsOff_w, bool full_ws){
-
+void get_unique_index(int& li, bool& oob,
+                      int nl_hi,int nl_wi,int hi,int wi,
+                      int wsOff_h,int wsOff_w,int time_offset,
+                      int stride1,int ws,int wsHalf,bool full_ws){
+  
+  // -- init --
+  int ws_i = -1;
+  int ws_j = -1;
+  
   // -- check spatial coordinates --
-  int ws_i_tmp;
-  int ws_j_tmp;
-  ws_i_tmp = (nl_patch[1] - ref_patch[1])/stride1 + wsHalf;
-  ws_j_tmp = (nl_patch[2] - ref_patch[2])/stride1 + wsHalf;
-  // ws_i_tmp = ws_i - wsOff_h + wsHalf;
-  // ws_j_tmp = ws_j - wsOff_w + wsHalf;
-  assert(ws_i_tmp >= -wsHalf);
-  assert(ws_j_tmp >= -wsHalf);
-  assert(ws_i_tmp < ws+wsHalf);
-  assert(ws_j_tmp < ws+wsHalf);
-
-  // -- check offset --
-  int delta_h = wsHalf - wsOff_h;
-  int delta_w = wsHalf - wsOff_w;
-
-  // int delta_i,delta_j;
-  int delta_i = delta_h > 0 ? (ws-1-ws_i) : ((delta_h < 0) ? ws_i : ws);
-  bool oob_i = (delta_h != 0) and (abs(delta_h) >= delta_i);
-  int delta_j = delta_w > 0 ? (ws-1-ws_j) : ((delta_w < 0) ? ws_j : ws);
-  bool oob_j = (delta_w != 0) and (abs(delta_w) >= delta_j);
-
-  // -- new idea --
-  int dH = abs(nl_patch[1] - ref_patch[1]);
-  int dW = abs(nl_patch[2] - ref_patch[2]);
-
+  int num_h = (nl_hi - hi)/stride1;
+  int num_w = (nl_wi - wi)/stride1;
+  
   // -- check oob --
+  bool oob_i = abs(num_h) > wsHalf;
+  bool oob_j = abs(num_w) > wsHalf;
   oob = (oob_i or oob_j) and full_ws;
-  ws_i = oob ? ws_i_tmp % ws : ws_i;
-  ws_j = oob ? ws_j_tmp % ws : ws_j;
 
-  // ws_i = oob_i ? (delta_i) : ws_i_tmp;
-  // ws_i = oob_j ? (ws_i % wsHalf) : ws_i;
+  // -- oob names --
+  if (oob_i and oob_j){
 
-  // ws_j = oob_j ? (delta_j) : ws_j_tmp;
-  // ws_j = oob_i ? (ws_j % wsHalf) : ws_j;
+    // -- di,dj --
+    int di = wsHalf - abs(wsHalf - wsOff_h);
+    int dj = wsHalf - abs(wsHalf - wsOff_w);
 
-  // ws_i = oob_i ? (wsOff_h) : (oob_j ? ws_i_tmp % wsHalf : ws_i_tmp);
-  // ws_j = oob_j ? (wsOff_w) : (oob_i ? ws_j_tmp % wsHalf : ws_j_tmp);
+    // -- small square --
+    int mi = di + wsHalf*dj;
+    ws_i = mi % ws;
+    ws_j = mi / ws + (ws-1);
+
+  }else if (oob_i and not(oob_j)){
+    ws_j = abs(num_h) - (wsHalf+1);
+    ws_i = num_w+wsHalf;
+  }else if (oob_j and not(oob_i)){
+    ws_j = abs(num_w) - (wsHalf+1) + (wsHalf);
+    ws_i = num_h+wsHalf;
+  }
+
+  // -- standard names --
+  if (not(oob_i or oob_j)){
+    ws_i = num_h + wsHalf;
+    ws_j = num_w + wsHalf;
+  }
+
+  // -- get unique index --
+  li = (ws_i) + (ws_j)*ws + time_offset;
+  li = oob ? li + ws*ws : li;
+
 }
-
 
 __global__ void scatter_labels_kernel(
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> flows,
@@ -120,8 +123,8 @@ __global__ void scatter_labels_kernel(
       // test = test or ((hi == 0) and (wi == 1) and (ti == 0));
       // test = test or ((hi == 1) and (wi == 1) and (ti == 0));
       // test = test or ((hi == 2) and (wi == 2) and (ti == 0));
-      bool test = (hi < 5) and (wi < 5) and (ti == 0);
-      if (not(test)){ return; }
+      // bool test = (hi < 5) and (wi < 5) and (ti == 0);
+      // if (not(test)){ return; }
 
       // -- non-local index --
   #pragma unroll
@@ -129,7 +132,8 @@ __global__ void scatter_labels_kernel(
         nl_patch[_idx] = ref_patch[_idx] + flows_k[ibatch][ihead][ti][hi][wi][ki][_idx];
       }
       check_bounds(valid_patch,nl_patch,T,H,W);
-      valid_patch = valid_patch or full_ws;
+      // valid_patch = valid_patch or full_ws;
+      if (not(valid_patch)){ return; }
 
       // nl_patch[0] = bounds(nl_patch[0],T);
       // nl_patch[1] = bounds(nl_patch[1],H);
@@ -141,6 +145,7 @@ __global__ void scatter_labels_kernel(
       int dt = static_cast<int>(nl_patch[0]) - ti;
       int dto = t_max - ti;
       int si = (dt > 0) ? (dt-st_offset) : (dto - dt - st_offset);
+      int ws_ti = (ref_patch[0]+nl_patch[0]) % T;
 
       // -- offset reference --
       // if (si >= 0){
@@ -150,58 +155,42 @@ __global__ void scatter_labels_kernel(
       //   ref_patch[2] = bounds(ref_patch[2],W);
       // }
 
-      // -- shift (ws_i,ws_j) to handle out of bounds --
-      int ws_i,ws_j;
-
       // -- search region offsets --
       set_search_offsets(wsOff_h, wsOff_w,
                          ref_patch[1], ref_patch[2],
                          stride1, wsHalf, ws, H, W, full_ws);
-      // set_search_offsets(wsOff_h_nl, wsOff_w_nl,
-      //                    nl_patch[1], nl_patch[2],
-      //                    stride1, wsHalf, ws, H, W, full_ws);
-
-      ws_i = (nl_patch[1] - ref_patch[1])/stride1 + wsOff_h;
-      ws_j = (nl_patch[2] - ref_patch[2])/stride1 + wsOff_w;
-      int ws_i_orig = ws_i;
-      int ws_j_orig = ws_j;
 
       // -- how different from my reference? --
+      int li;
       bool oob;
-      int _ws_i,_ws_j;
-      handle_oob(ws_i, ws_j, oob, nl_patch, ref_patch,
-                 stride1, ws, wsHalf, wsOff_h, wsOff_w, full_ws);
-
-      // -- compute the assigned index --
-      // int li_num = oob ? wsHalf : ws;
-      int li = (ws_i) + (ws_j)*ws;// + (si+st_offset)*ws_peak;
-      int li_off = (ws_i_orig < ws_j_orig) ? ws-1 : 0;
-      li = oob ? li + ws*ws + li_off : li;
+      int time_offset = ws_ti*(ws*ws+2*(wsHalf)*ws+wsHalf*wsHalf);
+      get_unique_index(li, oob, nl_patch[1], nl_patch[2],
+                       ref_patch[1], ref_patch[2], 
+                       wsOff_h, wsOff_w, time_offset,
+                       stride1, ws, wsHalf, full_ws);
 
       // -- assign to sparse matrix --
-      if (not(oob)){ return; }
-      if (not(valid_patch)){ return; }
+      // if (not(oob)){ return; }
 
       // -- check --
-      assert(ws_i >= 0);
-      assert(ws_j >= 0);
-      assert(ws_i <= (ws-1));
-      assert(ws_j <= (ws-1));
+      // assert(ws_i >= 0);
+      // assert(ws_j >= 0);
+      // assert(ws_i <= (ws-1));
+      // assert(ws_j <= (ws-1));
       // if (oob){
       //   assert(ws_i <= wsHalf);
       //   assert(ws_j <= wsHalf);
       // }
-      assert(nl_patch[1] == (ref_patch[1] + stride1*(ws_i_orig-wsOff_h)));
-      assert(nl_patch[2] == (ref_patch[2] + stride1*(ws_j_orig-wsOff_w)));
+      // assert(nl_patch[1] == (ref_patch[1] + stride1*(ws_i_orig-wsOff_h)));
+      // assert(nl_patch[2] == (ref_patch[2] + stride1*(ws_j_orig-wsOff_w)));
       assert(li >= 0);
       assert(li <= (S-1));
 
       // -- assigns --
-      // names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][0] = qi;
-      // names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][1] = ki;
-      atomicAdd(&(names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][0]),1);
-      atomicAdd(&(names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][1]),ws_i);
-      // names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][1] = ki;
+      names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][0] = qi;
+      names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][1] = ki;
+      // atomicAdd(&(names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][0]),1);
+      // atomicAdd(&(names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][1]),ki);
 
 
     }
@@ -233,12 +222,12 @@ __global__ void scatter_labels_norm_kernel(
     int ibatch = (blockIdx.y-ihead*B);
     if (nl_i > (Q-1)){ return; } // skip invalid
 
+    // -- reference index --
+    get_pixel_loc(nl_patch,nl_i,1,W,HW,H,W);
+
     // -- assign valid names to their (qi,ki) home --
     int ci = 0;
     for (int si=0; si < S; si++){
-
-      // -- reference index --
-      get_pixel_loc(nl_patch,nl_i,1,W,HW,H,W);
 
       // -- read names --
       int qi = names[ibatch][ihead][si][nl_patch[0]][nl_patch[1]][nl_patch[2]][0];
@@ -246,7 +235,6 @@ __global__ void scatter_labels_norm_kernel(
 
       // -- skip if not filled --
       if ((qi == -1) or (ki == -1)){ continue; }
-      // atomicAdd(&(labels[ibatch][ihead][qi][ki]),1);
       labels[ibatch][ihead][qi][ki] = ci;
       ci += 1;
 
@@ -267,7 +255,7 @@ void scatter_labels_cuda(
   int nW = flows.size(6);
   int K = flows_k.size(5);
   int Q = T*nH*nW;
-  fprintf(stdout,"Q,K: %d,%d\n",Q,K);
+  // fprintf(stdout,"Q,K: %d,%d\n",Q,K);
 
   // -- compute st --
   int W_t = 2*wt+1;
@@ -296,9 +284,9 @@ void scatter_labels_cuda(
   blocksPerGrid_norm.x = ceil(double(Q)/double(threadsPerBlock.x));
 
   // -- launch kernel --
-  // scatter_labels_norm_kernel<<<blocksPerGrid_norm, threadsPerBlock_norm>>>(
-  //    names.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-  //    labels.packed_accessor32<int,4,torch::RestrictPtrTraits>());
+  scatter_labels_norm_kernel<<<blocksPerGrid_norm, threadsPerBlock_norm>>>(
+     names.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
+     labels.packed_accessor32<int,4,torch::RestrictPtrTraits>());
 
 }
 

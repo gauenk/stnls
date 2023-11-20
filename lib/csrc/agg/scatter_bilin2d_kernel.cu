@@ -86,7 +86,6 @@ __global__ void scatter_bilin2d_forward_kernel(
       //      Fill Non-Local Patch
       //----------------------------------
 
-
       fill_non_local_patch_bilin2d<scalar_t>(stack[ibatch][ihead][ki],
                                              counts[ibatch][ihead],
                                              vid[ibatch][ihead_v],

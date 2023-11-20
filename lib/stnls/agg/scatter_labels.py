@@ -25,85 +25,28 @@ def run(flows,flows_k,ws,wt,stride0,stride1,full_ws):
     W_t = 2*wt+1
     H = nH*stride0
     W = nW*stride0
+    wsHalf = (ws-1)//2
 
     # -- number of maximum possible groups a single patch can belong to --
-    print(full_ws)
-    if not(full_ws):
-        S = W_t*ws*ws
-    else:
-        # wsHalf = ws
-        Ws_num = ws*ws + ws*ws#wsHalf*wsHalf
-        S = W_t*Ws_num
+    Wt_num = T
+    Ws_num = ws*ws
+    if full_ws: Ws_num += 2*ws*wsHalf + wsHalf**2
+    S = Wt_num*Ws_num
 
     # -- prepare --
     labels = -th.ones((B,HD,Q,K),device=flows.device,dtype=th.int)
     names = -th.ones((B,HD,S,T,H,W,2),device=flows.device,dtype=th.int)
-    print(flows.shape,flows_k.shape,names.shape,labels.shape)
+    # print(flows.shape,flows_k.shape,names.shape,labels.shape)
 
     # -- fill init labels --
     stnls_cuda.scatter_labels(flows,flows_k,labels,names,ws,wt,stride0,stride1,full_ws)
 
     # -- check --
     nvalid = (names[...,0] >= 0).float().sum(2)
-    print(nvalid.sum(),Q*K)
-    print(th.all(nvalid>0))
-    # assert th.all(nvalid>0)
-    print(nvalid.max())
-    # print(nvalid)
+    if full_ws:
+        assert(int(nvalid.sum().item()) == Q*K)
 
-    print("")
-    print("-"*10 + "< names >" + "-"*10)
-    print("")
-
-    print("-"*5)
-    print(names[0,0,:,0,0,0].T)
-    print(names[0,0,:,0,1,1].T)
-    print(names[0,0,:,0,2,2].T)
-    # print(names[0,0,:,0,3,3])
-
-    print("-"*5)
-    print(names[0,0,0,0,:,:,0])
-    print(names[0,0,0,0,:,:,1])
-    print("-"*5)
-    print(names[0,0,1,0,:,:,0])
-    print(names[0,0,1,0,:,:,1])
-    print("-"*5)
-    print(names[0,0,4,0,:,:,0])
-    print(names[0,0,4,0,:,:,1])
-
-
-    # -- names is correct --
-    print("")
-    print("-"*5 + "< [names] iterating >" + "-"*5)
-    Q = T*nH*nW
-    print(names[...,0].max().item(),names[...,1].max().item(),Q,S)
-    print((names>=0).sum(),Q*K)
-    for i in range(Q):
-        for j in range(S):
-            check0 = names[...,0]==i
-            check1 = names[...,1]==j
-            check = check0 * check1
-            num = check.sum().item()
-            # print("any %d,%d?: "%(i,j),check.sum().item())
-            if num > 1: print("invalid %d,%d?: %d"%(i,j,num))
-    print("")
-
-    # -- labels --
-    # labels = names2labels(names,Q,S)
-    print("")
-    print("-"*10 + "< labels >" + "-"*10)
-    print("")
-    valid0 = labels >= -1
-    valid1 = labels <= (S-1)
-    valid = th.all(valid0 * valid1).item()
-    print("All valid labels? ",valid)
-
-    print(labels[0,0,0,:])
-    print(labels[0,0,1,:])
-    print(labels[0,0,-3:])
-
-
-    return labels
+    return names,labels
 
 
 def names2labels(names,Q,S):

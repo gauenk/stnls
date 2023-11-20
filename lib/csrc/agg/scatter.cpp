@@ -10,7 +10,7 @@
 void scatter_int_forward_cuda(
     const torch::Tensor vid, const torch::Tensor weights,
     const torch::Tensor inds, const torch::Tensor labels,
-    torch::Tensor stack, torch::Tensor counts,
+    torch::Tensor stack, torch::Tensor mask, torch::Tensor counts,
     int ps, int pt, int dilation, int stride0,
     bool reflect_bounds, int patch_offset);
 
@@ -19,6 +19,15 @@ void scatter_labels_cuda(
     torch::Tensor labels, torch::Tensor names,
     int ws, int wt, int stride0, float stride1, bool full_ws);
 
+void scatter_tensor_forward_cuda(torch::Tensor out_tensor,
+                                 const torch::Tensor in_tensor,
+                                 const torch::Tensor labels,
+                                 const torch::Tensor flows_k, int stride0);
+
+void scatter_tensor_backward_cuda(torch::Tensor in_tensor_grad,
+                                  const torch::Tensor out_tensor_grad,
+                                  const torch::Tensor labels,
+                                  const torch::Tensor flows_k, int stride0);
 
 // void scatter_bilin2d_forward_cuda(
 //     const torch::Tensor vid, const torch::Tensor weights,
@@ -63,6 +72,30 @@ void scatter_labels_cuda(
 
 *********************************/
 
+void scatter_tensor_forward(
+    torch::Tensor out_tensor,
+    const torch::Tensor in_tensor,
+    const torch::Tensor labels,
+    const torch::Tensor flows_k, int stride0){
+  CHECK_INPUT(out_tensor);
+  CHECK_INPUT(in_tensor);
+  CHECK_INPUT(labels);
+  CHECK_INPUT(flows_k);
+  scatter_tensor_forward_cuda(out_tensor,in_tensor,labels,flows_k,stride0);
+}
+
+void scatter_tensor_backward(
+    torch::Tensor out_tensor_grad,
+    const torch::Tensor in_tensor_grad,
+    const torch::Tensor labels,
+    const torch::Tensor flows_k, int stride0){
+  CHECK_INPUT(in_tensor_grad);
+  CHECK_INPUT(out_tensor_grad);
+  CHECK_INPUT(labels);
+  CHECK_INPUT(flows_k);
+  scatter_tensor_backward_cuda(in_tensor_grad,out_tensor_grad,labels,flows_k,stride0);
+}
+
 void scatter_labels(
     const torch::Tensor flows, const torch::Tensor flows_k,
     torch::Tensor labels, torch::Tensor names,
@@ -78,15 +111,16 @@ void scatter_labels(
 void scatter_int_forward(
     const torch::Tensor vid, const torch::Tensor weights,
     const torch::Tensor inds,  const torch::Tensor labels,
-    torch::Tensor stack, torch::Tensor counts,
+    torch::Tensor stack, torch::Tensor mask, torch::Tensor counts,
     int ps, int pt, int dilation, int stride0, bool reflect_bounds, int patch_offset){
   CHECK_INPUT(vid);
   CHECK_INPUT(weights);
   CHECK_INPUT(inds);
   CHECK_INPUT(labels);
   CHECK_INPUT(stack);
+  CHECK_INPUT(mask);
   CHECK_INPUT(counts);
-  scatter_int_forward_cuda(vid,weights,inds,labels,stack,counts,
+  scatter_int_forward_cuda(vid,weights,inds,labels,stack,mask,counts,
                            ps,pt,dilation,stride0,
                            reflect_bounds,patch_offset);
 }
@@ -165,13 +199,13 @@ void scatter_int_forward(
 void init_scatter(py::module &m){
   m.def("scatter_labels", &scatter_labels,
         "Scatter Labels");
+  m.def("scatter_tensor_forward", &scatter_tensor_forward,
+        "Scatter Tensor");
+  m.def("scatter_tensor_backward", &scatter_tensor_backward,
+        "Scatter Tensor");
   m.def("scatter_int_forward", &scatter_int_forward,
         "Scatter Forward with Int Indexing");
-  // m.def("scatter_bilin2d_forward", &scatter_bilin2d_forward,
-  //       "Scatter Forward with Bilin2d Indexing");
   // m.def("scatter_int_backward",&scatter_int_backward,
   //       "Scatter Backward with Int Indexing");
-  // m.def("scatter_bilin2d_backward",&scatter_bilin2d_backward,
-  //       "Scatter Backward with Bilin2d Indexing");
 }
 

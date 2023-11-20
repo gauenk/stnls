@@ -16,6 +16,7 @@ template<typename scalar_t>
 __device__ __forceinline__ 
 void scatter_patch_fwd_int(
     torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> stack,
+    torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> mask,
     torch::TensorAccessor<int,2,torch::RestrictPtrTraits,int32_t> counts,
     const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid,
     scalar_t weight, int ps, int pt, int dilation, bool reflect_bounds,
@@ -82,6 +83,7 @@ void scatter_patch_fwd_int(
             pix = weight*vid[ref[0]][iftr][ref[1]][ref[2]];
             atomicAdd(&(stack[nl[0]][iftr][nl[1]][nl[2]]),pix);
           }
+          mask[nl[0]][0][nl[1]][nl[2]] = 1; // no need to atomic
 
         }
       }
