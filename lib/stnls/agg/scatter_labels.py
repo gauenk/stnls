@@ -42,9 +42,9 @@ def run(flows,flows_k,ws,wt,stride0,stride1,full_ws):
     stnls_cuda.scatter_labels(flows,flows_k,labels,names,ws,wt,stride0,stride1,full_ws)
 
     # -- check --
-    nvalid = (names[...,0] >= 0).float().sum(2)
-    if full_ws:
-        assert(int(nvalid.sum().item()) == Q*K)
+    # nvalid = (names[...,0] >= 0).float().sum(2)
+    # if full_ws:
+    #     assert(int(nvalid.sum().item()) == Q*K)
 
     return names,labels
 

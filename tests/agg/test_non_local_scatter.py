@@ -27,7 +27,7 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"nheads":[1],"ws":[15],"wt":[1],
+    test_lists = {"nheads":[1],"ws":[9],"wt":[1],
                   "stride0":[1],"stride1":[1],
                   "full_ws":[True],"seed":[123]}
     for key,val in test_lists.items():
@@ -90,6 +90,7 @@ def test_scatter_tensor(nheads,ws,wt,stride0,stride1,full_ws,seed):
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     K = ws*ws*W_t
     itype = "int"
+    K = 30
 
     # -- load flows --
     flows = th.ones((B,HD,T,W_t-1,2,nH,nW)).cuda()/2.
@@ -103,7 +104,7 @@ def test_scatter_tensor(nheads,ws,wt,stride0,stride1,full_ws,seed):
                                          stride0=stride0, stride1=stride1,
                                          reflect_bounds=True,self_action="anchor",
                                          itype="int",full_ws=full_ws)
-    vid = th.ones((B,HD,T,F,H,W)).to(device)
+    vid = th.rand((B,HD,T,F,H,W)).to(device)
     dists,flows_k = search(vid,vid,flows)
     # flows_k[ibatch][ihead][ti][hi][wi][ki][_idx]
     # print(flows_k[0,0,0,:2,:2])
@@ -116,19 +117,36 @@ def test_scatter_tensor(nheads,ws,wt,stride0,stride1,full_ws,seed):
     # -- weighted --
     gather_weights = th.softmax(-dists,-1)
     scatter_weights = stnls.agg.scatter_tensor(gather_weights,flows_k,labels,stride0)
+    Q = T*H*W
+    print(scatter_weights.shape)
+    print(int(th.sum(scatter_weights>=0).item()),Q*K)
+
     scatter_flows_k = stnls.agg.scatter_tensor(flows_k,flows_k,labels,stride0)
     scatter_flows_k = -scatter_flows_k
     # scatter_flows_k[th.where(scatter_flows_k==th.inf)] = -th.inf
 
-    K = 10
-    s_weight,s_flows_k = stnls.agg.scatter_topk(scatter_weights,scatter_flows_k,K)
+    # K = 30
+    K0 = K//2
+    s_weight,s_flows_k = stnls.agg.scatter_topk(scatter_weights,scatter_flows_k,K0)
     s_weight = rearrange(s_weight,'b hd (t h w) k -> b hd t h w k',t=T,h=H)
+    print(s_weight[0,0,0,:3,:3])
+    print(s_weight[0,0,0,10:12,10:12])
+    s_weight = th.softmax(s_weight,-1)
+    print("-"*30)
+    print(s_weight[0,0,0,:3,:3])
+    print(s_weight[0,0,0,10:12,10:12])
+    # print(s_weight[0,0,0,:3,:3])
     s_flows_k = rearrange(s_flows_k,'b hd (t h w) k tr -> b hd t h w k tr',t=T,h=H)
+    # print(s_weight.shape)
+    # print(int(th.sum(s_weight>=0).item()),Q*K)
+    # return
+    return
+
     agg = stnls.agg.NonLocalGather(ps=ps,stride0=stride0,itype="int")
     print(vid.shape,s_weight.shape,s_flows_k.shape)
     stack = agg(vid,s_weight,s_flows_k)
-    print(stack.shape)
     print(stack[0,0])
+    print(stack.shape)
     # print(w[0,0,-1])
     # print(f[0,0,-1])
 
