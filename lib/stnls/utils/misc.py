@@ -49,6 +49,11 @@ def get_space_grid(H,W,dtype=th.float,device="cuda"):
     grid.requires_grad = False
     return grid
 
+def flip_flows(flows_k,T,H,W):
+    B,HD,T,nH,nW,K,three = flows_k.shape
+    assert three == 3,"Must be three."
+    return -flows_k
+
 def flow2inds(flow,stride0):
     device = flow.device
     B = flow.shape[0]

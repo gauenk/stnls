@@ -64,137 +64,57 @@ def set_search_offsets(wsOff_h, wsOff_w, hi, wi,
 
     return wsOff_h,wsOff_w
 
-def check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,
-              stride1,ws,wsHalf,wsOff_h,wsOff_w,full_ws):
+def get_unique_index(nl_hi,nl_wi,hi,wi,
+                     wsOff_h,wsOff_w,time_offset,
+                     stride1,ws,wsHalf,full_ws):
 
-    # print((hi,wi),(nl_hi,nl_wi))
     # -- check spatial coordinates --
-    ws_i_tmp = (nl_hi - hi)//stride1# + wsHalf
-    ws_j_tmp = (nl_wi - wi)//stride1# + wsHalf
-    # assert(ws_i_tmp >= -wsHalf);
-    # assert(ws_j_tmp >= -wsHalf);
-    # assert(ws_i_tmp < ws+wsHalf);
-    # assert(ws_j_tmp < ws+wsHalf);
+    num_h = (nl_hi - hi)//stride1
+    num_w = (nl_wi - wi)//stride1
 
-    # -- max search --
-    hMax = hi + stride1 * ((ws-1) - wsHalf)
-    wMax = wi + stride1 * ((ws-1) - wsHalf)
-    hMin = (hi - stride1 * wsHalf)
-    wMin = (wi - stride1 * wsHalf)
+    # -- check oob --
+    oob_i = abs(num_h) > wsHalf
+    oob_j = abs(num_w) > wsHalf
 
-    # -- check offset --
-    delta_h = wsHalf - wsOff_h
-    delta_w = wsHalf - wsOff_w
-
-    # int delta_i,delta_j;
-    delta_i = (ws-1-ws_i) if (delta_h > 0) else (ws_i if (delta_h<0) else ws)
-    oob_i = (delta_h != 0) and (abs(delta_h) >= delta_i)
-    delta_j = (ws-1-ws_j) if (delta_w > 0) else (ws_j if (delta_w<0) else ws)
-    oob_j = (delta_w != 0) and (abs(delta_w) >= delta_j)
-    oob_i = abs(ws_i_tmp) > wsHalf
-    oob_j = abs(ws_j_tmp) > wsHalf
-
-    ws_i_noadj = ws_i_tmp + wsHalf
-    ws_j_noadj = ws_j_tmp + wsHalf
-
-    # print((delta_i,delta_j),(delta_h,delta_w),(oob_i,oob_j),
-    #       (ws_i_noadj,ws_j_noadj),(ws_i_tmp,ws_j_tmp))
-    # print("oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp): ",
-    #       oob_i,oob_j,(ws_i,ws_j),(ws_i_tmp,ws_j_tmp),(delta_i,delta_j))
-    verbose = True
-
+    # -- oob names --
     if oob_i and oob_j:
-        # print((ws-1)//2+1)
-        di = wsHalf - abs(delta_h)
-        dj = wsHalf - abs(delta_w)
+        # -- check offset --
+        adj_h = wsHalf - wsOff_h
+        adj_w = wsHalf - wsOff_w
+
+        # -- di,dj --
+        di = wsHalf - abs(adj_h)
+        dj = wsHalf - abs(adj_w)
+
+        # -- small square --
         mi = di + wsHalf*dj
         ws_i = mi % ws
         ws_j = mi // ws + (ws-1)
-        # ws_i = (ws-1) - (di + wsHalf*dj)
-        # ws_j = ws-1
-
-        # print(di,dj,di + wsHalf*dj)
-        # ws_i = delta_j
-        # ws_j = (ws-1)//2+1
     elif oob_i and not(oob_j):
-        ws_j = abs(ws_i_tmp)-((ws+1)//2)
-        ws_i = ws_j_tmp+wsHalf
-        # wsHalf - delta_h
-        # ws_i = ws-1-ws_j_noadj
-        # ws_j = wsHalf-delta_h
-        verbose = True
+        ws_j = abs(num_h) - (wsHalf+1)
+        ws_i = num_w+wsHalf
     elif oob_j and not(oob_i):
-        verbose = True
-        # ti = ws_i_noadj + ws_j_noadj * ws
-        # print("oob_j: ",oob_j,ws_i_noadj,ws_j_noadj,ti)
-        ws_j = abs(ws_j_tmp) -((ws+1)//2) + (wsHalf)
-        ws_i = ws_i_tmp+wsHalf# + wsHalf # shift down 2 rows
-        # ws_j = wsHalf - delta_w + wsHalf # shift down 2 rows
+        ws_j = abs(num_w) - (wsHalf+1) + (wsHalf)
+        ws_i = num_h+wsHalf
 
-    # if oob_i and oob_j:
-    #     print((ws-1)//2+1)
-    #     ti = (wsHalf+1)*(wsHalf-delta_h)+(wsHalf-delta_w)
-    #     print(ti)
-    #     ws_i = ti // (wsHalf+1)
-    #     ws_j = ti % (wsHalf+1) + (wsHalf+1)
-    #     # ws_i = delta_j
-    #     # ws_j = (ws-1)//2+1
-    # elif oob_i and not(oob_j):
-    #     ws_i = ws-1-ws_j_noadj
-    #     ws_j = wsHalf-delta_h
-    #     verbose = True
-    # elif oob_j and not(oob_i):
-    #     verbose = True
-    #     ti = ws_i_noadj + ws_j_noadj * ws
-    #     print("oob_j: ",oob_j,ws_i_noadj,ws_j_noadj,ti)
-    #     # print(ti,ws_i_noadj,ws_j_noadj)
-    #     # ws_j = 1#ws_j
-    #     ws_j = wsHalf-delta_w
-    #     ws_i = ws-1-ws_i_noadj
-
-    # print("(ws_i,ws_j): ",(ws_i,ws_j))
-    if wsHalf != wsOff_h and not(oob_i or oob_j):
-        ws_i = ws_i_tmp+wsHalf
-    if wsHalf != wsOff_w and not(oob_i or oob_j):
-        ws_j = ws_j_tmp+wsHalf
-
-    # if wsHalf == wsOff_h and not(oob_i or oob_j):
-    #     ws_i = ws_i_tmp+wsHalf
-    # if wsHalf == wsOff_w and not(oob_i or oob_j):
-    #     ws_j = ws_j_tmp+wsHalf
-
-
-        # if ws_j_tmp < 0:
-        #     ws_j = abs(ws_j_tmp - ws)
-        # else:
-        #     ws_j = abs(ws_j_tmp - ws)
-    # ws_i = (ws_i_tmp - ws) % ws if oob_i  else ws_i_tmp
-    # ws_j = (ws_j_tmp - ws) % ws if oob_j else ws_j_tmp
-
-    # -- new idea --
-    dH = abs(nl_hi - hi)
-    dW = abs(nl_wi - wi)
+    # -- standard names --
+    if not(oob_i or oob_j):
+        ws_i = num_h + wsHalf
+        ws_j = num_w + wsHalf
 
     # -- check oob --
     oob = (oob_i or oob_j) and full_ws
-    # ws_i = delta_i if oob else ws_i_tmp
-    # ws_j = delta_j if oob else ws_j_tmp
-    # # ws_i = ws_i_tmp % ws# if oob else ws_i
-    # # ws_j = ws_j_tmp % ws# if oob else ws_j
-    gt_i = ws_i_tmp >= ws
-    gt_j = ws_j_tmp >= ws
 
-    # if gt_i:
-    #     ws_i = 2*(hMax-1-hi) - ws_i
-    # if gt_j:
-    #     ws_j = 2*(wMax-1-wi) - ws_j
-
-    # if verbose:
-    #     print((ws_i,ws_j))
+    # -- check --
     if not(oob_i and oob_j):
         assert (ws_i >= 0) and (ws_i < ws)
         assert (ws_j >= 0) and (ws_j < ws)
-    return ws_i,ws_j,oob,gt_i,gt_j,verbose
+
+    # -- get unique index --
+    li = (ws_i) + (ws_j)*ws + time_offset
+    li = li + ws*ws if oob else li
+
+    return li,oob
 
 
 def get_tlims(ti, T, wt):
@@ -228,14 +148,13 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,st_offset,
     # if not((nl_hi == 0) and (nl_wi == 5)): return
     # if not((nl_hi == 6) and (nl_wi == 6)): return
 
-
     # -- search flow from difference --
     t_max,t_min = get_tlims(ti, T, wt)
     dt = nl_ti - ti
-    # si = nl_ti - t_min
     dto = t_max - ti
     si = (dt-st_offset) if (dt >= 0) else (dto - dt - st_offset)
-    si = (ti+nl_ti) % T
+    # ws_ti = (ti+nl_ti) % W_t
+    ws_ti = (nl_ti+ti) % T
     # print(si,dt,st_offset,nl_ti,ti)
 
     # -- offset search offsets --
@@ -249,18 +168,20 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,st_offset,
     ws_j_orig = ws_j
 
     # -- handle oob --
-    ws_i,ws_j,oob,gt_i,gt_j,verb = check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,stride1,ws,
-                                        wsHalf,wsOff_h,wsOff_w,full_ws)
+    time_offset = ws_ti*(ws*ws+2*(ws//2)*ws+(ws//2)**2)
+    li,oob = get_unique_index(nl_hi,nl_wi,hi,wi,
+                              wsOff_h,wsOff_w,time_offset,
+                              stride1,ws,wsHalf,full_ws)
+    # nl_hi,nl_wi,hi,wi,stride1,ws,
+    # wsHalf,wsOff_h,wsOff_w,time_offset,full_ws)
+    # ws_i,ws_j,oob = check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,stride1,ws,
+    #                           wsHalf,wsOff_h,wsOff_w,full_ws)
     # if not(oob): return
 
-    # -- get unique index --
-    li_off = si*(ws*ws+2*(ws//2)*ws+(ws//2)**2)
-    li = (ws_i) + (ws_j)*ws + li_off
-    li = li + ws*ws if oob else li
-    print("Ref/NonLocal: ",(ti,hi,wi),(nl_ti,nl_hi,nl_wi),si,dt,li,oob,stride1,ws)
+    # print("Ref/NonLocal: ",(ti,hi,wi),(nl_ti,nl_hi,nl_wi),ws_ti,dt,li,oob,stride1,ws)
 
     # -- update --
-    assert((si >= 0) and (si <= (W_t-1)))
+    # assert((ws_ti >= 0) and (ws_ti <= (W_t-1)))
     if np.any(names[li,ti,hi,wi]<0):
         names[li,ti,hi,wi,...] = 0
     names[li,nl_ti,nl_hi,nl_wi,0] = ti
@@ -279,13 +200,14 @@ def set_seed(seed):
     random.seed(seed)
 
 def main():
-    ws = 5
-    wt = 2
+    ws = 3
+    wt = 1
     W_t = 2*wt+1
     full_ws = True
-    T,H,W = 5,16,16
+    T,H,W = 5,32,32
     stride0,stride1 = 1,1
-    S = W_t*(ws*ws + 2*(ws//2)*ws + (ws//2)**2)
+    W_t_num = T#min(W_t + 2*wt,T)
+    S = W_t_num*(ws*ws + 2*(ws//2)*ws + (ws//2)**2)
     vals = np.zeros((T,H,W,ws,ws))
     names = -np.ones((S,T,H,W,3))
     counts = -np.ones((S,T,H,W))

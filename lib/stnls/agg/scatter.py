@@ -91,15 +91,12 @@ class non_local_scatter(th.autograd.Function):
         HD_i = flows_k.shape[1]
         HD = max(HD_v,HD_i)
         wshape = weights.shape
-        stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
+        stack = th.zeros((B,HD,S,T,F,H,W),device=vid.device,dtype=th.float32)
+        mask =  th.zeros((B,HD,S,T,1,H,W),device=vid.device,dtype=th.float32)
         counts = th.zeros((B,HD,H,W),device=vid.device,dtype=th.int32)
-        # print("B,HD,K,T,F,H,W: ",B,HD,K,T,F,H,W)
-        # print("stack [weights.shape,flows_k.shape]: ",weights.shape,flows_k.shape)
         patch_offset = 0 if use_adj else -(ps//2)
 
         # -- reshape --
-        # nH = (H-1)//stride0+1
-        # nW = (W-1)//stride0+1
         weights = weights.view(B,HD,-1,K).clone()
         flows_k = flows_k.view(B,HD,-1,K,3).clone()
 
@@ -113,31 +110,16 @@ class non_local_scatter(th.autograd.Function):
         # -- all same num of heads --
         assert vid.shape[1] == flows_k.shape[1]
         assert flows_k.shape[1] == weights.shape[1]
-        # print(vid.shape)
-        # print(flows_k[0,0,9])
-        # flows_k_n = rearrange(flows_k,'b HD (H W) k two -> b (HD k) two H W',H=H,W=W)
-        # print(flows_k_n[0,0])
-        # for i in range(flows_k_n.shape[1]):
-        #     print(flows_k_n[0,i,:,:3,:3])
-        # print(stride0,use_adj,ps)
         assert not th.any(th.isnan(weights)).item()
-        # print(vid.shape)
 
-        # print(vid.shape,weights.shape,flows_k.shape,stack.shape,counts.shape)
-        # print(weights[0,0,0,0])
-        # print(flows_k,imode)
-        if flows_k.dtype == th.int:
-            fwd_fxn = stnls_cuda.scatter_int_forward
-            fwd_fxn(vid, weights, flows_k,
-                    labels, stack, counts,
-                    ps, pt, dilation, stride0,
-                    reflect_bounds, patch_offset)
-        else:
-            fwd_fxn = stnls_cuda.scatter_bilin2d_forward
-            fwd_fxn(vid, weights, flows_k,
-                    labels, stack, counts,
-                    ps, pt, dilation, stride0,
-                    reflect_bounds, patch_offset)
+        # -- pick forward --
+        print(vid.shape,weights.shape,flows_k.shape,
+              labels.shape,stack.shape,counts.shape)
+        fwd_fxn = stnls_cuda.scatter_int_forward
+        fwd_fxn(vid, weights, flows_k,
+                labels, stack, mask, counts,
+                ps, pt, dilation, stride0,
+                reflect_bounds, patch_offset)
         assert th.all(counts > 0).item()
         # print(counts[0,0])
         # print(counts[1,0])
@@ -148,7 +130,7 @@ class non_local_scatter(th.autograd.Function):
         assert not th.any(th.isnan(stack)).item()
 
         # -- save for back-prop --
-        ctx.save_for_backward(vid,stack,weights,flows_k,counts)
+        ctx.save_for_backward(vid,stack,mask,weights,flows_k,counts)
         ctx.stride0 = stride0
         ctx.dilation = dilation
         ctx.use_adj = use_adj
@@ -159,7 +141,7 @@ class non_local_scatter(th.autograd.Function):
         ctx.itype = itype
         ctx.wshape = wshape
 
-        return stack
+        return stack,mask
 
     @staticmethod
     def backward(ctx, grad_stack):
@@ -227,21 +209,10 @@ class non_local_scatter(th.autograd.Function):
         B,HD,T,C,H,W = grad_vid.shape
         eps = 1e-10
         grad_stack = grad_stack / (counts.view(B,HD,1,1,1,H,W)+eps)
-        if ctx.itype == "int":
-            fwd_fxn = stnls_cuda.scatter_int_backward
-            fwd_fxn(grad_vid,grad_weights,grad_stack,
-                    vid,weights,flows_k,stack,counts,
-                    ps,pt,dilation,stride0,reflect_bounds,patch_offset)
-        else:
-            fwd_fxn = stnls_cuda.scatter_bilin2d_backward
-            fwd_fxn(grad_vid,grad_weights,grad_flows_k,grad_stack,
-                    vid,weights,flows_k,stack,counts,
-                    ps,pt,dilation,stride0,reflect_bounds,patch_offset)
-
-        # -- info --
-        # print("grad weights.")
-        # print(grad_weights.shape)
-        # print(th.all(grad_weights==0))
+        fwd_fxn = stnls_cuda.scatter_int_backward
+        fwd_fxn(grad_vid,grad_weights,grad_stack,
+                vid,weights,flows_k,stack,counts,
+                ps,pt,dilation,stride0,reflect_bounds,patch_offset)
 
         # -- ensure original ndim --
         grad_vid = revert_ndim(grad_vid,ndim)
@@ -259,17 +230,22 @@ class non_local_scatter(th.autograd.Function):
 
 class NonLocalScatter(th.nn.Module):
 
-    def __init__(self,ws,ps,stride0,pt=1,dilation=1,
-                 reflect_bounds=True,use_adj=False,itype="float"):
+    def __init__(self,ps,stride0,pt=1,dilation=1,
+                 reflect_bounds=True,use_adj=False,itype="int"):
         super().__init__()
-        _vars = ["ws","ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
+        _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))
+        assert self.itype == "int","Must use int search."
 
     def forward(self, vid, weights, flows_k, labels):
         inputs = [getattr(self,var) for var in self._vars]
         stack = non_local_scatter.apply(vid, weights, flows_k, labels, *inputs)
+    # def forward(ctx, vid, weights, flows_k, labels,
+    #             ps=7,stride0=4,pt=1,reflect_bounds=True,
+    #             dilation=1, use_adj=False, itype="int"):
+
         return stack
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -279,7 +255,7 @@ class NonLocalScatter(th.nn.Module):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
-           reflect_bounds=True, dilation=1, use_adj=False, itype="float"):
+           reflect_bounds=True, dilation=1, use_adj=False, itype="int"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -294,7 +270,7 @@ def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
 
 def extract_config(cfg,restrict=True):
     pairs = {"ps":3,"ws":-1,"stride0":1,"pt":1,"reflect_bounds":True,
-             "dilation":1, "use_adj":False,"itype":"float"}
+             "dilation":1, "use_adj":False,"itype":"int"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):

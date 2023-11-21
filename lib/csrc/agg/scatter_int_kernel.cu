@@ -20,7 +20,8 @@ __global__ void scatter_int_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> weights,
     const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> labels,
-    torch::PackedTensorAccessor32<scalar_t,8,torch::RestrictPtrTraits> stack,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> stack,
+    torch::PackedTensorAccessor32<scalar_t,7,torch::RestrictPtrTraits> mask,
     torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> counts,
     int ps, int pt, int dilation, int stride0, bool reflect_bounds,
     int patch_offset, int nW0, int nHW0, int ftrs_per_thread){
@@ -83,7 +84,8 @@ __global__ void scatter_int_forward_kernel(
       //----------------------------------
       //      Fill Non-Local Patch
       //----------------------------------
-      scatter_patch_fwd_int<scalar_t>(stack[ibatch][ihead][ki][li],
+      scatter_patch_fwd_int<scalar_t>(stack[ibatch][ihead][li],
+                                      mask[ibatch][ihead][li],
                                       counts[ibatch][ihead],
                                       vid[ibatch][ihead],
                                       weights[ibatch][ihead][qi][ki],
@@ -100,7 +102,7 @@ __global__ void scatter_int_forward_kernel(
 void scatter_int_forward_cuda(
     const torch::Tensor vid, const torch::Tensor weights,
     const torch::Tensor inds, const torch::Tensor labels,
-    torch::Tensor stack, torch::Tensor counts,
+    torch::Tensor stack, torch::Tensor mask, torch::Tensor counts,
     int ps, int pt, int dilation, int stride0,
     bool reflect_bounds, int patch_offset){
 
@@ -134,7 +136,8 @@ void scatter_int_forward_cuda(
            weights.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
            inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
            labels.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
-           stack.packed_accessor32<scalar_t,8,torch::RestrictPtrTraits>(),
+           stack.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
+           mask.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
            counts.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
            ps, pt, dilation, stride0, reflect_bounds, patch_offset,
            nW0, nHW0, ftrs_per_thread);
