@@ -73,7 +73,7 @@ def forward(vid0, vid1, flows,
         assert self_action == None
 
     # -- topk --
-    assert self_action in [None,"anchor","anchor_each"]
+    assert self_action in [None,"anchor","anchor_self","anchor_each"]
     anchor_self = False if self_action is None else "anchor" in self_action
     if topk_mode == "all":
         dim = 3
