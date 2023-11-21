@@ -76,7 +76,11 @@ def forward(vid0, vid1, flows,
     elif self_action == "anchor_each":
         stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
     elif self_action == "remove":
-        raise NotImplementedError("Not implemented self_action [remove].")
+        stnls.nn.anchor_self(dists,inds,stride0,H,W)
+        dists=dists.view(B,HD,Q,-1)
+        inds=inds.view(B,HD,Q,-1,3)
+        dists = dists[:,:,:,1:].contiguous()
+        inds = inds[:,:,:,1:,:].contiguous()
     elif self_action == "remove_ref_frame":
         assert wt > 0,"Cannot remove ref frame if not searching across time."
         dists = dists[...,1:,:,:].contiguous()
@@ -94,8 +98,10 @@ def forward(vid0, vid1, flows,
     # -- topk --
     if topk_mode == "all":
         dim = 3
-        dists=dists.view(B,HD,Q,W_t*ws*ws)
-        inds=inds.view(B,HD,Q,W_t*ws*ws,3)
+        dists=dists.view(B,HD,Q,-1)
+        inds=inds.view(B,HD,Q,-1,3)
+        # dists=dists.view(B,HD,Q,W_t*ws*ws)
+        # inds=inds.view(B,HD,Q,W_t*ws*ws,3)
         dists,inds = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
                                    descending=descending)
     elif topk_mode == "each":

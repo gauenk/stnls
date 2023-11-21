@@ -11,8 +11,6 @@ from einops import rearrange
 from stnls.utils import extract_pairs
 
 # -- stacking --
-# from .non_local_stack import extract_config as extract_config_stack
-# from .non_local_stack import init as init_stack
 from .gather import extract_config as extract_config_stack
 from .gather import init as init_stack
 
