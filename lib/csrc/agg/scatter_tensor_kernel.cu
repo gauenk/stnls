@@ -19,7 +19,7 @@ __global__ void scatter_tensor_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> in_tensor,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> labels,
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> flows_k,
-    int stride0, int stride1){
+    int stride0, int stride1, int H, int W){
 
     // -- unpack --
     int B = flows_k.size(0);
@@ -33,10 +33,10 @@ __global__ void scatter_tensor_forward_kernel(
     // -- derived --
     int nHW = nH*nW;
     int Q = T*nHW;
-    int H = nH*stride0;
-    int W = nW*stride0;
-    int nH1 = H/stride1;
-    int nW1 = W/stride1;
+    // int H = nH*stride0;
+    // int W = nW*stride0;
+    int nH1 = (H-1)/stride1+1;
+    int nW1 = (W-1)/stride1+1;
 
     // -- indexing variables --
     int ref_patch[3];
@@ -87,7 +87,7 @@ void scatter_tensor_forward_cuda(
     const torch::Tensor in_tensor,
     const torch::Tensor labels,
     const torch::Tensor flows_k,
-    int stride0, int stride1){
+    int stride0, int stride1, int H, int W){
 
   // -- sizes --
   int B = labels.size(0);
@@ -109,7 +109,7 @@ void scatter_tensor_forward_cuda(
            in_tensor.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
            labels.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
            flows_k.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-           stride0,stride1);
+           stride0,stride1,H,W);
       }));
 
 

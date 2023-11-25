@@ -197,7 +197,7 @@ def _apply(vid0, vid1, flows,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ws":-1,"wt":-1,"ps":1,"k":10,"wr":1,"kr":-1,
+    pairs = {"ws":-1,"wt":-1,"wr":1,"ps":1,"k":10,"kr":-1,
              "nheads":1, "stride0":4, "stride1":1, "dilation":1, "pt":1,
              "dist_type":"l2", "restricted_radius":False,
              "reflect_bounds":True, "full_ws":True,

@@ -101,7 +101,7 @@ def forward(frame0, frame1, flow,
     # -- topk --
     assert self_action in [None,"anchor","anchor_each"]
     anchor_self = False if self_action is None else "anchor" in self_action
-    if topk_mode == "all":
+    if topk_mode == "all" and (k > 0):
         dim = 3
         dists=dists.view(B,HD,Q,-1)
         inds=inds.view(B,HD,Q,-1,2)
@@ -113,14 +113,14 @@ def forward(frame0, frame1, flow,
             kselect = kselect.view(B,HD,Q,Ks*wr*wr) if not(kselect is None) else kselect
             # print("kselect.shape: ",kselect.shape,order.shape)
             kselect = stnls.nn.topk_f.apply_topk(kselect,order,dim)
-    elif topk_mode == "each":
+    elif topk_mode == "each" and (k > 0):
         dists = rearrange(dists,'... wh ww -> ... (wh ww)')
         inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
         dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
         if kselect.ndim > 1 and k > 0:
             kselect = rearrange(kselect,'... wh ww -> ... (wh ww)')
             kselect = kselect[...,:k] # all same across dim
-    else:
+    elif (k > 0):
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
     # print("[post]: ",dists.shape,inds.shape)
 

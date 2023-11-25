@@ -16,22 +16,23 @@ import torch as th
 # -- cpp cuda kernel --
 import stnls_cuda
 
-def run(flows,flows_k,ws,wt,stride0,stride1,full_ws):
+def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
 
     # -- unpack shapes --
     B,HD,T,nH,nW,K,_ = flows_k.shape
     # B,HD,T,W_t,2,nH,nW = flows.shape
     Q = T*nH*nW
     W_t = 2*wt+1
-    H = nH*stride0
-    W = nW*stride0
+    # H = nH*stride0
+    # W = nW*stride0
     wsHalf = (ws-1)//2
 
     # -- number of maximum possible groups a single patch can belong to --
-    Wt_num = T
+    Wt_num = T if wt > 0 else 1
     Ws_num = ws*ws
     if full_ws: Ws_num += 2*ws*wsHalf + wsHalf**2
     S = Wt_num*Ws_num
+    print(S,ws,wt,stride0,stride1,full_ws)
 
     # -- prepare --
     labels = -th.ones((B,HD,Q,K),device=flows.device,dtype=th.int)

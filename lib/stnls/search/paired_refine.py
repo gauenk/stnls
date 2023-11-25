@@ -209,7 +209,7 @@ def _apply(frame0, frame1, flow,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"wr":1,"ws":-1,"ps":3,"k":10,
+    pairs = {"ws":-1,"wr":1,"k":10,"kr":-1,"ps":1,
              "nheads":1,"dist_type":"l2",
              "stride0":1, "stride1":1, "dilation":1,
              "restricted_radius":False,
@@ -221,7 +221,7 @@ def extract_config(cfg,restrict=True):
 
 def init(cfg):
     cfg = extract_config(cfg,False)
-    search = PairedRefine(cfg.wr, cfg.ws, cfg.ps, cfg.k, nheads=cfg.nheads,
+    search = PairedRefine(cfg.ws, cfg.wr, cfg.k, cfg.kr, cfg.ps, nheads=cfg.nheads,
                           dist_type=cfg.dist_type, stride0=cfg.stride0,
                           stride1=cfg.stride1, dilation=cfg.dilation,
                           restricted_radius=cfg.restricted_radius,

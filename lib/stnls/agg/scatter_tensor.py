@@ -17,7 +17,7 @@ from einops import rearrange
 # -- cpp cuda kernel --
 import stnls_cuda
 
-def run(tensor,flows_k,labels,stride0,stride1):
+def run(tensor,flows_k,labels,stride0,stride1,H,W):
 
     # -- unpack shapes --
     B,HD,T,nH0,nW0,K = tensor.shape[:6]
@@ -25,22 +25,24 @@ def run(tensor,flows_k,labels,stride0,stride1):
     S = labels.max().int()+1
     tensor = tensor.reshape(B,HD,Q0,K,-1)
     M = tensor.shape[-1]
-    nH1 = (nH0*stride0)//stride1
-    nW1 = (nW0*stride0)//stride1
+    nH1 = (H-1)//stride1+1
+    nW1 = (W-1)//stride1+1
     Q1 = T*nH1*nW1
 
     # -- change type if needed --
     dtype = tensor.dtype
-    if tensor.dtype == th.int:
+    if dtype in [th.int32,th.int64]:
         tensor = tensor.float()
 
     # -- prepare --
-    scatter_tensor = -th.inf*th.ones((B,HD,Q1,S,M),device=labels.device,dtype=th.float)
-    stnls_cuda.scatter_tensor_forward(scatter_tensor,tensor,labels,flows_k,stride0,stride1)
+    shape = (B,HD,Q1,S,M)
+    scatter_tensor = -th.inf*th.ones(shape,device=labels.device,dtype=tensor.dtype)
+    stnls_cuda.scatter_tensor_forward(scatter_tensor,tensor,labels,flows_k,
+                                      stride0,stride1,H,W)
 
     # -- adjust output type --
-    if dtype == th.int:
-        tensor = tensor.int()
+    if dtype in [th.int32,th.int64]:
+        scatter_tensor = scatter_tensor.type(dtype)
 
     # -- squeeze single M --
     if M == 1:
@@ -100,5 +102,6 @@ def run_topk(weights,flows_k,K,descending=True):
     # -- unpack --
     weights = rearrange(weights,'(b hd q) k -> b hd q k',b=B,hd=HD)
     flows_topk = rearrange(flows_topk,'(b hd q) k tr -> b hd q k tr',b=B,hd=HD)
+    flows_topk = flows_topk.type(flows_k.dtype)
 
     return weights,flows_topk

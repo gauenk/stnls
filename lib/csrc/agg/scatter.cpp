@@ -23,7 +23,7 @@ void scatter_tensor_forward_cuda(torch::Tensor out_tensor,
                                  const torch::Tensor in_tensor,
                                  const torch::Tensor labels,
                                  const torch::Tensor flows_k,
-                                 int stride0, int stride1);
+                                 int stride0, int stride1, int H, int W);
 
 void scatter_tensor_backward_cuda(torch::Tensor in_tensor_grad,
                                   const torch::Tensor out_tensor_grad,
@@ -78,12 +78,13 @@ void scatter_tensor_forward(
     const torch::Tensor in_tensor,
     const torch::Tensor labels,
     const torch::Tensor flows_k,
-    int stride0, int stride1){
+    int stride0, int stride1, int H, int W){
   CHECK_INPUT(out_tensor);
   CHECK_INPUT(in_tensor);
   CHECK_INPUT(labels);
   CHECK_INPUT(flows_k);
-  scatter_tensor_forward_cuda(out_tensor,in_tensor,labels,flows_k,stride0,stride1);
+  scatter_tensor_forward_cuda(out_tensor,in_tensor,labels,flows_k,
+                              stride0,stride1,H,W);
 }
 
 void scatter_tensor_backward(
