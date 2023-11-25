@@ -134,7 +134,6 @@ class NonLocalAttentionStack(nn.Module):
 
         # -- search --
         dists,inds = self.run_search(q_vid,k_vid,flows,state)
-        # print(inds.shape)
 
         # -- normalize --
         weights,inds = self.run_normalize(dists,inds)

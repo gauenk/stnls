@@ -67,11 +67,11 @@ def forward(vid0, vid1, flows,
             reflect_bounds, full_ws, patch_offset,  dist_type_i)
 
     # -- anchor --
-    menu = [None,"anchor","anchor_each","remove",]
+    menu = [None,"anchor","anchor_self","anchor_each","remove",]
     menu += ["remove_ref_frame","anchor_and_remove_ref_frame"]
     assert self_action in menu
     anchor_self = False if self_action is None else "anchor" in self_action
-    if self_action == "anchor":
+    if self_action in ["anchor","anchor_self"]:
         stnls.nn.anchor_self(dists,inds,stride0,H,W)
     elif self_action == "anchor_each":
         stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
