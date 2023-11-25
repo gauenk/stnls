@@ -97,6 +97,9 @@ def get_unique_index(nl_hi,nl_wi,hi,wi,
         ws_j = abs(num_w) - (wsHalf+1) + (wsHalf)
         ws_i = num_h+wsHalf
 
+    # -- debug --
+    # print((hi,wi),(nl_hi,nl_wi),(oob_i,oob_j,))
+
     # -- standard names --
     if not(oob_i or oob_j):
         ws_i = num_h + wsHalf
@@ -123,7 +126,7 @@ def get_tlims(ti, T, wt):
   t_max = min(T-1,ti + wt - t_shift);
   return t_max,t_min
 
-def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,st_offset,
+def fill_names(ti,h_ref,w_ref,ki,ws,wt,stride0,stride1,st_offset,
                full_ws,names,counts,flows_k):
 
     # -- unpack --
@@ -133,12 +136,14 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,st_offset,
     wsOff_h,wsOff_w = wsHalf,wsHalf
 
     # -- get non-local position --
-    nl_ti = ti + flows_k[ti][hi][wi][ki][0]
-    nl_hi = hi + flows_k[ti][hi][wi][ki][1]
-    nl_wi = wi + flows_k[ti][hi][wi][ki][2]
+    hi,wi = h_ref*stride0,w_ref*stride0
+    nl_ti = ti + flows_k[ti][h_ref][w_ref][ki][0]
+    nl_hi = hi + flows_k[ti][h_ref][w_ref][ki][1]
+    nl_wi = wi + flows_k[ti][h_ref][w_ref][ki][2]
     valid = check_valid(nl_ti,nl_hi,nl_wi,T,H,W)
     if not(valid): return
     # if not((wi == 0) or (hi == 0)): return
+    # if not((wi == 0) and (hi == 0)): return
     # if not((nl_hi == 1) and (nl_wi == 0)): return
     # if not((nl_hi == 0) and (nl_wi == 2)): return
     # if not((nl_hi == 0) and (nl_wi == 2)): return
@@ -154,7 +159,7 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,st_offset,
     dto = t_max - ti
     si = (dt-st_offset) if (dt >= 0) else (dto - dt - st_offset)
     # ws_ti = (ti+nl_ti) % W_t
-    ws_ti = (nl_ti+ti) % T
+    ws_ti = (nl_ti+ti) % T if W_t > 1 else 0
     # print(si,dt,st_offset,nl_ti,ti)
 
     # -- offset search offsets --
@@ -162,10 +167,10 @@ def fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,st_offset,
                                          stride1, wsHalf, ws, H, W, full_ws)
 
     # -- get search index --
-    ws_i = (nl_hi - hi)//stride1 + wsOff_h
-    ws_j = (nl_wi - wi)//stride1 + wsOff_w
-    ws_i_orig = ws_i
-    ws_j_orig = ws_j
+    # ws_i = (nl_hi - hi)//stride1 + wsOff_h
+    # ws_j = (nl_wi - wi)//stride1 + wsOff_w
+    # ws_i_orig = ws_i
+    # ws_j_orig = ws_j
 
     # -- handle oob --
     time_offset = ws_ti*(ws*ws+2*(ws//2)*ws+(ws//2)**2)
@@ -200,13 +205,13 @@ def set_seed(seed):
     random.seed(seed)
 
 def main():
-    ws = 3
-    wt = 1
+    ws = 9
+    wt = 0
     W_t = 2*wt+1
     full_ws = True
-    T,H,W = 5,32,32
-    stride0,stride1 = 1,1
-    W_t_num = T#min(W_t + 2*wt,T)
+    T,H,W = 5,64,64
+    stride0,stride1 = 8,1
+    W_t_num = T if wt > 0 else 1#min(W_t + 2*wt,T)
     S = W_t_num*(ws*ws + 2*(ws//2)*ws + (ws//2)**2)
     vals = np.zeros((T,H,W,ws,ws))
     names = -np.ones((S,T,H,W,3))
@@ -215,18 +220,19 @@ def main():
     K = flows_k.shape[-2]
     st_offset = 1
     print("flows_k.shape: ",flows_k.shape)
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     for ti in range(T):
-        for hi in range(H):
-            for wi in range(W):
+        for h_ref in range(nH):
+            for w_ref in range(nW):
                 for ki in range(K):
-                    fill_names(ti,hi,wi,ki,ws,wt,stride0,stride1,
+                    fill_names(ti,h_ref,w_ref,ki,ws,wt,stride0,stride1,
                                st_offset,full_ws,names,counts,flows_k)
 
     print(counts[:,0,2,2])
     print(counts[:,0,:3,:3].T)
     # for i in range(S):
     #     print(counts[i,0])
-    print(np.sum(counts>=0),T*H*W*K)
-    print(np.sum(counts==0),T*H*W*K)
+    print(np.sum(counts>=0),T*nH*nW*K)
+    print(np.sum(counts==0),T*nH*nW*K)
 if __name__ == "__main__":
     main()

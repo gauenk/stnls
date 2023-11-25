@@ -24,8 +24,10 @@ void get_unique_index(int& li, bool& oob,
   int ws_j = -1;
   
   // -- check spatial coordinates --
-  int num_h = (nl_hi - hi)/stride1;
-  int num_w = (nl_wi - wi)/stride1;
+  int num_h = abs(nl_hi - hi)/stride1;
+  num_h = (nl_hi >= hi) ? num_h : -num_h;
+  int num_w = abs(nl_wi - wi)/stride1;
+  num_w = (nl_wi >= wi) ? num_w : -num_w;
   
   // -- check oob --
   bool oob_i = abs(num_h) > wsHalf;
@@ -78,12 +80,12 @@ __global__ void scatter_labels_kernel(
     int nW = flows.size(6);
     int K = flows_k.size(5);
     int S = names.size(2);
+    int H = names.size(4);
+    int W = names.size(5);
 
     // -- derived --
     int nHW = nH*nW;
     int Q = T*nHW;
-    int H = nH*stride0;
-    int W = nW*stride0;
 
     // -- indexing variables --
     int ref_patch[3];
@@ -113,8 +115,8 @@ __global__ void scatter_labels_kernel(
       // -- reference index --
       get_pixel_loc(ref_patch,qi,stride0,nW,nHW,H,W);
       int ti = ref_patch[0];
-      int h_ref = ref_patch[1];
-      int w_ref = ref_patch[2];
+      // int h_ref = ref_patch[1];
+      // int w_ref = ref_patch[2];
       int hi = ref_patch[1]/stride0;
       int wi = ref_patch[2]/stride0;
 
@@ -145,7 +147,7 @@ __global__ void scatter_labels_kernel(
       int dt = static_cast<int>(nl_patch[0]) - ti;
       int dto = t_max - ti;
       int si = (dt > 0) ? (dt-st_offset) : (dto - dt - st_offset);
-      int ws_ti = (ref_patch[0]+nl_patch[0]) % T;
+      int ws_ti = (wt > 0)  ? (ref_patch[0]+nl_patch[0]) % T : 0;
 
       // -- offset reference --
       // if (si >= 0){

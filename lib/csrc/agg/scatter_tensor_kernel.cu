@@ -19,7 +19,7 @@ __global__ void scatter_tensor_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> in_tensor,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> labels,
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> flows_k,
-    int stride0){
+    int stride0, int stride1, int H, int W){
 
     // -- unpack --
     int B = flows_k.size(0);
@@ -33,8 +33,10 @@ __global__ void scatter_tensor_forward_kernel(
     // -- derived --
     int nHW = nH*nW;
     int Q = T*nHW;
-    int H = nH*stride0;
-    int W = nW*stride0;
+    // int H = nH*stride0;
+    // int W = nW*stride0;
+    int nH1 = (H-1)/stride1+1;
+    int nW1 = (W-1)/stride1+1;
 
     // -- indexing variables --
     int ref_patch[3];
@@ -67,12 +69,12 @@ __global__ void scatter_tensor_forward_kernel(
       for (int _idx=0; _idx < 3; _idx++){
         nl_patch[_idx] = ref_patch[_idx] + flows_k[ibatch][ihead][ti][hi][wi][ki][_idx];
       }
-      int nl_hi = nl_patch[1]/stride0; // stride1 ?
-      int nl_wi = nl_patch[2]/stride0;
+      int nl_hi = nl_patch[1]/stride1;
+      int nl_wi = nl_patch[2]/stride1;
       check_bounds(valid_patch,nl_patch,T,H,W);
       if (not(valid_patch)){ return; }
 
-      int nl_qi = nl_patch[0] * nH * nW + nl_hi * nW + nl_wi;
+      int nl_qi = nl_patch[0] * nH1 * nW1 + nl_hi * nW1 + nl_wi;
       int nl_si = labels[ibatch][ihead][qi][ki];
       for (int mi=0; mi < M; mi++){
         out_tensor[ibatch][ihead][nl_qi][nl_si][mi]=in_tensor[ibatch][ihead][qi][ki][mi];
@@ -84,7 +86,8 @@ void scatter_tensor_forward_cuda(
     torch::Tensor out_tensor,
     const torch::Tensor in_tensor,
     const torch::Tensor labels,
-    const torch::Tensor flows_k, int stride0){
+    const torch::Tensor flows_k,
+    int stride0, int stride1, int H, int W){
 
   // -- sizes --
   int B = labels.size(0);
@@ -106,7 +109,7 @@ void scatter_tensor_forward_cuda(
            in_tensor.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
            labels.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
            flows_k.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-           stride0);
+           stride0,stride1,H,W);
       }));
 
 

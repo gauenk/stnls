@@ -49,10 +49,20 @@ def get_space_grid(H,W,dtype=th.float,device="cuda"):
     grid.requires_grad = False
     return grid
 
-def flip_flows(flows_k,T,H,W):
-    B,HD,T,nH,nW,K,three = flows_k.shape
-    assert three == 3,"Must be three."
-    return -flows_k
+# def flip_flows(flows_k,T,H,W):
+#     B,HD,T,nH,nW,K,three = flows_k.shape
+#     assert three == 3,"Must be three."
+#     return -flows_k
+
+def reflect_inds(inds,H,W):
+    def reflect_bounds(flow,i,L):
+        args0 = th.where(flow[...,i] > (L-1))
+        args1 = th.where(flow[...,i] < 0)
+        flow[...,i][args0] = 2*(L-1) - flow[...,i][args0]
+        flow[...,i][args1] = -flow[...,i][args1]
+    # -- reflect --
+    reflect_bounds(inds,1,H)
+    reflect_bounds(inds,2,W)
 
 def flow2inds(flow,stride0):
     device = flow.device
