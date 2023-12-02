@@ -25,12 +25,14 @@ def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
     W_t = 2*wt+1
     # H = nH*stride0
     # W = nW*stride0
-    wsHalf = (ws-1)//2
+    # wsHalf = (ws-1)//2
 
     # -- number of maximum possible groups a single patch can belong to --
     Wt_num = T if wt > 0 else 1
-    Ws_num = ws*ws
-    if full_ws: Ws_num += 2*ws*wsHalf + wsHalf**2
+    # Ws_num = ws*ws
+    wsNum = (ws-1)//stride0+1
+    Ws_num = wsNum*wsNum
+    if full_ws: Ws_num += 2*wsNum*(wsNum//2) + (wsNum//2)**2
     S = Wt_num*Ws_num
     print(S,ws,wt,stride0,stride1,full_ws)
 
@@ -43,9 +45,10 @@ def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
     stnls_cuda.scatter_labels(flows,flows_k,labels,names,ws,wt,stride0,stride1,full_ws)
 
     # -- check --
-    # nvalid = (names[...,0] >= 0).float().sum(2)
-    # if full_ws:
-    #     assert(int(nvalid.sum().item()) == Q*K)
+    nvalid = (names[...,0] >= 0).float().sum(2)
+    if full_ws:
+        print(int(nvalid.sum().item()),Q*K)
+        # assert(int(nvalid.sum().item()) == Q*K)
 
     return names,labels
 

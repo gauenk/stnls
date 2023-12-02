@@ -17,52 +17,83 @@ __device__ __forceinline__
 void get_unique_index(int& li, bool& oob,
                       int nl_hi,int nl_wi,int hi,int wi,
                       int wsOff_h,int wsOff_w,int time_offset,
-                      int stride1,int ws,int wsHalf,bool full_ws){
+                      int stride0, int stride1,int ws,int wsHalf,bool full_ws){
   
   // -- init --
   int ws_i = -1;
   int ws_j = -1;
   
   // -- check spatial coordinates --
-  int num_h = abs(nl_hi - hi)/stride1;
-  num_h = (nl_hi >= hi) ? num_h : -num_h;
-  int num_w = abs(nl_wi - wi)/stride1;
-  num_w = (nl_wi >= wi) ? num_w : -num_w;
+  int num_h = nl_hi - hi;//stride1;
+  // num_h = (nl_hi >= hi) ? num_h : -num_h;
+  int num_w = nl_wi - wi;//stride1;
+  // num_w = (nl_wi >= wi) ? num_w : -num_w;
   
   // -- check oob --
+  int wsNum = (ws-1)/stride0+1;
   bool oob_i = abs(num_h) > wsHalf;
   bool oob_j = abs(num_w) > wsHalf;
   oob = (oob_i or oob_j) and full_ws;
+  bool and_oob = oob_i and oob_j and full_ws;
+  bool xor_oob = (oob_i or oob_j) and not(oob_i and oob_j) and full_ws;
 
   // -- oob names --
   if (oob_i and oob_j){
 
-    // -- di,dj --
-    int di = wsHalf - abs(wsHalf - wsOff_h);
-    int dj = wsHalf - abs(wsHalf - wsOff_w);
+    // // -- di,dj --
+    int adj_h = wsHalf - wsOff_h;
+    int adj_w = wsHalf - wsOff_w;
 
-    // -- small square --
-    int mi = di + wsHalf*dj;
-    ws_i = mi % ws;
-    ws_j = mi / ws + (ws-1);
+    // int di = wsHalf - abs(wsHalf - wsOff_h);
+    // int dj = wsHalf - abs(wsHalf - wsOff_w);
+
+    // // -- small square --
+    // int mi = di + wsHalf*dj;
+    // ws_i = mi % ws;
+    // ws_j = mi / ws + (ws-1);
+
+    // -- only adj --
+    ws_i = (abs(adj_h)-1)/stride0;
+    ws_j = (abs(adj_w)-1)/stride0;
 
   }else if (oob_i and not(oob_j)){
     ws_j = abs(num_h) - (wsHalf+1);
     ws_i = num_w+wsHalf;
   }else if (oob_j and not(oob_i)){
-    ws_j = abs(num_w) - (wsHalf+1) + (wsHalf);
+    // ws_j = abs(num_w) - (wsHalf+1) + (wsHalf);
+    ws_j = abs(num_w) - (wsHalf+1);
     ws_i = num_h+wsHalf;
   }
 
   // -- standard names --
-  if (not(oob_i or oob_j)){
+  if (not(oob)){
     ws_i = num_h + wsHalf;
     ws_j = num_w + wsHalf;
   }
 
+  // -- standard names --
+  if (not(and_oob)){
+    ws_i = ws_i/stride0;
+    ws_j = ws_j/stride0;
+  }
+
   // -- get unique index --
-  li = (ws_i) + (ws_j)*ws + time_offset;
-  li = oob ? li + ws*ws : li;
+  if (not(oob_i or oob_j)){
+      li = (ws_i) + (ws_j)*wsNum + time_offset;
+  }else if (xor_oob and oob_i){
+    li = (ws_i) + (ws_j)*wsNum + time_offset + wsNum*wsNum;
+  }else if (xor_oob and oob_j){
+    li = (ws_i) + (ws_j)*wsNum + (wsNum/2)*wsNum + time_offset + wsNum*wsNum;
+  }else if (and_oob){
+      li = (ws_i) + (ws_j)*(wsNum/2);
+      li = li + time_offset + wsNum*wsNum + 2*(wsNum/2)*wsNum;
+  }else{
+    assert(1==0);
+  }
+
+  // // -- get unique index --
+  // li = (ws_i) + (ws_j)*ws + time_offset;
+  // li = oob ? li + ws*ws : li;
 
 }
 
@@ -169,7 +200,7 @@ __global__ void scatter_labels_kernel(
       get_unique_index(li, oob, nl_patch[1], nl_patch[2],
                        ref_patch[1], ref_patch[2], 
                        wsOff_h, wsOff_w, time_offset,
-                       stride1, ws, wsHalf, full_ws);
+                       stride0, stride1, ws, wsHalf, full_ws);
 
       // -- assign to sparse matrix --
       // if (not(oob)){ return; }

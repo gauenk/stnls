@@ -156,6 +156,7 @@ def get_unique_index(nl_hi,nl_wi,hi,wi,
 
     # -- divide out stride0 --
     vprint("pre: ",ws_i,ws_j)
+    # if not(oob_i or oob_j):
     if not(and_oob):
         ws_i = ws_i//stride0
         ws_j = ws_j//stride0
