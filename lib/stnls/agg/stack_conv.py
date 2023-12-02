@@ -32,6 +32,7 @@ class StackConv(nn.Module):
         stack = self.stacker(vid,weights,flows)
         stack = rearrange(stack,'b hd k t c h w -> b t k (hd c) h w')
         vid = self.run_projection(stack)
+        # print("[stack_conv] vid.shape: ",vid.shape)
         return vid
 
     def run_projection(self,stack):
