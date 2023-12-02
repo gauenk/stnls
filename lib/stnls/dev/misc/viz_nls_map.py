@@ -61,17 +61,22 @@ def get_pix(vid,loc):
     for ix in range(2):
         for jx in range(2):
             i = int(loc[1]+ix)
-            wi = max(0.,1-abs(1.*i - loc[1]))
+            wi = 1 - abs( (ix - (abs(loc[1]) % 1) ) )
+            # wi = max(0.,1-abs(1.*i - loc[1]))
+
             j = int(loc[2]+jx)
-            wj = max(0.,1-abs(1.*j - loc[2]))
+            wj = 1 - abs( (jx - (abs(loc[2]) % 1) ) )
+            # wj = max(0.,1-abs(1.*j - loc[2]))
+
             w = wi * wj
             i = bound(i,H)
             j = bound(j,W)
+
             # print(w)
             pix += w*vid[int(loc[0]),:,i,j]
     return pix
 
-def delta_patch(vid0,vid1,loc0,loc1,ps):
+def delta_patch(vid0,vid1,loc0,loc1,ps,dist_type="l2"):
     delta = 0
     poff = -ps//2
     for pi in range(ps):
@@ -80,24 +85,32 @@ def delta_patch(vid0,vid1,loc0,loc1,ps):
             loc1_ij = [loc1[0],loc1[1]+pi+poff,loc1[2]+pj+poff]
             pix0 = get_pix(vid0,loc0_ij)
             pix1 = get_pix(vid1,loc1_ij)
-            delta += th.sum((pix0-pix1)**2)
+            if dist_type == "l2":
+                delta += th.sum((pix0-pix1)**2)
+            elif dist_type == "prod":
+                delta += th.sum(pix0*pix1)
+            else:
+                raise ValueError(f"Uknown dist_type [{dist_type}]")
     return delta
 
 
-def search_deltas(vid0,vid1,fflow,bflow,loc0,grid,stride1,ws,ps,K=9):
+def search_deltas(vid0,vid1,fflow,bflow,loc0,grid,stride1,ws,ps,K=9,dist_type="l2"):
     dmap = th.zeros_like(grid[0])*1.
     flow = get_pix(fflow,loc0).flip(0)
     for wi in range(ws):
         for wj in range(ws):
             # -- get search location --
             off_i = grid[:,wi,wj]
-            loc1 = [1,]+[loc0[i] + flow[(i-1)] + stride1*off_i[i] for i in range(1,3)]
+            loc1_i = loc0[1] + flow[0] + stride1*off_i[1]
+            loc1_j = loc0[2] + flow[1] + stride1*off_i[2]
+            # loc1 = [1,]+[loc0[i] + flow[(i-1)] + stride1*off_i[i] for i in range(1,3)]
+            loc1 = [1,loc1_i,loc1_j]
             # print([wi,wj],off_i)
             # loc1 = [0,]+[loc0[i] + stride1*off_i[i] for i in range(1,3)]
             # print(wi,wj,[stride1*off_i[i] for i in range(1,3)])
 
             # -- compute delta ---
-            dmap[wi,wj] = delta_patch(vid0,vid1,loc0,loc1,ps)
+            dmap[wi,wj] = delta_patch(vid0,vid1,loc0,loc1,ps,dist_type)
             # print(loc1,dmap[wi,wj])
             # if off_i[1] == 0 and off_i[2] == 0:
             #     dmap[wi,wj] = 10000.
@@ -108,7 +121,8 @@ def search_deltas(vid0,vid1,fflow,bflow,loc0,grid,stride1,ws,ps,K=9):
     # dmap = th.log(dmap + eps)
     dmap -= dmap.min()
     dmap /= dmap.max()
-    dmap = th.exp(-10*dmap)
+    sign = -1 if dist_type == "l2" else 1
+    dmap = th.exp(sign*10*dmap)
     # # print(dmap)
     dmap -= dmap.min()
     dmap /= dmap.max()

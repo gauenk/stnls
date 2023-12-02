@@ -198,8 +198,7 @@ def flow_warp(x, flow, interp_mode='bilinear',
 
     # -- resample --
     output = F.grid_sample(x, vgrid_scaled, mode=interp_mode,
-                           padding_mode="reflection", align_corners=align_corners,
-    )
+                           padding_mode="reflection", align_corners=align_corners)
 
     return output
 

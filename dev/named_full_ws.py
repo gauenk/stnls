@@ -64,13 +64,21 @@ def set_search_offsets(wsOff_h, wsOff_w, hi, wi,
 
     return wsOff_h,wsOff_w
 
+def vprint(*args,**kwargs):
+    verbose = True
+    if verbose:
+        print(*args,**kwargs)
+
 def get_unique_index(nl_hi,nl_wi,hi,wi,
                      wsOff_h,wsOff_w,time_offset,
-                     stride1,ws,wsHalf,full_ws):
+                     stride0,stride1,ws,wsHalf,full_ws):
 
     # -- check spatial coordinates --
-    num_h = (nl_hi - hi)//stride1
-    num_w = (nl_wi - wi)//stride1
+    num_h = (nl_hi - hi)#//stride1
+    num_w = (nl_wi - wi)#//stride1
+    # num_h = (nl_hi - hi)//stride0
+    # num_w = (nl_wi - wi)//stride0
+    vprint("num_h,num_w,wsHalf: ",num_h,num_w,wsHalf)
 
     # -- check oob --
     oob_i = abs(num_h) > wsHalf
@@ -78,23 +86,58 @@ def get_unique_index(nl_hi,nl_wi,hi,wi,
 
     # -- oob names --
     if oob_i and oob_j:
+        vprint("case0")
         # -- check offset --
         adj_h = wsHalf - wsOff_h
         adj_w = wsHalf - wsOff_w
+        vprint("adj_h,adj_w: ",adj_h,adj_w)
 
         # -- di,dj --
-        di = wsHalf - abs(adj_h)
-        dj = wsHalf - abs(adj_w)
+        # di = wsHalf - abs(adj_h)
+        # dj = wsHalf - abs(adj_w)
+        di = wsHalf - adj_h if adj_h > 0 else adj_h
+        dj = wsHalf - adj_w if adj_w > 0 else adj_w
 
         # -- small square --
+        # mi = di + wsHalf*dj
+        # ws_i = mi % ws
+        # ws_j = mi // ws + (ws-1)
         mi = di + wsHalf*dj
         ws_i = mi % ws
         ws_j = mi // ws + (ws-1)
+        vprint("[case0] ws_i,ws_j: ",ws_i,ws_j)
+
+        ws_i = (abs(adj_h)-1)//stride0
+        ws_j = (abs(adj_w)-1)//stride0
+
+        # wsNum = (ws-1)//stride0+1
+
+        # # -- check offset --
+        # adj_h = wsHalf - wsOff_h
+        # adj_w = wsHalf - wsOff_w
+        # adj_h = adj_h//stride0
+        # adj_w = adj_w//stride0
+
+        # # -- di,dj --
+        # di = wsHalf - abs(adj_h)
+        # dj = wsHalf - abs(adj_w)
+        # di = di//stride0
+        # dj = dj//stride0
+
+        # # -- small square --
+        # mi = di + wsHalf*dj
+        # ws_i = mi % wsNum
+        # ws_j = mi // wsNum + (wsNum-1)
+
     elif oob_i and not(oob_j):
+        vprint("case1")
         ws_j = abs(num_h) - (wsHalf+1)
         ws_i = num_w+wsHalf
     elif oob_j and not(oob_i):
-        ws_j = abs(num_w) - (wsHalf+1) + (wsHalf)
+        vprint("case2")
+        # ws_j = abs(num_w) - (wsHalf+1) + (wsHalf)
+        # ws_i = num_h+wsHalf
+        ws_j = abs(num_w) - (wsHalf+1)
         ws_i = num_h+wsHalf
 
     # -- debug --
@@ -104,9 +147,19 @@ def get_unique_index(nl_hi,nl_wi,hi,wi,
     if not(oob_i or oob_j):
         ws_i = num_h + wsHalf
         ws_j = num_w + wsHalf
+        # print(num_h,num_w,wsHalf,ws_i,ws_j)
 
     # -- check oob --
-    oob = (oob_i or oob_j) and full_ws
+    wsNum = (ws-1)//stride0+1
+    xor_oob = (oob_i or oob_j) and not(oob_i and oob_j) and full_ws
+    and_oob = (oob_i and oob_j) and full_ws
+
+    # -- divide out stride0 --
+    vprint("pre: ",ws_i,ws_j)
+    if not(and_oob):
+        ws_i = ws_i//stride0
+        ws_j = ws_j//stride0
+    vprint("post: ",ws_i,ws_j)
 
     # -- check --
     if not(oob_i and oob_j):
@@ -114,10 +167,46 @@ def get_unique_index(nl_hi,nl_wi,hi,wi,
         assert (ws_j >= 0) and (ws_j < ws)
 
     # -- get unique index --
-    li = (ws_i) + (ws_j)*ws + time_offset
-    li = li + ws*ws if oob else li
+    # wsNum = (ws-1)//stride0+1
+    # li = (ws_i) + (ws_j)*wsNum + time_offset
+    # # li = li + wsNum*wsNum if oob else li
+    # xor_oob = (oob_i or oob_j) and not(oob_i and oob_j)
+    # li = li + wsNum*wsNum if xor_oob else li
+    # print(li)
+    # # 2*(wsNum//2)*wsNum
+    # li = li + wsNum*wsNum+2*(wsNum//2)*wsNum if (oob_i and oob_j) else li
+    # print(li)
 
-    return li,oob
+    # -- get unique index --
+    if not(oob_i or oob_j):
+        li = (ws_i) + (ws_j)*wsNum + time_offset
+    # elif xor_oob:
+    #     li = (ws_i) + (ws_j)*wsNum + time_offset + wsNum*wsNum
+    elif xor_oob and oob_i:
+        li = (ws_i) + (ws_j)*wsNum + time_offset + wsNum*wsNum
+    elif xor_oob and oob_j:
+        li = (ws_i) + (ws_j)*wsNum + (wsNum//2)*wsNum + time_offset + wsNum*wsNum
+    elif (and_oob):
+        # ws_i = abs(ws_i-1)//stride0-1
+        # ws_j = abs(ws_j-1)//stride0-1
+        # ws_i = ws_i
+        # ws_j = ws_j % stride0
+        vprint("[case0] ws_i,ws_j: ",ws_i,ws_j)
+        li = (ws_i) + (ws_j)*(wsNum//2)
+        li = li + time_offset + wsNum*wsNum + 2*(wsNum//2)*wsNum
+        # li = 15
+    else:
+        raise ValueError("What?")
+
+    # # li = li + wsNum*wsNum if oob else li
+    # li = li + wsNum*wsNum if xor_oob else li
+    # print(li)
+    # # 2*(wsNum//2)*wsNum
+    # li = li + wsNum*wsNum+2*(wsNum//2)*wsNum if (oob_i and oob_j) else li
+    # print(li)
+
+
+    return li,and_oob
 
 
 def get_tlims(ti, T, wt):
@@ -142,7 +231,10 @@ def fill_names(ti,h_ref,w_ref,ki,ws,wt,stride0,stride1,st_offset,
     nl_wi = wi + flows_k[ti][h_ref][w_ref][ki][2]
     valid = check_valid(nl_ti,nl_hi,nl_wi,T,H,W)
     if not(valid): return
-    # if not((wi == 0) or (hi == 0)): return
+    # if (wi < 8) or (hi < 8): return
+    # if (wi > 56) or (hi > 56): return
+    # if not((nl_hi == 16) and (nl_wi == 9)): return
+    # if not((nl_hi == 4) and (nl_wi == 16)): return
     # if not((wi == 0) and (hi == 0)): return
     # if not((nl_hi == 1) and (nl_wi == 0)): return
     # if not((nl_hi == 0) and (nl_wi == 2)): return
@@ -176,17 +268,18 @@ def fill_names(ti,h_ref,w_ref,ki,ws,wt,stride0,stride1,st_offset,
     time_offset = ws_ti*(ws*ws+2*(ws//2)*ws+(ws//2)**2)
     li,oob = get_unique_index(nl_hi,nl_wi,hi,wi,
                               wsOff_h,wsOff_w,time_offset,
-                              stride1,ws,wsHalf,full_ws)
+                              stride0,stride1,ws,wsHalf,full_ws)
     # nl_hi,nl_wi,hi,wi,stride1,ws,
     # wsHalf,wsOff_h,wsOff_w,time_offset,full_ws)
     # ws_i,ws_j,oob = check_oob(ws_i,ws_j,nl_hi,nl_wi,hi,wi,stride1,ws,
     #                           wsHalf,wsOff_h,wsOff_w,full_ws)
     # if not(oob): return
 
-    # print("Ref/NonLocal: ",(ti,hi,wi),(nl_ti,nl_hi,nl_wi),ws_ti,dt,li,oob,stride1,ws)
+    print("Ref/NonLocal: ",(ti,hi,wi),(nl_ti,nl_hi,nl_wi),li,ws_ti,dt,oob,stride1,ws)
 
     # -- update --
     # assert((ws_ti >= 0) and (ws_ti <= (W_t-1)))
+    wsNum = (ws-1)//stride0+1
     if np.any(names[li,ti,hi,wi]<0):
         names[li,ti,hi,wi,...] = 0
     names[li,nl_ti,nl_hi,nl_wi,0] = ti
@@ -195,7 +288,8 @@ def fill_names(ti,h_ref,w_ref,ki,ws,wt,stride0,stride1,st_offset,
     if counts[li,nl_ti,nl_hi,nl_wi] == 0:
         print("already here.")
         exit()
-    if li < ws*ws and oob:
+    if li < wsNum*wsNum and oob:
+        print("li is small to be out of bounds.")
         exit()
     counts[li,nl_ti,nl_hi,nl_wi] += 1
 
@@ -205,14 +299,28 @@ def set_seed(seed):
     random.seed(seed)
 
 def main():
-    ws = 9
+    # ws = 7
     wt = 0
     W_t = 2*wt+1
     full_ws = True
-    T,H,W = 5,64,64
-    stride0,stride1 = 8,1
+    T,H,W = 1,64,64
+    stride0 = 8
+    ws = 2*stride0 + 1
+    ws = 17
+    assert( ws>=(2*stride0+1) )
+    stride1 = 1
     W_t_num = T if wt > 0 else 1#min(W_t + 2*wt,T)
-    S = W_t_num*(ws*ws + 2*(ws//2)*ws + (ws//2)**2)
+    wsNum = (ws-1)//stride0+1
+    # wsNum = (ws//2)//stride0+1
+    print(wsNum)
+    #S = W_t_num*(ws*ws + 2*(ws//2)*ws + (ws//2)**2)
+    # S = W_t_num*(wsNum*wsNum + 2*(wsNum//2)*wsNum+(wsNum//2)**2)
+    S = W_t_num*(wsNum*wsNum + 2*(wsNum//2)*wsNum+(wsNum//2)**2)
+    print("wsNum,wsNum*wsNum,2*(wsNum//2)*wsNum: ",wsNum,wsNum*wsNum,2*(wsNum//2)*wsNum)
+    print("S: ",S)
+    # S = 17
+    # S = 16
+    print("ws,wt,S: ",ws,wt,S)
     vals = np.zeros((T,H,W,ws,ws))
     names = -np.ones((S,T,H,W,3))
     counts = -np.ones((S,T,H,W))
@@ -228,11 +336,18 @@ def main():
                     fill_names(ti,h_ref,w_ref,ki,ws,wt,stride0,stride1,
                                st_offset,full_ws,names,counts,flows_k)
 
-    print(counts[:,0,2,2])
-    print(counts[:,0,:3,:3].T)
+    # print(counts[:,0,2,2])
+    # print(counts[:,0,:3,:3].T)
+    # print(counts[:,0,59,3])
+    print(counts[:,0,16,9])
     # for i in range(S):
     #     print(counts[i,0])
+    print(np.sum(counts>=0,0).max())
     print(np.sum(counts>=0),T*nH*nW*K)
     print(np.sum(counts==0),T*nH*nW*K)
+    print("wsNum,wsNum*wsNum,2*(wsNum//2)*wsNum: ",wsNum,wsNum*wsNum,2*(wsNum//2)*wsNum)
+    print("S: ",S)
+
+
 if __name__ == "__main__":
     main()
