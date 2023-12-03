@@ -107,6 +107,12 @@ __global__ void refinement_bilin2d_forward_kernel(
       prop_center[1] = ref_patch[2] + flows[ibatch][ihead_f][ti][nh][nw][ki][2];
       prop_patch[0] = bounds(prop_patch[0],T);
 
+      // -- possibly illegal flows --
+      valid = abs(flows[ibatch][ihead_f][ti][nh][nw][ki][1]) < 1e8;
+      valid = valid and abs(flows[ibatch][ihead_f][ti][nh][nw][ki][2]) < 1e8;
+      if (not(valid)){ continue; }
+
+      // -- bounding --
       reflect[ibatch][ihead_f][ti][nh][nw][ki][0] = not check_bound(prop_center[0],H);
       reflect[ibatch][ihead_f][ti][nh][nw][ki][1] = not check_bound(prop_center[1],W);
       prop_center[0] = bounds(prop_center[0],H);

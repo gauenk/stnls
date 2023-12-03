@@ -41,6 +41,9 @@ setup(name='stnls',
               'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum
               'lib/csrc/agg/wpsum_int_kernel.cu',
               'lib/csrc/agg/wpsum_bilin2d_kernel.cu',
+              'lib/csrc/agg/pool.cpp', # Pooled - Weighted Patch Sum
+              'lib/csrc/agg/pool_int_kernel.cu',
+              #'lib/csrc/agg/pool_bilin2d_kernel.cu',
               # -- setup --
               'lib/csrc/pybind.cpp',
           ],

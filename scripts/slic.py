@@ -61,13 +61,13 @@ def run_exp(cfg):
     vid = load_video(cfg).half()
     vid = append_grid(vid,cfg.M,cfg.stride0)
     B,T,F,H,W = vid.shape
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
 
     # -- compute flows --
     flows = flow.orun(vid,cfg.flow,ftype="cv2")
     flows = stnls.nn.search_flow(flows.fflow,flows.bflow,cfg.wt,cfg.stride0)
     flows = flows[:,None].round().int()
-    print(flows.shape)
+    # print(flows.shape)
 
     # -- benchmark --
     timer,memer = ExpTimer(),GpuMemer()
@@ -81,7 +81,8 @@ def run_exp(cfg):
     for pooling_type in pooling_grid:
         with TimeIt(timer,pooling_type):
             with MemIt(memer,pooling_type):
-                pooled_p,seg_p = run_pooling(cfg,vid,flows,pooling_type)
+                pooled_p,seg_p = run_pooling(cfg,vid,flows,pooling_type,
+                                             cfg.pooling_ksize,cfg.stride0)
                 pooled[pooling_type] = pooled_p
                 seg[pooling_type] = seg_p
 
@@ -95,11 +96,11 @@ def run_exp(cfg):
 
     return vid,pooled,seg
 
-def run_pooling(cfg,vid,flows,pooling_type):
-    ws,stride0 = cfg.ws,cfg.stride0
-    ksize = ws
-    ksize = stride0
-    stride = 1#stride0//2
+def run_pooling(cfg,vid,flows,pooling_type,ksize,stride):
+    ws = cfg.ws
+    # ksize = ws
+    # ksize = stride0
+    # stride = 1#stride0//2
     # stride = stride0
     B = vid.shape[0]
 
@@ -118,11 +119,11 @@ def run_pooling(cfg,vid,flows,pooling_type):
     elif pooling_type == "slic":
         pool_fxn = th.nn.functional.avg_pool2d
         pooled,seg = run_slic(vid,flows,cfg)
-        pooled = run_standard(pool_fxn,pooled,ksize,stride)
+        # pooled = run_standard(pool_fxn,pooled,ksize,stride)
     elif pooling_type == "nls":
         pool_fxn = th.nn.functional.avg_pool2d
         pooled,seg = run_nls(vid,flows,cfg)
-        pooled = run_standard(pool_fxn,pooled,ksize,stride)
+        # pooled = run_standard(pool_fxn,pooled,ksize,stride)
     else:
         raise ValueError("Uknown pooling type.")
     return pooled,seg
@@ -137,11 +138,14 @@ def run_nls(vid,flows,cfg):
                                          self_action="anchor_self",
                                          full_ws=full_ws,itype="int")
     dists,flows_k = search(vid,vid,flows)
-    weights = th.softmax(-dists,-1)
+    weights = th.softmax(-cfg.softmax_weight*dists,-1)
+    # print(weights)
 
     # -- aggregate --
-    ps = int(cfg.stride0*1.75)
-    agg = stnls.agg.WeightedPatchSum(ps,cfg.stride0,itype="int")
+    ps = cfg.stride0
+    # ps = int(cfg.stride0*1.75)
+    # agg = stnls.agg.WeightedPatchSum(ps,cfg.stride0,itype="int")
+    agg = stnls.agg.PooledPatchSum(ps,cfg.stride0,itype="int")
     vout = agg(vid,weights,flows_k)
     vout = rearrange(vout,'b hd t c h w -> b t (hd c) h w')
 
@@ -167,7 +171,8 @@ def run_slic(vid,flows,cfg):
 
     # -- scattering top-K=1 --
     K0 = 1
-    gather_weights = th.softmax(-dists,-1)
+    # gather_weights = th.softmax(-dists,-1)
+    gather_weights = dists
     # timer,memer = ExpTimer(),GpuMemer()
     # with TimeIt(timer,"labels"):
     #     with MemIt(memer,"labels"):
@@ -175,7 +180,9 @@ def run_slic(vid,flows,cfg):
                                             cfg.stride0,cfg.stride1,H,W,cfg.full_ws)
     # print(timer,memer)
     # print(labels.min().item(),labels.max().item())
-    print("[scattering]: ",gather_weights.shape,flows_k.shape,labels.shape)
+    # print("[scattering]: ",gather_weights.shape,flows_k.shape,labels.shape)
+    # print(gather_weights[0,0,0,0,0])
+    # print(labels[0,0,0])
     gather_labels = labels.reshape_as(gather_weights)
     scatter_weights = stnls.agg.scatter_tensor(gather_weights,flows_k,labels,
                                                cfg.stride0,cfg.stride1,H,W)
@@ -183,7 +190,7 @@ def run_slic(vid,flows,cfg):
                                                cfg.stride0,cfg.stride1,H,W)
     scatter_labels = stnls.agg.scatter_tensor(gather_labels,flows_k,labels,
                                               cfg.stride0,cfg.stride1,H,W)
-    print("[a]: ",scatter_flows_k.shape,flows_k.shape,scatter_labels.shape)
+    # print("[a]: ",scatter_flows_k.shape,flows_k.shape,scatter_labels.shape)
 
 
     # -- checking in --
@@ -197,10 +204,16 @@ def run_slic(vid,flows,cfg):
     # print(scatter_flows_k[0,0,0,-3:,-3:])
     # exit()
 
+    both = th.cat([scatter_weights[...,None],scatter_flows_k],-1)
+    # print(both.shape)
+    # print(both[0,0,0])
+    # exit()
+
     # -- topk --
     scatter_flows_k = -scatter_flows_k
     s_weight,s_flows_k,s_labels = stnls.agg.scatter_topk(scatter_weights,scatter_flows_k,
-                                                         scatter_labels,K0)
+                                                         scatter_labels,K0,
+                                                         descending=False)
     # print(s_flows_k.shape,s_labels.shape)
     # s_flows_k = s_flows_k.int()
     # print(th.any(s_weight<-1000).item())
@@ -216,17 +229,21 @@ def run_slic(vid,flows,cfg):
     # print(s_flows_k[0,0,:3])
     # print(s_flows_k[0,0,100:103])
     # print(s_flows_k[0,0,-3:])
+    both = th.cat([s_weight[...,None],s_flows_k],-1)
+    # print(both.shape)
+    # print(both[0,0,:,:])
+    # exit()
 
     pooled = slic_pooling(vid,s_weight,s_flows_k,s_labels,
-                          cfg.ps,cfg.stride0,cfg.stride1,K0)
+                          cfg.ps,cfg.stride0,cfg.stride1,K0,cfg.softmax_weight)
     # pooled = None
 
-    print(pooled.shape)
+    # print(pooled.shape)
 
     return pooled[:,:,:3],s_flows_k
 
 
-def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0):
+def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0,softmax_weight):
 
     # -- prepare weights and flows --
     B,T,F,H,W = vid.shape
@@ -236,12 +253,12 @@ def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0):
     s_labels = s_labels.reshape(B,HD,T*H*W,-1)
 
     # -- run scatters --
-    print("pooling: ",s_weights.shape,s_flows_k.shape,s_labels.shape)
+    # print("pooling: ",s_weights.shape,s_flows_k.shape,s_labels.shape)
     weights = stnls.agg.scatter_tensor(s_weights,s_flows_k,s_labels,
                                        stride1,stride0,H,W)
     flows_k = stnls.agg.scatter_tensor(s_flows_k,s_flows_k,s_labels,
                                        stride1,stride0,H,W)
-    print(weights.shape,flows_k.shape)
+    # print(weights.shape,flows_k.shape)
 
     # -- reshape --
     K = weights.shape[-1]
@@ -252,22 +269,27 @@ def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0):
 
     # -- renormalize weights --
     # print(weights)
-    weights = th.softmax(weights,-1)
+    weights = th.softmax(-softmax_weight*weights,-1)
     # print(weights)
-
-    # # -- inspect --
-    # print("scatter_weights.shape: ",weights.shape)
-    # args = th.where(th.isnan(weights[0,0]))
-    # print(args)
-    # exit()
+    # weights = weights / th.sum(weights,-1,keepdim=True)
+    # print(th.sum(weights,-1))
+    # print(weights[0,0,:2,:2])
+    # print(weights[0,0,-2:,-2:])
 
     # -- aggregate --
-    ps = int(stride0*1.75)
+    ps = stride0
     # ps = stride0
-    agg = stnls.agg.WeightedPatchSum(ps,stride0,itype="int")
+    # agg = stnls.agg.WeightedPatchSum(ps,stride0,itype="int")
+    # print(th.sum(weights,-1))
+    # print(ps,stride0)
+    agg = stnls.agg.PooledPatchSum(ps,stride0,itype="int")
+    # vid = th.ones_like(vid)
+    # print("weights [min,max]: ",weights.min().item(),weights.max().item())
     vout = agg(vid,weights,flows_k)
     vout = rearrange(vout,'b hd t c h w -> b t (hd c) h w')
-    # vout = None
+    # print("vin [min,max]: ",vid[...,:3,:,:].min().item(),vid[...,:3,:,:].max().item())
+    # print("vout [min,max]: ",vout[...,:3,:,:].min().item(),vout[...,:3,:,:].max().item())
+    # # vout = None
     # print("vout.shape,vid.shape: ",vout.shape,vid.shape)
 
     return vout
@@ -314,7 +336,8 @@ def main():
     cfg.seed = 123
     cfg.dname = "set8"
     cfg.dset = "val"
-    cfg.isize = "540_540"
+    # cfg.isize = "540_540"
+    cfg.isize = "260_260"
     # cfg.isize = "256_256"
     # cfg.isize = "128_128"
     # cfg.isize = None
@@ -322,19 +345,23 @@ def main():
     # cfg.isize = "300_300"
     cfg.vid_name = "sunflower"
     cfg.ntype = "g"
-    cfg.sigma = 0.1
-    cfg.nframes = 5
+    cfg.sigma = 0.01
+    cfg.nframes = 1
     cfg.flow = False
     cfg.full_ws = True
     cfg.wt = 0
-    cfg.stride0 = 8
+    cfg.stride0 = 5
     cfg.ws = 2*cfg.stride0-2
+    # cfg.stride0 = 3
+    # cfg.ws = 3
     # if cfg.ws == 1: cfg.ws += 1
     cfg.stride1 = 1
     cfg.k = -1#cfg.ws*cfg.ws
     cfg.nls_k = 8
     cfg.ps = 1
     cfg.M = 0.1
+    cfg.pooling_ksize = 1
+    cfg.softmax_weight = 20.
 
     # -- run slic --
     vid,pooled,segs = run_exp(cfg)
@@ -362,8 +389,9 @@ def main():
     vid_io.save_video(seg,"output/slic","ex")
 
     for ptype in pooled:
-        print(pooled[ptype].type,pooled[ptype].shape,pooled[ptype].max())
-        vid_io.save_video(pooled[ptype][:,:,:3],"output/slic_pooled/",ptype)
+        print(pooled[ptype].type,pooled[ptype].shape,pooled[ptype][:,:,:3].max())
+        vid = pooled[ptype][:,:,:3]
+        vid_io.save_video(vid,"output/slic_pooled/",ptype)
 
 
 if __name__ == "__main__":

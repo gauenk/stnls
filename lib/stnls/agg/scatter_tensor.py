@@ -17,7 +17,7 @@ from einops import rearrange
 # -- cpp cuda kernel --
 import stnls_cuda
 
-def run(tensor,flows_k,labels,stride0,stride1,H,W):
+def run(tensor,flows_k,labels,stride0,stride1,H,W,invalid=th.inf):
 
     # -- unpack shapes --
     B,HD,T,nH0,nW0,K = tensor.shape[:6]
@@ -36,7 +36,7 @@ def run(tensor,flows_k,labels,stride0,stride1,H,W):
 
     # -- prepare --
     shape = (B,HD,Q1,S,M)
-    scatter_tensor = -th.inf*th.ones(shape,device=labels.device,dtype=tensor.dtype)
+    scatter_tensor = invalid*th.ones(shape,device=labels.device,dtype=tensor.dtype)
     stnls_cuda.scatter_tensor_forward(scatter_tensor,tensor,labels,flows_k,
                                       stride0,stride1,H,W)
 

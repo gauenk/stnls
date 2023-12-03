@@ -39,11 +39,11 @@ def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
     # -- number of maximum possible groups a single patch can belong to --
     Wt_num = T if wt > 0 else 1
     # Ws_num = ws*ws
-    wsNum = (ws-1)//stride0+1
+    wsNum = (ws)//stride0+1
     Ws_num = wsNum*wsNum
     if full_ws: Ws_num += 2*wsNum*(wsNum//2) + (wsNum//2)**2
     S = Wt_num*Ws_num
-    print(S,ws,wt,stride0,stride1,full_ws)
+    # print(S,ws,wt,stride0,stride1,full_ws)
 
     # -- prepare --
     labels = -th.ones((B,HD,Q,K),device=flows.device,dtype=th.int)
@@ -55,9 +55,9 @@ def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
 
     # -- check --
     nvalid = (names[...,0] >= 0).float().sum(2)
-    if full_ws:
-        print(int(nvalid.sum().item()),Q*K)
-        # assert(int(nvalid.sum().item()) == Q*K)
+    # if full_ws:
+    #     print(int(nvalid.sum().item()),Q*K)
+    #     # assert(int(nvalid.sum().item()) == Q*K)
 
     return names,labels
 

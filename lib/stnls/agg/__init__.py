@@ -1,6 +1,7 @@
 
 # -- modules --
 from . import wpsum as wpsum_f
+from . import pool as pool_f
 from . import gather as gather_f
 from . import scatter as scatter_f
 from . import scatter_labels as scatter_labels_f
@@ -12,6 +13,7 @@ from .api import init,extract_config
 
 # -- functional api --
 wpsum = wpsum_f._apply
+pool = pool_f._apply
 gather = gather_f._apply
 scatter = scatter_f._apply
 scatter_labels = scatter_labels_f.run
@@ -23,3 +25,4 @@ scatter_topk = scatter_tensor_f.run_topk
 NonLocalGather = gather_f.NonLocalGather
 NonLocalScatter = scatter_f.NonLocalScatter
 WeightedPatchSum = wpsum_f.WeightedPatchSum
+PooledPatchSum = pool_f.PooledPatchSum
