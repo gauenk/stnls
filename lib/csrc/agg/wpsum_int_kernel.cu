@@ -33,13 +33,17 @@ __global__ void wpsum_int_forward_kernel(
     int K = inds.size(3);
 
     // -- batching --
-    int query_start = (threadIdx.x + blockDim.x*blockIdx.x)*q_per_thread;
-    int ibatch = blockIdx.y;
-    int ihead = blockIdx.z;
+    // int query_start = (threadIdx.x + blockDim.x*blockIdx.x)*q_per_thread;
+    int query_start = blockIdx.x*blockDim.x+threadIdx.x;
+    int ki = blockIdx.y*blockDim.y+threadIdx.y;
+    int ihead = blockIdx.z/B;
+    int ibatch = (blockIdx.z-ihead*B) % B;
+    // int ibatch = blockIdx.y;
+    // int ihead = blockIdx.z;
 
-    // -- cuda threads --
-    int pi = threadIdx.y;
-    int pj = threadIdx.z;
+    // // -- cuda threads --
+    // int pi = threadIdx.y;
+    // int pj = threadIdx.z;
 
     // -- pixel locations --
     int qi;
@@ -58,22 +62,26 @@ __global__ void wpsum_int_forward_kernel(
       if (qi >= Q){ continue; }
       get_pixel_loc<int>(ref,qi,stride0,nW,nHW,H,W);
 
-      // -- reference pixel index --
-      ref_p[0] = ref[0];
-      ref_p[1] = ref[1]+dilation*(pi + patch_offset);
-      ref_p[2] = ref[2]+dilation*(pj + patch_offset);
 
-      // -- valid ref pixel only --
-      check_bounds(valid, ref_p, T,  H, W);
-      if (not valid){ continue; }
+      // -- iterate over patches --
+      for(int pi=0; pi < ps; pi++){
+      for(int pj=0; pj < ps; pj++){
 
-      // -- normalize --
-      if ((ref[0]==0) and (ibatch==0) and (ihead==0)){
-        atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
-      }
-
-      for(int ki = 0; ki < K; ki++){
-
+        // -- reference pixel index --
+        ref_p[0] = ref[0];
+        ref_p[1] = ref[1]+dilation*(pi + patch_offset);
+        ref_p[2] = ref[2]+dilation*(pj + patch_offset);
+  
+        // -- valid ref pixel only --
+        check_bounds(valid, ref_p, T,  H, W);
+        if (not valid){ continue; }
+  
+        // -- normalize --
+        if ((ref[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
+          atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
+        }
+  
+  
         // -- non-local index --
     #pragma unroll
         for (int _idx=0; _idx < 3; _idx++){
@@ -118,8 +126,8 @@ __global__ void wpsum_int_forward_kernel(
 
           } // nfeatures-loop
         } // pt-loop
-      } // k-loop
-    } // query-loop
+      }} // pi,pj
+  } // query-loop
 }
 
 void wpsum_int_forward_cuda(
@@ -133,18 +141,34 @@ void wpsum_int_forward_cuda(
   int B = inds.size(0);
   int HD = inds.size(1);
   int Q = inds.size(2);
+  int K = inds.size(3);
   int q_per_thread = 2;
 
   // -- kernel threads --
-  int MAX_THREADS = 1024;
-  int q_threads = MAX_THREADS/(ps*ps); // num of queries threads per block
+  int MAX_THREADS = 512;//1024
+  int k_threads = 8;
+  int q_threads = MAX_THREADS/(k_threads); // num of queries threads per block
   q_threads = min(Q,q_threads);
   int q_blocks = (Q-1)/(q_per_thread*q_threads)+1;
-  dim3 nthreads(q_threads,ps,ps);
-  // fprintf(stdout,"ps,reflect_bounds,patch_offset: %d,%d,%d\n",ps,reflect_bounds,patch_offset);
-
+  int k_blocks = (K-1)/(k_threads)+1;
+  dim3 nthreads(q_threads,k_threads);
+  // fprintf(stdout,
+  //         "ps,pt,stride0,reflect_bounds,dilation,patch_offset: %d,%d,%d,%d,%d,%d\n",
+  //         ps,pt,stride0,reflect_bounds,dilation,patch_offset);
   // -- kernel blocks --
-  dim3 nblocks(q_blocks,B,HD);
+  dim3 nblocks(q_blocks,k_blocks,B*HD);
+
+
+  // // -- kernel threads --
+  // int MAX_THREADS = 1024;
+  // int q_threads = MAX_THREADS/(ps*ps); // num of queries threads per block
+  // q_threads = min(Q,q_threads);
+  // int q_blocks = (Q-1)/(q_per_thread*q_threads)+1;
+  // dim3 nthreads(q_threads,ps,ps);
+  // // fprintf(stdout,"ps,reflect_bounds,patch_offset: %d,%d,%d\n",ps,reflect_bounds,patch_offset);
+
+  // // -- kernel blocks --
+  // dim3 nblocks(q_blocks,B,HD);
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(in_vid.type(), "wpsum_int_forward_kernel", ([&] {

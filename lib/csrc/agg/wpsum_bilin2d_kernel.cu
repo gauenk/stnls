@@ -137,6 +137,21 @@ void wpsum_bilin2d_forward_cuda(
   int Q = inds.size(2);
   int q_per_thread = 1;
 
+  // // -- kernel threads --
+  // int MAX_THREADS = 512;//1024
+  // int k_threads = 8;
+  // int q_threads = MAX_THREADS/(k_threads); // num of queries threads per block
+  // q_threads = min(Q,q_threads);
+  // int q_blocks = (Q-1)/(q_per_thread*q_threads)+1;
+  // int k_blocks = (K-1)/(k_threads)+1;
+  // dim3 nthreads(q_threads,k_threads);
+  // // fprintf(stdout,
+  // //         "ps,pt,stride0,reflect_bounds,dilation,patch_offset: %d,%d,%d,%d,%d,%d\n",
+  // //         ps,pt,stride0,reflect_bounds,dilation,patch_offset);
+
+  // // -- kernel blocks --
+  // dim3 nblocks(q_blocks,k_blocks,B*HD);
+
   // -- kernel threads --
   int MAX_THREADS = 512;//1024
   int q_threads = MAX_THREADS/(ps*ps); // num of queries threads per block

@@ -18,6 +18,15 @@ import stnls_cuda
 
 def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
 
+    """
+
+    There is a minimum and maximum (ws) depending on (stride0)
+
+    - [max] we don't want overlap of query points
+    - [min] we don't want skipped key points
+
+    """
+
     # -- unpack shapes --
     B,HD,T,nH,nW,K,_ = flows_k.shape
     # B,HD,T,W_t,2,nH,nW = flows.shape

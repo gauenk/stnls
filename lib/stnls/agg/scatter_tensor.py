@@ -76,12 +76,13 @@ def run(tensor,flows_k,labels,stride0,stride1,H,W):
 
 #     return flows_k
 
-def run_topk(weights,flows_k,K,descending=True):
+def run_topk(weights,flows_k,labels,K,descending=True):
 
     # -- reshape --
     B,HD,Q,S,_ = flows_k.shape
     weights = rearrange(weights,'b hd q s -> (b hd q) s')
     flows_k = rearrange(flows_k,'b hd q s tr -> (b hd q) s tr')
+    labels = rearrange(labels,'b hd q s -> (b hd q) s')
     # names = rearrange(names,'b hd s t nh nw tw -> (b hd t nh nw) s tw')
     device = weights.device
 
@@ -90,6 +91,7 @@ def run_topk(weights,flows_k,K,descending=True):
 
     # -- get topk --
     weights = th.gather(weights,-1,order)
+    labels = th.gather(labels,-1,order)
 
     flows_topk = -th.inf*th.ones(weights.shape+(3,),device=device,dtype=flows_k.dtype)
     for i in range(flows_k.shape[-1]):
@@ -101,7 +103,8 @@ def run_topk(weights,flows_k,K,descending=True):
 
     # -- unpack --
     weights = rearrange(weights,'(b hd q) k -> b hd q k',b=B,hd=HD)
+    labels = rearrange(labels,'(b hd q) k -> b hd q k',b=B,hd=HD)
     flows_topk = rearrange(flows_topk,'(b hd q) k tr -> b hd q k tr',b=B,hd=HD)
     flows_topk = flows_topk.type(flows_k.dtype)
 
-    return weights,flows_topk
+    return weights,flows_topk,labels
