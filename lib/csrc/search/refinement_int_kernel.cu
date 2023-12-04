@@ -22,15 +22,17 @@ __global__ void refinement_forward_kernel(
     torch::PackedTensorAccessor32<int,9,torch::RestrictPtrTraits> inds,
     int wr, int ws, int ps, int pt, int stride0, int stride1, int dilation,
     bool reflect_bounds, bool full_ws, bool restrict_radius, int patch_offset,
-    int q_per_thread, int k_per_thread, int wr_per_thread){
+    int off_Hq, int off_Wq, int q_per_thread, int k_per_thread, int wr_per_thread){
 
   // -- unpack shapes --
   int HD = vid0.size(1);
   int HD_f = flows.size(1);
   int T = vid0.size(2);
   int F = vid0.size(3);
-  int H = vid0.size(4);
-  int W = vid0.size(5);
+  int qH = vid0.size(4);
+  int qW = vid0.size(5);
+  int kH = vid1.size(4);
+  int kW = vid1.size(5);
   int nH = dists.size(3);
   int nW = dists.size(4);
   int nHW = nH*nW;
@@ -56,6 +58,10 @@ __global__ void refinement_forward_kernel(
   int q_start = blockIdx.x*q_per_thread;
   int qi,ki,wh,ww;
 
+  // -- offsets --
+  int offs[2];
+  offs[0] = off_Hq;
+  offs[1] = off_Wq;
 
   // -- fwd decls --
   int prop_center[2];
@@ -79,7 +85,7 @@ __global__ void refinement_forward_kernel(
     if (qi >= Q){ continue; }
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qi,stride0,nW,nHW,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW,nHW,qH,qW);
     ti = ref_patch[0];
     nh = ref_patch[1]/stride0;
     nw = ref_patch[2]/stride0;
@@ -99,8 +105,8 @@ __global__ void refinement_forward_kernel(
       prop_center[0] = ref_patch[1] + flows[ibatch][ihead_f][ti][nh][nw][ki][1];
       prop_center[1] = ref_patch[2] + flows[ibatch][ihead_f][ti][nh][nw][ki][2];
       prop_patch[0] = bounds(prop_patch[0],T);
-      prop_center[0] = bounds(prop_center[0],H);
-      prop_center[1] = bounds(prop_center[1],W);
+      prop_center[0] = bounds(prop_center[0],kH);
+      prop_center[1] = bounds(prop_center[1],kW);
 
       // -- possibly illegal flows --
       valid = abs(flows[ibatch][ihead_f][ti][nh][nw][ki][1]) < 1e8;
@@ -110,7 +116,7 @@ __global__ void refinement_forward_kernel(
       // -- search region offsets --
       set_search_offsets(wrOff_h, wrOff_w,
                          prop_center[0], prop_center[1], stride1,
-                         wrHalf, wr, H, W, full_ws);
+                         wrHalf, wr, kH, kW, full_ws);
   
       // -- [unused] set search bounds for [optionally] expanded region --
       // if (restrict_radius){
@@ -141,7 +147,7 @@ __global__ void refinement_forward_kernel(
           prop_patch[2] = prop_center[1] + stride1 * (ww - wrOff_w);
 
           // -- check bounds of pixel location --
-          check_bounds(valid_prop[3],prop_patch,T,H,W);
+          check_bounds(valid_prop[3],prop_patch,T,kH,kW);
           valid = valid_prop[3];// && valid_prop[3];
           // valid = true;//valid_prop[3];
 
@@ -152,7 +158,7 @@ __global__ void refinement_forward_kernel(
                          ref_patch, prop_patch, 
                          ref_pix, prop_pix, valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
-                         patch_offset,invalid,T,F,H,W);
+                         patch_offset,invalid,offs,T,F,qH,qW,kH,kW);
           }
 
           // -- assignent --
@@ -173,7 +179,7 @@ void refinement_int_forward_cuda(
     const torch::Tensor flows, torch::Tensor dists, torch::Tensor inds,
     int ws, int ps, int stride0, int stride1, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
-    int patch_offset,  int dist_type){
+    int patch_offset, int off_Hq, int off_Wq, int dist_type){
 
    // dists.shape = (B,HD,T,nH,nW,K,wr,wr)
    // inds.shape = (B,HD,T,nH,nW,K,wr,wr,3)
@@ -219,7 +225,7 @@ void refinement_int_forward_cuda(
           inds.packed_accessor32<int,9,torch::RestrictPtrTraits>(),
           wr, ws, ps, pt, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset, 
-          q_per_thread, k_per_thread, wr_per_thread);
+          off_Hq, off_Wq, q_per_thread, k_per_thread, wr_per_thread);
         }));
    }else if (dist_type == 1){
      AT_DISPATCH_FLOATING_TYPES(vid0.type(),"refinement_forward_kernel", ([&] {
@@ -231,7 +237,7 @@ void refinement_int_forward_cuda(
           inds.packed_accessor32<int,9,torch::RestrictPtrTraits>(),
           wr, ws, ps, pt, stride0, stride1, dilation,
           restrict_radius, reflect_bounds, full_ws, patch_offset,
-          q_per_thread, k_per_thread, wr_per_thread);
+          off_Hq, off_Wq, q_per_thread, k_per_thread, wr_per_thread);
         }));
    }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");

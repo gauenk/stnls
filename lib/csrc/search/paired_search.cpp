@@ -8,20 +8,22 @@ void paired_search_int_forward_cuda(
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, int stride1, int dilation,
-    bool reflect_bounds, bool full_ws, int patch_offset, int dist_type);
+    bool reflect_bounds, bool full_ws, int patch_offset,
+    int off_Hq, int off_Wq, int dist_type);
 
 void paired_search_bilin2d_forward_cuda(
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, float stride1, int dilation,
-    bool reflect_bounds, bool full_ws, int patch_offset, int dist_type);
+    bool reflect_bounds, bool full_ws, int patch_offset,
+    int off_Hq, int off_Wq, int dist_type);
 
 void paired_search_int_backward_cuda(
     torch::Tensor grad_frame0, torch::Tensor grad_frame1,
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_offset, int dist_type);
+    int patch_offset, int off_Hq, int off_Wq, int dist_type);
 
 void paired_search_bilin2d_backward_cuda(
     torch::Tensor grad_frame0, torch::Tensor grad_frame1,
@@ -31,7 +33,7 @@ void paired_search_bilin2d_backward_cuda(
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_offset, int dist_type);
+    int patch_offset, int off_Hq, int off_Wq, int dist_type);
 
 
 // C++ interface
@@ -45,7 +47,8 @@ void paired_search_int_forward(
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, int stride1, int dilation,
-    bool reflect_bounds, bool full_ws, int patch_offset, int dist_type){
+    bool reflect_bounds, bool full_ws, int patch_offset,
+    int off_Hq, int off_Wq, int dist_type){
   CHECK_INPUT(frame0);
   CHECK_INPUT(frame1);
   CHECK_INPUT(flow);
@@ -53,7 +56,8 @@ void paired_search_int_forward(
   CHECK_INPUT(inds);
   paired_search_int_forward_cuda(frame0, frame1, flow, dists, inds,
                                  ps, k, stride0, stride1, dilation,
-                                 reflect_bounds, full_ws, patch_offset, dist_type);
+                                 reflect_bounds, full_ws, patch_offset,
+                                 off_Hq, off_Wq, dist_type);
 
 }
 
@@ -61,7 +65,8 @@ void paired_search_bilin2d_forward(
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, float stride1, int dilation,
-    bool reflect_bounds, bool full_ws, int patch_offset, int dist_type){
+    bool reflect_bounds, bool full_ws, int patch_offset,
+    int off_Hq, int off_Wq, int dist_type){
   CHECK_INPUT(frame0);
   CHECK_INPUT(frame1);
   CHECK_INPUT(flow);
@@ -69,7 +74,8 @@ void paired_search_bilin2d_forward(
   CHECK_INPUT(inds);
   paired_search_bilin2d_forward_cuda(frame0, frame1, flow, dists, inds,
                                      ps, k, stride0, stride1, dilation,
-                                     reflect_bounds, full_ws, patch_offset, dist_type);
+                                     reflect_bounds, full_ws, patch_offset,
+                                     off_Hq, off_Wq, dist_type);
 }
 
 void paired_search_int_backward(
@@ -77,7 +83,7 @@ void paired_search_int_backward(
     const torch::Tensor frame0, const torch::Tensor frame1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_offset, int dist_type) {
+    int patch_offset, int off_Hq, int off_Wq, int dist_type) {
 
   // -- validate --
   CHECK_INPUT(grad_frame0);
@@ -93,7 +99,7 @@ void paired_search_int_backward(
          frame0, frame1,
          grad_dists, inds,
          stride0, ps, dilation, reflect_bounds,
-         patch_offset, dist_type);
+         patch_offset, off_Hq, off_Wq, dist_type);
 
 }
 
@@ -106,7 +112,7 @@ void paired_search_bilin2d_backward(
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_offset, int dist_type) {
+    int patch_offset, int off_Hq, int off_Wq, int dist_type) {
 
   // -- validate --
   CHECK_INPUT(grad_frame0);
@@ -123,7 +129,7 @@ void paired_search_bilin2d_backward(
          frame0, frame1, flow,
          grad_dists, grad_inds, inds,
          stride0, ps, dilation, reflect_bounds,
-         patch_offset, dist_type);
+         patch_offset, off_Hq, off_Wq, dist_type);
 
 }
 

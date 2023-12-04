@@ -151,20 +151,23 @@ def backward(ctx, grad_dists, grad_inds):
         bwd_fxn(grad_vid0,grad_vid1,
                 vid0,vid1,grad_dists,inds,
                 ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                reflect_bounds,patch_offset,ctx.dist_type_i)
+                reflect_bounds,patch_offset,
+                ctx.off_Hq,ctx.off_Wq,ctx.dist_type_i)
     elif not(flows.requires_grad):
         bwd_fxn = stnls_cuda.non_local_search_bilin2d_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,
                 grad_dists,inds,
                 ctx.wt,ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                reflect_bounds,patch_offset,ctx.dist_type_i)
+                reflect_bounds,patch_offset,
+                ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
     else:
         bwd_fxn = stnls_cuda.non_local_search_bilin2d_vidflows_backward
         bwd_fxn(grad_vid0,grad_vid1,grad_flows,
                 vid0,vid1,flows,
                 grad_dists,grad_inds,dists,inds,
                 ctx.wt,ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                reflect_bounds,patch_offset,ctx.dist_type_i)
+                reflect_bounds,patch_offset,
+                ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
 
     # -- finalize shape --
     grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')

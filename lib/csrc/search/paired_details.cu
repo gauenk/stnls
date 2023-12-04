@@ -37,33 +37,34 @@ void compute_dist_2d(scalar_t& dist, //int Z,
   int* ref_patch, int* prop_patch, int* ref, int* prop,
   bool* valid_ref, bool* valid_prop,
   int ps, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid, int F, int H, int W){
+  int patch_offset, scalar_t invalid, int* offsets,
+  int F, int qH, int qW, int kH, int kW){
                   
   scalar_t pix0,pix1,_dist;
   // Z = 0;
   for (int pi = 0; pi < ps; pi++){
 
     // -- ref height --
-    ref[0] = ref_patch[0]+dilation*(pi + patch_offset);
-    ref[0] = reflect_bounds ? bounds(ref[0],H) : ref[0];
-    valid_ref[0] = check_interval(ref[0],0,H);
+    ref[0] = ref_patch[0]+offsets[0]+dilation*(pi + patch_offset);
+    ref[0] = reflect_bounds ? bounds(ref[0],qH) : ref[0];
+    valid_ref[0] = check_interval(ref[0],0,qH);
 
     // -- proposed height --
     prop[0] = prop_patch[0]+dilation*(pi + patch_offset);
-    prop[0] = reflect_bounds ? bounds(prop[0],H) : prop[0];
-    valid_prop[0] = check_interval(prop[0],0,H);
+    prop[0] = reflect_bounds ? bounds(prop[0],kH) : prop[0];
+    valid_prop[0] = check_interval(prop[0],0,kH);
 
     for (int pj = 0; pj < ps; pj++){
       
       // -- ref width --
-      ref[1] = ref_patch[1]+dilation*(pj + patch_offset);
-      ref[1] = reflect_bounds ? bounds(ref[1],W) : ref[1];
-      valid_ref[1] = check_interval(ref[1],0,W);
+      ref[1] = ref_patch[1]+offsets[1]+dilation*(pj + patch_offset);
+      ref[1] = reflect_bounds ? bounds(ref[1],qW) : ref[1];
+      valid_ref[1] = check_interval(ref[1],0,qW);
 
       // -- prop width --
       prop[1] = prop_patch[1]+dilation*(pj + patch_offset);
-      prop[1] = reflect_bounds ? bounds(prop[1],W) : prop[1];
-      valid_prop[1] = check_interval(prop[1],0,W);
+      prop[1] = reflect_bounds ? bounds(prop[1],kW) : prop[1];
+      valid_prop[1] = check_interval(prop[1],0,kW);
 
       // -- ensure valid location --
       valid_ref[2] = true;
@@ -112,33 +113,34 @@ void compute_dist_bilin2d_2d(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,3,torch::RestrictPtrTraits,int32_t> frame1,
   int* ref_patch, scalar_t* prop_patch, int* ref, scalar_t* prop, //int* prop_i,
   bool* valid_ref, bool* valid_prop, int ps, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid, int C, int H, int W){
+  int patch_offset, scalar_t invalid, int* offsets,
+  int C, int qH, int qW, int kH, int kW){
                   
   scalar_t pix0,pix1,w;
   scalar_t interp[2];
   for (int pi = 0; pi < ps; pi++){
 
     // -- ref height --
-    ref[0] = ref_patch[0]+dilation*(pi + patch_offset);
-    ref[0] = reflect_bounds ? bounds(ref[0],H) : ref[0];
-    valid_ref[0] = check_interval(ref[0],0,H);
+    ref[0] = ref_patch[0]+offsets[0]+dilation*(pi + patch_offset);
+    ref[0] = reflect_bounds ? bounds(ref[0],qH) : ref[0];
+    valid_ref[0] = check_interval(ref[0],0,qH);
 
     // -- proposed height --
     prop[0] = prop_patch[0]+dilation*(pi + patch_offset);
-    prop[0] = reflect_bounds ? bounds_clip<scalar_t>(prop[0],H) : prop[0];
-    valid_prop[0] = check_interval<scalar_t>(prop[0],0,H);
+    prop[0] = reflect_bounds ? bounds_clip<scalar_t>(prop[0],kH) : prop[0];
+    valid_prop[0] = check_interval<scalar_t>(prop[0],0,kH);
 
     for (int pj = 0; pj < ps; pj++){
       
       // -- ref width --
-      ref[1] = ref_patch[1]+dilation*(pj + patch_offset);
-      ref[1] = reflect_bounds ? bounds(ref[1],W) : ref[1];
-      valid_ref[1] = check_interval(ref[1],0,W);
+      ref[1] = ref_patch[1]+offsets[1]+dilation*(pj + patch_offset);
+      ref[1] = reflect_bounds ? bounds(ref[1],qW) : ref[1];
+      valid_ref[1] = check_interval(ref[1],0,qW);
 
       // -- prop width --
       prop[1] = prop_patch[1]+dilation*(pj + patch_offset);
-      prop[1] = reflect_bounds ? bounds_clip<scalar_t>(prop[1],W) : prop[1];
-      valid_prop[1] = check_interval<scalar_t>(prop[1],0,W);
+      prop[1] = reflect_bounds ? bounds_clip<scalar_t>(prop[1],kW) : prop[1];
+      valid_prop[1] = check_interval<scalar_t>(prop[1],0,kW);
 
       // -- ensure valid location --
       valid_ref[2] = true;
@@ -159,30 +161,7 @@ void compute_dist_bilin2d_2d(scalar_t& dist,
         pix0 = valid_ref[2] ? frame0[ci][ref[0]][ref[1]] : 0;
 
         // -- interpolate pixel value --
-        // pix1 = 0;
-        // #pragma unroll
-        // for (int ix=0;ix<2;ix++){
-        //   #pragma unroll
-        //   for (int jx=0;jx<2;jx++){
-
-        //     // -- interpolation weight --
-        //     prop_i[0] = __float2int_rz(prop[0]+ix);
-        //     interp[0] = max(0.,1-fabs(prop_i[0]-prop[0]));
-        //     prop_i[1] = __float2int_rz(prop[1]+jx);
-        //     interp[1] = max(0.,1-fabs(prop_i[1]-prop[1]));
-        //     w = interp[0] * interp[1];
-
-        //     // -- ensure legal bounds --
-        //     prop_i[0] = bounds(prop_i[0],H);
-        //     prop_i[1] = bounds(prop_i[1],W);
-
-        //     // -- update --
-        //     pix1 += valid_prop[2] ? w*frame1[ci][prop_i[0]][prop_i[1]] : 0;
-        //     // pix1 += w;
-        //   }
-        // }
-        // // pix1 = 1;
-        bilin2d_interpolate(pix1,prop[0],prop[1],H,W,frame1[ci]);
+        bilin2d_interpolate(pix1,prop[0],prop[1],kH,kW,frame1[ci]);
 
         // -- compute dist --
         if(DIST_TYPE == 0){ // product
@@ -217,31 +196,31 @@ void update_bwd_patch_2d(
     int ps, int dilation, bool reflect_bounds, int patch_offset,
     int ftr_start, int ftr_end,
     int* ref, int* prop, bool* valid_ref, bool* valid_prop, bool valid,
-    int H, int W, scalar_t pix0, scalar_t pix1){
+    int* offsets, int qH, int qW, int kH, int kW, scalar_t pix0, scalar_t pix1){
 
     for (int pi = 0; pi < ps; pi++){
 
       // -- ref patch --
-      ref[0] = ref_patch[0]+dilation*(pi + patch_offset);
-      ref[0] = reflect_bounds ? bounds(ref[0],H) : ref[0];
-      valid_ref[0] = check_interval(ref[0],0,H);
+      ref[0] = ref_patch[0]+offsets[0]+dilation*(pi + patch_offset);
+      ref[0] = reflect_bounds ? bounds(ref[0],qH) : ref[0];
+      valid_ref[0] = check_interval(ref[0],0,qH);
 
       // -- prop patch --
       prop[0] = prop_patch[0]+dilation*(pi + patch_offset);
-      prop[0] = reflect_bounds ? bounds(prop[0],H) : prop[0];
-      valid_prop[0] = check_interval(prop[0],0,H);
+      prop[0] = reflect_bounds ? bounds(prop[0],kH) : prop[0];
+      valid_prop[0] = check_interval(prop[0],0,kH);
 
       for (int pj = 0; pj < ps; pj++){
         
         // -- ref patch --
-        ref[1] = ref_patch[1]+dilation*(pj + patch_offset);
-        ref[1] = reflect_bounds ? bounds(ref[1],W) : ref[1];
-        valid_ref[1] = check_interval(ref[1],0,W);
+        ref[1] = ref_patch[1]+offsets[1]+dilation*(pj + patch_offset);
+        ref[1] = reflect_bounds ? bounds(ref[1],qW) : ref[1];
+        valid_ref[1] = check_interval(ref[1],0,qW);
 
         // -- prop patch --
         prop[1] = prop_patch[1]+dilation*(pj + patch_offset);
-        prop[1] = reflect_bounds ? bounds(prop[1],W) : prop[1];
-        valid_prop[1] = check_interval(prop[1],0,W);
+        prop[1] = reflect_bounds ? bounds(prop[1],kW) : prop[1];
+        valid_prop[1] = check_interval(prop[1],0,kW);
 
         // -- ensure valid location --
         valid_ref[2] = true;
@@ -288,7 +267,8 @@ void update_bwd_bilin2d_patch_2d(
     int ps, int dilation, bool reflect_bounds,
     int patch_offset, // int ftr_start, int ftr_end,
     // int* ref, scalar_t* prop, int* prop_i,
-    bool* valid_ref, bool* valid_prop, bool valid, int H, int W){
+    bool* valid_ref, bool* valid_prop, bool valid, int* offsets,
+    int qH, int qW, int kH, int kW){
 
     scalar_t dDists,pix0,pix1;
     int ref[2];
@@ -300,28 +280,28 @@ void update_bwd_bilin2d_patch_2d(
     for (int pi = 0; pi < ps; pi++){
 
       // -- ref patch --
-      ref[0] = ref_patch[0]+dilation*(pi + patch_offset);
-      ref[0] = reflect_bounds ? bounds(ref[0],H) : ref[0];
-      valid_ref[0] = check_interval(ref[0],0,H);
+      ref[0] = ref_patch[0]+offsets[0]+dilation*(pi + patch_offset);
+      ref[0] = reflect_bounds ? bounds(ref[0],qH) : ref[0];
+      valid_ref[0] = check_interval(ref[0],0,qH);
 
       // -- prop patch --
       prop[0] = prop_patch[0]+dilation*(pi + patch_offset);
-      signH = check_interval(prop[0],0,H) ? 1 : -1;
-      prop[0] = reflect_bounds ? bounds(prop[0],H) : prop[0];
-      valid_prop[0] = check_interval(prop[0],0,H);
+      signH = check_interval(prop[0],0,kH) ? 1 : -1;
+      prop[0] = reflect_bounds ? bounds(prop[0],kH) : prop[0];
+      valid_prop[0] = check_interval(prop[0],0,kH);
 
       for (int pj = 0; pj < ps; pj++){
         
         // -- ref patch --
-        ref[1] = ref_patch[1]+dilation*(pj + patch_offset);
-        ref[1] = reflect_bounds ? bounds(ref[1],W) : ref[1];
-        valid_ref[1] = check_interval(ref[1],0,W);
+        ref[1] = ref_patch[1]+offsets[1]+dilation*(pj + patch_offset);
+        ref[1] = reflect_bounds ? bounds(ref[1],qW) : ref[1];
+        valid_ref[1] = check_interval(ref[1],0,qW);
 
         // -- prop patch --
         prop[1] = prop_patch[1]+dilation*(pj + patch_offset);
-        signW = check_interval(prop[1],0,W) ? 1 : -1;
-        prop[1] = reflect_bounds ? bounds(prop[1],W) : prop[1];
-        valid_prop[1] = check_interval(prop[1],0,W);
+        signW = check_interval(prop[1],0,kW) ? 1 : -1;
+        prop[1] = reflect_bounds ? bounds(prop[1],kW) : prop[1];
+        valid_prop[1] = check_interval(prop[1],0,kW);
 
         // -- ensure valid location --
         valid_ref[2] = true;
@@ -341,7 +321,7 @@ void update_bwd_bilin2d_patch_2d(
           pix0 = frame0[iftr][ref[0]][ref[1]];
 
           // -- interpolate pixel value --
-          bilin2d_interpolate(pix1, prop[0], prop[1], H, W, frame1[iftr]);
+          bilin2d_interpolate(pix1, prop[0], prop[1], kH, kW, frame1[iftr]);
 
           // -- update grad_frame0 --
           if (DIST_TYPE == 0){ // prod
@@ -357,10 +337,10 @@ void update_bwd_bilin2d_patch_2d(
           }else if(DIST_TYPE == 1){ // l2 norm
             dDists = -dDists;
           }
-          bilin2d_assign(dDists,prop[0],prop[1],H,W,grad_frame1[iftr]);
+          bilin2d_assign(dDists,prop[0],prop[1],kH,kW,grad_frame1[iftr]);
 
           // -- update accumulated dflows --
-          update_dFlows(acc_dFlows,dDists,prop[0],prop[1],H,W,signH,signW,frame1[iftr]);
+          update_dFlows(acc_dFlows,dDists,prop[0],prop[1],kH,kW,signH,signW,frame1[iftr]);
 
         }
       }

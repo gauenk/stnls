@@ -36,7 +36,8 @@ class PairedSearchFunction(th.autograd.Function):
                 ws, ps, k, nheads=1, dist_type="prod",
                 stride0=4, stride1=1, dilation=1, pt=1,
                 reflect_bounds=True,full_ws=True, self_action=None,
-                use_adj=False, normalize_bwd=False, k_agg=-1, itype="float"):
+                use_adj=False, normalize_bwd=False, k_agg=-1,
+                off_Hq=0, off_Wq=0, itype="float"):
 
         """
         Run the non-local search
@@ -62,7 +63,7 @@ class PairedSearchFunction(th.autograd.Function):
                              ws, ps, k, dist_type,
                              stride0, stride1, dilation, pt,
                              self_action, reflect_bounds, full_ws,
-                             use_adj, itype)
+                             use_adj, off_Hq, off_Wq, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -77,6 +78,7 @@ class PairedSearchFunction(th.autograd.Function):
                     "reflect_bounds":reflect_bounds,
                     "normalize_bwd":normalize_bwd,
                     "k_agg":k_agg,"use_adj":use_adj,
+                    "off_Hq":off_Hq,"off_Wq":off_Wq,
                     "dist_type_i":dist_type_i,"itype":itype}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
@@ -87,7 +89,7 @@ class PairedSearchFunction(th.autograd.Function):
     @staticmethod
     def backward(ctx, grad_dists, grad_inds):
         grad0,grad1,gflow = backward(ctx, grad_dists, grad_inds)
-        return grad0,grad1,gflow,None,None,None,None,None,None,None,\
+        return grad0,grad1,gflow,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,None
 
@@ -104,7 +106,8 @@ class PairedSearch(th.nn.Module):
                  dist_type="l2", stride0=4, stride1=1,
                  dilation=1, pt=1, reflect_bounds=True,
                  full_ws=True, self_action=None, use_adj=False,
-                 normalize_bwd=False, k_agg=-1, itype="float"):
+                 normalize_bwd=False, k_agg=-1,
+                 off_Hq=0, off_Wq=0, itype="float"):
         super().__init__()
 
         # -- core search params --
@@ -118,6 +121,10 @@ class PairedSearch(th.nn.Module):
         self.dilation = dilation
         self.pt = pt
         self.itype = itype
+
+        # -- offsets --
+        self.off_Hq = off_Hq
+        self.off_Wq = off_Wq
 
         # -- manage patch and search boundaries --
         self.reflect_bounds = reflect_bounds
@@ -143,7 +150,8 @@ class PairedSearch(th.nn.Module):
                                           self.stride1,self.dilation,self.pt,
                                           self.reflect_bounds,self.full_ws,
                                           self.self_action,self.use_adj,
-                                          self.normalize_bwd,self.k_agg,self.itype)
+                                          self.normalize_bwd,self.k_agg,
+                                          self.off_Hq, self.off_Wq, self.itype)
 
     def flops(self,T,F,H,W):
         print("hi.")
@@ -182,7 +190,7 @@ def _apply(frame0, frame1, flow,
            dilation=1, pt=1, reflect_bounds=True,
            full_ws=True,self_action=None,
            use_adj=False, normalize_bwd=False, k_agg=-1,
-           itype="float"):
+           off_Hq=0, off_Wq=0, itype="float"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -191,7 +199,7 @@ def _apply(frame0, frame1, flow,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,pt,reflect_bounds,
                full_ws,self_action,use_adj,normalize_bwd,k_agg,
-               itype)
+               off_Hq,off_Wq,itype)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -206,7 +214,7 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":True,
              "self_action":None,"use_adj":False,
              "normalize_bwd": False, "k_agg":-1,
-             "itype":"float",}
+             "off_Hq":0,"off_Wq":0,"itype":"float",}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
@@ -214,9 +222,9 @@ def init(cfg):
     search = PairedSearch(cfg.ws, cfg.ps, cfg.k, nheads=cfg.nheads,
                           dist_type=cfg.dist_type, stride0=cfg.stride0,
                           stride1=cfg.stride1, dilation=cfg.dilation, pt=cfg.pt,
-                          reflect_bounds=cfg.reflect_bounds,
-                          full_ws=cfg.full_ws, self_action=cfg.self_action,
-                          use_adj=cfg.use_adj,normalize_bwd=cfg.normalize_bwd,
-                          k_agg=cfg.k_agg,itype=cfg.itype)
+                          reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
+                          self_action=cfg.self_action, use_adj=cfg.use_adj,
+                          normalize_bwd=cfg.normalize_bwd, k_agg=cfg.k_agg,
+                          off_Hq=cfg.off_Hq,off_Wq=cfg.off_Wq,itype=cfg.itype)
     return search
 

@@ -90,7 +90,7 @@ class NonLocalSearchFunction(th.autograd.Function):
                     "normalize_bwd":normalize_bwd,
                     "k_agg":k_agg,"use_adj":use_adj,
                     "dist_type_i":dist_type_i,"itype":itype,
-                    "flow_ndim":flow_ndim}
+                    "off_Hq":off_Hq,"off_Wq":off_Wq,"flow_ndim":flow_ndim}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
 

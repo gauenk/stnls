@@ -9,7 +9,7 @@ void paired_refine_int_forward_cuda(
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
     int ws, int ps, int stride0, int stride1, int dilation,
     bool restricted_radius, bool reflect_bounds, bool full_ws,
-    int patch_offset, int dist_type);
+    int patch_offset, int off_Hq, int off_Wq, int dist_type);
 
 void paired_refine_bilin2d_forward_cuda(
     const torch::Tensor frame0, const torch::Tensor frame1,
@@ -17,7 +17,7 @@ void paired_refine_bilin2d_forward_cuda(
     torch::Tensor dists, torch::Tensor inds, torch::Tensor kselect,
     int ws, int ps, int stride0, float stride1, int dilation,
     bool restricted_radius, bool reflect_bounds, bool full_ws,
-    int patch_offset, int dist_type);
+    int patch_offset, int off_Hq, int off_Wq, int dist_type);
 
 void paired_refine_vidflows_backward_cuda(
     torch::Tensor grad_frame0, torch::Tensor grad_frame1,
@@ -27,7 +27,7 @@ void paired_refine_vidflows_backward_cuda(
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds, const torch::Tensor kselect,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_offset, int dist_type);
+    int patch_offset, int off_Hq, int off_Wq, int dist_type);
 
 
 // C++ interface
@@ -42,7 +42,7 @@ void paired_refine_int_forward(
     const torch::Tensor flow, torch::Tensor dists, torch::Tensor inds,
     int ws, int ps, int stride0, int stride1, int dilation,
     bool restricted_radius, bool reflect_bounds, bool full_ws,
-    int patch_offset, int dist_type){
+    int patch_offset, int off_Hq, int off_Wq, int dist_type){
   CHECK_INPUT(frame0);
   CHECK_INPUT(frame1);
   CHECK_INPUT(flow);
@@ -51,7 +51,7 @@ void paired_refine_int_forward(
   paired_refine_int_forward_cuda(frame0, frame1, flow, dists, inds,
                                  ws, ps, stride0, stride1, dilation,
                                  restricted_radius, reflect_bounds, full_ws,
-                                 patch_offset, dist_type);
+                                 patch_offset, off_Hq, off_Wq, dist_type);
 
 }
 
@@ -61,7 +61,7 @@ void paired_refine_bilin2d_forward(
     torch::Tensor dists, torch::Tensor inds, torch::Tensor kselect,
     int ws, int ps, int stride0, float stride1, int dilation,
     bool restricted_radius, bool reflect_bounds, bool full_ws,
-    int patch_offset, int dist_type){
+    int patch_offset, int off_Hq, int off_Wq, int dist_type){
   CHECK_INPUT(frame0);
   CHECK_INPUT(frame1);
   CHECK_INPUT(flow);
@@ -71,7 +71,7 @@ void paired_refine_bilin2d_forward(
   paired_refine_bilin2d_forward_cuda(frame0, frame1, flow, dists, inds, kselect,
                                      ws, ps, stride0, stride1, dilation,
                                      restricted_radius, reflect_bounds, full_ws,
-                                     patch_offset, dist_type);
+                                     patch_offset, off_Hq, off_Wq, dist_type);
 }
 
 
@@ -83,7 +83,7 @@ void paired_refine_vidflows_backward(
     const torch::Tensor grad_dists, const torch::Tensor grad_inds,
     const torch::Tensor inds, const torch::Tensor kselect,
     int stride0, int ps, int dilation, bool reflect_bounds,
-    int patch_offset, int dist_type) {
+    int patch_offset, int off_Hq, int off_Wq, int dist_type) {
 
   // -- validate --
   CHECK_INPUT(grad_frame0);
@@ -101,7 +101,7 @@ void paired_refine_vidflows_backward(
          frame0, frame1, flow,
          grad_dists, grad_inds, inds, kselect,
          stride0, ps, dilation, reflect_bounds,
-         patch_offset, dist_type);
+         patch_offset, off_Hq, off_Wq, dist_type);
 
 }
 

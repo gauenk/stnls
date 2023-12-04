@@ -133,39 +133,39 @@ def test_fwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
     assert max_error < max_tol
 
 
-def test_fwd_compute_centroid(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
-                              nheads,self_action,exact,dist_type,seed):
+# def test_fwd_compute_centroid(ws,wt,k,ps,stride0,stride1,dilation,k_agg,
+#                               nheads,self_action,exact,dist_type,seed):
 
-    # -- get args --
-    pt = 1
-    dil = dilation
-    ext = "jpg"
-    dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
-    device = "cuda:0"
-    clean_flow = True
-    run_flow = False
-    reflect_bounds = True
-    use_adj = False # keep false since unfold/fold doesn't match search
-    set_seed(seed)
+#     # -- get args --
+#     pt = 1
+#     dil = dilation
+#     ext = "jpg"
+#     dnames = ["davis_baseball_64x64","davis_baseball_64x64"]
+#     device = "cuda:0"
+#     clean_flow = True
+#     run_flow = False
+#     reflect_bounds = True
+#     use_adj = False # keep false since unfold/fold doesn't match search
+#     set_seed(seed)
 
-    # -- load data --
-    vid = get_data(dnames,ext)
+#     # -- load data --
+#     vid = get_data(dnames,ext)
 
-    # -- compute flow --
-    flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
-    flows.fflow = th.clamp(10.*th.randn_like(flows.fflow),-3,3).round()
-    flows.bflow = th.clamp(10.*th.randn_like(flows.bflow),-3,3).round()
-    flows = stnls.nn.search_flows(flows.fflow,flows.bflow,wt,stride0)
+#     # -- compute flow --
+#     flows = stnls.flow.get_flow_batch(run_flow,clean_flow,vid,vid,0.)
+#     flows.fflow = th.clamp(10.*th.randn_like(flows.fflow),-3,3).round()
+#     flows.bflow = th.clamp(10.*th.randn_like(flows.bflow),-3,3).round()
+#     flows = stnls.nn.search_flows(flows.fflow,flows.bflow,wt,stride0)
 
-    # -- exec fold fxns --
-    sch = stnls.search
-    search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
-                                   dist_type=dist_type, dilation=dil,
-                                   stride0=stride0, stride1=stride1,
-                                   reflect_bounds=reflect_bounds,
-                                   self_action=self_action,
-                                   use_adj=use_adj,normalize_bwd=True,
-                                   itype="int",full_ws=True)
+#     # -- exec fold fxns --
+#     sch = stnls.search
+#     search_gt = sch.NonLocalSearch(ws, wt, ps, k, nheads,
+#                                    dist_type=dist_type, dilation=dil,
+#                                    stride0=stride0, stride1=stride1,
+#                                    reflect_bounds=reflect_bounds,
+#                                    self_action=self_action,
+#                                    use_adj=use_adj,normalize_bwd=True,
+#                                    itype="int",full_ws=True)
 
 
 def test_bwd_n3mm(ws,wt,k,ps,stride0,stride1,dilation,

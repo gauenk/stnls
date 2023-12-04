@@ -25,8 +25,8 @@ __global__ void non_local_search_int_forward_kernel(
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
     int ws, int wt, int ps, int pt, int stride0, int stride1, int dilation,
     bool reflect_bounds, bool full_ws, int patch_offset,
-    int off_qH, int off_qW, int nH0, int nW0, int nHW0, int st_offset,
-    int q_per_thread, int ws_per_thread, int wt_per_thread){
+    int nH0, int nW0, int nHW0, int st_offset,
+    int off_Hq, int off_Wq, int q_per_thread, int ws_per_thread, int wt_per_thread){
 
   // -- unpack shape --
   int B = vid0.size(0);
@@ -72,10 +72,10 @@ __global__ void non_local_search_int_forward_kernel(
   bool valid_prop[4];
   int n_hi,n_wi;
 
-  // -- fill --
-  int q_offs[2];
-  q_offs[0] = off_qH;
-  q_offs[1] = off_qW;
+  // -- offsets --
+  int offs[2];
+  offs[0] = off_Hq;
+  offs[1] = off_Wq;
 
   // -- indexing --
   scalar_t dist;
@@ -159,9 +159,9 @@ __global__ void non_local_search_int_forward_kernel(
             compute_dist_int<scalar_t,DIST_TYPE>(dist,
                          vid0[ibatch][ihead],vid1[ibatch][ihead],
                          ref_patch, prop_patch, ref_pix, prop_pix,
-                         valid_ref, valid_prop, q_offs,
+                         valid_ref, valid_prop,
                          ps,pt,dilation,reflect_bounds,
-                         patch_offset,invalid,T,F,qH,qW,kH,kW);
+                         patch_offset,invalid,offs,T,F,qH,qW,kH,kW);
           }
 
           // -- assignent --
@@ -183,7 +183,7 @@ void non_local_search_int_forward_cuda(
     torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, int stride1, int dilation, int pt,
     bool reflect_bounds, bool full_ws, int patch_offset,
-    int off_qH, int off_qW, int dist_type){
+    int off_Hq, int off_Wq, int dist_type){
 
    // -- derived quantities --
    int kH = vid1.size(4);
@@ -233,8 +233,8 @@ void non_local_search_int_forward_cuda(
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws, wt, ps, pt, stride0, stride1, dilation, 
-            reflect_bounds, full_ws, patch_offset, off_qH, off_qW,
-            nH, nW, nHW, st_offset, q_per_thread, ws_per_thread, wt_per_thread);
+            reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
+            st_offset, off_Hq, off_Wq, q_per_thread, ws_per_thread, wt_per_thread);
           }));
    }else if(dist_type == 1){
        AT_DISPATCH_FLOATING_TYPES(vid0.type(),
@@ -246,8 +246,8 @@ void non_local_search_int_forward_cuda(
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws, wt, ps, pt, stride0, stride1, dilation, 
-            reflect_bounds, full_ws, patch_offset, off_qH, off_qW,
-            nH, nW, nHW, st_offset, q_per_thread, ws_per_thread, wt_per_thread);
+            reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
+            st_offset, off_Hq, off_Wq, q_per_thread, ws_per_thread, wt_per_thread);
           }));
    }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");
@@ -271,7 +271,7 @@ __global__ void non_local_search_int_vid_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_dists,
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
     int ps, int pt, int stride0, int dilation, bool reflect_bounds,
-    int patch_offset, int ftrs_per_thread) {
+    int patch_offset, int off_Hq, int off_Wq, int ftrs_per_thread) {
 
   // -- shape --
   int nbatch = vid0.size(0);
@@ -300,6 +300,11 @@ __global__ void non_local_search_int_vid_backward_kernel(
   bool valid;
   scalar_t dist,weight;
   int iftr;
+
+  // -- offsets --
+  int offs[2];
+  offs[0] = off_Hq;
+  offs[1] = off_Wq;
 
   // -- location to fill --
   int qi = blockIdx.x*blockDim.x+threadIdx.x;
@@ -334,8 +339,8 @@ __global__ void non_local_search_int_vid_backward_kernel(
                      ps,pt,dilation,reflect_bounds,
                      patch_offset,iftr,ftr_start,ftr_end,
                      ref,prop,valid_ref,valid_prop,valid,
-                     T,qH,qW,kH,kW);
-
+                     offs,T,qH,qW,kH,kW);
+    
   }
 }
 
@@ -344,15 +349,16 @@ void non_local_search_int_vid_backward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
     int ps, int pt, int stride0, int dilation,
-    bool reflect_bounds, int patch_offset, int dist_type) {
+    bool reflect_bounds, int patch_offset,
+    int off_Hq, int off_Wq, int dist_type) {
 
   // -- unpack --
   int B = vid0.size(0);
   int HD = vid0.size(1);
   int T = vid0.size(2);
   int F = vid0.size(3);
-  int H = vid0.size(4);
-  int W = vid0.size(5);
+  int qH = vid0.size(4);
+  int qW = vid0.size(5);
   int BHD = B*HD;
 
   // -- num --
@@ -401,7 +407,7 @@ void non_local_search_int_vid_backward_cuda(
           grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
           ps, pt, stride0, dilation, reflect_bounds, patch_offset,
-          ftrs_per_thread);
+          off_Hq, off_Wq, ftrs_per_thread);
     }));
   }else if (dist_type == 1){ // l2
     AT_DISPATCH_FLOATING_TYPES(vid0.type(),"non_local_search_int_backward_kernel", ([&] {
@@ -414,7 +420,7 @@ void non_local_search_int_vid_backward_cuda(
           grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
           ps, pt, stride0, dilation, reflect_bounds, patch_offset,
-          ftrs_per_thread);
+          off_Hq, off_Wq, ftrs_per_thread);
     }));
   }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");    }

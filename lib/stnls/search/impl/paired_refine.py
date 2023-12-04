@@ -24,7 +24,7 @@ def forward(frame0, frame1, flow,
             ws, wr, k, ps, nheads, dist_type,
             stride0, stride1, dilation, self_action,
             restricted_radius, reflect_bounds, full_ws,
-            use_adj, topk_mode, itype):
+            use_adj, topk_mode, off_Hq, off_Wq, itype):
 
     # -- unpack --
     device = frame0.device
@@ -68,13 +68,13 @@ def forward(frame0, frame1, flow,
         fwd_fxn(frame0, frame1, flow, dists, inds,
                 ws, ps, stride0, stride1, dilation,
                 restricted_radius, reflect_bounds, full_ws,
-                patch_offset, dist_type_i)
+                patch_offset, off_Hq, off_Wq, dist_type_i)
         flow = flow.int()
     else:
         fwd_fxn(frame0, frame1, flow, dists, inds,
                 kselect, ws, ps, stride0, stride1, dilation,
                 restricted_radius, reflect_bounds, full_ws,
-                patch_offset, dist_type_i)
+                patch_offset, off_Hq, off_Wq, dist_type_i)
 
     # # print(frame0.shape,flow.shape,dists.shape,inds.shape)
     # fwd_fxn(frame0, frame1, flow, dists, inds,
@@ -179,14 +179,14 @@ def backward(ctx, grad_dists, grad_inds):
         bwd_fxn(grad_frame0,grad_frame1,
                 frame0,frame1,grad_dists,inds,
                 ctx.stride0,ctx.ps,ctx.dil,ctx.reflect_bounds,
-                patch_offset,ctx.dist_type_i)
+                patch_offset, ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
     else:
         # print("grad_flow.shape,flow.shape: ",grad_flow.shape,flow.shape)
         bwd_fxn = stnls_cuda.paired_refine_vidflows_backward
         bwd_fxn(grad_frame0,grad_frame1,grad_flow,
                 frame0,frame1,flow,grad_dists,grad_inds,inds,
                 kselect,ctx.stride0,ctx.ps,ctx.dil,ctx.reflect_bounds,
-                patch_offset,ctx.dist_type_i)
+                patch_offset, ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
 
     # -- finalize shape --
     if ctx.in_ndim == 4:

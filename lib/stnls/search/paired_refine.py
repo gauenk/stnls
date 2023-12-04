@@ -37,7 +37,8 @@ class PairedRefineFunction(th.autograd.Function):
                 dist_type="prod", stride0=4, stride1=1,
                 dilation=1, restricted_radius=False, reflect_bounds=True,
                 full_ws=True, self_action=None, use_adj=False,
-                normalize_bwd=False, k_agg=-1, topk_mode="each", itype="float"):
+                normalize_bwd=False, k_agg=-1, topk_mode="each",
+                off_Hq=0, off_Wq=0, itype="float"):
 
         """
 
@@ -67,7 +68,7 @@ class PairedRefineFunction(th.autograd.Function):
                                      stride0, stride1, dilation,
                                      self_action, restricted_radius,
                                      reflect_bounds, full_ws,
-                                     use_adj, topk_mode, itype)
+                                     use_adj, topk_mode, off_Hq, off_Wq, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -80,6 +81,7 @@ class PairedRefineFunction(th.autograd.Function):
                     "reflect_bounds":reflect_bounds,
                     "normalize_bwd":normalize_bwd,
                     "k_agg":k_agg,"use_adj":use_adj,
+                    "off_Hq":off_Hq,"off_Wq":off_Wq,
                     "dist_type_i":dist_type_i,"itype":itype}
         for name,val in ctx_vars.items():
             setattr(ctx,name,val)
@@ -107,7 +109,8 @@ class PairedRefine(th.nn.Module):
                  dist_type="l2", stride0=1, stride1=1,
                  dilation=1, restricted_radius=False, reflect_bounds=True,
                  full_ws=True, self_action=None, use_adj=False,
-                 normalize_bwd=False, k_agg=-1, topk_mode="each", itype="float"):
+                 normalize_bwd=False, k_agg=-1, topk_mode="each",
+                 off_Hq=0, off_Wq=0, itype="float"):
         super().__init__()
 
         # -- core search params --
@@ -122,6 +125,10 @@ class PairedRefine(th.nn.Module):
         self.stride1 = stride1
         self.dilation = dilation
         self.itype = itype
+
+        # -- offsets --
+        self.off_Hq = off_Hq
+        self.off_Wq = off_Wq
 
         # -- manage patch and search boundaries --
         self.restricted_radius = restricted_radius
@@ -151,7 +158,8 @@ class PairedRefine(th.nn.Module):
                                           self.reflect_bounds,self.full_ws,
                                           self.self_action,self.use_adj,
                                           self.normalize_bwd,self.k_agg,
-                                          self.topk_mode,self.itype)
+                                          self.topk_mode,self.off_Hq,self.off_Wq,
+                                          self.itype)
 
 
 
@@ -191,7 +199,7 @@ def _apply(frame0, frame1, flow,
            dilation=1, restricted_radius=False,
            reflect_bounds=True, full_ws=True, self_action=None,
            use_adj=False, normalize_bwd=False, k_agg=-1,
-           topk_mode="each",itype="float"):
+           topk_mode="each",off_Hq=0,off_Wq=0,itype="float"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -200,7 +208,7 @@ def _apply(frame0, frame1, flow,
                nheads,batchsize,dist_type,
                stride0,stride1,dilation,restricted_radius,reflect_bounds,
                full_ws,self_action,use_adj,normalize_bwd,k_agg,
-               topk_mode,itype)
+               topk_mode,off_Hq,off_Wq,itype)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -216,7 +224,7 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":True,
              "self_action":None,"use_adj":False,
              "normalize_bwd": False, "k_agg":-1,
-             "topk_mode":"each","itype":"float",}
+             "topk_mode":"each","off_Hq":0,"off_Wq":0,"itype":"float",}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
@@ -228,6 +236,7 @@ def init(cfg):
                           reflect_bounds=cfg.reflect_bounds,
                           full_ws=cfg.full_ws, self_action=cfg.self_action,
                           use_adj=cfg.use_adj,normalize_bwd=cfg.normalize_bwd,
-                          k_agg=cfg.k_agg,topk_mode=cfg.topk_mode,itype=cfg.itype)
+                          k_agg=cfg.k_agg,topk_mode=cfg.topk_mode,
+                          off_Hq=cfg.off_Hq,off_Wq=cfg.off_Wq,itype=cfg.itype)
     return search
 

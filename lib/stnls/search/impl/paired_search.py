@@ -24,7 +24,7 @@ def forward(frame0, frame1, flow,
             ws, ps, k, dist_type,
             stride0, stride1, dilation, pt,
             self_action, reflect_bounds,
-            full_ws, use_adj, itype):
+            full_ws, use_adj, off_Hq, off_Wq, itype):
 
     # -- unpack --
     device = frame0.device
@@ -60,7 +60,7 @@ def forward(frame0, frame1, flow,
         stride1 = float(stride1)
     fwd_fxn(frame0, frame1, flow, dists, inds,
             ps, k, stride0, stride1, dilation,
-            reflect_bounds, full_ws, patch_offset, dist_type_i)
+            reflect_bounds, full_ws, patch_offset, off_Hq, off_Wq, dist_type_i)
 
     # -- anchor --
     assert self_action in [None,"anchor","anchor_each"]
@@ -128,13 +128,13 @@ def backward(ctx, grad_dists, grad_inds):
         bwd_fxn(grad_frame0,grad_frame1,
                 frame0,frame1,grad_dists,inds,
                 ctx.stride0,ctx.ps,ctx.dil,ctx.reflect_bounds,
-                patch_offset,ctx.dist_type_i)
+                patch_offset,ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
     else:
         bwd_fxn = stnls_cuda.paired_search_bilin2d_backward
         bwd_fxn(grad_frame0,grad_frame1,grad_flow,
                 frame0,frame1,flow,grad_dists,grad_inds,inds,
                 ctx.stride0,ctx.ps,ctx.dil,ctx.reflect_bounds,
-                patch_offset,ctx.dist_type_i)
+                patch_offset,ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
 
     # -- finalize shape --
     if ctx.in_ndim == 4:

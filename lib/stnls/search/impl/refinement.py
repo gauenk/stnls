@@ -19,7 +19,8 @@ def forward(vid0, vid1, flows,
             ws, wr, k, kr, ps, stride0, stride1, dilation, pt,
             dist_type, restricted_radius,
             reflect_bounds, full_ws,
-            topk_mode, self_action, patch_offset, itype_fwd):
+            topk_mode, self_action, patch_offset,
+            off_Hq, off_Wq, itype_fwd):
 
     # -- fix negative Q --
     # if Q > 0:
@@ -57,7 +58,7 @@ def forward(vid0, vid1, flows,
         fwd_fxn(vid0, vid1, flows, dists, inds,
                 ws, ps, stride0, stride1, dilation, pt,
                 restricted_radius, reflect_bounds, full_ws,
-                patch_offset, dist_type_i)
+                patch_offset, off_Hq, off_Wq, dist_type_i)
     else:
         stride1 = float(stride1)
         fwd_fxn = stnls_cuda.refinement_bilin2d_forward
@@ -65,7 +66,7 @@ def forward(vid0, vid1, flows,
                 kselect, reflect,
                 ws, ps, stride0, stride1, dilation, pt,
                 restricted_radius, reflect_bounds, full_ws,
-                patch_offset, dist_type_i)
+                patch_offset, off_Hq, off_Wq, dist_type_i)
 
     # -- manage self dists --
     if not(self_action is None) and "anchor" in self_action:
@@ -142,19 +143,22 @@ def backward(ctx, grad_dists, grad_inds):
         bwd_fxn = stnls_cuda.non_local_search_int_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,grad_dists,inds,
                 ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
+                ctx.reflect_bounds,patch_offset,
+                ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
     elif not(ctx.flows_requires_grad):
         bwd_fxn = stnls_cuda.non_local_search_bilin2d_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,grad_dists,inds,
                 ctx.wt,ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
+                ctx.reflect_bounds,patch_offset,
+                ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
     else:
         bwd_fxn = stnls_cuda.refinement_bilin2d_vidflows_backward
         bwd_fxn(grad_vid0,grad_vid1,grad_flows,
                 vid0,vid1,grad_dists,grad_inds,inds,
                 kselect,reflect,
                 ctx.ws,ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
-                ctx.reflect_bounds,patch_offset,ctx.dist_type_i)
+                ctx.reflect_bounds,patch_offset,
+                ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
     th.cuda.synchronize()
 
     # -- finalize shape --

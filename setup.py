@@ -48,7 +48,7 @@ setup(name='stnls',
               'lib/csrc/pybind.cpp',
           ],
            extra_compile_args={'cxx': ['-g','-w'],
-                               'nvcc': ['-O2']})
+                               'nvcc': ['-O2','-w']})
       ],
       cmdclass={'build_ext': BuildExtension},
 )
