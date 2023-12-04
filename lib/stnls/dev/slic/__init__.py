@@ -54,6 +54,7 @@ def append_grid(vid,M,S):
 
 def slic_select(vid,ws):
 
+    print("vid.shape: ",vid.shape)
     # -- config --
     ps = 1
     # ws = 3
@@ -68,7 +69,7 @@ def slic_select(vid,ws):
     full_ws = True
     use_flow = False
     M = 0.1
-    use_rand = True
+    use_rand = False
 
     # -- compute search window --
     B,T,F,H,W = vid.shape
@@ -108,8 +109,11 @@ def slic_select(vid,ws):
     # -- prepare weights and flows --
     pooled,weights,flows_k = slic_pooling(vid,s_weight,s_flows_k,s_labels,
                                           ps,stride0,stride1,K0,
-                                          softmax_weight,"wpsum")
+                                          softmax_weight,"pool")
     # print(th.cat([weights[...,None],flows_k],-1))
+    print(pooled.shape,vid.shape)
+    # pooled = pooled[...,psHalf:,psHalf:]
+    print(pooled.shape,vid.shape)
 
     # -- refine --
     assert pooled.shape[-2:] == vid.shape[-2:],"Same Spatial Dim [H x W]"
@@ -211,16 +215,28 @@ def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0,
 
     # -- renormalize weights --
     weights = th.softmax(-softmax_weight*weights,-1)
+    # print(th.where(weights.sum(-1)>1.))
+    # print(th.where(th.abs(weights.sum(-1)-1.)>1e-3))
+    # print(weights.sum(-1).round(decimals=2).unique())
 
     # -- aggregate --
-    ps = stride0
+    print(vid.shape,weights.shape,flows_k.shape,ps,stride0)
     if pool_method == "pool":
+        # ps = stride0//2+1
+        # ps = ps + (1 - ps % 2) # ensure odd
+        ps = stride0
+        # ps = ps + (1 - ps % 2) # ensure odd
         agg = stnls.agg.PooledPatchSum(ps,stride0,itype="int")
     elif pool_method == "wpsum":
         ps = stride0*2
+        ps = ps + (1 - ps % 2) # ensure odd
         agg = stnls.agg.WeightedPatchSum(ps,stride0,itype="int")
     else:
         raise ValueError(f"Uknown pool method [{pool_method}]")
+    # print(weights[0,0,0].sum(-1))
+    # wsum = weights[0,0,0].sum(-1)
+    # print(th.where(th.abs(wsum-1.)>1e-3))
+    # print(flows_k[0,0,0])
     vout = agg(vid,weights,flows_k)
     vout = rearrange(vout,'b hd t c h w -> b t (hd c) h w')
 

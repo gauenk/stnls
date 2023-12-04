@@ -145,6 +145,7 @@ def run_nls(vid,flows,cfg):
     ps = cfg.stride0
     # ps = int(cfg.stride0*1.75)
     # agg = stnls.agg.WeightedPatchSum(ps,cfg.stride0,itype="int")
+    ps = ps + (1 - ps % 2) # ensure odd
     agg = stnls.agg.PooledPatchSum(ps,cfg.stride0,itype="int")
     vout = agg(vid,weights,flows_k)
     vout = rearrange(vout,'b hd t c h w -> b t (hd c) h w')
@@ -278,6 +279,7 @@ def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0,softmax_
 
     # -- aggregate --
     ps = stride0
+    ps = ps + (1 - ps % 2) # ensure odd
     # ps = stride0
     # agg = stnls.agg.WeightedPatchSum(ps,stride0,itype="int")
     # print(th.sum(weights,-1))
@@ -337,9 +339,10 @@ def main():
     cfg.dname = "set8"
     cfg.dset = "val"
     # cfg.isize = "540_540"
-    cfg.isize = "260_260"
+    # cfg.isize = "260_260"
     # cfg.isize = "256_256"
     # cfg.isize = "128_128"
+    cfg.isize = "816_1216"
     # cfg.isize = None
     # cfg.isize = "400_400"
     # cfg.isize = "300_300"
@@ -350,7 +353,7 @@ def main():
     cfg.flow = False
     cfg.full_ws = True
     cfg.wt = 0
-    cfg.stride0 = 5
+    cfg.stride0 = 8
     cfg.ws = 2*cfg.stride0-2
     # cfg.stride0 = 3
     # cfg.ws = 3

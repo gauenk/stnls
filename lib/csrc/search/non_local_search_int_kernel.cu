@@ -25,7 +25,7 @@ __global__ void non_local_search_int_forward_kernel(
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
     int ws, int wt, int ps, int pt, int stride0, int stride1, int dilation,
     bool reflect_bounds, bool full_ws, int patch_offset,
-    int nH0, int nW0, int nHW0, int st_offset,
+    int off_qH, int off_qW, int nH0, int nW0, int nHW0, int st_offset,
     int q_per_thread, int ws_per_thread, int wt_per_thread){
 
   // -- unpack shape --
@@ -33,8 +33,10 @@ __global__ void non_local_search_int_forward_kernel(
   int HD = vid0.size(1);
   int T = vid0.size(2);
   int F = vid0.size(3);
-  int H = vid0.size(4);
-  int W = vid0.size(5);
+  int qH = vid0.size(4);
+  int qW = vid0.size(5);
+  int kH = vid1.size(4);
+  int kW = vid1.size(5);
   int Q = dists.size(2);
   int HD_f = flows.size(1);
 
@@ -70,6 +72,11 @@ __global__ void non_local_search_int_forward_kernel(
   bool valid_prop[4];
   int n_hi,n_wi;
 
+  // -- fill --
+  int q_offs[2];
+  q_offs[0] = off_qH;
+  q_offs[1] = off_qW;
+
   // -- indexing --
   scalar_t dist;
 
@@ -85,7 +92,7 @@ __global__ void non_local_search_int_forward_kernel(
     if (qi >= Q){ continue; }
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,qH,qW);
     n_hi = ref_patch[1] / stride0;
     n_wi = ref_patch[2] / stride0;
 
@@ -114,8 +121,8 @@ __global__ void non_local_search_int_forward_kernel(
         auto flows_t = flows[ibatch][ihead_f][ref_patch[0]][st_i-st_offset];
         frame_anchor[0] = ref_patch[1] + flows_t[1][n_hi][n_wi];
         frame_anchor[1] = ref_patch[2] + flows_t[0][n_hi][n_wi];
-        frame_anchor[0] = bounds(frame_anchor[0],H);
-        frame_anchor[1] = bounds(frame_anchor[1],W);
+        frame_anchor[0] = bounds(frame_anchor[0],kH);
+        frame_anchor[1] = bounds(frame_anchor[1],kW);
       }else{
         frame_anchor[0] = ref_patch[1];
         frame_anchor[1] = ref_patch[2];
@@ -124,7 +131,7 @@ __global__ void non_local_search_int_forward_kernel(
       // -- search region offsets --
       set_search_offsets(wsOff_h, wsOff_w,
                          frame_anchor[0], frame_anchor[1], stride1,
-                         wsHalf, ws, H, W, full_ws);
+                         wsHalf, ws, kH, kW, full_ws);
 
       // ---------------------------------------
       //          spatial searching
@@ -141,7 +148,7 @@ __global__ void non_local_search_int_forward_kernel(
           // -- compute proposed location --
           prop_patch[1] = frame_anchor[0] + stride1 * (ws_i - wsOff_h);
           prop_patch[2] = frame_anchor[1] + stride1 * (ws_j - wsOff_w);
-          check_bounds(valid_prop_patch,prop_patch,T,H,W);
+          check_bounds(valid_prop_patch,prop_patch,T,kH,kW);
           valid = valid_ref_patch && valid_prop_patch;
 
           // -- init dist --
@@ -151,10 +158,10 @@ __global__ void non_local_search_int_forward_kernel(
           if (valid){
             compute_dist_int<scalar_t,DIST_TYPE>(dist,
                          vid0[ibatch][ihead],vid1[ibatch][ihead],
-                         ref_patch, prop_patch, 
-                         ref_pix, prop_pix, valid_ref, valid_prop,
+                         ref_patch, prop_patch, ref_pix, prop_pix,
+                         valid_ref, valid_prop, q_offs,
                          ps,pt,dilation,reflect_bounds,
-                         patch_offset,invalid,T,F,H,W);
+                         patch_offset,invalid,T,F,qH,qW,kH,kW);
           }
 
           // -- assignent --
@@ -175,13 +182,14 @@ void non_local_search_int_forward_cuda(
     const torch::Tensor flows,
     torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, int stride1, int dilation, int pt,
-    bool reflect_bounds, bool full_ws, int patch_offset, int dist_type){
+    bool reflect_bounds, bool full_ws, int patch_offset,
+    int off_qH, int off_qW, int dist_type){
 
    // -- derived quantities --
-   int H = vid0.size(4);
-   int W = vid0.size(5);
-   int nH = (H-1)/stride0+1;
-   int nW = (W-1)/stride0+1;
+   int kH = vid1.size(4);
+   int kW = vid1.size(5);
+   int nH = (kH-1)/stride0+1;
+   int nW = (kW-1)/stride0+1;
    int nHW = nH * nW;
 
    // -- threads --
@@ -225,8 +233,8 @@ void non_local_search_int_forward_cuda(
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws, wt, ps, pt, stride0, stride1, dilation, 
-            reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
-            st_offset, q_per_thread, ws_per_thread, wt_per_thread);
+            reflect_bounds, full_ws, patch_offset, off_qH, off_qW,
+            nH, nW, nHW, st_offset, q_per_thread, ws_per_thread, wt_per_thread);
           }));
    }else if(dist_type == 1){
        AT_DISPATCH_FLOATING_TYPES(vid0.type(),
@@ -238,8 +246,8 @@ void non_local_search_int_forward_cuda(
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             ws, wt, ps, pt, stride0, stride1, dilation, 
-            reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
-            st_offset, q_per_thread, ws_per_thread, wt_per_thread);
+            reflect_bounds, full_ws, patch_offset, off_qH, off_qW,
+            nH, nW, nHW, st_offset, q_per_thread, ws_per_thread, wt_per_thread);
           }));
    }else{
      throw std::invalid_argument("Uknown distance type. Must be 0 (product) or 1 (l2)");
@@ -270,8 +278,12 @@ __global__ void non_local_search_int_vid_backward_kernel(
   int HD = vid0.size(1);
   int T = vid0.size(2);
   int F = vid0.size(3);
-  int H = vid0.size(4);
-  int W = vid0.size(5);
+  // int H = vid0.size(4);
+  // int W = vid0.size(5);
+  int qH = vid0.size(4);
+  int qW = vid0.size(5);
+  int kH = vid1.size(4);
+  int kW = vid1.size(5);
   int nH0 = inds.size(3);
   int nW0 = inds.size(4);
   int nHW0 = nH0*nW0;
@@ -303,7 +315,7 @@ __global__ void non_local_search_int_vid_backward_kernel(
   if ((qi < Q) && (ki < K)){
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,H,W);
+    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,qH,qW);
     int ti = ref_patch[0];
     int nh = ref_patch[1]/stride0;
     int nw = ref_patch[2]/stride0;
@@ -321,7 +333,8 @@ __global__ void non_local_search_int_vid_backward_kernel(
                      weight,ref_patch,prop_patch,
                      ps,pt,dilation,reflect_bounds,
                      patch_offset,iftr,ftr_start,ftr_end,
-                     ref,prop,valid_ref,valid_prop,valid,T,H,W);
+                     ref,prop,valid_ref,valid_prop,valid,
+                     T,qH,qW,kH,kW);
 
   }
 }

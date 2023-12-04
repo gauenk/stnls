@@ -15,7 +15,7 @@ import torch as th
 import stnls_cuda
 from .dim3_utils import dimN_dim3,dim3_dimN
 
-def run(dists,inds,stride0,H,W,qstart=0):
+def run(dists,inds,stride0,nH,nW,qstart=0):
 
     # -- view --
     # print(dists.shape)
@@ -33,7 +33,7 @@ def run(dists,inds,stride0,H,W,qstart=0):
     order = th.zeros_like(dists[...,0]).int()
 
     # -- run --
-    stnls_cuda.anchor_self(dists,inds,order,stride0,H,W)
+    stnls_cuda.anchor_self(dists,inds,order,stride0,nH,nW)
 
     # -- [patchwork] --
     if d2or3 == 2:
@@ -46,7 +46,7 @@ def run(dists,inds,stride0,H,W,qstart=0):
 
     return order
 
-def run_refine(dists,inds,flows,stride0,H,W):
+def run_refine(dists,inds,flows,stride0,qH,qW,kH,kW):
 
     # -- view --
     HD_f = flows.shape[1]
@@ -64,9 +64,9 @@ def run_refine(dists,inds,flows,stride0,H,W):
     # print("dists.shape,inds.shape,flows.shape: ",dists.shape,inds.shape,flows.shape)
 
     # -- run --
-    stnls_cuda.anchor_self_refine(dists,inds,flows,stride0,H,W)
+    stnls_cuda.anchor_self_refine(dists,inds,flows,stride0,qH,qW,kH,kW)
 
-def run_time(dists,inds,flows,wt,stride0,H,W):
+def run_time(dists,inds,flows,wt,stride0,qH,qW,kH,kW):
 
     # -- view --
     B,HD,Q,W_t,ws,ws = dists.shape
@@ -76,9 +76,9 @@ def run_time(dists,inds,flows,wt,stride0,H,W):
     assert d2or3 == 3,"Index must be size 3."
 
     # -- run --
-    stnls_cuda.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
+    stnls_cuda.anchor_self_time(dists,inds,flows,wt,stride0,qH,qW,kH,kW)
 
-def run_paired(dists,inds,flows,stride0,H,W):
+def run_paired(dists,inds,flows,stride0,qH,qW,kH,kW):
 
     # -- view --
     B,HD,Q,G,ws,ws = dists.shape
@@ -92,6 +92,6 @@ def run_paired(dists,inds,flows,stride0,H,W):
     # flows.shape = B,HD,nH,nW,G,two
 
     # -- run --
-    stnls_cuda.anchor_self_paired(dists,inds,flows,stride0,H,W)
+    stnls_cuda.anchor_self_paired(dists,inds,flows,stride0,qH,qW,kH,kW)
 
 

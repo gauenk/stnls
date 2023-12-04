@@ -28,7 +28,8 @@ def forward(frame0, frame1, flow,
 
     # -- unpack --
     device = frame0.device
-    B,HD_fr,C,H,W = frame0.shape
+    B,HD_fr,C,qH,qW = frame0.shape
+    kH,kW = frame1.shape[-2:]
     HD_flow = flow.shape[1]
     # print(frame0.shape,flow.shape)
     assert flow.ndim == 5
@@ -36,8 +37,8 @@ def forward(frame0, frame1, flow,
     patch_offset = 0 if use_adj else -(ps//2)
 
     # -- derived shapes --
-    nH0 = (H-1)//stride0+1
-    nW0 = (W-1)//stride0+1
+    nH0 = (kH-1)//stride0+1
+    nW0 = (kW-1)//stride0+1
     Q = nH0*nW0
 
     # -- settings from distance type --
@@ -70,7 +71,7 @@ def forward(frame0, frame1, flow,
         flow = rearrange(flow,'b hd two nh nw -> b hd nh nw 1 two').flip(-1)
         flow = flow.contiguous()
         # print("dists.shape,inds.shape,flow.shape: ",dists.shape,inds.shape,flow.shape)
-        stnls.nn.anchor_self_paired(dists,inds,flow,stride0,H,W)
+        stnls.nn.anchor_self_paired(dists,inds,flow,stride0,qH,qW,kH,kW)
     else:
         raise ValueError(f"Uknown option for self_action [{self_action}]")
 
@@ -99,8 +100,8 @@ def backward(ctx, grad_dists, grad_inds):
     grad_flow = allocate_grad_flows(itype_bwd,flow.shape,flow.device)
 
     # -- allocate grads --
-    grad_frame0 = allocate_vid(ctx.vid_shape,grad_dists.device)
-    grad_frame1 = allocate_vid(ctx.vid_shape,grad_dists.device)
+    grad_frame0 = allocate_vid(frame0.shape,grad_dists.device)
+    grad_frame1 = allocate_vid(frame1.shape,grad_dists.device)
     # return grad_vid0,grad_vid1,grad_flow
 
     # -- restrict to k_agg --

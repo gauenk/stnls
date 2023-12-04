@@ -24,19 +24,24 @@ We also want to compute the center of the offset regions too.
 
 void anchor_self_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor order, int stride0, int H, int W);
+     torch::Tensor order, int stride0,
+     int nH, int nW);
+     // int qH, int qW, int kH, int kW);
 
 void anchor_self_time_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int wt, int stride0, int H, int W);
+     torch::Tensor flows, int wt, int stride0,
+     int qH, int qW, int kH, int kW);
 
 void anchor_self_refine_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int stride0, int H, int W);
+     torch::Tensor flows, int stride0,
+     int qH, int qW, int kH, int kW);
 
 void anchor_self_paired_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int stride0, int H, int W);
+     torch::Tensor flows, int stride0,
+     int qH, int qW, int kH, int kW);
 
 // C++ interface
 
@@ -46,38 +51,42 @@ void anchor_self_paired_forward_cuda(
 
 void anchor_self_forward(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor order, int stride0, int H, int W){
+     torch::Tensor order, int stride0, int nH, int nW){
+     // int qH, int qW, int kH, int kW){
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   CHECK_INPUT(order);
-  anchor_self_forward_cuda(dists,inds,order,stride0,H,W);
+  anchor_self_forward_cuda(dists,inds,order,stride0,nH,nW);
 }
 
 void anchor_self_time_forward(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int wt, int stride0, int H, int W){
+     torch::Tensor flows, int wt, int stride0,
+     int qH, int qW, int kH, int kW){
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   CHECK_INPUT(flows);
-  anchor_self_time_forward_cuda(dists,inds,flows,wt,stride0,H,W);
+  anchor_self_time_forward_cuda(dists,inds,flows,wt,stride0,qH,qW,kH,kW);
 }
 
 void anchor_self_refine_forward(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int stride0, int H, int W){
+     torch::Tensor flows, int stride0,
+     int qH, int qW, int kH, int kW){
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   CHECK_INPUT(flows);
-  anchor_self_refine_forward_cuda(dists,inds,flows,stride0,H,W);
+  anchor_self_refine_forward_cuda(dists,inds,flows,stride0,qH,qW,kH,kW);
 }
 
 void anchor_self_paired_forward(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int stride0, int H, int W){
+     torch::Tensor flows, int stride0,
+     int qH, int qW, int kH, int kW){
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   CHECK_INPUT(flows);
-  anchor_self_paired_forward_cuda(dists,inds,flows,stride0,H,W);
+  anchor_self_paired_forward_cuda(dists,inds,flows,stride0,qH,qW,kH,kW);
 }
 
 // python bindings

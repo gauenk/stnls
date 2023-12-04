@@ -26,7 +26,7 @@ __global__ void anchor_self_kernel(
     torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<itype,4,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> order,
-    int stride0, int H, int W, int nHW, int nW, int q_per_thread){
+    int stride0, int nHW, int nW, int q_per_thread){
 
   // -- starting qi for thread --
   int Q = dists.size(1);
@@ -120,7 +120,7 @@ void anchor_self_forward_cuda(
      torch::Tensor dists,
      torch::Tensor inds,
      torch::Tensor order,
-     int stride0, int H, int W){
+     int stride0, int nH, int nW){
   
   // -- unpack --
   int B = dists.size(0);
@@ -128,8 +128,8 @@ void anchor_self_forward_cuda(
   int K = dists.size(2);
 
   // -- derivative --
-  int nH = (H-1)/stride0+1;
-  int nW = (W-1)/stride0+1;
+  // int nH = (kH-1)/stride0+1;
+  // int nW = (kW-1)/stride0+1;
   int nHW = nH*nW;
 
   // -- num 2 run --
@@ -155,7 +155,7 @@ void anchor_self_forward_cuda(
          dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
          order.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-         stride0, H, W, nHW, nW, q_per_thread);
+         stride0, nHW, nW, q_per_thread);
         }));
   }else if (itype == dtype){
   // }else if(std::is_same_v<inds.type(),dists.type()>){
@@ -164,7 +164,7 @@ void anchor_self_forward_cuda(
          dists.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
          order.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-         stride0, H, W, nHW, nW, q_per_thread);
+         stride0, nHW, nW, q_per_thread);
         }));
 
   }else{
@@ -189,7 +189,7 @@ __global__ void anchor_self_time_kernel(
     torch::PackedTensorAccessor32<itype,6,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<itype,7,torch::RestrictPtrTraits> flows,
     int wt, int stride0, int st_offset,
-    int H, int W, int nHW, int nW, int q_per_thread){
+    int qH, int qW, int kH, int kW, int nHW, int nW, int q_per_thread){
 
   // -- starting qi for thread --
   int HD = dists.size(1);
@@ -224,7 +224,7 @@ __global__ void anchor_self_time_kernel(
     if (qi >= Q){ continue; }
 
     // -- unpack pixel locs --
-    get_pixel_loc(iloc,  qi, stride0, nW, nHW, H, W);
+    get_pixel_loc(iloc,  qi, stride0, nW, nHW, qH, qW);
     // int tmp = qi;
     // iloc[0] = qi / nHW;
     // tmp = (tmp - iloc[0]*nHW); 
@@ -247,8 +247,8 @@ __global__ void anchor_self_time_kernel(
       auto flows_t = flows[bi][hi_f][iloc[0]][st_i-st_offset];
       loc[1] = iloc[1] + flows_t[1][n_hi][n_wi];
       loc[2] = iloc[2] + flows_t[0][n_hi][n_wi];
-      loc[1] = bounds(loc[1],H)-iloc[1];
-      loc[2] = bounds(loc[2],W)-iloc[2];
+      loc[1] = bounds(loc[1],kH)-iloc[1];
+      loc[2] = bounds(loc[2],kW)-iloc[2];
     }else{
       loc[1] = 0;//1.*iloc[1];
       loc[2] = 0;//1.*iloc[2];
@@ -309,7 +309,8 @@ __global__ void anchor_self_time_kernel(
 
 void anchor_self_time_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int wt, int stride0, int H, int W){
+     torch::Tensor flows, int wt, int stride0,
+     int qH, int qW, int kH, int kW){
   
   // -- unpack --
   int B = dists.size(0);
@@ -319,8 +320,8 @@ void anchor_self_time_forward_cuda(
   int K = dists.size(4);
 
   // -- derivative --
-  int nH = (H-1)/stride0+1;
-  int nW = (W-1)/stride0+1;
+  int nH = (kH-1)/stride0+1;
+  int nW = (kW-1)/stride0+1;
   int nHW = nH*nW;
   assert((W_t == 2*wt+1) or (W_t == 2*wt));
   int st_offset = W_t - flows.size(3);
@@ -346,7 +347,7 @@ void anchor_self_time_forward_cuda(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
          flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-         wt, stride0, st_offset, H, W, nHW, nW, q_per_thread);
+         wt, stride0, st_offset, qH, qW, kH, kW, nHW, nW, q_per_thread);
         }));
   }else if (itype == dtype){
     AT_DISPATCH_FLOATING_TYPES(dists.type(), "anchor_self_time_kernel", ([&] {
@@ -354,7 +355,7 @@ void anchor_self_time_forward_cuda(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
          flows.packed_accessor32<scalar_t,7,torch::RestrictPtrTraits>(),
-         wt, stride0, st_offset, H, W, nHW, nW, q_per_thread);
+         wt, stride0, st_offset, qH, qW, kH, kW, nHW, nW, q_per_thread);
         }));
 
   }else{
@@ -379,7 +380,7 @@ __global__ void anchor_self_paired_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<itype,6,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<itype,6,torch::RestrictPtrTraits> flows,
-    int stride0, int H, int W, int nHW, int nW, int q_per_thread){
+    int stride0, int qH, int qW, int kH, int kW, int nHW, int nW, int q_per_thread){
 
   // -- starting qi for thread --
   int HD = dists.size(1);
@@ -413,7 +414,7 @@ __global__ void anchor_self_paired_kernel(
     if (qi >= Q){ continue; }
 
     // -- unpack pixel locs --
-    get_pixel_loc(iloc,  qi, stride0, nW, nHW, H, W);
+    get_pixel_loc(iloc,  qi, stride0, nW, nHW, qH, qW);
     int n_hi = iloc[1]/stride0;
     int n_wi = iloc[2]/stride0;
 
@@ -421,8 +422,8 @@ __global__ void anchor_self_paired_kernel(
     auto flows_t = flows[bi][hi_f];
     loc[0] = iloc[1] + flows_t[n_hi][n_wi][gi][0];
     loc[1] = iloc[2] + flows_t[n_hi][n_wi][gi][1];
-    loc[0] = bounds(loc[0],H)-iloc[1];
-    loc[1] = bounds(loc[1],W)-iloc[2];
+    loc[0] = bounds(loc[0],kH)-iloc[1];
+    loc[1] = bounds(loc[1],kW)-iloc[2];
 
     // -- search for matching index --
     min_idx = 0;
@@ -479,7 +480,8 @@ __global__ void anchor_self_paired_kernel(
 
 void anchor_self_paired_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
-     torch::Tensor flows, int stride0, int H, int W){
+     torch::Tensor flows, int stride0,
+     int qH, int qW, int kH, int kW){
   
   // -- unpack --
   int B = dists.size(0);
@@ -489,8 +491,8 @@ void anchor_self_paired_forward_cuda(
   int K = dists.size(4);
 
   // -- derivative --
-  int nH = (H-1)/stride0+1;
-  int nW = (W-1)/stride0+1;
+  int nH = (kH-1)/stride0+1;
+  int nW = (kW-1)/stride0+1;
   int nHW = nH*nW;
 
   // -- num 2 run --
@@ -514,7 +516,7 @@ void anchor_self_paired_forward_cuda(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
          flows.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
-         stride0, H, W, nHW, nW, q_per_thread);
+         stride0, qH, qW, kH, kW, nHW, nW, q_per_thread);
         }));
   }else if (itype == dtype){
     AT_DISPATCH_FLOATING_TYPES(dists.type(), "anchor_self_paired_kernel", ([&] {
@@ -522,7 +524,7 @@ void anchor_self_paired_forward_cuda(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
          flows.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
-         stride0, H, W, nHW, nW, q_per_thread);
+         stride0, qH, qW, kH, kW, nHW, nW, q_per_thread);
         }));
 
   }else{
@@ -547,7 +549,7 @@ __global__ void anchor_self_refine_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<itype,6,torch::RestrictPtrTraits> inds,
     torch::PackedTensorAccessor32<itype,5,torch::RestrictPtrTraits> flows,
-    int stride0, int H, int W, int nHW, int nW, int q_per_thread){
+    int stride0, int qH, int qW, int kH, int kW, int nHW, int nW, int q_per_thread){
 
   // -- starting qi for thread --
   int HD = dists.size(1);
@@ -584,7 +586,7 @@ __global__ void anchor_self_refine_kernel(
     // loc[0] = round(flows[bi][hi_f][qi][gi][0]);
     // loc[1] = flows[bi][hi_f][qi][gi][1];
     // loc[2] = flows[bi][hi_f][qi][gi][2];
-    get_pixel_loc(iloc,  qi, stride0, nW, nHW, H, W);
+    get_pixel_loc(iloc,  qi, stride0, nW, nHW, qH, qW);
     // int n_hi = iloc[1]/stride0;
     // int n_wi = iloc[2]/stride0;
 
@@ -592,8 +594,8 @@ __global__ void anchor_self_refine_kernel(
     loc[0] = round(flows[bi][hi_f][qi][gi][0]);
     loc[1] = iloc[1] + flows[bi][hi_f][qi][gi][1];
     loc[2] = iloc[2] + flows[bi][hi_f][qi][gi][2];
-    loc[1] = bounds(loc[1],H)-iloc[1];
-    loc[2] = bounds(loc[2],W)-iloc[2];
+    loc[1] = bounds(loc[1],kH)-iloc[1];
+    loc[2] = bounds(loc[2],kW)-iloc[2];
 
     // -- search for matching index --
     min_idx = 0;
@@ -651,7 +653,7 @@ __global__ void anchor_self_refine_kernel(
 void anchor_self_refine_forward_cuda(
      torch::Tensor dists, torch::Tensor inds,
      torch::Tensor flows,
-     int stride0, int H, int W){
+     int stride0, int qH, int qW, int kH, int kW){
   
   // -- unpack --
   int B = dists.size(0);
@@ -661,8 +663,8 @@ void anchor_self_refine_forward_cuda(
   int K = dists.size(4);
 
   // -- derivative --
-  int nH = (H-1)/stride0+1;
-  int nW = (W-1)/stride0+1;
+  int nH = (kH-1)/stride0+1;
+  int nW = (kW-1)/stride0+1;
   int nHW = nH*nW;
 
   // -- num 2 run --
@@ -687,7 +689,7 @@ void anchor_self_refine_forward_cuda(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<int,6,torch::RestrictPtrTraits>(),
          flows.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
-         stride0, H, W, nHW, nW, q_per_thread);
+         stride0, qH, qW, kH, kW, nHW, nW, q_per_thread);
         }));
   }else if (itype == dtype){
     AT_DISPATCH_FLOATING_TYPES(dists.type(), "anchor_self_refine_kernel", ([&] {
@@ -695,7 +697,7 @@ void anchor_self_refine_forward_cuda(
          dists.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
          inds.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
          flows.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-         stride0, H, W, nHW, nW, q_per_thread);
+         stride0, qH, qW, kH, kW, nHW, nW, q_per_thread);
         }));
 
   }else{

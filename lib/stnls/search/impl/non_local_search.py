@@ -24,18 +24,20 @@ def forward(vid0, vid1, flows,
             ws, wt, ps, k, stride0, stride1,
             dist_type, dilation, pt,
             topk_mode, self_action,
-            reflect_bounds, full_ws, use_adj, itype):
+            reflect_bounds, full_ws, use_adj,
+            off_Hq, off_Wq, itype):
 
     # -- unpack --
     # itype = "int"
     device = vid0.device
-    B,HD,T,C,H,W = vid0.shape
+    B,HD,T,C,qH,qW = vid0.shape
+    B,HD,T,C,kH,kW = vid1.shape
     patch_offset = 0 if use_adj else -(ps//2)
     # print(ps,k,dist_type,topk_mode,self_action,patch_offset)
 
     # -- derived shapes --
-    nH0 = (H-1)//stride0+1
-    nW0 = (W-1)//stride0+1
+    nH0 = (kH-1)//stride0+1
+    nW0 = (kW-1)//stride0+1
     Q = T*nH0*nW0
     # print(vid0.shape,nH0,nW0,Q)
 
@@ -64,7 +66,8 @@ def forward(vid0, vid1, flows,
         stride1 = float(stride1)
     fwd_fxn(vid0, vid1, flows, dists, inds,
             ps, k, stride0, stride1, dilation, pt,
-            reflect_bounds, full_ws, patch_offset,  dist_type_i)
+            reflect_bounds, full_ws, patch_offset,
+            off_Hq, off_Wq, dist_type_i)
 
     # -- anchor --
     menu = [None,"anchor","anchor_self","anchor_each","remove",]
@@ -72,11 +75,11 @@ def forward(vid0, vid1, flows,
     assert self_action in menu
     anchor_self = False if self_action is None else "anchor" in self_action
     if self_action in ["anchor","anchor_self"]:
-        stnls.nn.anchor_self(dists,inds,stride0,H,W)
+        stnls.nn.anchor_self(dists,inds,stride0,nH0,nW0)
     elif self_action == "anchor_each":
-        stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
+        stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,qH,qW,kH,kW)
     elif self_action == "remove":
-        stnls.nn.anchor_self(dists,inds,stride0,H,W)
+        stnls.nn.anchor_self(dists,inds,stride0,nH0,nW0)
         dists=dists.view(B,HD,Q,-1)
         inds=inds.view(B,HD,Q,-1,3)
         dists = dists[:,:,:,1:].contiguous()
@@ -89,7 +92,7 @@ def forward(vid0, vid1, flows,
         assert wt > 0,"Cannot remove ref frame if not searching across time."
         dists = dists[...,1:,:,:].contiguous()
         inds = inds[...,1:,:,:,:].contiguous()
-        stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,H,W)
+        stnls.nn.anchor_self_time(dists,inds,flows,wt,stride0,qH,qW,kH,kW)
     elif self_action is None:
         pass
     else:

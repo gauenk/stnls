@@ -7,9 +7,10 @@ void compute_dist_int(scalar_t& dist,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid0,
   const torch::TensorAccessor<scalar_t,4,torch::RestrictPtrTraits,int32_t> vid1,
   int* ref_patch, int* prop_patch, int* ref, int* prop,
-  bool* valid_ref, bool* valid_prop,
+  bool* valid_ref, bool* valid_prop, int* q_offs,
   int ps, int pt, int dilation, bool reflect_bounds,
-  int patch_offset, scalar_t invalid, int T, int C, int H, int W){
+  int patch_offset, scalar_t invalid,
+  int T, int C, int qH, int qW, int kH, int kW){
                   
   scalar_t pix0,pix1,_dist;
   for (int pk = 0; pk < pt; pk++){
@@ -25,26 +26,26 @@ void compute_dist_int(scalar_t& dist,
     for (int pi = 0; pi < ps; pi++){
 
       // -- ref height --
-      ref[1] = ref_patch[1]+dilation*(pi + patch_offset);
-      ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
-      valid_ref[1] = check_interval(ref[1],0,H);
+      ref[1] = ref_patch[1]+q_offs[0]+dilation*(pi + patch_offset);
+      ref[1] = reflect_bounds ? bounds(ref[1],qH) : ref[1];
+      valid_ref[1] = check_interval(ref[1],0,qH);
 
       // -- proposed height --
       prop[1] = prop_patch[1]+dilation*(pi + patch_offset);
-      prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
-      valid_prop[1] = check_interval(prop[1],0,H);
+      prop[1] = reflect_bounds ? bounds(prop[1],kH) : prop[1];
+      valid_prop[1] = check_interval(prop[1],0,kH);
 
       for (int pj = 0; pj < ps; pj++){
         
         // -- ref width --
-        ref[2] = ref_patch[2]+dilation*(pj + patch_offset);
-        ref[2] = reflect_bounds ? bounds(ref[2],W) : ref[2];
-        valid_ref[2] = check_interval(ref[2],0,W);
+        ref[2] = ref_patch[2]+q_offs[1]+dilation*(pj + patch_offset);
+        ref[2] = reflect_bounds ? bounds(ref[2],qW) : ref[2];
+        valid_ref[2] = check_interval(ref[2],0,qW);
 
         // -- prop width --
         prop[2] = prop_patch[2]+dilation*(pj + patch_offset);
-        prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
-        valid_prop[2] = check_interval(prop[2],0,W);
+        prop[2] = reflect_bounds ? bounds(prop[2],kW) : prop[2];
+        valid_prop[2] = check_interval(prop[2],0,kW);
 
         // -- ensure valid location --
         valid_ref[3] = true;
@@ -95,7 +96,7 @@ void update_bwd_patch_int(
     int ps, int pt, int dilation, bool reflect_bounds,
     int patch_offset, int iftr, int ftr_start, int ftr_end,
     int* ref, int* prop, bool* valid_ref, bool* valid_prop,
-    bool valid, int T, int H, int W){
+    bool valid, int T, int qH, int qW, int kH, int kW){
 
     scalar_t pix0,pix1,pix;
 
@@ -113,25 +114,25 @@ void update_bwd_patch_int(
 
         // -- ref patch --
         ref[1] = ref_patch[1]+dilation*(pi + patch_offset);
-        ref[1] = reflect_bounds ? bounds(ref[1],H) : ref[1];
-        valid_ref[1] = check_interval(ref[1],0,H);
+        ref[1] = reflect_bounds ? bounds(ref[1],qH) : ref[1];
+        valid_ref[1] = check_interval(ref[1],0,qH);
 
         // -- prop patch --
         prop[1] = prop_patch[1]+dilation*(pi + patch_offset);
-        prop[1] = reflect_bounds ? bounds(prop[1],H) : prop[1];
-        valid_prop[1] = check_interval(prop[1],0,H);
+        prop[1] = reflect_bounds ? bounds(prop[1],kH) : prop[1];
+        valid_prop[1] = check_interval(prop[1],0,kH);
 
         for (int pj = 0; pj < ps; pj++){
           
           // -- ref patch --
           ref[2] = ref_patch[2]+dilation*(pj + patch_offset);
-          ref[2] = reflect_bounds ? bounds(ref[2],W) : ref[2];
-          valid_ref[2] = check_interval(ref[2],0,W);
+          ref[2] = reflect_bounds ? bounds(ref[2],qW) : ref[2];
+          valid_ref[2] = check_interval(ref[2],0,qW);
 
           // -- prop patch --
           prop[2] = prop_patch[2]+dilation*(pj + patch_offset);
-          prop[2] = reflect_bounds ? bounds(prop[2],W) : prop[2];
-          valid_prop[2] = check_interval(prop[2],0,W);
+          prop[2] = reflect_bounds ? bounds(prop[2],kW) : prop[2];
+          valid_prop[2] = check_interval(prop[2],0,kW);
 
           // -- ensure valid location --
           valid_ref[3] = true;

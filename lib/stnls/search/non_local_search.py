@@ -35,7 +35,8 @@ class NonLocalSearchFunction(th.autograd.Function):
                 stride0=4, stride1=1, dist_type="l2",
                 dilation=1, pt=1, topk_mode="all",
                 self_action=None, reflect_bounds=True, full_ws=True,
-                use_adj=False, normalize_bwd=False, k_agg=-1, itype="float"):
+                use_adj=False, normalize_bwd=False, k_agg=-1,
+                off_Hq=0, off_Wq=0, itype="float"):
 
         """
         Run the non-local search
@@ -51,7 +52,8 @@ class NonLocalSearchFunction(th.autograd.Function):
         dtype = vid0.dtype
         device = vid0.device
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
-        B,HD,T,F,H,W = vid0.shape
+        B,HD,T,F,qH,qW = vid0.shape
+        kH,kW = vid1.shape[-2:]
         reflect_bounds_warning(reflect_bounds)
         W_t = 2*wt+1
         assert T >= W_t,f"Num Frames [{T}] must be >= Temporal Window [{W_t}]"
@@ -62,8 +64,8 @@ class NonLocalSearchFunction(th.autograd.Function):
         B,HD,T,W_t,_,fH,fW = flows.shape
 
         # -- sample flow  --
-        nH = (H-1)//stride0+1
-        nW = (W-1)//stride0+1
+        nH = (kH-1)//stride0+1
+        nW = (kW-1)//stride0+1
         assert (fH == nH) and (fW == nW)
 
         # -- run [optionally batched] forward function --
@@ -71,7 +73,8 @@ class NonLocalSearchFunction(th.autograd.Function):
                              ws, wt, ps, k, stride0, stride1,
                              dist_type, dilation, pt,
                              topk_mode, self_action,
-                             reflect_bounds, full_ws, use_adj, itype)
+                             reflect_bounds, full_ws, use_adj,
+                             off_Hq, off_Wq, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -101,7 +104,8 @@ class NonLocalSearchFunction(th.autograd.Function):
         grad0,grad1,gfflow = backward(ctx, grad_dists, grad_inds)
         return grad0,grad1,gfflow,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None,None,None,None,\
+            None,None
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -116,7 +120,8 @@ class NonLocalSearch(th.nn.Module):
                  stride0=4, stride1=1, dist_type="l2",
                  dilation=1, pt=1, self_action=None, topk_mode="all",
                  reflect_bounds=True, full_ws=True, use_adj=False,
-                 normalize_bwd=False, k_agg=-1, itype="float"):
+                 normalize_bwd=False, k_agg=-1,
+                 off_Hq=0, off_Wq=0, itype="float"):
         super().__init__()
 
         # -- core search params --
@@ -130,6 +135,10 @@ class NonLocalSearch(th.nn.Module):
         self.stride1 = stride1
         self.dilation = dilation
         self.pt = pt
+
+        # -- shifting --
+        self.off_Hq = off_Hq
+        self.off_Wq = off_Wq
 
         # -- forward --
         self.itype = itype
@@ -168,7 +177,8 @@ class NonLocalSearch(th.nn.Module):
                                             self.topk_mode,self.self_action,
                                             self.reflect_bounds,self.full_ws,
                                             self.use_adj,self.normalize_bwd,
-                                            self.k_agg,self.itype)
+                                            self.k_agg,self.off_Hq,
+                                            self.off_Wq,self.itype)
 
     def flops(self,T,F,H,W):
         return 0
@@ -206,7 +216,8 @@ def _apply(vid0, vid1, flows,
            dilation=1, pt=1, self_action=None,
            topk_mode="all",reflect_bounds=True,
            full_ws=True,use_adj=False,
-           normalize_bwd=False, k_agg=-1, itype="float"):
+           normalize_bwd=False, k_agg=-1,
+           off_Hq=0, off_Wq=0, itype="float"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -215,7 +226,10 @@ def _apply(vid0, vid1, flows,
                nheads,stride0,stride1,dist_type,
                dilation,pt,self_action,topk_mode,
                reflect_bounds,full_ws,
-               use_adj,normalize_bwd,k_agg,itype)
+               use_adj,normalize_bwd,k_agg,
+               off_Hq,off_Wq,itype)
+
+
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -230,7 +244,8 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":True,
              "self_action":None,"use_adj":False,
              "normalize_bwd": False, "k_agg":-1,
-             "itype":"float","topk_mode":"all",}
+             "itype":"float","topk_mode":"all",
+             "off_Hq":0,"off_Wq":0}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 
@@ -242,6 +257,7 @@ def init(cfg):
                             self_action=cfg.self_action, topk_mode=cfg.topk_mode,
                             reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
                             use_adj=cfg.use_adj,normalize_bwd=cfg.normalize_bwd,
-                            k_agg=cfg.k_agg,itype=cfg.itype)
+                            k_agg=cfg.k_agg,off_Hq=cfg.off_Hq,off_Wq=cfg.off_Wq,
+                            itype=cfg.itype)
     return search
 

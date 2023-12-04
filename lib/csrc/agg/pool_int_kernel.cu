@@ -36,7 +36,6 @@ __global__ void pool_int_forward_kernel(
 
     // -- batching --
     int query_start = (threadIdx.x + blockDim.x*blockIdx.x)*q_per_thread;
-    // int query_start = blockIdx.x*blockDim.x+threadIdx.x;
     int ki = blockIdx.y*blockDim.y+threadIdx.y;
     int ihead = blockIdx.z/B;
     int ibatch = (blockIdx.z-ihead*B) % B;
@@ -59,11 +58,6 @@ __global__ void pool_int_forward_kernel(
       // -- query index --
       qi = query_start + _qi;
       if (qi >= Q){ return; }
-
-      // -- non-local weight --
-      weight = dists[ibatch][ihead][qi][ki];
-      if (weight < 1e-8){ continue; }
-      // if (ki == 0){ continue; }
 
       // -- write location --
       get_pixel_loc<int>(wref,qi,ps,nW,nHW,outH,outW);
@@ -95,6 +89,11 @@ __global__ void pool_int_forward_kernel(
         if ((wref[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
           atomicAdd(&counts[wref_p[1]][wref_p[2]],1);
         }
+
+        // -- non-local weight --
+        weight = dists[ibatch][ihead][qi][ki];
+        if (weight < 1e-8){ continue; }
+        // if (ki == 0){ continue; }
 
         // -- non-local pixel index --
         nl_p[0] = nl[0];

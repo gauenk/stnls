@@ -67,7 +67,7 @@ class PooledPatchSumFunction(th.autograd.Function):
         psHalf = (ps-1)//2+1
         outH = ps*nH
         outW = ps*nW
-        # print("ps,nH,nW,outH,outW: ",ps,nH,nW,outH,outW)
+        print("ps,nH,nW,outH,outW: ",ps,nH,nW,outH,outW)
         out_shape = (B,HD,T,inF,outH,outW)
 
         # -- allocate --
@@ -89,6 +89,7 @@ class PooledPatchSumFunction(th.autograd.Function):
         # else:
         #     # flows[...,1:] = flows[...,1:].int()+1
         #     fwd_fxn = stnls_cuda.pool_bilin2d_forward
+        ps = ps + (1 - ps % 2)
         fwd_fxn(out_vid, counts, vid, weights, flows,
                 ps, stride0, pt, dilation, reflect_bounds, patch_offset)
         eps = 1e-10
@@ -105,13 +106,18 @@ class PooledPatchSumFunction(th.autograd.Function):
 
         # -- normalize --
         H,W = vid.shape[-2:]
-        # print(counts)
-        # print(counts.sum(-1))
-        # print(counts.sum(-2))
+        # # print(counts.sum(-1))
+        # # print(counts.sum(-2))
+        # print(vid[0,0,0,0,3:,3:])
+        # print(counts[3:,3:])
+        print(th.where(counts==0))
         # exit()
         # print("counts [min,max]: ",counts.min().item(),counts.max().item())
         # print("[pre] out_vid [min,max]: ",out_vid.min().item(),out_vid.max().item())
         counts = counts.view((1,1,1,1,outH,outW))
+        # from dev_basics.utils import vid_io
+        # vid_io.save_video(counts[:,0],"outputs/debug","counts")
+        # vid_io.save_video(out_vid[:,0,:,:3]/out_vid.max(),"outputs/debug","vout")
         out_vid = out_vid / (counts+eps)
         # print("out_vid [min,max]: ",out_vid.min().item(),out_vid.max().item())
         assert th.all(counts>1e-3)

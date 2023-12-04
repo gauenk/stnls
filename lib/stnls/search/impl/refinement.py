@@ -24,6 +24,8 @@ def forward(vid0, vid1, flows,
     # -- fix negative Q --
     # if Q > 0:
     #     flows = flows[:,:,qshift:qshift+Q].contiguous()
+    B,HD,T,C,qH,qW = vid0.shape
+    B,HD,T,C,kH,kW = vid1.shape
     B,HD,T,nH,nW,Ks,_ = flows.shape
     Q = T*nH*nW
 
@@ -68,7 +70,7 @@ def forward(vid0, vid1, flows,
     # -- manage self dists --
     if not(self_action is None) and "anchor" in self_action:
         H,W = vid0.shape[-2:]
-        stnls.nn.anchor_self_refine(dists,inds,flows,stride0,H,W)
+        stnls.nn.anchor_self_refine(dists,inds,flows,stride0,qH,qW,kH,kW)
     else:
         assert self_action == None
 

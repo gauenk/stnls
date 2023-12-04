@@ -70,7 +70,8 @@ class PairedSearchFunction(th.autograd.Function):
         ctx.save_for_backward(inds,frame0,frame1,flow)
         if itype == "int":
             ctx.mark_non_differentiable(inds)
-        ctx.vid_shape = frame0.shape
+        # ctx.frame0_shape = frame0.shape
+        # ctx.frame1_shape = frame1.shape
         ctx_vars = {"stride0":stride0,"stride1":stride1,
                     "ps":ps,"pt":pt,"ws":ws,"dil":dilation,
                     "reflect_bounds":reflect_bounds,

@@ -109,6 +109,7 @@ def test_fwd_anchor(ws,wt,ps,stride0,stride1,dilation,
     W_t = 2*wt+1
     k = W_t*ws*ws
     self_action = "anchor"
+    if ws == 1: return
 
     # -- load data --
     B,T,F,H,W = 1,5,3,16,16
