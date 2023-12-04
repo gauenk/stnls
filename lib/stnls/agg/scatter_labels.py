@@ -55,9 +55,8 @@ def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
 
     # -- check --
     nvalid = (names[...,0] >= 0).float().sum(2)
-    # if full_ws:
-    #     print(int(nvalid.sum().item()),Q*K)
-    #     # assert(int(nvalid.sum().item()) == Q*K)
+    if full_ws:
+        assert(int(nvalid.sum().item()) == Q*K)
 
     return names,labels
 

@@ -21,11 +21,9 @@ from stnls.search.shared import normz_bwd
 
 
 def forward(vid0, vid1, flows,
-            ws, wt, ps, k, stride0, stride1,
-            dist_type, dilation, pt,
-            topk_mode, self_action,
-            reflect_bounds, full_ws, use_adj,
-            off_Hq, off_Wq, itype):
+            ws, wt, ps, k, stride0, stride1, strideQ,
+            dist_type, dilation, pt, topk_mode, self_action,
+            reflect_bounds, full_ws, use_adj, off_Hq, off_Wq, itype):
 
     # -- unpack --
     # itype = "int"
@@ -61,13 +59,18 @@ def forward(vid0, vid1, flows,
         inds = inds.int()
         stride1 = max(1,int(stride1))
         fwd_fxn = stnls_cuda.non_local_search_int_forward
+        strideQ = stride0 if strideQ is None else strideQ
+        fwd_fxn(vid0, vid1, flows, dists, inds,
+                ps, k, stride0, stride1, strideQ, dilation, pt,
+                reflect_bounds, full_ws, patch_offset,
+                off_Hq, off_Wq, dist_type_i)
     else:
         fwd_fxn = stnls_cuda.non_local_search_bilin2d_forward
         stride1 = float(stride1)
-    fwd_fxn(vid0, vid1, flows, dists, inds,
-            ps, k, stride0, stride1, dilation, pt,
-            reflect_bounds, full_ws, patch_offset,
-            off_Hq, off_Wq, dist_type_i)
+        fwd_fxn(vid0, vid1, flows, dists, inds,
+                ps, k, stride0, stride1, dilation, pt,
+                reflect_bounds, full_ws, patch_offset,
+                off_Hq, off_Wq, dist_type_i)
 
     # -- anchor --
     menu = [None,"anchor","anchor_self","anchor_each","remove",]
@@ -147,10 +150,11 @@ def backward(ctx, grad_dists, grad_inds):
 
     # -- backward pass with increasing complexity --
     if ctx.itype == "int":
+        strideQ = ctx.stride0 if ctx.strideQ is None else ctx.strideQ
         bwd_fxn = stnls_cuda.non_local_search_int_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,
                 vid0,vid1,grad_dists,inds,
-                ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
+                ctx.ps,ctx.pt,ctx.stride0,strideQ,ctx.dil,
                 reflect_bounds,patch_offset,
                 ctx.off_Hq,ctx.off_Wq,ctx.dist_type_i)
     elif not(flows.requires_grad):

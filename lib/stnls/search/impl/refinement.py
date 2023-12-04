@@ -16,7 +16,8 @@ from stnls.search.utils import get_inds,allocate_grad_flows
 from stnls.search.shared import normz_bwd
 
 def forward(vid0, vid1, flows,
-            ws, wr, k, kr, ps, stride0, stride1, dilation, pt,
+            ws, wr, k, kr, ps,
+            stride0, stride1, strideQ, dilation, pt,
             dist_type, restricted_radius,
             reflect_bounds, full_ws,
             topk_mode, self_action, patch_offset,
@@ -55,8 +56,9 @@ def forward(vid0, vid1, flows,
     if itype_fwd == "int":
         stride1 = int(max(1,int(stride1)))
         fwd_fxn = stnls_cuda.refinement_int_forward
+        strideQ = stride0 if strideQ is None else strideQ
         fwd_fxn(vid0, vid1, flows, dists, inds,
-                ws, ps, stride0, stride1, dilation, pt,
+                ws, ps, stride0, stride1, strideQ, dilation, pt,
                 restricted_radius, reflect_bounds, full_ws,
                 patch_offset, off_Hq, off_Wq, dist_type_i)
     else:
@@ -140,9 +142,10 @@ def backward(ctx, grad_dists, grad_inds):
     # print("gvid0: ",grad_vid0.shape)
     # print(kselect.min().item(),kselect.max().item())
     if itype_bwd == "int":
+        strideQ = ctx.stride0 if ctx.strideQ is None else ctx.strideQ
         bwd_fxn = stnls_cuda.non_local_search_int_vid_backward
         bwd_fxn(grad_vid0,grad_vid1,vid0,vid1,grad_dists,inds,
-                ctx.ps,ctx.pt,ctx.stride0,ctx.dil,
+                ctx.ps,ctx.pt,ctx.stride0,strideQ,ctx.dil,
                 ctx.reflect_bounds,patch_offset,
                 ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
     elif not(ctx.flows_requires_grad):

@@ -32,7 +32,8 @@ class RefineSearchFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid0, vid1, flows,
                 ws, wt, wr, k, kr=-1, ps=1, nheads=1,
-                stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
+                stride0=4, stride1=1, strideQ=None,
+                dilation=1, pt=1, dist_type="l2",
                 restricted_radius=False, reflect_bounds=True,
                 full_ws=True, topk_mode="all", self_action=None,
                 use_adj=False, normalize_bwd=False, k_agg=-1,
@@ -51,8 +52,9 @@ class RefineSearchFunction(th.autograd.Function):
         dtype = vid0.dtype
         device = vid0.device
         vid0,vid1 = shape_vids(nheads,[vid0,vid1])
-        B,HD,T,F,H,W = vid0.shape
-        nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+        B,HD,T,F,qH,qW = vid0.shape
+        B,HD,T,F,kH,kW = vid1.shape
+        nH,nW = (kH-1)//stride0+1,(kW-1)//stride0+1
         flows = shape_flows(nheads,flows,B,nH,nW)
         flows_shape = flows.shape
         flows_requires_grad = flows.requires_grad
@@ -72,7 +74,8 @@ class RefineSearchFunction(th.autograd.Function):
 
         # -- run fwd pass --
         dists,inds,kselect,reflect = forward(vid0, vid1, flows,
-                                             ws, wr, k, kr, ps, stride0, stride1,
+                                             ws, wr, k, kr, ps,
+                                             stride0, stride1, strideQ,
                                              dilation, pt, dist_type, restricted_radius,
                                              reflect_bounds, full_ws, topk_mode,
                                              self_action, patch_offset,
@@ -88,7 +91,7 @@ class RefineSearchFunction(th.autograd.Function):
         if itype == "int":
             ctx.mark_non_differentiable(inds)
         ctx.vid_shape = vid0.shape
-        ctx_vars = {"stride0":stride0,"stride1":stride1,
+        ctx_vars = {"stride0":stride0,"stride1":stride1,"strideQ":strideQ,
                     "ps":ps,"pt":pt,"dil":dilation,"ws":ws,"wt":wt,
                     "reflect_bounds":reflect_bounds,"k_agg":k_agg,
                     "use_adj":use_adj,"normalize_bwd":normalize_bwd,
@@ -105,13 +108,14 @@ class RefineSearchFunction(th.autograd.Function):
     def backward(ctx, grad_dists, grad_inds):
         grad0,grad1,grad_flows = backward(ctx, grad_dists, grad_inds)
         return grad0,grad1,grad_flows,None,None,None,None,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None,None,None,None,\
+            None,None,None,None,None,None,None,None,None,None,None,None,None,None,\
             None,None,None,None,None,None,None,None,None,None,None,None,None,None,None
 
 class RefineSearch(th.nn.Module):
 
     def __init__(self, ws, wt, wr, k, kr, ps, nheads=1,
-                 stride0=4, stride1=1, dilation=1, pt=1, dist_type="l2",
+                 stride0=4, stride1=1, strideQ=None,
+                 dilation=1, pt=1, dist_type="l2",
                  restricted_radius=True, reflect_bounds=True,
                  full_ws=True, topk_mode="all", self_action=None,
                  use_adj=False, normalize_bwd=False, k_agg=-1,
@@ -128,6 +132,7 @@ class RefineSearch(th.nn.Module):
         self.nheads = nheads
         self.stride0 = stride0
         self.stride1 = stride1
+        self.strideQ = strideQ
         self.dilation = dilation
         self.pt = pt
         self.dist_type = dist_type
@@ -160,7 +165,7 @@ class RefineSearch(th.nn.Module):
         return RefineSearchFunction.apply(vid0,vid1,flows,
                                           self.ws, self.wt, self.wr, self.k,
                                           self.kr, self.ps, self.nheads,
-                                          self.stride0,self.stride1,
+                                          self.stride0,self.stride1,self.strideQ,
                                           self.dilation,self.pt,self.dist_type,
                                           self.restricted_radius,
                                           self.reflect_bounds,self.full_ws,
@@ -187,7 +192,7 @@ def _apply(vid0, vid1, flows,
            restricted_radius=False, reflect_bounds=True, full_ws=True,
            topk_mode="all", self_action=None, use_adj=False,
            normalize_bwd=False, k_agg=-1,
-           off_Hq=0, off_Wq=0, itype="float"):
+           off_Hq=0, off_Wq=0, strideQ=None, itype="float"):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     # cfg = extract_config(kwargs)
@@ -197,7 +202,7 @@ def _apply(vid0, vid1, flows,
                stride0, stride1, dilation, pt, dist_type,
                restricted_radius, reflect_bounds, full_ws,
                topk_mode, self_action, use_adj,
-               normalize_bwd, k_agg, off_Hq, off_Wq, itype)
+               normalize_bwd, k_agg, off_Hq, off_Wq, strideQ, itype)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -212,19 +217,19 @@ def extract_config(cfg,restrict=True):
              "reflect_bounds":True, "full_ws":True,
              "topk_mode": "all", "self_action":None,
              "use_adj":False, "normalize_bwd": False, "k_agg":-1,
-             "off_Hq":0,"off_Wq":0,"itype":"float"}
+             "off_Hq":0,"off_Wq":0,"strideQ":None,"itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     cfg = extract_config(cfg,False)
     search = RefineSearch(cfg.ws, cfg.wt, cfg.wr, cfg.k, kr=cfg.kr, ps=cfg.ps,
-                          nheads=cfg.nheads, stride0=cfg.stride0, stride1=cfg.stride0,
+                          nheads=cfg.nheads, stride0=cfg.stride0, stride1=cfg.stride1,
                           dilation=cfg.dilation, pt=cfg.pt, dist_type=cfg.dist_type,
                           restricted_radius=cfg.restricted_radius,
                           reflect_bounds=cfg.reflect_bounds, full_ws=cfg.full_ws,
                           topk_mode=cfg.topk_mode, self_action=cfg.self_action,
                           use_adj=cfg.use_adj, normalize_bwd=cfg.normalize_bwd,
                           k_agg=cfg.k_agg,off_Hq=cfg.off_Hq,off_Wq=cfg.off_Wq,
-                          itype=cfg.itype)
+                          strideQ=cfg.strideQ,itype=cfg.itype)
     return search
 

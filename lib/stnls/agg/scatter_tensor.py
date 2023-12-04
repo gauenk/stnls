@@ -22,7 +22,7 @@ def run(tensor,flows_k,labels,stride0,stride1,H,W,invalid=th.inf):
     # -- unpack shapes --
     B,HD,T,nH0,nW0,K = tensor.shape[:6]
     Q0 = T*nH0*nW0
-    S = labels.max().int()+1
+    S = labels.max().long().item()+1
     tensor = tensor.reshape(B,HD,Q0,K,-1)
     M = tensor.shape[-1]
     nH1 = (H-1)//stride1+1

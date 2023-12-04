@@ -23,9 +23,10 @@ __global__ void non_local_search_int_forward_kernel(
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> flows,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
-    int ws, int wt, int ps, int pt, int stride0, int stride1, int dilation,
+    int ws, int wt, int ps, int pt,
+    int stride0, int stride1, int strideQ, int dilation,
     bool reflect_bounds, bool full_ws, int patch_offset,
-    int nH0, int nW0, int nHW0, int st_offset,
+    int nH, int nW, int nHW, int st_offset,
     int off_Hq, int off_Wq, int q_per_thread, int ws_per_thread, int wt_per_thread){
 
   // -- unpack shape --
@@ -62,6 +63,7 @@ __global__ void non_local_search_int_forward_kernel(
 
   // -- decls --
   int ref_patch[3];
+  int adj_patch[3];
   int prop_patch[3];
   int frame_anchor[2];
   int ref_pix[3];
@@ -92,9 +94,10 @@ __global__ void non_local_search_int_forward_kernel(
     if (qi >= Q){ continue; }
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,qH,qW);
-    n_hi = ref_patch[1] / stride0;
-    n_wi = ref_patch[2] / stride0;
+    get_pixel_loc(ref_patch,qi,strideQ,nW,nHW,qH,qW);
+    get_pixel_loc(adj_patch,qi,stride0,nW,nHW,kH,kW);
+    n_hi = ref_patch[1] / strideQ;
+    n_wi = ref_patch[2] / strideQ;
 
     // -- check bounds of pixel location --
     // check_bounds(valid_ref_patch,ref_patch,T,H,W);
@@ -113,19 +116,19 @@ __global__ void non_local_search_int_forward_kernel(
       // ---------------------------------------
 
       // -- select time --
-      prop_patch[0] = ref_patch[0] + st_i; // t_next
+      prop_patch[0] = adj_patch[0] + st_i; // t_next
       prop_patch[0] = (prop_patch[0] > t_max) ? t_max - st_i : prop_patch[0];
 
       // -- offset with flows --
       if (st_i >= st_offset){
-        auto flows_t = flows[ibatch][ihead_f][ref_patch[0]][st_i-st_offset];
-        frame_anchor[0] = ref_patch[1] + flows_t[1][n_hi][n_wi];
-        frame_anchor[1] = ref_patch[2] + flows_t[0][n_hi][n_wi];
+        auto flows_t = flows[ibatch][ihead_f][adj_patch[0]][st_i-st_offset];
+        frame_anchor[0] = adj_patch[1] + flows_t[1][n_hi][n_wi];
+        frame_anchor[1] = adj_patch[2] + flows_t[0][n_hi][n_wi];
         frame_anchor[0] = bounds(frame_anchor[0],kH);
         frame_anchor[1] = bounds(frame_anchor[1],kW);
       }else{
-        frame_anchor[0] = ref_patch[1];
-        frame_anchor[1] = ref_patch[2];
+        frame_anchor[0] = adj_patch[1];
+        frame_anchor[1] = adj_patch[2];
       }
 
       // -- search region offsets --
@@ -167,9 +170,9 @@ __global__ void non_local_search_int_forward_kernel(
           // -- assignent --
           if (!valid){ dist = invalid; }
           dists[ibatch][ihead][qi][st_i][ws_i][ws_j] = dist;
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0] - ref_patch[0];
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1] - ref_patch[1];
-          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][2] = prop_patch[2] - ref_patch[2];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][0] = prop_patch[0] - adj_patch[0];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][1] = prop_patch[1] - adj_patch[1];
+          inds[ibatch][ihead][qi][st_i][ws_i][ws_j][2] = prop_patch[2] - adj_patch[2];
           
         }
       }
@@ -181,9 +184,9 @@ void non_local_search_int_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor flows,
     torch::Tensor dists, torch::Tensor inds,
-    int ps, int k, int stride0, int stride1, int dilation, int pt,
-    bool reflect_bounds, bool full_ws, int patch_offset,
-    int off_Hq, int off_Wq, int dist_type){
+    int ps, int k, int stride0, int stride1, int strideQ,
+    int dilation, int pt, bool reflect_bounds, bool full_ws,
+    int patch_offset, int off_Hq, int off_Wq, int dist_type){
 
    // -- derived quantities --
    int kH = vid1.size(4);
@@ -232,7 +235,7 @@ void non_local_search_int_forward_cuda(
             flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-            ws, wt, ps, pt, stride0, stride1, dilation, 
+            ws, wt, ps, pt, stride0, stride1, strideQ, dilation, 
             reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
             st_offset, off_Hq, off_Wq, q_per_thread, ws_per_thread, wt_per_thread);
           }));
@@ -245,7 +248,7 @@ void non_local_search_int_forward_cuda(
             flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-            ws, wt, ps, pt, stride0, stride1, dilation, 
+            ws, wt, ps, pt, stride0, stride1, strideQ, dilation, 
             reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
             st_offset, off_Hq, off_Wq, q_per_thread, ws_per_thread, wt_per_thread);
           }));
@@ -270,7 +273,7 @@ __global__ void non_local_search_int_vid_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid1,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> grad_dists,
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
-    int ps, int pt, int stride0, int dilation, bool reflect_bounds,
+    int ps, int pt, int stride0, int strideQ, int dilation, bool reflect_bounds,
     int patch_offset, int off_Hq, int off_Wq, int ftrs_per_thread) {
 
   // -- shape --
@@ -284,14 +287,15 @@ __global__ void non_local_search_int_vid_backward_kernel(
   int qW = vid0.size(5);
   int kH = vid1.size(4);
   int kW = vid1.size(5);
-  int nH0 = inds.size(3);
-  int nW0 = inds.size(4);
-  int nHW0 = nH0*nW0;
+  int nH = inds.size(3);
+  int nW = inds.size(4);
+  int nHW = nH*nW;
   int K =  inds.size(5);
-  int Q = T*nH0*nW0;
+  int Q = T*nH*nW;
 
   // -- fwd decl registers --
   int ref_patch[3];
+  int adj_patch[3];
   int prop_patch[3];
   int ref[3];
   int prop[3];
@@ -320,16 +324,17 @@ __global__ void non_local_search_int_vid_backward_kernel(
   if ((qi < Q) && (ki < K)){
 
     // -- pixel location from query index --
-    get_pixel_loc(ref_patch,qi,stride0,nW0,nHW0,qH,qW);
+    get_pixel_loc(ref_patch,qi,strideQ,nW,nHW,qH,qW);
+    get_pixel_loc(adj_patch,qi,stride0,nW,nHW,kH,kW);
     int ti = ref_patch[0];
-    int nh = ref_patch[1]/stride0;
-    int nw = ref_patch[2]/stride0;
+    int nh = ref_patch[1]/strideQ;
+    int nw = ref_patch[2]/strideQ;
 
     // -- proposed location --
     weight = grad_dists[ibatch][ihead][ti][nh][nw][ki];
-    prop_patch[0] = ref_patch[0] + inds[ibatch][ihead][ti][nh][nw][ki][0];
-    prop_patch[1] = ref_patch[1] + inds[ibatch][ihead][ti][nh][nw][ki][1];
-    prop_patch[2] = ref_patch[2] + inds[ibatch][ihead][ti][nh][nw][ki][2];
+    prop_patch[0] = adj_patch[0] + inds[ibatch][ihead][ti][nh][nw][ki][0];
+    prop_patch[1] = adj_patch[1] + inds[ibatch][ihead][ti][nh][nw][ki][1];
+    prop_patch[2] = adj_patch[2] + inds[ibatch][ihead][ti][nh][nw][ki][2];
 
     // -- update patch --
     update_bwd_patch_int<scalar_t,DIST_TYPE>(
@@ -348,7 +353,7 @@ void non_local_search_int_vid_backward_cuda(
     torch::Tensor grad_vid0, torch::Tensor grad_vid1,
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor grad_dists, const torch::Tensor inds,
-    int ps, int pt, int stride0, int dilation,
+    int ps, int pt, int stride0, int strideQ, int dilation,
     bool reflect_bounds, int patch_offset,
     int off_Hq, int off_Wq, int dist_type) {
 
@@ -406,7 +411,7 @@ void non_local_search_int_vid_backward_cuda(
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-          ps, pt, stride0, dilation, reflect_bounds, patch_offset,
+          ps, pt, stride0, strideQ, dilation, reflect_bounds, patch_offset,
           off_Hq, off_Wq, ftrs_per_thread);
     }));
   }else if (dist_type == 1){ // l2
@@ -419,7 +424,7 @@ void non_local_search_int_vid_backward_cuda(
           vid1.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           grad_dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
           inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-          ps, pt, stride0, dilation, reflect_bounds, patch_offset,
+          ps, pt, stride0, strideQ, dilation, reflect_bounds, patch_offset,
           off_Hq, off_Wq, ftrs_per_thread);
     }));
   }else{

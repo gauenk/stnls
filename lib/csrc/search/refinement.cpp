@@ -8,7 +8,7 @@
 void refinement_int_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1, const torch::Tensor flows,
     torch::Tensor dists, torch::Tensor inds,
-    int ws, int ps, int stride0, int stride1, int dilation, int pt,
+    int ws, int ps, int stride0, int stride1, int strideQ, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
     int patch_offset, int off_Hq, int off_Wq, int dist_type);
 
@@ -39,7 +39,7 @@ void refinement_bilin2d_vidflows_backward_cuda(
 void refinement_int_forward(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor flows, torch::Tensor dists, torch::Tensor inds,
-    int ws, int ps, int stride0, int stride1, int dilation, int pt,
+    int ws, int ps, int stride0, int stride1, int strideQ, int dilation, int pt,
     bool restrict_radius, bool reflect_bounds, bool full_ws,
     int patch_offset, int off_Hq, int off_Wq, int dist_type){
   CHECK_INPUT(vid0);
@@ -48,7 +48,7 @@ void refinement_int_forward(
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
   refinement_int_forward_cuda(vid0, vid1, flows, dists, inds,
-                              ws, ps, stride0, stride1, dilation, pt,
+                              ws, ps, stride0, stride1, strideQ, dilation, pt,
                               restrict_radius, reflect_bounds, full_ws,
                               patch_offset, off_Hq, off_Wq, dist_type);
 }

@@ -177,6 +177,7 @@ def run_slic(vid,flows,cfg):
     # timer,memer = ExpTimer(),GpuMemer()
     # with TimeIt(timer,"labels"):
     #     with MemIt(memer,"labels"):
+    print(cfg.full_ws)
     names,labels = stnls.agg.scatter_labels(flows,flows_k,cfg.ws,cfg.wt,
                                             cfg.stride0,cfg.stride1,H,W,cfg.full_ws)
     # print(timer,memer)
@@ -190,8 +191,9 @@ def run_slic(vid,flows,cfg):
     scatter_flows_k = stnls.agg.scatter_tensor(flows_k,flows_k,labels,
                                                cfg.stride0,cfg.stride1,H,W)
     scatter_labels = stnls.agg.scatter_tensor(gather_labels,flows_k,labels,
-                                              cfg.stride0,cfg.stride1,H,W)
-    # print("[a]: ",scatter_flows_k.shape,flows_k.shape,scatter_labels.shape)
+                                              cfg.stride0,cfg.stride1,H,W,
+                                              invalid=-th.inf)
+    print("[a]: ",scatter_flows_k.shape,flows_k.shape,scatter_labels.shape)
 
 
     # -- checking in --
@@ -354,7 +356,8 @@ def main():
     cfg.full_ws = True
     cfg.wt = 0
     cfg.stride0 = 8
-    cfg.ws = 2*cfg.stride0-2
+    # cfg.ws = 2*cfg.stride0-2
+    cfg.ws = 11
     # cfg.stride0 = 3
     # cfg.ws = 3
     # if cfg.ws == 1: cfg.ws += 1

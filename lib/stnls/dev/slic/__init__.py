@@ -59,17 +59,18 @@ def slic_select(vid,ws):
     ps = 1
     # ws = 3
     wt = 0
-    stride0 = 8
-    ws = 2*stride0-2
+    stride0 = 7
+    ws = 5
     # stride0,ws = 3,5
     stride1 = 1
     K0 = 1
     softmax_weight = 10.
     k = -1
     full_ws = True
-    use_flow = False
-    M = 0.1
+    use_flow = True
+    M = 0.5
     use_rand = False
+    agg_ps = ps
 
     # -- compute search window --
     B,T,F,H,W = vid.shape
@@ -98,7 +99,7 @@ def slic_select(vid,ws):
     scatter_flows_k = stnls.agg.scatter_tensor(flows_k,flows_k,labels,
                                                stride0,stride1,H,W)
     scatter_labels = stnls.agg.scatter_tensor(gather_labels,flows_k,labels,
-                                              stride0,stride1,H,W)
+                                              stride0,stride1,H,W,invalid=-th.inf)
 
     # -- topk --
     scatter_flows_k = -scatter_flows_k
@@ -107,19 +108,30 @@ def slic_select(vid,ws):
                                                          descending=False)
 
     # -- prepare weights and flows --
+    pool_type = "pool"
+    # pool_type = "wpsum"
     pooled,weights,flows_k = slic_pooling(vid,s_weight,s_flows_k,s_labels,
-                                          ps,stride0,stride1,K0,
-                                          softmax_weight,"pool")
+                                          agg_ps,stride0,stride1,K0,
+                                          softmax_weight,pool_type)
     # print(th.cat([weights[...,None],flows_k],-1))
     print(pooled.shape,vid.shape)
     # pooled = pooled[...,psHalf:,psHalf:]
     print(pooled.shape,vid.shape)
 
     # -- refine --
-    assert pooled.shape[-2:] == vid.shape[-2:],"Same Spatial Dim [H x W]"
+    # assert pooled.shape[-2:] == vid.shape[-2:],"Same Spatial Dim [H x W]"
     wr,k,kr = 1,1,1.
-    refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads=1,
-                                       stride0=stride0, dist_type="l2", itype="int")
+    if pool_type == "pool":
+        ps = 1
+        refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads=1,
+                                           strideQ=ps,stride0=stride0,
+                                           off_Hq=ps//2,off_Wq=ps//2,
+                                           dist_type="l2", itype="int")
+    elif pool_type == "wpsum":
+        refine = stnls.search.RefineSearch(ws, wt, wr, k, kr, ps, nheads=1,
+                                           stride0=stride0, dist_type="l2", itype="int")
+    else:
+        raise ValueError(f"Uknown pool type [{pool_type}]")
     if use_rand:
         pooled = th.rand_like(pooled)
         vid = th.rand_like(vid)
@@ -130,11 +142,19 @@ def slic_select(vid,ws):
     # -- flows to mask --
     # inds = inds2labels(s_flows_k,cfg,H,W)
     # print(th.cat([dists[...,None],flows_k],-1))
+    print(flows_k.shape,
+          flows_k[...,0].min(),flows_k[...,0].max(),
+          flows_k[...,1].min(),flows_k[...,1].max(),
+          flows_k[...,2].min(),flows_k[...,2].max())
+
     inds = stnls.utils.misc.flow2inds(flows_k,stride0).long()
     inds = rearrange(inds,'b hd t h w 1 tr -> (b hd) (t h w) tr')
     select = inds[:,:,0]*H*W + inds[:,:,1]*W + inds[:,:,2]
     print("select.shape: ",select.shape)
-    # print(inds.shape)
+    print(inds.shape,
+          inds[...,0].min(),inds[...,0].max(),
+          inds[...,1].min(),inds[...,1].max(),
+          inds[...,2].min(),inds[...,2].max())
     # # print(inds)
     # # # print(inds.shape)
 
@@ -224,11 +244,11 @@ def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0,
     if pool_method == "pool":
         # ps = stride0//2+1
         # ps = ps + (1 - ps % 2) # ensure odd
-        ps = stride0
+        # ps = stride0
         # ps = ps + (1 - ps % 2) # ensure odd
         agg = stnls.agg.PooledPatchSum(ps,stride0,itype="int")
     elif pool_method == "wpsum":
-        ps = stride0*2
+        # ps = stride0*2
         ps = ps + (1 - ps % 2) # ensure odd
         agg = stnls.agg.WeightedPatchSum(ps,stride0,itype="int")
     else:
