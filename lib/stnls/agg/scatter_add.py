@@ -94,12 +94,7 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         eps = 1e-10
 
         # -- normalize --
-        H,W = vid.shape[-2:]
-        # print(counts)
-        # print(counts.sum(-1))
-        # print(counts.sum(-2))
-        # exit()
-        counts = counts.view((1,1,1,1,H,W))
+        counts = counts.view((1,1,1,1,outH,outW))
         out_vid = out_vid / (counts+eps)
         assert th.all(counts>1e-3)
 
