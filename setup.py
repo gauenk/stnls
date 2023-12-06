@@ -42,8 +42,8 @@ setup(name='stnls',
               # 'lib/csrc/agg/wpsum_int_kernel.cu',
               # 'lib/csrc/agg/wpsum_bilin2d_kernel.cu',
               'lib/csrc/agg/gather_add.cpp', # Non-Local Gather Sum
-              'lib/csrc/agg/gather_add_int_kernel.cu',
-              'lib/csrc/agg/gather_add_bilin2d_kernel.cu',
+              'lib/csrc/agg/gather_add_kernel.cu',
+              # 'lib/csrc/agg/gather_add_bilin2d_kernel.cu',
               'lib/csrc/agg/scatter_add.cpp', # Non-Local Scatter Sum
               'lib/csrc/agg/scatter_add_int_kernel.cu',
               # 'lib/csrc/agg/nlsum_scatter_bilin2d_kernel.cu',

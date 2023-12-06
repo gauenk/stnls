@@ -34,7 +34,7 @@ def get_inds(inds,itype):
 class NonLocalGatherAddFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid, weights, flows, ps, stride0,
+    def forward(ctx, vid, weights, flows, ps, strideIn, strideOut,
                 pt=1, dilation=1, reflect_bounds=True, use_adj=False, itype="float"):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
@@ -79,7 +79,7 @@ class NonLocalGatherAddFunction(th.autograd.Function):
             # flows[...,1:] = flows[...,1:].int()+1
             fwd_fxn = stnls_cuda.gather_add_bilin2d_forward
         fwd_fxn(out_vid, counts, vid, weights, flows,
-                ps, stride0, pt, dilation, reflect_bounds, patch_offset)
+                ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset)
         eps = 1e-10
 
         # -- normalize --
@@ -97,7 +97,8 @@ class NonLocalGatherAddFunction(th.autograd.Function):
         ctx.vid_in_dim = vid_in_dim
         ctx.itype = itype
         ctx.ps,ctx.pt = ps,pt
-        ctx.stride0 = stride0
+        ctx.strideIn = strideIn
+        ctx.strideOut = strideOut
         ctx.vid_shape = vid.shape
         ctx.wshape = wshape
         ctx.dilation = dilation
@@ -113,7 +114,8 @@ class NonLocalGatherAddFunction(th.autograd.Function):
         # -- unpack --
         weights,flows,vid,counts = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
-        stride0 = ctx.stride0
+        strideIn = ctx.strideIn
+        strideOut = ctx.strideOut
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
         use_adj = ctx.use_adj
@@ -145,7 +147,7 @@ class NonLocalGatherAddFunction(th.autograd.Function):
             bwd_fxn = stnls_cuda.gather_add_int_backward
             bwd_fxn(grad_in_vid,grad_weights,
                     grad_out_vid,vid,weights,flows,
-                    ps,stride0,pt,dilation,
+                    ps,strideIn,strideOut,pt,dilation,
                     reflect_bounds,patch_offset)
         # elif not(flows.requires_grad):
         #     bwd_fxn = stnls_cuda.gather_add_bilin2d_backward
@@ -157,7 +159,7 @@ class NonLocalGatherAddFunction(th.autograd.Function):
             bwd_fxn = stnls_cuda.gather_add_bilin2d_backward
             bwd_fxn(grad_in_vid,grad_weights,grad_flows,
                     grad_out_vid,vid,weights,flows,
-                    ps,stride0,pt,dilation,
+                    ps,strideIn,strideOut,pt,dilation,
                     reflect_bounds,patch_offset)
 
         # print(th.where(grad_weights[0,0].abs()>0))
@@ -218,12 +220,12 @@ class NonLocalGatherAdd(th.nn.Module):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def _apply(vid, weights, flows, ps, stride0,
+def _apply(vid, weights, flows, ps, strideIn, strideOut,
            pt=1, dilation=1,reflect_bounds=True, use_adj=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     fxn = NonLocalGatherAddFunction.apply
-    return fxn(vid,weights,flows,ps,stride0,
+    return fxn(vid,weights,flows,ps, strideIn, strideOut,
                pt,dilation,reflect_bounds,use_adj)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -233,14 +235,14 @@ def _apply(vid, weights, flows, ps, stride0,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ps":3,"stride0":1,"pt":1,"dilation":1,
+    pairs = {"ps":3,"strideIn":1,"strideOut":1,"pt":1,"dilation":1,
              "reflect_bounds":True, "use_adj":False, "itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     cfg = extract_config(cfg,False)
     reducer = NonLocalGatherAdd(
-        cfg.ps, cfg.stride0, pt=cfg.pt, dilation=cfg.dilation,
+        cfg.ps, cfg.strideIn, cfg.strideOut, pt=cfg.pt, dilation=cfg.dilation,
         reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,itype=cfg.itype)
     return reducer
 
