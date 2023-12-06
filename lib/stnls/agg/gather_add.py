@@ -73,13 +73,11 @@ class NonLocalGatherAddFunction(th.autograd.Function):
         flows = flows.view(B,HD,Q,K,3)
 
         # -- exec --
-        if flows.dtype == th.int:
-            fwd_fxn = stnls_cuda.gather_add_int_forward
-        else:
-            # flows[...,1:] = flows[...,1:].int()+1
-            fwd_fxn = stnls_cuda.gather_add_bilin2d_forward
+        itype_int = flows.dtype == th.int
+        fwd_fxn = stnls_cuda.gather_add_forward
         fwd_fxn(out_vid, counts, vid, weights, flows,
-                ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset)
+                ps, strideIn, strideOut, pt, dilation,
+                reflect_bounds, patch_offset, itype_int)
         eps = 1e-10
 
         # -- normalize --
@@ -185,10 +183,11 @@ class NonLocalGatherAddFunction(th.autograd.Function):
 class NonLocalGatherAdd(th.nn.Module):
     # [video -> patches] @ flows
 
-    def __init__(self, ps, stride0, pt=1, dilation=1,
+    def __init__(self, ps, strideIn, strideOut, pt=1, dilation=1,
                  reflect_bounds=True, use_adj=False, itype="float"):
         super().__init__()
-        _vars = ["ps","stride0","pt","dilation","reflect_bounds","use_adj","itype"]
+        _vars = ["ps","strideIn","strideOut", "pt","dilation",
+                 "reflect_bounds","use_adj","itype"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))
@@ -216,7 +215,7 @@ class NonLocalGatherAdd(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#   [Direct API]  stnls.agg.wpsum(...)
+#   [Direct API]  stnls.agg.gather_add(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -230,7 +229,7 @@ def _apply(vid, weights, flows, ps, strideIn, strideOut,
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#   [Python Dict API] stnls.agg.wpsum(pydict)
+#   [Python Dict API] stnls.agg.gather_add(pydict)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 

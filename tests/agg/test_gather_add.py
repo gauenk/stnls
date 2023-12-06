@@ -52,10 +52,10 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[5],"stride0":[1,2,3],"pt":[1],
-                  "dilation":[2],"K":[5,10],"nheads":[1,2],
-                  "reflect_bounds":[True,False],
-                  "seed":[0,1,2],"itype":["float","int"]}
+    test_lists = {"ps":[1,5],"stride0":[1,2,3],"pt":[1],
+                  "K":[5,10],"nheads":[1,2],
+                  "seed":[0,1,2],"dilation":[1],
+                  "reflect_bounds":[True,False],"itype":["float","int"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -74,6 +74,7 @@ def test_fwd(K,ps,pt,stride0,dilation,
     # -- init --
     device = "cuda:0"
     set_seed(seed)
+    if ((ps-1)//2+1) < stride0: return
 
     # -- load data --
     B,HD,T,F,H,W = 1,nheads,4,3,16,16
@@ -102,19 +103,19 @@ def test_fwd(K,ps,pt,stride0,dilation,
     flows = flows.to(vid.device)
 
     # -- exec fold fxns --
-    agg_gt = stnls.agg.NonLocalStack(ps=ps,stride0=stride0,pt=pt,
+    agg_gt = stnls.agg.NonLocalGather(ps=ps,stride0=stride0,pt=pt,
                                      reflect_bounds=reflect_bounds,
                                      itype=itype)
     out_gt = th.sum(agg_gt(vid,weights,flows),2)
     # print("out_gt.shape: ",out_gt.shape)
 
     # -- exec fold fxns --
-    # agg_gt = stnls.agg.NonLocalStack(ps=ps,stride0=stride0,pt=pt,
+    # agg_gt = stnls.agg.NonLocalGather(ps=ps,stride0=stride0,pt=pt,
     #                                  reflect_bounds=reflect_bounds,
     #                                  itype="int")
     # out_te = th.sum(agg_gt(vid,weights,flows),2)
-    agg_te = stnls.agg.NonLocalGatherSum(ps=ps,stride0=stride0,pt=pt,
-                                         reflect_bounds=reflect_bounds,
+    agg_te = stnls.agg.NonLocalGatherAdd(ps=ps,strideIn=stride0,strideOut=stride0,
+                                         pt=pt,reflect_bounds=reflect_bounds,
                                          itype=itype)
     out_te = agg_te(vid,weights,flows)
     # print("out_te.shape: ",out_te.shape)
@@ -140,6 +141,7 @@ def test_bwd(K,ps,pt,stride0,dilation,
     # -- get args --
     device = "cuda:0"
     set_seed(seed)
+    if ((ps-1)//2+1) < stride0: return
 
     # -- load data --
     B,HD,T,F,H,W = 1,nheads,4,3,8,8
@@ -172,7 +174,7 @@ def test_bwd(K,ps,pt,stride0,dilation,
         flows = flows.round().int()
 
     # -- exec fold fxns --
-    agg = stnls.agg.NonLocalGatherSum(ps=ps,stride0=stride0,
+    agg = stnls.agg.NonLocalGatherAdd(ps=ps,strideIn=stride0,strideOut=stride0,
                                       reflect_bounds=reflect_bounds,
                                       itype=itype)
 

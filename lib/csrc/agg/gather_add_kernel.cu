@@ -36,12 +36,9 @@ __global__ void gather_add_forward_kernel(
 
     // -- batching --
     int query_start = q_per_thread*(threadIdx.x + blockDim.x*blockIdx.x);
-    // int query_start = blockIdx.x*blockDim.x+threadIdx.x;
     int ki = blockIdx.y*blockDim.y+threadIdx.y;
     int ihead = blockIdx.z/B;
     int ibatch = (blockIdx.z-ihead*B) % B;
-    // int ibatch = blockIdx.y;
-    // int ihead = blockIdx.z;
     if (ki >= K){ return; }
 
     // // -- cuda threads --
@@ -62,11 +59,11 @@ __global__ void gather_add_forward_kernel(
       // -- query index --
       qi = query_start + _qi;
       if (qi >= Q){ continue; }
-      get_pixel_loc<int>(ref,qi,strideOut,nW,nHW,outH,outW);
+      get_pixel_loc(ref,qi,strideOut,nW,nHW,outH,outW);
 
       // -- non-local index --
   #pragma unroll
-      get_pixel_loc<int>(nl,qi,strideIn,nW,nHW,inH,inW);
+      get_pixel_loc(nl,qi,strideIn,nW,nHW,inH,inW);
       for (int _idx=0; _idx < 3; _idx++){
         nl[_idx] = nl[_idx] + inds[ibatch][ihead][qi][ki][_idx];
       }
@@ -122,7 +119,7 @@ __global__ void gather_add_forward_kernel(
 
             // -- read --
             if (INTERPOLATE){
-              bilin2d_interpolate(pix,nl_p[1],nl_p[2],inH,inW,
+              bilin2d_interpolate(pix,(scalar_t)nl_p[1],(scalar_t)nl_p[2],inH,inW,
                                   in_vid[ibatch][ihead][nl_p[0]][iftr]);
             }else{
               pix = in_vid[ibatch][ihead][nl_p[0]][iftr][nl_p[1]][nl_p[2]];
@@ -225,16 +222,17 @@ __global__ void gather_add_int_backward_kernel(
   int outW = out_vid_grad.size(5);
 
   // -- pixel indexing --
-  int qi,ki;
+  int qi;
   int ref[3],ref_p[3],nl[3],nl_p[3];
   bool valid;
   float weight,pix_n,pix_m;
 
-  // -- location to fill --
-  int query_start = q_per_thread*(blockIdx.x*blockDim.x+threadIdx.x);
+  // -- batching --
+  int query_start = q_per_thread*(threadIdx.x + blockDim.x*blockIdx.x);
   int ki = blockIdx.y*blockDim.y+threadIdx.y;
-  int ihead = blockIdx.y/B;
-  int ibatch = (blockIdx.y-ihead*B);
+  int ihead = blockIdx.z/B;
+  int ibatch = (blockIdx.z-ihead*B) % B;
+  if (ki >= K){ return; }
   int nW = (inW-1)/strideIn+1;
   int nHW = nW*((inH-1)/strideIn+1);
 
@@ -276,10 +274,10 @@ __global__ void gather_add_int_backward_kernel(
         check_bounds(valid, ref_p, T,  outH, outW);
         if (not valid){ continue; }
   
-        // -- increment legal refs --
-        if ((ref_p[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
-          atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
-        }
+        // // -- increment legal refs --
+        // if ((ref_p[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
+        //   atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
+        // }
   
         // -- non-local pixel index --
         nl_p[0] = nl[0];
@@ -331,7 +329,7 @@ void gather_add_int_backward_cuda(
   int HD = dists.size(1);
   int Q = dists.size(2);
   int K = dists.size(3);
-  int q_per_thread = 2;
+  int q_per_thread = 1;
   
   // -- kernel threads --
   int MAX_THREADS = 512;
@@ -394,15 +392,17 @@ __global__ void gather_add_bilin2d_backward_kernel(
 
   // -- pixel indexing --
   bool valid;
-  int qi,ki;
-  float weight,pix_n,pix_m;
-  scalar_t ref[3],ref_p[3],nl[3],nl_p[3];
+  int qi;
+  scalar_t weight,grad,pix_m;
+  int ref[3],ref_p[3],nl_ti;
+  scalar_t nl[3],nl_p[3];
 
-  // -- location to fill --
-  int query_start = q_per_thread*(blockIdx.x*blockDim.x+threadIdx.x);
+  // -- batching --
+  int query_start = q_per_thread*(threadIdx.x + blockDim.x*blockIdx.x);
   int ki = blockIdx.y*blockDim.y+threadIdx.y;
-  int ihead = blockIdx.y/B;
-  int ibatch = (blockIdx.y-ihead*B);
+  int ihead = blockIdx.z/B;
+  int ibatch = (blockIdx.z-ihead*B) % B;
+  if (ki >= K){ return; }
   int nW = (inW-1)/strideIn+1;
   int nHW = nW*((inH-1)/strideIn+1);
 
@@ -412,11 +412,11 @@ __global__ void gather_add_bilin2d_backward_kernel(
     // -- query index --
     qi = query_start + _qi;
     if (qi >= Q){ continue; }
-    get_pixel_loc<int>(ref,qi,strideOut,nW,nHW,outH,outW);
+    get_pixel_loc(ref,qi,strideOut,nW,nHW,outH,outW);
 
     // -- non-local index --
 #pragma unroll
-    get_pixel_loc<int>(nl,qi,strideIn,nW,nHW,inH,inW);
+    get_pixel_loc(nl,qi,strideIn,nW,nHW,inH,inW);
     for (int _idx=0; _idx < 3; _idx++){
       nl[_idx] = nl[_idx] + inds[ibatch][ihead][qi][ki][_idx];
     }
@@ -426,8 +426,11 @@ __global__ void gather_add_bilin2d_backward_kernel(
     if (not(valid)){ continue; }
 
     // -- always reflect anchor point --
+    int signH0,signW0;
     nl[0] = bounds(nl[0],T);
+    signH0 = check_bound(nl[1],inH) ? 1 : -1;
     nl[1] = bounds(nl[1],inH);
+    signW0 = check_bound(nl[2],inW) ? 1 : -1;
     nl[2] = bounds(nl[2],inW);
 
     // -- non-local weight --
@@ -444,16 +447,18 @@ __global__ void gather_add_bilin2d_backward_kernel(
         check_bounds(valid, ref_p, T,  outH, outW);
         if (not valid){ continue; }
   
-        // -- increment legal refs --
-        if ((ref_p[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
-          atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
-        }
+        // // -- increment legal refs --
+        // if ((ref_p[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
+        //   atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
+        // }
   
         // -- non-local pixel index --
         nl_p[0] = nl[0];
         nl_p[1] = nl[1]+dilation*(pi + patch_offset);
+        int signH = check_bound(nl_p[1],inH) ? signH0 : -signH0;
         nl_p[1] = reflect_bounds ? bounds(nl_p[1],inH) : nl_p[1];
         nl_p[2] = nl[2]+dilation*(pj + patch_offset);
+        int signW = check_bound(nl_p[2],inW) ? signW0 : -signW0;
         nl_p[2] = reflect_bounds ? bounds(nl_p[2],inW) : nl_p[2];
         check_bounds(valid, nl_p, T,  inH, inW);
         if (not valid){ continue; }
@@ -470,7 +475,7 @@ __global__ void gather_add_bilin2d_backward_kernel(
 
           // -- time is always valid --
           ref_p[0] = ref_p[0] + pk;
-          nl_p[0] = reflect_bounds ? bounds(nl[0]+pk,T) : (nl[0]+pk);
+          nl_ti = reflect_bounds ? bounds(nl[0]+pk,T) : (nl[0]+pk);
           valid = (nl_p[0] >= 0) and (nl_p[0] < T);
           valid = valid and (ref_p[0] >= 0) and (ref_p[0] < T);
           if (not valid){ continue; }
@@ -484,7 +489,7 @@ __global__ void gather_add_bilin2d_backward_kernel(
             // -- write "in_vid_grad" and read "in_vid" @ non-local index --
             bilin2d_assign_bwd(igradW, igradH, pix_m,
                                weight*grad, nl_p[1], nl_p[2], inH, inW,
-                               vid[ibatch][ihead][nl_p[0]][iftr],
+                               vid[ibatch][ihead][nl_ti][iftr],
                                in_vid_grad[ibatch][ihead][nl_ti][iftr]);
 
             // -- accumulate dists --
@@ -546,7 +551,7 @@ void gather_add_bilin2d_backward_cuda(
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
         inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset,
-        q_per_thread, k_per_thread);
+        q_per_thread);
       }));
   
 }

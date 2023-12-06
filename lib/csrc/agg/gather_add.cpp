@@ -60,7 +60,7 @@ void gather_add_forward(
   CHECK_INPUT(in_vid);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  gather_add_int_forward_cuda(out_vid,counts,in_vid,dists,inds,
+  gather_add_forward_cuda(out_vid,counts,in_vid,dists,inds,
                               ps,strideIn,strideOut,pt,dilation,
                               reflect_bounds,patch_offset,itype_int);
 }

@@ -118,7 +118,7 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         weights,flows,vid,counts = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
         strideIn = ctx.strideIn
-        strideOut = ctx.,strideOut
+        strideOut = ctx.strideOut
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
         use_adj = ctx.use_adj
