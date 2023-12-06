@@ -12,7 +12,7 @@ void scatter_add_forward_cuda(
   const torch::Tensor in_vid,
   const torch::Tensor dists, const torch::Tensor inds,
   int ps, int strideIn, int strideOut, int pt,
-  int dilation, bool reflect_bounds, int patch_offset);
+  int dilation, bool reflect_bounds, int patch_offset, bool itype_int);
 
 void scatter_add_int_backward_cuda(
     torch::Tensor in_vid_grad,
@@ -50,7 +50,7 @@ void scatter_add_forward(
   const torch::Tensor dists,
   const torch::Tensor inds,
   int ps, int strideIn, int strideOut, int pt,
-  int dilation, bool reflect_bounds, int patch_offset){
+  int dilation, bool reflect_bounds, int patch_offset, bool itype_int){
   CHECK_INPUT(out_vid);
   CHECK_INPUT(counts);
   CHECK_INPUT(in_vid);
@@ -58,7 +58,7 @@ void scatter_add_forward(
   CHECK_INPUT(inds);
   scatter_add_forward_cuda(out_vid,counts,in_vid,dists,inds,
                            ps,strideIn,strideOut,pt,dilation,
-                           reflect_bounds,patch_offset);
+                           reflect_bounds,patch_offset,itype_int);
 }
 
 

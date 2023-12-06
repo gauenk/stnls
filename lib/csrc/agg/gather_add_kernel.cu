@@ -225,7 +225,7 @@ __global__ void gather_add_int_backward_kernel(
   int qi;
   int ref[3],ref_p[3],nl[3],nl_p[3];
   bool valid;
-  float weight,pix_n,pix_m;
+  float weight,grad,pix_m;
 
   // -- batching --
   int query_start = q_per_thread*(threadIdx.x + blockDim.x*blockIdx.x);
@@ -296,16 +296,17 @@ __global__ void gather_add_int_backward_kernel(
           // -- time is always valid --
           ref_p[0] = ref[0] + pk;
           nl_p[0] = reflect_bounds ? bounds(nl[0]+pk,T) : (nl[0]+pk);
-          valid = (nl_p[0] >= 0) and (nl_p[0] < T) and (ref_p[0] >= 0) and (ref_p[0] < T);
+          valid = (nl_p[0] >= 0) and (nl_p[0] < T);
+          valid = valid and (ref_p[0] >= 0) and (ref_p[0] < T);
           if (not valid){ continue; }
 
           // -- num features --
           for (int iftr = 0; iftr < F; iftr++){
-            pix_n = out_vid_grad[ibatch][ihead][ref_p[0]][iftr][ref_p[1]][ref_p[2]];
+            grad = out_vid_grad[ibatch][ihead][ref_p[0]][iftr][ref_p[1]][ref_p[2]];
             pix_m = vid[ibatch][ihead][nl_p[0]][iftr][nl_p[1]][nl_p[2]];
             atomicAdd(&in_vid_grad[ibatch][ihead][nl_p[0]][iftr][nl_p[1]][nl_p[2]],
-                      weight*pix_n);
-            acc_dists_grad += pix_n*pix_m;
+                      weight*grad);
+            acc_dists_grad += grad*pix_m;
           }
 
         } // pt

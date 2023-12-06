@@ -763,7 +763,6 @@ void bilin2d_interpolate(scalar_t& pix, scalar_t hi, scalar_t wi, int H, int W,
       // h_interp = bounds(h_interp,H);
       // w_interp = bounds(w_interp,W);
 
-
       // -- update --
       pix += w*vid[h_interp][w_interp];
     }
@@ -860,6 +859,58 @@ void bilin2d_assign(scalar_t val, scalar_t hi, scalar_t wi, int H, int W,
 
 }
 
+template<typename scalar_t>
+__device__ __forceinline__ 
+void bilin2d_read_bwd(scalar_t& igradW, scalar_t& igradH,
+                      scalar_t& pix, scalar_t& grad,
+     scalar_t hi, scalar_t wi, int H, int W,
+     const torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> vid,
+     const torch::TensorAccessor<scalar_t,2,torch::RestrictPtrTraits,int32_t> grad_vid){
+
+  // -- init --
+  int hi_interp,wi_interp;
+  scalar_t interp_weight,vid_pix,vid_grad;
+  scalar_t gH,gW;
+  pix = 0;
+  igradW = 0;
+  igradH = 0;
+
+  // -- bilinear --
+  #pragma unroll
+  for (int ix=0;ix<2;ix++){
+    #pragma unroll
+    for (int jx=0;jx<2;jx++){
+
+      // -- interpolate weight --
+      hi_interp = __float2int_rz(hi+ix);
+      wi_interp = __float2int_rz(wi+jx);
+      gH = max(0.,1-fabs(hi-hi_interp));
+      gW = max(0.,1-fabs(wi-wi_interp));
+      interp_weight = gH * gW;
+
+      // -- check directions --
+      bool leftH = ix==0;
+      bool leftW = jx==0;
+
+      // -- legalize inds --
+      if (not check_bound(hi_interp,H)){ continue;}
+      if (not check_bound(wi_interp,W)){ continue;}
+      
+      // -- read video --
+      vid_pix = vid[hi_interp][wi_interp];
+      vid_grad = grad_vid[hi_interp][wi_interp];
+
+      // -- dist grad --
+      pix += interp_weight*vid_pix;
+      grad += interp_weight*vid_grad;
+
+      // -- index grad --
+      igradW += leftW ? -gH*vid_pix : gH*vid_pix; // dF[0]/dF[0]; A(0) 
+      igradH += leftH ? -gW*vid_pix : gW*vid_pix; // dF[0]/dF[0]; A(0)
+
+    }
+  }
+}
 
             
 template<typename scalar_t>

@@ -74,15 +74,11 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         flows = flows.view(B,HD,Q,K,3)
 
         # -- exec --
-        if flows.dtype == th.int:
-            fwd_fxn = stnls_cuda.scatter_add_int_forward
-        else:
-            fwd_fxn = None
-        # else:
-        #     # flows[...,1:] = flows[...,1:].int()+1
-        #     fwd_fxn = stnls_cuda.scatter_add_bilin2d_forward
+        fwd_fxn = stnls_cuda.scatter_add_forward
+        itype_int = flows.dtype == th.int
         fwd_fxn(out_vid, counts, vid, weights, flows,
-                ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset)
+                ps, strideIn, strideOut, pt, dilation,
+                reflect_bounds, patch_offset, itype_int)
         eps = 1e-10
 
         # -- normalize --
@@ -146,28 +142,14 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         # print(grad_weights[0,0])
 
         # -- video backward --
-        bwd_fxn = stnls_cuda.nl_scatter_add_int_backward
+        if itype == "int":
+            bwd_fxn = stnls_cuda.scatter_add_int_backward
+        else:
+            bwd_fxn = stnls_cuda.scatter_add_bilin2d_backward
         bwd_fxn(grad_in_vid,grad_weights,
                 grad_out_vid,vid,weights,flows,
                 ps,strideIn,strideOut,pt,dilation,
                 reflect_bounds,patch_offset)
-        # if itype == "int":
-        # # elif not(flows.requires_grad):
-        # #     bwd_fxn = stnls_cuda.scatter_add_bilin2d_backward
-        # #     bwd_fxn(grad_in_vid,grad_weights,
-        # #             grad_out_vid,vid,weights,flows,
-        # #             ps,stride0,pt,dilation,
-        # #             reflect_bounds,patch_offset)
-        # else:
-        #     bwd_fxn = stnls_cuda.scatter_add_bilin2d_backward
-        #     bwd_fxn(grad_in_vid,grad_weights,grad_flows,
-        #             grad_out_vid,vid,weights,flows,
-        #             ps,stride0,pt,dilation,
-        #             reflect_bounds,patch_offset)
-
-        # print(th.where(grad_weights[0,0].abs()>0))
-        # print(grad_weights[th.where(grad_weights.abs()>0)])
-        # print(grad_out_vid.sum(),grad_weights.sum())
 
         # -- shaping vid --
         vid_in_dim = ctx.vid_in_dim
