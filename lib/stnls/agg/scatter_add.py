@@ -35,7 +35,8 @@ class NonLocalScatterAddFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid, weights, flows, ps, strideIn, strideOut,
-                pt=1, dilation=1, reflect_bounds=True, use_adj=False, itype="float"):
+                outH=0, outW=0, pt=1, dilation=1, reflect_bounds=True,
+                use_adj=False, itype="float"):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
         weights = [BatchSize,nHeads,NumQueries,K]
@@ -61,10 +62,21 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         wshape = weights.shape
         vid = vid.contiguous()
         flows = get_inds(flows,itype)
+        B,HD,T,nH,nW,K = weights.shape
+        B,HD,T,F,inH,inW = vid.shape
+        if outH == 0:
+            if strideOut == 1: outH = strideOut*nH
+            else: outH = inH
+        if outW == 0:
+            if strideOut == 1:  outW = strideOut*nW
+            else: outW = inW
+        nH_in,nW_in = (inH-1)//strideIn+1,(inW-1)//strideIn+1
+        nH_out,nW_out = (outH-1)//strideOut+1,(outW-1)//strideOut+1
+        assert (nH == nH_in) and (nW == nW_in)
+        assert (nH == nH_out) and (nW == nW_out)
 
         # -- allocate --
-        B,HD,T,F,H,W = vid.shape
-        out_vid = th.zeros((B,HD,T,F,H,W),device=device,dtype=th.float)
+        out_vid = th.zeros((B,HD,T,F,outH,outW),device=device,dtype=th.float)
         counts = th.zeros_like(out_vid[0,0,0,0,:,:]).type(th.int)
         patch_offset = 0 if use_adj else -(ps//2)
 
@@ -74,8 +86,8 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         flows = flows.view(B,HD,Q,K,3)
 
         # -- exec --
-        fwd_fxn = stnls_cuda.scatter_add_forward
         itype_int = flows.dtype == th.int
+        fwd_fxn = stnls_cuda.scatter_add_forward
         fwd_fxn(out_vid, counts, vid, weights, flows,
                 ps, strideIn, strideOut, pt, dilation,
                 reflect_bounds, patch_offset, itype_int)
@@ -165,16 +177,16 @@ class NonLocalScatterAddFunction(th.autograd.Function):
             grad_flows = None
 
         return grad_in_vid,grad_weights,grad_flows,None,None,None,\
-            None,None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None,None,None
 
 class NonLocalScatterAdd(th.nn.Module):
     # [video -> patches] @ flows
 
-    def __init__(self, ps, strideIn, strideOut, pt=1, dilation=1,
-                 reflect_bounds=True, use_adj=False, itype="float"):
+    def __init__(self, ps, strideIn, strideOut, outH=0, outW=0, pt=1,
+                 dilation=1, reflect_bounds=True, use_adj=False, itype="float"):
         super().__init__()
-        _vars = ["ps","strideIn","strideOut","pt","dilation",
-                 "reflect_bounds","use_adj","itype"]
+        _vars = ["ps","strideIn","strideOut","outH","outW",
+                 "pt","dilation","reflect_bounds","use_adj","itype"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))
@@ -206,12 +218,12 @@ class NonLocalScatterAdd(th.nn.Module):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def _apply(vid, weights, flows, ps, stride0,
-           pt=1, dilation=1,reflect_bounds=True, use_adj=False):
+def _apply(vid, weights, flows, ps, strideIn, strideOut,
+           outH=0, outW=0, pt=1, dilation=1,reflect_bounds=True, use_adj=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
     fxn = NonLocalScatterAddFunction.apply
-    return fxn(vid,weights,flows,ps,stride0,
+    return fxn(vid,weights,flows,ps,strideIn,strideOut,outH,outW,
                pt,dilation,reflect_bounds,use_adj)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -221,14 +233,16 @@ def _apply(vid, weights, flows, ps, stride0,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ps":3,"strideIn":1,"strideOut":1,"pt":1,"dilation":1,
-             "reflect_bounds":True, "use_adj":False, "itype":"float"}
+    pairs = {"ps":3,"strideIn":1,"strideOut":1,"outH":0,"outW":0,
+             "pt":1,"dilation":1,"reflect_bounds":True,
+             "use_adj":False, "itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     cfg = extract_config(cfg,False)
     reducer = NonLocalScatterAdd(
-        cfg.ps, cfg.strideIn, cfg.strideOut, pt=cfg.pt, dilation=cfg.dilation,
-        reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,itype=cfg.itype)
+        cfg.ps, cfg.strideIn, cfg.strideOut,
+        outH=cfg.outH, outW=cfg.outW, pt=cfg.pt, dilation=cfg.dilation,
+        reflect_bounds=cfg.reflect_bounds, use_adj=cfg.use_adj,itype=cfg.itype)
     return reducer
 
