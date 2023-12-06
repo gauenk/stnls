@@ -45,7 +45,7 @@ setup(name='stnls',
               'lib/csrc/agg/gather_add_kernel.cu',
               # 'lib/csrc/agg/gather_add_bilin2d_kernel.cu',
               'lib/csrc/agg/scatter_add.cpp', # Non-Local Scatter Sum
-              'lib/csrc/agg/scatter_add_int_kernel.cu',
+              'lib/csrc/agg/scatter_add_kernel.cu',
               # 'lib/csrc/agg/nlsum_scatter_bilin2d_kernel.cu',
               'lib/csrc/agg/pool.cpp', # Pooled - Weighted Patch Sum
               'lib/csrc/agg/pool_int_kernel.cu',
