@@ -133,9 +133,10 @@ def slic_v2_run(vid,ws,wt,ps,stride0,full_ws,M=0.5,
 
         # -- pooling (u_c) --
         weights = th.softmax(-softmax_weight*dists_k,-1)
-        agg = stnls.agg.PooledPatchSum(agg_ps,stride0,itype="int")
+        agg = stnls.agg.NonLocalGatherSum(agg_ps,stride0,1,itype="int")
         pooled = rearrange(agg(vid,weights,flows_k),'b hd t c h w -> b t (hd c) h w')
         # print("Delta: ",th.mean((pooled-pooled0)**2).item())
+        print("[gather] pooled.shape: ",pooled.shape)
 
         # -- compute pairwise searches --
         search = stnls.search.NonLocalSearch(ws,wt,ps,-1,nheads=1,dist_type="l2",
@@ -168,9 +169,11 @@ def slic_v2_run(vid,ws,wt,ps,stride0,full_ws,M=0.5,
 
         # -- pooling (u_c) --
         weights = th.softmax(-softmax_weight*dists_k,-1)
-        agg = stnls.agg.PooledPatchSum(agg_ps,stride0,itype="int")
+        agg = stnls.agg.NonLocalScatterSum(agg_ps,1,stride0,itype="int")
+        # agg = stnls.agg.PooledPatchSum(agg_ps,stride0,itype="int")
         pooled = rearrange(agg(pooled,weights,flows_k),'b hd t c h w -> b t (hd c) h w')
         # print("Delta: ",th.mean((pooled-pooled0)**2).item())
+        print("[scatter] pooled.shape: ",pooled.shape)
 
 
         # -- score --
@@ -251,7 +254,8 @@ def slic_run(vid,ws,wt,ps,stride0,full_ws,M=0.5,softmax_weight=10.,niters=1):
     return pooled,dists_k,flows_k,s_dists,s_flows
 
 def get_slic_sampling_mask(vid,ws,wt,ps,stride0,full_ws,M=0.5,use_rand=False):
-    pooled,dists_k,flows_k,_,_ = slic_run(vid,ws,wt,ps,stride0,full_ws,M)
+    # pooled,dists_k,flows_k,_,_ = slic_run(vid,ws,wt,ps,stride0,full_ws,M)
+    pooled,dists_k,flows_k,_,_ = slic_v2_run(vid,ws,wt,ps,stride0,full_ws,M)
     vid = append_grid(vid,M,stride0)
     mask = get_sampling_mask(vid, pooled, flows_k, ws, wt, ps, stride0, use_rand)
     return mask
@@ -569,7 +573,7 @@ def slic_clusters(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0,
     elif pool_method == "wpsum":
         # ps = stride0*2
         ps = ps + (1 - ps % 2) # ensure odd
-        agg = stnls.agg.WeightedPatchSum(ps,stride0,itype="int")
+        agg = stnls.agg.NonLocalGatherSum(ps,stride0,stride0,itype="int")
     else:
         raise ValueError(f"Uknown pool method [{pool_method}]")
     # print(weights[0,0,0].sum(-1))

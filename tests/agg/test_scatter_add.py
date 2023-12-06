@@ -34,10 +34,10 @@ def get_data(dnames,ext="jpg",device="cuda:0"):
     return vid
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"ps":[5],"stride0":[2],"pt":[1],
-                  "K":[5],"nheads":[1],
-                  "seed":[0],"dilation":[1],
-                  "reflect_bounds":[False],"itype":["int"]}
+    test_lists = {"ps":[5],"stride0":[1,2,3],"pt":[1],
+                  "K":[5,10],"nheads":[1,2],
+                  "seed":[0,1,2],"dilation":[1,2],
+                  "reflect_bounds":[True,False],"itype":["int"]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
             metafunc.parametrize(key,val)
@@ -104,8 +104,8 @@ def test_fwd(K,ps,pt,stride0,dilation,
     # print("out_te.shape: ",out_te.shape)
 
     # print(th.where(th.abs(out_gt-out_te)>1e-3))
-    print(out_gt[0,0,0,0,-5:,-5:])
-    print(out_te[0,0,0,0,-5:,-5:])
+    # print(out_gt[0,0,0,0,-5:,-5:])
+    # print(out_te[0,0,0,0,-5:,-5:])
     # print((out_gt[0,0,0,0] - out_te[0,0,0,0]).abs()>1e-3)
 
     assert th.allclose(out_te,out_gt,1e-3,1e-3,equal_nan=True)
@@ -155,7 +155,7 @@ def test_bwd(K,ps,pt,stride0,dilation,
         assert not_int,"Gradcheck only works _not_ near an int."
     else:
         flows = flows.round().int()
-    flows = th.zeros_like(flows)
+    # flows = th.zeros_like(flows)
 
     # -- exec fold fxns --
     agg = stnls.agg.NonLocalScatterAdd(ps=ps,strideIn=stride0,strideOut=stride0,
