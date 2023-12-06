@@ -38,9 +38,15 @@ setup(name='stnls',
               'lib/csrc/agg/scatter_labels_kernel.cu',
               'lib/csrc/agg/scatter_tensor_kernel.cu',
               'lib/csrc/agg/scatter_int_kernel.cu',
-              'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum
-              'lib/csrc/agg/wpsum_int_kernel.cu',
-              'lib/csrc/agg/wpsum_bilin2d_kernel.cu',
+              # 'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum (Gather)
+              # 'lib/csrc/agg/wpsum_int_kernel.cu',
+              # 'lib/csrc/agg/wpsum_bilin2d_kernel.cu',
+              'lib/csrc/agg/gather_add.cpp', # Non-Local Gather Sum
+              'lib/csrc/agg/gather_add_int_kernel.cu',
+              'lib/csrc/agg/gather_add_bilin2d_kernel.cu',
+              'lib/csrc/agg/scatter_add.cpp', # Non-Local Scatter Sum
+              'lib/csrc/agg/scatter_add_int_kernel.cu',
+              # 'lib/csrc/agg/nlsum_scatter_bilin2d_kernel.cu',
               'lib/csrc/agg/pool.cpp', # Pooled - Weighted Patch Sum
               'lib/csrc/agg/pool_int_kernel.cu',
               #'lib/csrc/agg/pool_bilin2d_kernel.cu',

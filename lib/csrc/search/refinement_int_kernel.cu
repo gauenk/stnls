@@ -112,8 +112,8 @@ __global__ void refinement_forward_kernel(
       prop_center[1] = bounds(prop_center[1],kW);
 
       // -- possibly illegal flows --
-      valid = abs(flows[ibatch][ihead_f][ti][nh][nw][ki][1]) < 1e8;
-      valid = valid and abs(flows[ibatch][ihead_f][ti][nh][nw][ki][2]) < 1e8;
+      valid = abs(flows[ibatch][ihead_f][ti][nh][nw][ki][1]) < 1e5;
+      valid = valid and abs(flows[ibatch][ihead_f][ti][nh][nw][ki][2]) < 1e5;
       if (not(valid)){ continue; }
 
       // -- search region offsets --

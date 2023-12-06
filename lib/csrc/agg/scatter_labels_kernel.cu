@@ -80,9 +80,11 @@ void get_unique_index(int& li, bool& oob,
   // -- get unique index --
   if (not(oob_i or oob_j)){
       li = (ws_i) + (ws_j)*wsNum + time_offset;
-  }else if (xor_oob and oob_i){
+  // }else if (xor_oob and oob_i){
+  }else if (not(oob_j) and oob_i){
     li = (ws_i) + (ws_j)*wsNum + time_offset + wsNum*wsNum;
-  }else if (xor_oob and oob_j){
+  // }else if (xor_oob and oob_j){
+  }else if (not(oob_i) and oob_j){
     li = (ws_i) + (ws_j)*wsNum + (wsNum/2)*wsNum + time_offset + wsNum*wsNum;
   }else if (and_oob){
       li = (ws_i) + (ws_j)*(wsNum/2);
@@ -124,9 +126,10 @@ __global__ void scatter_labels_kernel(
     bool valid_patch;
   
     // -- search window params --
-    int wsHalf = (ws-1)/2;
-    int wsOff_h = wsHalf;
-    int wsOff_w = wsHalf;
+    int wsHalf0 = (ws-1)/2;
+    int wsHalf = (ws)/2;
+    int wsOff_h = wsHalf0;
+    int wsOff_w = wsHalf0;
     int wsOff_h_nl = wsHalf;
     int wsOff_w_nl = wsHalf;
 
@@ -191,7 +194,7 @@ __global__ void scatter_labels_kernel(
       // -- search region offsets --
       set_search_offsets(wsOff_h, wsOff_w,
                          ref_patch[1], ref_patch[2],
-                         stride1, wsHalf, ws, H, W, full_ws);
+                         stride1, wsHalf0, ws, H, W, full_ws);
 
       // -- how different from my reference? --
       int li;

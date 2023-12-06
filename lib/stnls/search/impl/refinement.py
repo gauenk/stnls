@@ -69,6 +69,8 @@ def forward(vid0, vid1, flows,
                 ws, ps, stride0, stride1, dilation, pt,
                 restricted_radius, reflect_bounds, full_ws,
                 patch_offset, off_Hq, off_Wq, dist_type_i)
+    # print(vid0.shape,vid1.shape,strideQ,stride0,ps)
+    th.cuda.synchronize()
 
     # -- manage self dists --
     if not(self_action is None) and "anchor" in self_action:
@@ -84,6 +86,7 @@ def forward(vid0, vid1, flows,
         dim = 3
         dists=dists.view(B,HD,Q,Ks*wr*wr)
         inds=inds.view(B,HD,Q,Ks*wr*wr,3)
+        th.cuda.synchronize()
         dists,inds,order = stnls.nn.topk(dists,inds,k,dim=dim,anchor=anchor_self,
                                          descending=descending,unique=False,
                                          return_order=True)

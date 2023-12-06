@@ -20,7 +20,9 @@ from stnls.utils import extract_pairs
 MENU = edict({"wpsum":"wpsum",
               "nlstack":"gather",
               "nlgather":"gather",
-              "gather":"gather"})
+              "gather":"gather",
+              "scatter":"scatter",
+              "scatter_sum":"scatter_sum"})
 
 def from_agg_menu(name):
     if name in MENU:

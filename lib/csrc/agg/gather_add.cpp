@@ -10,14 +10,14 @@
 
  *************************************/
 
-void wpsum_int_forward_cuda(
+void gather_add_int_forward_cuda(
   torch::Tensor out_vid, torch::Tensor counts,
   const torch::Tensor in_vid,
   const torch::Tensor dists, const torch::Tensor inds,
   int ps, int stride0, int pt, int dilation,
   bool reflect_bounds, int patch_offset);
 
-void wpsum_int_backward_cuda(
+void gather_add_int_backward_cuda(
     torch::Tensor in_vid_grad,
     torch::Tensor dists_grad,
     const torch::Tensor out_vid_grad, const torch::Tensor vid,
@@ -30,14 +30,14 @@ void wpsum_int_backward_cuda(
 
  *************************************/
 
-void wpsum_bilin2d_forward_cuda(
+void gather_add_bilin2d_forward_cuda(
   torch::Tensor out_vid, torch::Tensor counts,
   const torch::Tensor in_vid,
   const torch::Tensor dists, const torch::Tensor inds,
   int ps, int stride0, int pt, int dilation,
   bool reflect_bounds, int patch_offset);
 
-void wpsum_bilin2d_backward_cuda(
+void gather_add_bilin2d_backward_cuda(
     torch::Tensor in_vid_grad,
     torch::Tensor dists_grad,
     torch::Tensor inds_grad,
@@ -61,7 +61,7 @@ void wpsum_bilin2d_backward_cuda(
 ***********************/
 
 
-void wpsum_int_forward(
+void gather_add_int_forward(
   torch::Tensor out_vid, torch::Tensor counts,
   const torch::Tensor in_vid,
   const torch::Tensor dists,
@@ -73,11 +73,11 @@ void wpsum_int_forward(
   CHECK_INPUT(in_vid);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  wpsum_int_forward_cuda(out_vid,counts,in_vid,dists,inds,
+  gather_add_int_forward_cuda(out_vid,counts,in_vid,dists,inds,
                          ps,stride0,pt,dilation,reflect_bounds,patch_offset);
 }
 
-void wpsum_int_backward( // "in" and "out" w.r.t. forward pass
+void gather_add_int_backward( // "in" and "out" w.r.t. forward pass
   torch::Tensor in_vid_grad, torch::Tensor dists_grad,
   const torch::Tensor out_vid_grad, const torch::Tensor vid,
   const torch::Tensor dists, const torch::Tensor inds,
@@ -88,7 +88,7 @@ void wpsum_int_backward( // "in" and "out" w.r.t. forward pass
   CHECK_INPUT(vid);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  wpsum_int_backward_cuda(in_vid_grad,dists_grad,
+  gather_add_int_backward_cuda(in_vid_grad,dists_grad,
                           out_vid_grad,vid,dists,inds,
                           ps,stride0,pt,dilation,reflect_bounds,patch_offset);
 }
@@ -101,7 +101,7 @@ void wpsum_int_backward( // "in" and "out" w.r.t. forward pass
 
 ***********************/
 
-void wpsum_bilin2d_forward(
+void gather_add_bilin2d_forward(
   torch::Tensor out_vid, torch::Tensor counts,
   const torch::Tensor in_vid,
   const torch::Tensor dists,
@@ -113,11 +113,11 @@ void wpsum_bilin2d_forward(
   CHECK_INPUT(in_vid);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  wpsum_bilin2d_forward_cuda(out_vid,counts,in_vid,dists,inds,
+  gather_add_bilin2d_forward_cuda(out_vid,counts,in_vid,dists,inds,
                          ps,stride0,pt,dilation,reflect_bounds,patch_offset);
 }
 
-void wpsum_bilin2d_backward( // "in" and "out" w.r.t. forward pass
+void gather_add_bilin2d_backward( // "in" and "out" w.r.t. forward pass
   torch::Tensor in_vid_grad,
   torch::Tensor dists_grad, torch::Tensor inds_grad,
   const torch::Tensor out_vid_grad, const torch::Tensor vid,
@@ -130,7 +130,7 @@ void wpsum_bilin2d_backward( // "in" and "out" w.r.t. forward pass
   CHECK_INPUT(vid);
   CHECK_INPUT(dists);
   CHECK_INPUT(inds);
-  wpsum_bilin2d_backward_cuda(in_vid_grad,dists_grad,
+  gather_add_bilin2d_backward_cuda(in_vid_grad,dists_grad,
                               inds_grad,
                               out_vid_grad,vid,dists,inds,
                               ps,stride0,pt,dilation,reflect_bounds,patch_offset);
@@ -144,14 +144,14 @@ void wpsum_bilin2d_backward( // "in" and "out" w.r.t. forward pass
 
 ***********************/
 
-void init_wpsum(py::module &m){
-  m.def("wpsum_int_forward", &wpsum_int_forward,
+void init_gather_add(py::module &m){
+  m.def("gather_add_int_forward", &gather_add_int_forward,
         "WeightedPatchSum Forward (CUDA)");
-  m.def("wpsum_int_backward", &wpsum_int_backward,
+  m.def("gather_add_int_backward", &gather_add_int_backward,
         "WeightedPatchSum Backward (CUDA)");
-  m.def("wpsum_bilin2d_forward", &wpsum_bilin2d_forward,
+  m.def("gather_add_bilin2d_forward", &gather_add_bilin2d_forward,
         "WeightedPatchSum Forward (CUDA)");
-  m.def("wpsum_bilin2d_backward", &wpsum_bilin2d_backward,
+  m.def("gather_add_bilin2d_backward", &gather_add_bilin2d_backward,
         "WeightedPatchSum Backward (CUDA)");
 
 }

@@ -15,10 +15,11 @@ void init_anchor_self(py::module &);
 void init_non_local_inds(py::module &);
 
 // -- agg --
-void init_wpsum(py::module &);
 void init_pool(py::module &);
 void init_gather(py::module &);
+void init_gather_add(py::module &);
 void init_scatter(py::module &);
+void init_scatter_add(py::module &);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
@@ -36,10 +37,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_non_local_inds(m);
 
   // -- agg --
-  init_wpsum(m);
   init_pool(m);
   init_gather(m);
+  init_gather_add(m);
   init_scatter(m);
+  init_scatter_add(m);
 
 }
 

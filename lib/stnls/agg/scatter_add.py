@@ -31,10 +31,10 @@ def get_inds(inds,itype):
     else:
         return inds
 
-class WeightedPatchSumFunction(th.autograd.Function):
+class NonLocalScatterAddFunction(th.autograd.Function):
 
     @staticmethod
-    def forward(ctx, vid, weights, flows, ps, stride0,
+    def forward(ctx, vid, weights, flows, ps, strideIn, strideOut,
                 pt=1, dilation=1, reflect_bounds=True, use_adj=False, itype="float"):
         """
         vid = [BatchSize,nHeads or 1,T,C,H,W]
@@ -63,8 +63,9 @@ class WeightedPatchSumFunction(th.autograd.Function):
         flows = get_inds(flows,itype)
 
         # -- allocate --
-        out_vid = th.zeros_like(vid)
-        counts = th.zeros_like(vid[0,0,0,0,:,:]).type(th.int)
+        B,HD,T,F,H,W = vid.shape
+        out_vid = th.zeros((B,HD,T,F,H,W),device=device,dtype=th.float)
+        counts = th.zeros_like(out_vid[0,0,0,0,:,:]).type(th.int)
         patch_offset = 0 if use_adj else -(ps//2)
 
         # -- view --
@@ -74,12 +75,14 @@ class WeightedPatchSumFunction(th.autograd.Function):
 
         # -- exec --
         if flows.dtype == th.int:
-            fwd_fxn = stnls_cuda.wpsum_int_forward
+            fwd_fxn = stnls_cuda.scatter_add_int_forward
         else:
-            # flows[...,1:] = flows[...,1:].int()+1
-            fwd_fxn = stnls_cuda.wpsum_bilin2d_forward
+            fwd_fxn = None
+        # else:
+        #     # flows[...,1:] = flows[...,1:].int()+1
+        #     fwd_fxn = stnls_cuda.scatter_add_bilin2d_forward
         fwd_fxn(out_vid, counts, vid, weights, flows,
-                ps, stride0, pt, dilation, reflect_bounds, patch_offset)
+                ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset)
         eps = 1e-10
 
         # -- normalize --
@@ -97,7 +100,8 @@ class WeightedPatchSumFunction(th.autograd.Function):
         ctx.vid_in_dim = vid_in_dim
         ctx.itype = itype
         ctx.ps,ctx.pt = ps,pt
-        ctx.stride0 = stride0
+        ctx.strideIn = strideIn
+        ctx.strideOut = strideOut
         ctx.vid_shape = vid.shape
         ctx.wshape = wshape
         ctx.dilation = dilation
@@ -113,7 +117,8 @@ class WeightedPatchSumFunction(th.autograd.Function):
         # -- unpack --
         weights,flows,vid,counts = ctx.saved_tensors
         ps,pt = ctx.ps,ctx.pt
-        stride0 = ctx.stride0
+        strideIn = ctx.strideIn
+        strideOut = ctx.,strideOut
         vid_shape = ctx.vid_shape
         dilation = ctx.dilation
         use_adj = ctx.use_adj
@@ -141,24 +146,24 @@ class WeightedPatchSumFunction(th.autograd.Function):
         # print(grad_weights[0,0])
 
         # -- video backward --
-        if itype == "int":
-            bwd_fxn = stnls_cuda.wpsum_int_backward
-            bwd_fxn(grad_in_vid,grad_weights,
-                    grad_out_vid,vid,weights,flows,
-                    ps,stride0,pt,dilation,
-                    reflect_bounds,patch_offset)
-        # elif not(flows.requires_grad):
-        #     bwd_fxn = stnls_cuda.wpsum_bilin2d_backward
-        #     bwd_fxn(grad_in_vid,grad_weights,
+        bwd_fxn = stnls_cuda.nl_scatter_add_int_backward
+        bwd_fxn(grad_in_vid,grad_weights,
+                grad_out_vid,vid,weights,flows,
+                ps,strideIn,strideOut,pt,dilation,
+                reflect_bounds,patch_offset)
+        # if itype == "int":
+        # # elif not(flows.requires_grad):
+        # #     bwd_fxn = stnls_cuda.scatter_add_bilin2d_backward
+        # #     bwd_fxn(grad_in_vid,grad_weights,
+        # #             grad_out_vid,vid,weights,flows,
+        # #             ps,stride0,pt,dilation,
+        # #             reflect_bounds,patch_offset)
+        # else:
+        #     bwd_fxn = stnls_cuda.scatter_add_bilin2d_backward
+        #     bwd_fxn(grad_in_vid,grad_weights,grad_flows,
         #             grad_out_vid,vid,weights,flows,
         #             ps,stride0,pt,dilation,
         #             reflect_bounds,patch_offset)
-        else:
-            bwd_fxn = stnls_cuda.wpsum_bilin2d_backward
-            bwd_fxn(grad_in_vid,grad_weights,grad_flows,
-                    grad_out_vid,vid,weights,flows,
-                    ps,stride0,pt,dilation,
-                    reflect_bounds,patch_offset)
 
         # print(th.where(grad_weights[0,0].abs()>0))
         # print(grad_weights[th.where(grad_weights.abs()>0)])
@@ -178,22 +183,23 @@ class WeightedPatchSumFunction(th.autograd.Function):
             grad_flows = None
 
         return grad_in_vid,grad_weights,grad_flows,None,None,None,\
-            None,None,None,None,None,None,None,None,None
+            None,None,None,None,None,None,None,None,None,None
 
-class WeightedPatchSum(th.nn.Module):
+class NonLocalScatterAdd(th.nn.Module):
     # [video -> patches] @ flows
 
-    def __init__(self, ps, stride0, pt=1, dilation=1,
+    def __init__(self, ps, strideIn, strideOut, pt=1, dilation=1,
                  reflect_bounds=True, use_adj=False, itype="float"):
         super().__init__()
-        _vars = ["ps","stride0","pt","dilation","reflect_bounds","use_adj","itype"]
+        _vars = ["ps","strideIn","strideOut","pt","dilation",
+                 "reflect_bounds","use_adj","itype"]
         self._vars = _vars
         for var in _vars:
             setattr(self,var,eval(var))
 
     def forward(self, vid, weights, flows):
         inputs = [getattr(self,var) for var in self._vars]
-        vid_out = WeightedPatchSumFunction.apply(vid,weights,flows,*inputs)
+        vid_out = NonLocalScatterAddFunction.apply(vid,weights,flows,*inputs)
         return vid_out
 
     def flops(self, nrefs, chnls_per_head, nheads, k):
@@ -222,7 +228,7 @@ def _apply(vid, weights, flows, ps, stride0,
            pt=1, dilation=1,reflect_bounds=True, use_adj=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
-    fxn = WeightedPatchSumFunction.apply
+    fxn = NonLocalScatterAddFunction.apply
     return fxn(vid,weights,flows,ps,stride0,
                pt,dilation,reflect_bounds,use_adj)
 
@@ -233,16 +239,14 @@ def _apply(vid, weights, flows, ps, stride0,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ps":3,"stride0":1,"pt":1,"dilation":1,
+    pairs = {"ps":3,"strideIn":1,"strideOut":1,"pt":1,"dilation":1,
              "reflect_bounds":True, "use_adj":False, "itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 
 def init(cfg):
     cfg = extract_config(cfg,False)
-    reducer = WeightedPatchSum(
-        cfg.ps, cfg.stride0, pt=cfg.pt, dilation=cfg.dilation,
+    reducer = NonLocalScatterAdd(
+        cfg.ps, cfg.strideIn, cfg.strideOut, pt=cfg.pt, dilation=cfg.dilation,
         reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,itype=cfg.itype)
     return reducer
-
-
 

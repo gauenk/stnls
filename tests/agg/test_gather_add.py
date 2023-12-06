@@ -37,7 +37,7 @@ from torchvision import utils as tv_utils
 import stnls
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/wpsum")
+SAVE_DIR = Path("./output/tests/gather_add")
 
 def set_seed(seed):
     th.manual_seed(seed)
@@ -113,9 +113,9 @@ def test_fwd(K,ps,pt,stride0,dilation,
     #                                  reflect_bounds=reflect_bounds,
     #                                  itype="int")
     # out_te = th.sum(agg_gt(vid,weights,flows),2)
-    agg_te = stnls.agg.WeightedPatchSum(ps=ps,stride0=stride0,pt=pt,
-                                        reflect_bounds=reflect_bounds,
-                                        itype=itype)
+    agg_te = stnls.agg.NonLocalGatherSum(ps=ps,stride0=stride0,pt=pt,
+                                         reflect_bounds=reflect_bounds,
+                                         itype=itype)
     out_te = agg_te(vid,weights,flows)
     # print("out_te.shape: ",out_te.shape)
 
@@ -172,9 +172,9 @@ def test_bwd(K,ps,pt,stride0,dilation,
         flows = flows.round().int()
 
     # -- exec fold fxns --
-    agg = stnls.agg.WeightedPatchSum(ps=ps,stride0=stride0,
-                                     reflect_bounds=reflect_bounds,
-                                     itype=itype)
+    agg = stnls.agg.NonLocalGatherSum(ps=ps,stride0=stride0,
+                                      reflect_bounds=reflect_bounds,
+                                      itype=itype)
 
     # -- gradcheck --
     stack_vid = lambda vid: agg(vid,weights,flows)

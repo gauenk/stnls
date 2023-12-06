@@ -31,7 +31,7 @@ def get_inds(inds,itype):
     else:
         return inds
 
-class PooledPatchSumFunction(th.autograd.Function):
+class NonLocalGatherAddFunction(th.autograd.Function):
 
     @staticmethod
     def forward(ctx, vid, weights, flows, ps, stride0,
@@ -62,20 +62,10 @@ class PooledPatchSumFunction(th.autograd.Function):
         vid = vid.contiguous()
         flows = get_inds(flows,itype)
 
-        # -- shape output --
-        inF,inH,inW = vid.shape[-3:]
-        psHalf = (ps-1)//2+1
-        outH = ps*nH
-        outW = ps*nW
-        # print("ps,nH,nW,outH,outW: ",ps,nH,nW,outH,outW)
-        out_shape = (B,HD,T,inF,outH,outW)
-
         # -- allocate --
-        dtype = vid.dtype
-        out_vid = th.zeros(out_shape,device=device,dtype=dtype)
-        counts = th.zeros_like(out_vid[0,0,0,0,:,:]).type(th.int)
+        out_vid = th.zeros_like(vid)
+        counts = th.zeros_like(vid[0,0,0,0,:,:]).type(th.int)
         patch_offset = 0 if use_adj else -(ps//2)
-        # print(patch_offset)
 
         # -- view --
         Q = T*nH*nW
@@ -83,45 +73,24 @@ class PooledPatchSumFunction(th.autograd.Function):
         flows = flows.view(B,HD,Q,K,3)
 
         # -- exec --
-        fwd_fxn = stnls_cuda.pool_int_forward
-        # if flows.dtype == th.int:
-        #     fwd_fxn = stnls_cuda.pool_int_forward
-        # else:
-        #     # flows[...,1:] = flows[...,1:].int()+1
-        #     fwd_fxn = stnls_cuda.pool_bilin2d_forward
-        ps = ps + (1 - ps % 2)
+        if flows.dtype == th.int:
+            fwd_fxn = stnls_cuda.gather_add_int_forward
+        else:
+            # flows[...,1:] = flows[...,1:].int()+1
+            fwd_fxn = stnls_cuda.gather_add_bilin2d_forward
         fwd_fxn(out_vid, counts, vid, weights, flows,
                 ps, stride0, pt, dilation, reflect_bounds, patch_offset)
         eps = 1e-10
-        # print(out_vid.shape,vid.shape)
-        # print(out_vid.sum((-2,-1)))
-        # # print(out_vid[0,0,0,0,:,:].sum((-2)))
-        # # print(out_vid[0,0,0,0,:,:].sum((-1)))
-        # print(out_vid[0,0,0,0,:5,:5])
-        # print(th.where(out_vid==1))
-        # print(out_vid[0,0,0,0,:7,:7])
-        # print(out_vid[0,0,-1,0,-7:,-7:])
-        # print(out_vid[0,0,0,:,6,233])
-        # print(out_vid[0,0,0,:,7,229])
 
         # -- normalize --
         H,W = vid.shape[-2:]
-        # # print(counts.sum(-1))
-        # # print(counts.sum(-2))
-        # print(vid[0,0,0,0,3:,3:])
-        # print(counts[3:,3:])
-        # print(th.where(counts==0))
+        # print(counts)
+        # print(counts.sum(-1))
+        # print(counts.sum(-2))
         # exit()
-        # print("counts [min,max]: ",counts.min().item(),counts.max().item())
-        # print("[pre] out_vid [min,max]: ",out_vid.min().item(),out_vid.max().item())
-        counts = counts.view((1,1,1,1,outH,outW))
-        # from dev_basics.utils import vid_io
-        # vid_io.save_video(counts[:,0],"outputs/debug","counts")
-        # vid_io.save_video(out_vid[:,0,:,:3]/out_vid.max(),"outputs/debug","vout")
+        counts = counts.view((1,1,1,1,H,W))
         out_vid = out_vid / (counts+eps)
-        # print("out_vid [min,max]: ",out_vid.min().item(),out_vid.max().item())
         assert th.all(counts>1e-3)
-        # exit()
 
         # -- backward --
         ctx.save_for_backward(weights,flows,vid,counts)
@@ -173,19 +142,19 @@ class PooledPatchSumFunction(th.autograd.Function):
 
         # -- video backward --
         if itype == "int":
-            bwd_fxn = stnls_cuda.pool_int_backward
+            bwd_fxn = stnls_cuda.gather_add_int_backward
             bwd_fxn(grad_in_vid,grad_weights,
                     grad_out_vid,vid,weights,flows,
                     ps,stride0,pt,dilation,
                     reflect_bounds,patch_offset)
         # elif not(flows.requires_grad):
-        #     bwd_fxn = stnls_cuda.wpsum_bilin2d_backward
+        #     bwd_fxn = stnls_cuda.gather_add_bilin2d_backward
         #     bwd_fxn(grad_in_vid,grad_weights,
         #             grad_out_vid,vid,weights,flows,
         #             ps,stride0,pt,dilation,
         #             reflect_bounds,patch_offset)
         else:
-            bwd_fxn = stnls_cuda.pool_bilin2d_backward
+            bwd_fxn = stnls_cuda.gather_add_bilin2d_backward
             bwd_fxn(grad_in_vid,grad_weights,grad_flows,
                     grad_out_vid,vid,weights,flows,
                     ps,stride0,pt,dilation,
@@ -211,7 +180,7 @@ class PooledPatchSumFunction(th.autograd.Function):
         return grad_in_vid,grad_weights,grad_flows,None,None,None,\
             None,None,None,None,None,None,None,None,None
 
-class PooledPatchSum(th.nn.Module):
+class NonLocalGatherAdd(th.nn.Module):
     # [video -> patches] @ flows
 
     def __init__(self, ps, stride0, pt=1, dilation=1,
@@ -224,7 +193,7 @@ class PooledPatchSum(th.nn.Module):
 
     def forward(self, vid, weights, flows):
         inputs = [getattr(self,var) for var in self._vars]
-        vid_out = PooledPatchSumFunction.apply(vid,weights,flows,*inputs)
+        vid_out = NonLocalGatherAddFunction.apply(vid,weights,flows,*inputs)
         return vid_out
 
     def flops(self, nrefs, chnls_per_head, nheads, k):
@@ -253,7 +222,7 @@ def _apply(vid, weights, flows, ps, stride0,
            pt=1, dilation=1,reflect_bounds=True, use_adj=False):
     # wrap "new (2018) apply function
     # https://discuss.pytorch.org #13845/17
-    fxn = PooledPatchSumFunction.apply
+    fxn = NonLocalGatherAddFunction.apply
     return fxn(vid,weights,flows,ps,stride0,
                pt,dilation,reflect_bounds,use_adj)
 
@@ -270,7 +239,7 @@ def extract_config(cfg,restrict=True):
 
 def init(cfg):
     cfg = extract_config(cfg,False)
-    reducer = PooledPatchSum(
+    reducer = NonLocalGatherAdd(
         cfg.ps, cfg.stride0, pt=cfg.pt, dilation=cfg.dilation,
         reflect_bounds=cfg.reflect_bounds,use_adj=cfg.use_adj,itype=cfg.itype)
     return reducer

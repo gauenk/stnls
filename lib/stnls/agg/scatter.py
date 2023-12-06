@@ -250,7 +250,7 @@ class NonLocalScatter(th.nn.Module):
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
-#            [Functional API]  stnls.agg.nlstack(...)
+#            [Functional API]  stnls.agg.scatter(...)
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 

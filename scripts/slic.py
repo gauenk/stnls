@@ -37,10 +37,11 @@ def load_video(cfg):
     data,loaders = data_hub.sets.load(cfg)
     indices = data_hub.filter_subseq(data[cfg.dset],cfg.vid_name,0,cfg.nframes)
     vid = data[cfg.dset][indices[0]]['clean'][None,:].to(device)/255.
+    noisy = data[cfg.dset][indices[0]]['noisy'][None,:].to(device)/255.
     # F = 32
     # B,T,_,H,W = vid.shape
     # vid = th.randn((B,T,F,H,W),device=device,dtype=vid.dtype)
-    return vid
+    return vid,noisy
 
 def append_grid(vid,M,S):
     B,T,F,H,W = vid.shape
@@ -58,7 +59,8 @@ def run_exp(cfg):
     set_seed(cfg.seed)
 
     # -- read video --
-    vid = load_video(cfg).half()
+    vid,noisy = load_video(cfg)
+    noisy = append_grid(noisy,cfg.M,cfg.stride0)
     vid = append_grid(vid,cfg.M,cfg.stride0)
     B,T,F,H,W = vid.shape
     # print("vid.shape: ",vid.shape)
@@ -81,7 +83,7 @@ def run_exp(cfg):
     for pooling_type in pooling_grid:
         with TimeIt(timer,pooling_type):
             with MemIt(memer,pooling_type):
-                pooled_p,seg_p = run_pooling(cfg,vid,flows,pooling_type,
+                pooled_p,seg_p = run_pooling(cfg,noisy,flows,pooling_type,
                                              cfg.pooling_ksize,cfg.stride0)
                 pooled[pooling_type] = pooled_p
                 seg[pooling_type] = seg_p
@@ -152,7 +154,16 @@ def run_nls(vid,flows,cfg):
 
     return vout[:,:,:3],None
 
+def run_slic_dev(vid,flows,cfg):
+    from stnls.dev.slic import slic_run
+    use_rand = False
+    outs = slic_run(vid,cfg.ws,cfg.wt,cfg.ps,cfg.stride0,cfg.full_ws,
+                    cfg.M,cfg.softmax_weight,cfg.niters)
+    pooled,dists_k,flows_k,s_dists,s_flows = outs
+    return pooled[:,:,:3],s_flows
+
 def run_slic(vid,flows,cfg):
+    return run_slic_dev(vid,flows,cfg)
 
     # -- compute search window --
     B,T,F,H,W = vid.shape
@@ -342,22 +353,23 @@ def main():
     cfg.dset = "val"
     # cfg.isize = "540_540"
     # cfg.isize = "260_260"
-    # cfg.isize = "256_256"
+    cfg.isize = "256_256"
     # cfg.isize = "128_128"
-    cfg.isize = "816_1216"
+    # cfg.isize = "816_1216"
+    # cfg.isize = "640_480"
     # cfg.isize = None
     # cfg.isize = "400_400"
     # cfg.isize = "300_300"
     cfg.vid_name = "sunflower"
     cfg.ntype = "g"
-    cfg.sigma = 0.01
+    cfg.sigma = .001
     cfg.nframes = 1
     cfg.flow = False
-    cfg.full_ws = True
+    cfg.full_ws = False
     cfg.wt = 0
-    cfg.stride0 = 8
-    # cfg.ws = 2*cfg.stride0-2
-    cfg.ws = 11
+    cfg.stride0 = 15
+    cfg.ws = 23
+    # cfg.ws = 21
     # cfg.stride0 = 3
     # cfg.ws = 3
     # if cfg.ws == 1: cfg.ws += 1
@@ -368,6 +380,7 @@ def main():
     cfg.M = 0.1
     cfg.pooling_ksize = 1
     cfg.softmax_weight = 20.
+    cfg.niters = 3
 
     # -- run slic --
     vid,pooled,segs = run_exp(cfg)
@@ -392,7 +405,7 @@ def main():
             seg.append(th.tensor(seg_bt))
     seg = th.stack(seg).view(B,T,F,H,W)
     print(seg.shape)
-    vid_io.save_video(seg,"output/slic","ex")
+    vid_io.save_video(seg,"output/slic","ex_n%d"%cfg.niters)
 
     for ptype in pooled:
         print(pooled[ptype].type,pooled[ptype].shape,pooled[ptype][:,:,:3].max())
