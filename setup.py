@@ -35,8 +35,6 @@ setup(name='stnls',
               'lib/csrc/agg/gather_int_kernel.cu',
               'lib/csrc/agg/gather_bilin2d_kernel.cu',
               'lib/csrc/agg/scatter.cpp', # Non-Local Scatter
-              'lib/csrc/agg/scatter_labels_kernel.cu',
-              'lib/csrc/agg/scatter_tensor_kernel.cu',
               'lib/csrc/agg/scatter_int_kernel.cu',
               # 'lib/csrc/agg/wpsum.cpp', # Weighted Patch Sum (Gather)
               # 'lib/csrc/agg/wpsum_int_kernel.cu',
@@ -47,9 +45,16 @@ setup(name='stnls',
               'lib/csrc/agg/scatter_add.cpp', # Non-Local Scatter Sum
               'lib/csrc/agg/scatter_add_kernel.cu',
               # 'lib/csrc/agg/nlsum_scatter_bilin2d_kernel.cu',
-              'lib/csrc/agg/pool.cpp', # Pooled - Weighted Patch Sum
+              'lib/csrc/agg/pool.cpp', # Pooled - Weighted Patch Sum (to remove.)
               'lib/csrc/agg/pool_int_kernel.cu',
               #'lib/csrc/agg/pool_bilin2d_kernel.cu',
+              # -- graph_opts --
+              'lib/csrc/graph_opts/scatter_labels.cpp',
+              'lib/csrc/graph_opts/scatter_labels_kernel.cu',
+              'lib/csrc/graph_opts/scatter_tensor.cpp',
+              'lib/csrc/graph_opts/scatter_tensor_kernel.cu',
+              'lib/csrc/graph_opts/gather_tensor.cpp',
+              'lib/csrc/graph_opts/gather_tensor_kernel.cu',
               # -- setup --
               'lib/csrc/pybind.cpp',
           ],

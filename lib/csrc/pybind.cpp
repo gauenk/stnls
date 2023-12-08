@@ -21,6 +21,12 @@ void init_gather_add(py::module &);
 void init_scatter(py::module &);
 void init_scatter_add(py::module &);
 
+// -- graph opts --
+void init_scatter_tensor(py::module &m);
+void init_gather_tensor(py::module &m);
+void init_scatter_labels(py::module &m);
+
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
   // -- search --
@@ -42,6 +48,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_gather_add(m);
   init_scatter(m);
   init_scatter_add(m);
+
+  // -- graph opts --
+  init_scatter_tensor(m);
+  init_gather_tensor(m);
+  init_scatter_labels(m);
 
 }
 

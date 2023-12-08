@@ -51,7 +51,8 @@ def run(flows,flows_k,ws,wt,stride0,stride1,H,W,full_ws):
     # print(flows.shape,flows_k.shape,names.shape,labels.shape)
 
     # -- fill init labels --
-    stnls_cuda.scatter_labels(flows,flows_k,labels,names,ws,wt,stride0,stride1,full_ws)
+    stnls_cuda.scatter_labels_forward(flows,flows_k,labels,names,
+                                      ws,wt,stride0,stride1,full_ws)
 
     # -- check --
     nvalid = (names[...,0] >= 0).float().sum(2)

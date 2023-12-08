@@ -72,8 +72,12 @@ class NonLocalScatterAddFunction(th.autograd.Function):
             else: outW = inW
         nH_in,nW_in = (inH-1)//strideIn+1,(inW-1)//strideIn+1
         nH_out,nW_out = (outH-1)//strideOut+1,(outW-1)//strideOut+1
-        assert (nH == nH_in) and (nW == nW_in)
-        assert (nH == nH_out) and (nW == nW_out)
+        print((inH,inW),(outH,outW))
+        print((nH,nW),(nH_out,nW_out),(nH_in,nW_in),strideIn,strideOut)
+        args = (nH,nH_in,nW,nW_in)
+        assert (nH == nH_in) and (nW == nW_in),"(%d == %d) and (%d == %d)" % args
+        args = (nH,nH_out,nW,nW_out)
+        assert (nH == nH_out) and (nW == nW_out),"(%d == %d) and (%d == %d)" % args
 
         # -- allocate --
         out_vid = th.zeros((B,HD,T,F,outH,outW),device=device,dtype=th.float)
@@ -94,8 +98,11 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         eps = 1e-10
 
         # -- normalize --
+        # counts = counts/K
+        # print(counts[-5:,-5:])
+        # print(counts,counts.max())
         counts = counts.view((1,1,1,1,outH,outW))
-        out_vid = out_vid / (counts+eps)
+        out_vid = out_vid# / (counts+eps)
         assert th.all(counts>1e-3)
 
         # -- backward --

@@ -4,7 +4,18 @@
 
 */
 
-#include "scatter_int.cu"
+#include <cuda/std/type_traits>
+#include <cstdio>
+#include <torch/types.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <vector>
+#include <cstddef>
+#include <math.h>
+#include <ATen/ATen.h>
+#include "../shared_kernel.cu"
+
+using namespace at;
 
 
 /**************************************
@@ -14,7 +25,7 @@
 **************************************/
 
 template <typename scalar_t>
-__global__ void scatter_tensor_forward_kernel(
+__global__ void gather_tensor_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> out_tensor,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> in_tensor,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> labels,
@@ -77,12 +88,13 @@ __global__ void scatter_tensor_forward_kernel(
       int nl_qi = nl_patch[0] * nH1 * nW1 + nl_hi * nW1 + nl_wi;
       int nl_si = labels[ibatch][ihead][qi][ki];
       for (int mi=0; mi < M; mi++){
-        out_tensor[ibatch][ihead][nl_qi][nl_si][mi]=in_tensor[ibatch][ihead][qi][ki][mi];
+       //out_tensor[ibatch][ihead][nl_qi][nl_si][mi]=in_tensor[ibatch][ihead][qi][ki][mi];
+        out_tensor[ibatch][ihead][qi][ki][mi]=in_tensor[ibatch][ihead][nl_qi][nl_si][mi];
       }
     }
 }
 
-void scatter_tensor_forward_cuda(
+void gather_tensor_forward_cuda(
     torch::Tensor out_tensor,
     const torch::Tensor in_tensor,
     const torch::Tensor labels,
@@ -103,8 +115,8 @@ void scatter_tensor_forward_cuda(
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(in_tensor.type(),
-                             "scatter_tensor_forward_kernel",([&]{
-  scatter_tensor_forward_kernel<scalar_t><<<blocksPerGrid, threadsPerBlock>>>(
+                             "gather_tensor_forward_kernel",([&]{
+  gather_tensor_forward_kernel<scalar_t><<<blocksPerGrid, threadsPerBlock>>>(
            out_tensor.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
            in_tensor.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
            labels.packed_accessor32<int,4,torch::RestrictPtrTraits>(),
@@ -124,7 +136,7 @@ void scatter_tensor_forward_cuda(
 **************************************/
 
 template <typename scalar_t>
-__global__ void scatter_tensor_backward_kernel(
+__global__ void gather_tensor_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> in_grad,
     const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> out_grad,
     const torch::PackedTensorAccessor32<int,4,torch::RestrictPtrTraits> labels,
@@ -188,7 +200,7 @@ __global__ void scatter_tensor_backward_kernel(
     }
 }
 
-void scatter_tensor_backward_cuda(
+void gather_tensor_backward_cuda(
     torch::Tensor in_tensor_grad,
     const torch::Tensor out_tensor_grad,
     const torch::Tensor labels,
@@ -208,8 +220,8 @@ void scatter_tensor_backward_cuda(
 
   // -- launch kernel --
   AT_DISPATCH_FLOATING_TYPES(in_tensor_grad.type(),
-                             "scatter_tensor_backward_kernel",([&]{
-  scatter_tensor_backward_kernel<scalar_t><<<blocksPerGrid, threadsPerBlock>>>(
+                             "gather_tensor_backward_kernel",([&]{
+  gather_tensor_backward_kernel<scalar_t><<<blocksPerGrid, threadsPerBlock>>>(
            in_tensor_grad.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
            out_tensor_grad.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
            labels.packed_accessor32<int,4,torch::RestrictPtrTraits>(),

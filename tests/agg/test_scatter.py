@@ -19,7 +19,7 @@ from einops import rearrange,repeat
 import stnls
 
 # -- paths --
-SAVE_DIR = Path("./output/tests/non_local_gather")
+SAVE_DIR = Path("./output/tests/graph_opts/scatter")
 
 def set_seed(seed):
     th.manual_seed(seed)
@@ -71,7 +71,7 @@ def test_scatter_labels(nheads,ws,wt,stride0,stride1,full_ws,seed):
     # print(flows_k[0,0,0,:2,:2])
 
     # -- get unique labels --
-    names,labels = stnls.agg.scatter_labels(flows,flows_k,ws,wt,stride0,stride1,full_ws)
+    names,labels = stnls.graph_opts.scatter_labels(flows,flows_k,ws,wt,stride0,stride1,full_ws)
 
     if (full_ws):
         Q = T*H*W
@@ -110,24 +110,24 @@ def test_scatter_tensor(nheads,ws,wt,stride0,stride1,full_ws,seed):
     # print(flows_k[0,0,0,:2,:2])
 
     # -- get unique labels --
-    names,labels = stnls.agg.scatter_labels(flows,flows_k,ws,wt,stride0,stride1,full_ws)
+    names,labels = stnls.graph_opts.scatter_labels(flows,flows_k,ws,wt,stride0,stride1,full_ws)
     print(labels)
     print(labels.min(),labels.max())
 
     # -- weighted --
     gather_weights = th.softmax(-dists,-1)
-    scatter_weights = stnls.agg.scatter_tensor(gather_weights,flows_k,labels,stride0)
+    scatter_weights = stnls.graph_opts.scatter_tensor(gather_weights,flows_k,labels,stride0)
     Q = T*H*W
     print(scatter_weights.shape)
     print(int(th.sum(scatter_weights>=0).item()),Q*K)
 
-    scatter_flows_k = stnls.agg.scatter_tensor(flows_k,flows_k,labels,stride0)
+    scatter_flows_k = stnls.graph_opts.scatter_tensor(flows_k,flows_k,labels,stride0)
     scatter_flows_k = -scatter_flows_k
     # scatter_flows_k[th.where(scatter_flows_k==th.inf)] = -th.inf
 
     # K = 30
     K0 = K//2
-    s_weight,s_flows_k = stnls.agg.scatter_topk(scatter_weights,scatter_flows_k,K0)
+    s_weight,s_flows_k = stnls.graph_opts.scatter_topk(scatter_weights,scatter_flows_k,K0)
     s_weight = rearrange(s_weight,'b hd (t h w) k -> b hd t h w k',t=T,h=H)
     print(s_weight[0,0,0,:3,:3])
     print(s_weight[0,0,0,10:12,10:12])

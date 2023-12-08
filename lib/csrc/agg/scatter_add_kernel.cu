@@ -96,21 +96,24 @@ __global__ void scatter_add_forward_kernel(
         ref_p[2] = ref[2]+dilation*(pj + patch_offset);
         check_bounds(valid, ref_p, T,  inH, inW);
         if (not valid){ continue; }
-  
-        // -- increment legal refs --
-        if ((ref[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
-          atomicAdd(&counts[ref_p[1]][ref_p[2]],1);
-        }
-  
+
         // -- non-local pixel index --
         nl_p[0] = nl[0];
         nl_p[1] = nl[1]+dilation*(pi + patch_offset);
-        nl_p[1] = reflect_bounds ? bounds(nl_p[1],inH) : nl_p[1];
+        nl_p[1] = reflect_bounds ? bounds(nl_p[1],outH) : nl_p[1];
         nl_p[2] = nl[2]+dilation*(pj + patch_offset);
-        nl_p[2] = reflect_bounds ? bounds(nl_p[2],inW) : nl_p[2];
-        check_bounds(valid, nl_p, T, inH, inW);
+        nl_p[2] = reflect_bounds ? bounds(nl_p[2],outW) : nl_p[2];
+        check_bounds(valid, nl_p, T, outH, outW);
         if (not valid){ continue; }
-
+  
+        // -- increment legal refs --
+        // if ((ref[0]==0) and (ibatch==0) and (ihead==0) and (ki==0)){
+        //   atomicAdd(&counts[nl_p[1]][nl_p[2]],1);
+        // }
+        if ((ref[0]==0) and (ibatch==0) and (ihead==0)){
+          atomicAdd(&counts[nl_p[1]][nl_p[2]],1);
+        }
+  
         // -- iterate over loop --
         for(int pk = 0; pk < pt; pk++){
 

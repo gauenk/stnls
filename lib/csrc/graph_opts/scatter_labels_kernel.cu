@@ -4,7 +4,20 @@
 
 */
 
-#include "scatter_int.cu"
+#include <cuda/std/type_traits>
+#include <cstdio>
+#include <torch/types.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <vector>
+#include <cstddef>
+#include <math.h>
+#include <ATen/ATen.h>
+#include "../shared_kernel.cu"
+
+using namespace at;
+
+// #include "scatter_int.cu"
 
 
 /**************************************

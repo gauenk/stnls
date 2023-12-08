@@ -14,21 +14,16 @@ void scatter_int_forward_cuda(
     int ps, int pt, int dilation, int stride0,
     bool reflect_bounds, int patch_offset);
 
-void scatter_labels_cuda(
-    const torch::Tensor flows, const torch::Tensor flows_k,
-    torch::Tensor labels, torch::Tensor names,
-    int ws, int wt, int stride0, float stride1, bool full_ws);
+// void scatter_tensor_forward_cuda(torch::Tensor out_tensor,
+//                                  const torch::Tensor in_tensor,
+//                                  const torch::Tensor labels,
+//                                  const torch::Tensor flows_k,
+//                                  int stride0, int stride1, int H, int W);
 
-void scatter_tensor_forward_cuda(torch::Tensor out_tensor,
-                                 const torch::Tensor in_tensor,
-                                 const torch::Tensor labels,
-                                 const torch::Tensor flows_k,
-                                 int stride0, int stride1, int H, int W);
-
-void scatter_tensor_backward_cuda(torch::Tensor in_tensor_grad,
-                                  const torch::Tensor out_tensor_grad,
-                                  const torch::Tensor labels,
-                                  const torch::Tensor flows_k, int stride0);
+// void scatter_tensor_backward_cuda(torch::Tensor in_tensor_grad,
+//                                   const torch::Tensor out_tensor_grad,
+//                                   const torch::Tensor labels,
+//                                   const torch::Tensor flows_k, int stride0);
 
 // void scatter_bilin2d_forward_cuda(
 //     const torch::Tensor vid, const torch::Tensor weights,
@@ -66,50 +61,6 @@ void scatter_tensor_backward_cuda(torch::Tensor in_tensor_grad,
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
-
-/*********************************
-
-      Using Raster Order
-
-*********************************/
-
-void scatter_tensor_forward(
-    torch::Tensor out_tensor,
-    const torch::Tensor in_tensor,
-    const torch::Tensor labels,
-    const torch::Tensor flows_k,
-    int stride0, int stride1, int H, int W){
-  CHECK_INPUT(out_tensor);
-  CHECK_INPUT(in_tensor);
-  CHECK_INPUT(labels);
-  CHECK_INPUT(flows_k);
-  scatter_tensor_forward_cuda(out_tensor,in_tensor,labels,flows_k,
-                              stride0,stride1,H,W);
-}
-
-void scatter_tensor_backward(
-    torch::Tensor out_tensor_grad,
-    const torch::Tensor in_tensor_grad,
-    const torch::Tensor labels,
-    const torch::Tensor flows_k, int stride0){
-  CHECK_INPUT(in_tensor_grad);
-  CHECK_INPUT(out_tensor_grad);
-  CHECK_INPUT(labels);
-  CHECK_INPUT(flows_k);
-  scatter_tensor_backward_cuda(in_tensor_grad,out_tensor_grad,labels,flows_k,stride0);
-}
-
-void scatter_labels(
-    const torch::Tensor flows, const torch::Tensor flows_k,
-    torch::Tensor labels, torch::Tensor names,
-    int ws, int wt, int stride0, float stride1, bool full_ws){
-  CHECK_INPUT(flows);
-  CHECK_INPUT(flows_k);
-  CHECK_INPUT(labels);
-  CHECK_INPUT(names);
-  scatter_labels_cuda(flows,flows_k,labels,names,
-                      ws,wt,stride0,stride1,full_ws);
-}
 
 void scatter_int_forward(
     const torch::Tensor vid, const torch::Tensor weights,
@@ -200,12 +151,12 @@ void scatter_int_forward(
 
 // python bindings
 void init_scatter(py::module &m){
-  m.def("scatter_labels", &scatter_labels,
-        "Scatter Labels");
-  m.def("scatter_tensor_forward", &scatter_tensor_forward,
-        "Scatter Tensor");
-  m.def("scatter_tensor_backward", &scatter_tensor_backward,
-        "Scatter Tensor");
+  // m.def("scatter_labels", &scatter_labels,
+  //       "Scatter Labels");
+  // m.def("scatter_tensor_forward", &scatter_tensor_forward,
+  //       "Scatter Tensor");
+  // m.def("scatter_tensor_backward", &scatter_tensor_backward,
+  //       "Scatter Tensor");
   m.def("scatter_int_forward", &scatter_int_forward,
         "Scatter Forward with Int Indexing");
   // m.def("scatter_int_backward",&scatter_int_backward,

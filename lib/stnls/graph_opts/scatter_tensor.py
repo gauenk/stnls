@@ -85,6 +85,7 @@ def run_topk(weights,flows_k,labels,K,descending=True):
     labels = rearrange(labels,'b hd q s -> (b hd q) s')
     # names = rearrange(names,'b hd s t nh nw tw -> (b hd t nh nw) s tw')
     device = weights.device
+    if K <= 0: K = S
 
     # -- get ordering --
     order = th.argsort(weights,-1,descending=descending)[:,:K]

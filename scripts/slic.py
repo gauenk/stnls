@@ -35,13 +35,20 @@ from skimage.segmentation import mark_boundaries
 def load_video(cfg):
     device = "cuda:0"
     data,loaders = data_hub.sets.load(cfg)
+    print(data.tr[0])
     indices = data_hub.filter_subseq(data[cfg.dset],cfg.vid_name,0,cfg.nframes)
     vid = data[cfg.dset][indices[0]]['clean'][None,:].to(device)/255.
     noisy = data[cfg.dset][indices[0]]['noisy'][None,:].to(device)/255.
-    # F = 32
-    # B,T,_,H,W = vid.shape
-    # vid = th.randn((B,T,F,H,W),device=device,dtype=vid.dtype)
-    return vid,noisy
+    seg = None
+    if "seg" in data[cfg.dset][indices[0]]:
+        seg = data[cfg.dset][indices[0]]['seg']
+    print("vid.shape: ",vid.shape)
+    print(seg[0,0])
+    print(seg[0,0][0][0][0].shape)
+    print(seg[0,0][0][0][1].shape)
+    print(seg[0,0].shape)
+    exit()
+    return vid,noisy,seg
 
 def append_grid(vid,M,S):
     B,T,F,H,W = vid.shape
@@ -59,7 +66,7 @@ def run_exp(cfg):
     set_seed(cfg.seed)
 
     # -- read video --
-    vid,noisy = load_video(cfg)
+    vid,noisy,seg_gt = load_video(cfg)
     noisy = append_grid(noisy,cfg.M,cfg.stride0)
     vid = append_grid(vid,cfg.M,cfg.stride0)
     B,T,F,H,W = vid.shape
@@ -96,7 +103,7 @@ def run_exp(cfg):
     # seg_labels = inds2labels(slic_flows,cfg,H,W)
     seg["slic"] = inds2labels(seg["slic"],cfg,H,W)
 
-    return vid,pooled,seg
+    return vid,pooled,seg,seg_gt
 
 def run_pooling(cfg,vid,flows,pooling_type,ksize,stride):
     ws = cfg.ws
@@ -155,9 +162,8 @@ def run_nls(vid,flows,cfg):
     return vout[:,:,:3],None
 
 def run_slic_dev(vid,flows,cfg):
-    from stnls.dev.slic import slic_run
-    use_rand = False
-    outs = slic_run(vid,cfg.ws,cfg.wt,cfg.ps,cfg.stride0,cfg.full_ws,
+    from stnls.dev.slic import run_slic
+    outs = run_slic(vid,cfg.ws,cfg.wt,cfg.ps,cfg.stride0,cfg.full_ws,
                     cfg.M,cfg.softmax_weight,cfg.niters)
     pooled,dists_k,flows_k,s_dists,s_flows = outs
     return pooled[:,:,:3],s_flows
@@ -165,96 +171,96 @@ def run_slic_dev(vid,flows,cfg):
 def run_slic(vid,flows,cfg):
     return run_slic_dev(vid,flows,cfg)
 
-    # -- compute search window --
-    B,T,F,H,W = vid.shape
-    search = stnls.search.NonLocalSearch(cfg.ws,cfg.wt,cfg.ps,cfg.k,
-                                         nheads=1,dist_type="l2",
-                                         stride0=cfg.stride0,
-                                         self_action="anchor_self",
-                                         full_ws=cfg.full_ws,itype="int")
-    dists,flows_k = search(vid,vid,flows)
-    # print(dists.shape,flows_k.shape)
-    inds = stnls.utils.misc.flow2inds(flows_k,cfg.stride0)
-    # print(inds.shape)
-    # print(inds[0,0,0,:4,:4])
+    # # # -- compute search window --
+    # # B,T,F,H,W = vid.shape
+    # # search = stnls.search.NonLocalSearch(cfg.ws,cfg.wt,cfg.ps,cfg.k,
+    # #                                      nheads=1,dist_type="l2",
+    # #                                      stride0=cfg.stride0,
+    # #                                      self_action="anchor_self",
+    # #                                      full_ws=cfg.full_ws,itype="int")
+    # # dists,flows_k = search(vid,vid,flows)
+    # # # print(dists.shape,flows_k.shape)
+    # # inds = stnls.utils.misc.flow2inds(flows_k,cfg.stride0)
+    # # # print(inds.shape)
+    # # # print(inds[0,0,0,:4,:4])
 
-    # print(inds[0,0,0,:2,:2,0])
-    # print(inds[0,0,0,-4:,-4:,0])
+    # # # print(inds[0,0,0,:2,:2,0])
+    # # # print(inds[0,0,0,-4:,-4:,0])
 
-    # -- scattering top-K=1 --
-    K0 = 1
-    # gather_weights = th.softmax(-dists,-1)
-    gather_weights = dists
-    # timer,memer = ExpTimer(),GpuMemer()
-    # with TimeIt(timer,"labels"):
-    #     with MemIt(memer,"labels"):
-    print(cfg.full_ws)
-    names,labels = stnls.agg.scatter_labels(flows,flows_k,cfg.ws,cfg.wt,
-                                            cfg.stride0,cfg.stride1,H,W,cfg.full_ws)
-    # print(timer,memer)
-    # print(labels.min().item(),labels.max().item())
-    # print("[scattering]: ",gather_weights.shape,flows_k.shape,labels.shape)
-    # print(gather_weights[0,0,0,0,0])
-    # print(labels[0,0,0])
-    gather_labels = labels.reshape_as(gather_weights)
-    scatter_weights = stnls.agg.scatter_tensor(gather_weights,flows_k,labels,
-                                               cfg.stride0,cfg.stride1,H,W)
-    scatter_flows_k = stnls.agg.scatter_tensor(flows_k,flows_k,labels,
-                                               cfg.stride0,cfg.stride1,H,W)
-    scatter_labels = stnls.agg.scatter_tensor(gather_labels,flows_k,labels,
-                                              cfg.stride0,cfg.stride1,H,W,
-                                              invalid=-th.inf)
-    print("[a]: ",scatter_flows_k.shape,flows_k.shape,scatter_labels.shape)
+    # # # -- scattering top-K=1 --
+    # # K0 = 1
+    # # # gather_weights = th.softmax(-dists,-1)
+    # # gather_weights = dists
+    # # # timer,memer = ExpTimer(),GpuMemer()
+    # # # with TimeIt(timer,"labels"):
+    # # #     with MemIt(memer,"labels"):
+    # # print(cfg.full_ws)
+    # # names,labels = stnls.agg.scatter_labels(flows,flows_k,cfg.ws,cfg.wt,
+    # #                                         cfg.stride0,cfg.stride1,H,W,cfg.full_ws)
+    # # # print(timer,memer)
+    # # # print(labels.min().item(),labels.max().item())
+    # # # print("[scattering]: ",gather_weights.shape,flows_k.shape,labels.shape)
+    # # # print(gather_weights[0,0,0,0,0])
+    # # # print(labels[0,0,0])
+    # # gather_labels = labels.reshape_as(gather_weights)
+    # # scatter_weights = stnls.agg.scatter_tensor(gather_weights,flows_k,labels,
+    # #                                            cfg.stride0,cfg.stride1,H,W)
+    # # scatter_flows_k = stnls.agg.scatter_tensor(flows_k,flows_k,labels,
+    # #                                            cfg.stride0,cfg.stride1,H,W)
+    # # scatter_labels = stnls.agg.scatter_tensor(gather_labels,flows_k,labels,
+    # #                                           cfg.stride0,cfg.stride1,H,W,
+    # #                                           invalid=-th.inf)
+    # # print("[a]: ",scatter_flows_k.shape,flows_k.shape,scatter_labels.shape)
 
 
-    # -- checking in --
-    # nH,nW = H//cfg.stride1,W//cfg.stride1
-    # shape_str = 'b hd (t nh nw) k tr -> b hd t nh nw k tr'
-    # scatter_flows_k = rearrange(scatter_flows_k,shape_str,nh=nH,nw=nW)
-    # shape_str = 'b hd (t nh nw) k -> b hd t nh nw k'
-    # scatter_weights = rearrange(scatter_weights,shape_str,nh=nH,nw=nW)
-    # print(scatter_weights.shape,scatter_flows_k.shape)
-    # print(scatter_weights[0,0,0,-3:,-3:])
-    # print(scatter_flows_k[0,0,0,-3:,-3:])
-    # exit()
+    # # # -- checking in --
+    # # # nH,nW = H//cfg.stride1,W//cfg.stride1
+    # # # shape_str = 'b hd (t nh nw) k tr -> b hd t nh nw k tr'
+    # # # scatter_flows_k = rearrange(scatter_flows_k,shape_str,nh=nH,nw=nW)
+    # # # shape_str = 'b hd (t nh nw) k -> b hd t nh nw k'
+    # # # scatter_weights = rearrange(scatter_weights,shape_str,nh=nH,nw=nW)
+    # # # print(scatter_weights.shape,scatter_flows_k.shape)
+    # # # print(scatter_weights[0,0,0,-3:,-3:])
+    # # # print(scatter_flows_k[0,0,0,-3:,-3:])
+    # # # exit()
 
-    both = th.cat([scatter_weights[...,None],scatter_flows_k],-1)
-    # print(both.shape)
-    # print(both[0,0,0])
-    # exit()
+    # # both = th.cat([scatter_weights[...,None],scatter_flows_k],-1)
+    # # # print(both.shape)
+    # # # print(both[0,0,0])
+    # # # exit()
 
-    # -- topk --
-    scatter_flows_k = -scatter_flows_k
-    s_weight,s_flows_k,s_labels = stnls.agg.scatter_topk(scatter_weights,scatter_flows_k,
-                                                         scatter_labels,K0,
-                                                         descending=False)
-    # print(s_flows_k.shape,s_labels.shape)
-    # s_flows_k = s_flows_k.int()
-    # print(th.any(s_weight<-1000).item())
-    # print(th.any(s_flows_k<-1000).item(),th.any(s_flows_k>1000).item())
-    # print(th.where(s_flows_k[...,0]<-1000))
-    # print(s_weight[th.where(s_flows_k[...,0]<-1000)])
-    # print(th.where(s_flows_k<-1000))
-    # print(s_weight.shape)
-    # print(s_flows_k.shape)
-    # print(s_weight[0,0,:3])
-    # print(s_weight[0,0,100:103])
-    # print(s_weight[0,0,-3:])
-    # print(s_flows_k[0,0,:3])
-    # print(s_flows_k[0,0,100:103])
-    # print(s_flows_k[0,0,-3:])
-    both = th.cat([s_weight[...,None],s_flows_k],-1)
-    # print(both.shape)
-    # print(both[0,0,:,:])
-    # exit()
+    # # # -- topk --
+    # # scatter_flows_k = -scatter_flows_k
+    # # s_weight,s_flows_k,s_labels = stnls.agg.scatter_topk(scatter_weights,scatter_flows_k,
+    # #                                                      scatter_labels,K0,
+    # #                                                      descending=False)
+    # # # print(s_flows_k.shape,s_labels.shape)
+    # # # s_flows_k = s_flows_k.int()
+    # # # print(th.any(s_weight<-1000).item())
+    # # # print(th.any(s_flows_k<-1000).item(),th.any(s_flows_k>1000).item())
+    # # # print(th.where(s_flows_k[...,0]<-1000))
+    # # # print(s_weight[th.where(s_flows_k[...,0]<-1000)])
+    # # # print(th.where(s_flows_k<-1000))
+    # # # print(s_weight.shape)
+    # # # print(s_flows_k.shape)
+    # # # print(s_weight[0,0,:3])
+    # # # print(s_weight[0,0,100:103])
+    # # # print(s_weight[0,0,-3:])
+    # # # print(s_flows_k[0,0,:3])
+    # # # print(s_flows_k[0,0,100:103])
+    # # # print(s_flows_k[0,0,-3:])
+    # # both = th.cat([s_weight[...,None],s_flows_k],-1)
+    # # # print(both.shape)
+    # # # print(both[0,0,:,:])
+    # # # exit()
 
-    pooled = slic_pooling(vid,s_weight,s_flows_k,s_labels,
-                          cfg.ps,cfg.stride0,cfg.stride1,K0,cfg.softmax_weight)
-    # pooled = None
+    # # pooled = slic_pooling(vid,s_weight,s_flows_k,s_labels,
+    # #                       cfg.ps,cfg.stride0,cfg.stride1,K0,cfg.softmax_weight)
+    # # # pooled = None
 
-    # print(pooled.shape)
+    # # # print(pooled.shape)
 
-    return pooled[:,:,:3],s_flows_k
+    # return pooled[:,:,:3],s_flows_k
 
 
 def slic_pooling(vid,s_weights,s_flows_k,s_labels,ps,stride0,stride1,K0,softmax_weight):
@@ -349,11 +355,13 @@ def main():
     # -- config --
     cfg = edict()
     cfg.seed = 123
-    cfg.dname = "set8"
-    cfg.dset = "val"
+    cfg.dname = "bsd500"
+    cfg.dset = "tr"
+    # cfg.dname = "set8"
+    # cfg.dset = "val"
     # cfg.isize = "540_540"
     # cfg.isize = "260_260"
-    cfg.isize = "256_256"
+    # cfg.isize = "256_256"
     # cfg.isize = "128_128"
     # cfg.isize = "816_1216"
     # cfg.isize = "640_480"
@@ -361,14 +369,15 @@ def main():
     # cfg.isize = "400_400"
     # cfg.isize = "300_300"
     cfg.vid_name = "sunflower"
+    cfg.vid_name = "12074"
     cfg.ntype = "g"
     cfg.sigma = .001
     cfg.nframes = 1
     cfg.flow = False
     cfg.full_ws = False
     cfg.wt = 0
-    cfg.stride0 = 15
-    cfg.ws = 23
+    cfg.stride0 = 8
+    cfg.ws = 15
     # cfg.ws = 21
     # cfg.stride0 = 3
     # cfg.ws = 3
@@ -383,7 +392,7 @@ def main():
     cfg.niters = 3
 
     # -- run slic --
-    vid,pooled,segs = run_exp(cfg)
+    vid,pooled,segs,seg_gt = run_exp(cfg)
     vid = vid[:,:,:3]
     # pooled = pooled[:,:,:3]
     labels = segs['slic']
