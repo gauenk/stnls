@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Gauen"
+  given-names: "Kent"
+  orcid: "https://orcid.org/0000-0001-9582-8318"
+- family-names: "Chan"
+  given-names: "Stanley"
+  orcid: "https://orcid.org/0000-0001-5876-2073"
+title: "Space-Time Non-Local Search"
+version: 1.0.0
+doi: 10.48550/arXiv.2309.16849
+date-released: 2023-12-04
+url: "https://github.com/gauenk/stnls"
+
