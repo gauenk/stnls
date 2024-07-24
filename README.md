@@ -72,5 +72,16 @@ We upgrade Guided Deformable Attention (GDA) with our Shifted Non-Local Search (
 ![upgrading rvrt](https://github.com/gauenk/stnls/blob/master/figs/upgrade_rvrt.png?raw=true)
 
 
+## Citation
 
+If you find this work useful, please cite our paper:
+
+```bibtex
+@article{gauen2023space,
+  title={Space-Time Attention with Shifted Non-Local Search},
+  author={Gauen, Kent and Chan, Stanley},
+  journal={arXiv},
+  year={2023}
+}
+```
 

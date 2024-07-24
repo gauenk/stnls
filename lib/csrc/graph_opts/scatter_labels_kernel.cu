@@ -104,6 +104,7 @@ void get_unique_index(int& li, bool& oob,
       li = li + time_offset + wsNum*wsNum + 2*(wsNum/2)*wsNum;
   }else{
     assert(1==0);
+    // li = -1; // skip me!
   }
 
   // // -- get unique index --
@@ -232,10 +233,11 @@ __global__ void scatter_labels_kernel(
       // }
       // assert(nl_patch[1] == (ref_patch[1] + stride1*(ws_i_orig-wsOff_h)));
       // assert(nl_patch[2] == (ref_patch[2] + stride1*(ws_j_orig-wsOff_w)));
-      assert(li >= 0);
+      assert(li >= 0); // allow invalid at "-1"
       assert(li <= (S-1));
 
       // -- assigns --
+      // if (li < 0){ continue; }
       names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][0] = qi;
       names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][1] = ki;
       // atomicAdd(&(names[ibatch][ihead][li][nl_patch[0]][nl_patch[1]][nl_patch[2]][0]),1);

@@ -3,6 +3,7 @@
 from . import topk as topk_f
 from . import anchor_self as anchor_self_f
 from . import non_local_inds as non_local_inds_f
+from . import non_local_flow as non_local_flow_f
 from . import accumulate_flow as accumulate_flow_f
 from . import search_flow as search_flow_f
 from . import non_local_attn as non_local_attn_f
@@ -17,6 +18,7 @@ anchor_self_time = anchor_self_f.run_time
 anchor_self_refine = anchor_self_f.run_refine
 anchor_self_paired = anchor_self_f.run_paired
 non_local_inds = non_local_inds_f.run
+non_local_flow = non_local_flow_f.run
 accumulate_flow = accumulate_flow_f.run
 extract_search_from_accumulated = accumulate_flow_f.extract_search_from_accumulated
 search_flow = search_flow_f.run

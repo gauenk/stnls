@@ -14,19 +14,19 @@ def allocate_pair(base_shape,device,dtype,idist_val,itype_str):
     dists = th.zeros(base_shape,device=device,dtype=dtype)
     dists[...] = idist_val
     inds = th.zeros(base_shape+(3,),device=device,dtype=get_itype(itype_str))
-    inds[...] = -1
+    inds[...] = -1e8
     return dists,inds
 
 def allocate_pair_2d(base_shape,device,dtype,idist_val,itype_str):
     dists = th.zeros(base_shape,device=device,dtype=dtype)
     dists[...] = idist_val
     inds = th.zeros(base_shape+(2,),device=device,dtype=get_itype(itype_str))
-    inds[...] = -1
+    inds[...] = -1e8
     return dists,inds
 
 def allocate_inds(base_shape,device,itype_str):
     inds = th.zeros(base_shape+(3,),device=device,dtype=get_itype(itype_str))
-    inds[...] = -1
+    inds[...] = -1e8
     return inds
 
 def allocate_vid(vid_shape,device):
@@ -113,7 +113,9 @@ def get_dists(inds,itype):
 #
 
 def filter_k(inds,kr,k=None):
+    # inds.shape = (B,HD,K,T,H,W,2or3)
     K = inds.shape[-2] if k is None else k
+    # K = inds.shape[-5] if k is None else k
     kr = K if kr is None else kr
     if kr <= 0: return inds
     if isinstance(kr,float):
@@ -121,6 +123,7 @@ def filter_k(inds,kr,k=None):
         Ks = int(K*kr)
     else: Ks = int(kr)
     return inds[...,:Ks,:].contiguous()
+    # return inds[...,:Ks,:,:,:,:].contiguous()
 
 
 def ensure_paired_flow_dim(flow,num):
@@ -339,6 +342,7 @@ def paired_vids(forward, vid0, vid1, flows, wt, skip_self=False):
     # print("[a] flows.shape: ",flows.shape)
     flows = get_flows(flows)
     # print("[b] flows.shape: ",flows.shape)
+    # print(vid0.shape,flows.shape,wt)
     zflow = th.zeros_like(flows[:,:,0,0])
     for ti in range(T):
         t_grid = get_time_window_inds(ti,wt,T)
@@ -347,17 +351,25 @@ def paired_vids(forward, vid0, vid1, flows, wt, skip_self=False):
             # -- update search frame --
             tj = t_grid[_tj]
             if (ti == tj) and skip_self: continue
+            # print(ti,tj,_tj-1)
             frame0 = vid0[:,ti]
             frame1 = vid1[:,tj]
             if _tj > 0: flow = flows[:,:,ti,_tj-1]
             else: flow = zflow
             flow = flow.float()
             dists_ij,inds_ij = forward(frame0,frame1,flow)
+            # print("flow_ij.shape: ",inds_ij.shape)
+            # exit()
             inds_t = (tj-ti)*th.ones_like(inds_ij[...,[0]])
+            # inds_t = (tj-ti)*th.ones_like(inds_ij[...,[0],:,:])
+            # print(inds_t.shape,inds_ij.shape)
+            # inds_ij = th.cat([inds_t,inds_ij],-3)
             inds_ij = th.cat([inds_t,inds_ij],-1)
             dists_i.append(dists_ij)
             inds_i.append(inds_ij)
         # -- stack across K --
+        # dists_i = th.cat(dists_i,-3)
+        # inds_i = th.cat(inds_i,-4)
         dists_i = th.cat(dists_i,-1)
         inds_i = th.cat(inds_i,-2)
         dists.append(dists_i)
@@ -365,38 +377,52 @@ def paired_vids(forward, vid0, vid1, flows, wt, skip_self=False):
     # -- stack across time --
     dists = th.stack(dists,-4)
     inds = th.stack(inds,-5)
+    # dists = th.stack(dists,-4)
+    # inds = th.stack(inds,-4)
     return dists,inds
 
-def paired_vids_refine(forward, vid0, vid1, flows, wt, skip_self=False):
+def paired_vids_refine(forward, vid0, vid1, flows, wt, skip_self=False, check_time=True):
     """
 
     Only really for testing...
 
+    ... why? why not for use?
+
     """
     dists,inds = [],[]
     T = vid0.shape[1]
+    # print(vid0.shape,flows.shape)
     flows = get_flows(flows)
     zflow = th.zeros_like(flows[:,:,0,0])
     K_total = flows.shape[-2]
-    assert (K_total % T == 0),"Must be divisible by T."
-    K_each = K_total // T
+    # print("utils: ",flows.shape)
+    Wt = 2*wt+1
+    Wt = Wt-1 if skip_self else Wt
+    assert ((K_total % Wt) == 0),"Must be divisible by Wt."
+    K_each = K_total // Wt
     for ti in range(T):
         t_grid = get_time_window_inds(ti,wt,T)
         dists_i,inds_i = [],[]
+        ix = 0
         for _tj in range(2*wt+1):
             # -- update search frame --
             tj = t_grid[_tj]
-            if (ti == tj) and skip_self: continue
+            if (ti == tj) and skip_self:
+                continue
             frame0 = vid0[:,ti]
             frame1 = vid1[:,tj]
-            ks0,ks1 = _tj*K_each,(_tj+1)*K_each
+            # ks0,ks1 = _tj*K_each,(_tj+1)*K_each
+            ks0,ks1 = ix*K_each,(ix+1)*K_each
             flow = flows[:,:,ti,:,:,ks0:ks1,:].float()
-            assert th.all(flow[...,0] == (tj-ti)),"Must all be same frame."
+            # print(flow.shape,ks0,ks1,_tj*K_each,(_tj+1)*K_each)
+            if check_time:
+                assert th.all(flow[...,0] == (tj-ti)),"Must all be same frame."
             dists_ij,inds_ij = forward(frame0,frame1,flow[...,1:])
             inds_t = (tj-ti)*th.ones_like(inds_ij[...,[0]])
             inds_ij = th.cat([inds_t,inds_ij],-1)
             dists_i.append(dists_ij)
             inds_i.append(inds_ij)
+            ix+=1
         # -- stack across K --
         dists_i = th.cat(dists_i,-1)
         inds_i = th.cat(inds_i,-2)

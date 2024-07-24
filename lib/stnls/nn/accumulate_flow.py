@@ -1,4 +1,12 @@
 
+"""
+
+stride0 = query stride for flows; fflow.shape[-2:] = (nH,nW) nH = (H-1)//stride0+1
+
+flows = stnls.nn.accumulate_flow(fflow,bflow,stride0)
+
+"""
+
 # -- python --
 import torch as th
 from functools import partial
@@ -241,13 +249,13 @@ def pad(vid):
 def bounds(vgrid,H,W):
     L = [W,H]
     eps = 0#1e-3
-    print("vgrid: ",vgrid.shape)
+    # print("vgrid: ",vgrid.shape)
     for i in range(2):
-        print("pre: ",vgrid[:,i].min(),vgrid[:,i].max())
+        # print("pre: ",vgrid[:,i].min(),vgrid[:,i].max())
         args = th.where(vgrid[:,i] > (L[i]-1))
         vgrid[:,i][args] = 2*(L[i]-1) - vgrid[:,i][args]
         args = th.where(vgrid[:,i] < eps)
         vgrid[:,i][args] = -vgrid[:,i][args]
-        print("post: ",vgrid[:,i].min(),vgrid[:,i].max())
+        # print("post: ",vgrid[:,i].min(),vgrid[:,i].max())
 
     return vgrid

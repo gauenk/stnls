@@ -137,7 +137,9 @@ class non_local_gather(th.autograd.Function):
             fwd_fxn(vid, weights, inds, stack, counts,
                     ps, pt, dilation, stride0,
                     reflect_bounds, patch_offset)
+        # # print(th.mean(1.*(counts==0)))
         assert th.all(counts > 0).item()
+
         # print(counts[0,0])
         # print(counts[1,0])
         # print(counts[2,0])

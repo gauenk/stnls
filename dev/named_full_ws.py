@@ -7,7 +7,7 @@ import numpy as np
 import random
 
 
-def get_data(ws,wt,T,H,W,stride0,stride1,full_ws):
+def get_data(ws,ws_og,wt,T,H,W,stride0,stride1,full_ws):
 
     # -- get args --
     seed = 123
@@ -17,6 +17,9 @@ def get_data(ws,wt,T,H,W,stride0,stride1,full_ws):
     W_t = 2*wt+1
     B,HD,F = 1,1,1
     nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    # ws_og = ws
+    # ws = ws + (H-(nH-1)*stride0)
+    # print("ws,ws_og: ",ws,ws_og)
     K = ws*ws*W_t
     itype = "int"
     # K = -1
@@ -33,6 +36,7 @@ def get_data(ws,wt,T,H,W,stride0,stride1,full_ws):
                                          stride0=stride0, stride1=stride1,
                                          reflect_bounds=True,
                                          self_action="anchor",
+                                         ws_interior=ws_og,
                                          itype="int",full_ws=full_ws)
     vid = th.rand((B,HD,T,F,H,W)).to(device)
     _,flows_k = search(vid,vid,flows)
@@ -65,7 +69,7 @@ def set_search_offsets(wsOff_h, wsOff_w, hi, wi,
     return wsOff_h,wsOff_w
 
 def vprint(*args,**kwargs):
-    verbose = True
+    verbose = False
     if verbose:
         print(*args,**kwargs)
 
@@ -303,12 +307,13 @@ def main():
     # ws = 7
     wt = 0
     W_t = 2*wt+1
-    full_ws = True
+    full_ws = False
     T,H,W = 1,64,64
     stride0 = 8
     ws = 2*stride0 + 1
-    ws = 17
-    assert( ws>=(2*stride0+1) )
+    # ws = 3
+    # ws = 17
+    # assert( ws>=(2*stride0+1) )
     stride1 = 1
     W_t_num = T if wt > 0 else 1#min(W_t + 2*wt,T)
     wsNum = (ws-1)//stride0+1
@@ -325,11 +330,13 @@ def main():
     vals = np.zeros((T,H,W,ws,ws))
     names = -np.ones((S,T,H,W,3))
     counts = -np.ones((S,T,H,W))
-    flows_k = get_data(ws,wt,T,H,W,stride0,stride1,full_ws)
+    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
+    ws_og = ws
+    ws = ws_og + (H-(nH-1)*stride0)
+    flows_k = get_data(ws,ws_og,wt,T,H,W,stride0,stride1,full_ws)
     K = flows_k.shape[-2]
     st_offset = 1
     print("flows_k.shape: ",flows_k.shape)
-    nH,nW = (H-1)//stride0+1,(W-1)//stride0+1
     for ti in range(T):
         for h_ref in range(nH):
             for w_ref in range(nW):
@@ -337,9 +344,17 @@ def main():
                     fill_names(ti,h_ref,w_ref,ki,ws,wt,stride0,stride1,
                                st_offset,full_ws,names,counts,flows_k)
 
+    # # graph_transpose_q2k(dists_k,flows_k,flows,ws,wt,stride0,H,W,full_ws):
+    # scatter_flows_k = stnls.graph_opts.scatter_tensor(flows_k,flows_k,labels,
+    #                                                   stride0,stride1,H,W)
+
+
     # print(counts[:,0,2,2])
     # print(counts[:,0,:3,:3].T)
     # print(counts[:,0,59,3])
+    print(names.shape,counts.shape)
+    print(names[:,0,-2:,-2:].squeeze())
+    print(counts[:,0,-2:,-2:].squeeze())
     print(counts[:,0,16,9])
     # for i in range(S):
     #     print(counts[i,0])

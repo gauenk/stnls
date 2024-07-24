@@ -1,4 +1,14 @@
 
+"""
+
+wt = temporal window
+stride0 = query stride for flows; fflow.shape[-2:] = (nH,nW) nH = (H-1)//stride0+1
+
+flows = stnls.nn.search_flow(fflow,bflow,wt,stride0)
+
+"""
+
+
 # -- python --
 import torch as th
 from functools import partial
@@ -15,6 +25,8 @@ def run(fflow,bflow,wt,stride0):
 
     # -- exec --
     if wt > 0:
+        fflow = fflow.contiguous()
+        bflow = bflow.contiguous()
         flows = search_flow_th.apply(fflow,bflow,wt,stride0)
     else:
         flows = empty_flows(fflow,wt,stride0)
@@ -25,7 +37,7 @@ def empty_flows(fflow,wt,stride0):
     B,T,_,H,W = fflow.shape
     nH = (H-1)//stride0+1
     nW = (W-1)//stride0+1
-    W_t = 2*wt+1
+    W_t = min(2*wt+1,T)
     flows = th.zeros((B,T,W_t-1,2,nH,nW),
                      device=fflow.device,dtype=fflow.dtype)
     return flows
@@ -39,8 +51,8 @@ class search_flow_th(th.autograd.Function):
         B,T,_,H,W = fflow.shape
         nH = (H-1)//stride0+1
         nW = (W-1)//stride0+1
-        W_t = 2*wt
-        flows = th.zeros((B,T,W_t,2,nH,nW),
+        W_t = min(2*wt+1,T)
+        flows = th.zeros((B,T,W_t-1,2,nH,nW),
                          device=fflow.device,dtype=fflow.dtype)
 
         # -- forward --

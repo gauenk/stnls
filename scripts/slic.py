@@ -11,6 +11,10 @@ from einops import rearrange,repeat
 from easydict import EasyDict as edict
 from dev_basics.utils import vid_io
 
+# -- interpolation --
+import torchvision.transforms.functional as TF
+from torchvision.transforms import InterpolationMode
+
 # -- exps --
 from dev_basics.utils.misc import set_seed
 
@@ -35,20 +39,42 @@ from skimage.segmentation import mark_boundaries
 def load_video(cfg):
     device = "cuda:0"
     data,loaders = data_hub.sets.load(cfg)
-    print(data.tr[0])
     indices = data_hub.filter_subseq(data[cfg.dset],cfg.vid_name,0,cfg.nframes)
     vid = data[cfg.dset][indices[0]]['clean'][None,:].to(device)/255.
     noisy = data[cfg.dset][indices[0]]['noisy'][None,:].to(device)/255.
-    seg = None
+    seg_info = None
     if "seg" in data[cfg.dset][indices[0]]:
-        seg = data[cfg.dset][indices[0]]['seg']
+        seg_info = data[cfg.dset][indices[0]]['seg']
+    prepare_seg(seg_info)
     print("vid.shape: ",vid.shape)
-    print(seg[0,0])
-    print(seg[0,0][0][0][0].shape)
-    print(seg[0,0][0][0][1].shape)
-    print(seg[0,0].shape)
-    exit()
-    return vid,noisy,seg
+
+    # -- crop --
+    vid = vid[...,330:400,420:490]
+    noisy = noisy[...,330:400,420:490]
+    # exit()
+    # vid_io.save_video(vid,"output/segs/","vid")
+    # exit()
+    return vid,noisy,seg_info
+
+def prepare_seg(seg_info):
+    if seg_info is None: return None
+    segs = []
+    for i in range(seg_info.shape[1]):
+        assert len(seg_info[0,i]) == 1
+        assert len(seg_info[0,i][0]) == 1
+        # print(len(seg_info[0,i][0][0]))
+        # print(seg_info[0,i][0][0][0])
+        # print(seg_info[0,i][0][0][1])
+        for j in range(len(seg_info[0,i][0][0])):
+            print(seg_info[0,i][0][0][j])
+            print("seg_info[0,i][0][j].shape: ",seg_info[0,i][0][0][j].shape)
+            seg_ij = th.from_numpy(seg_info[0,i][0][0][j]*1.)
+            segs.append(seg_ij)
+    segs = th.stack(segs)[:,None,None]
+    segs /= segs.max()
+    print(segs.shape)
+    vid_io.save_video(segs,"output/segs/","ex")
+    return segs
 
 def append_grid(vid,M,S):
     B,T,F,H,W = vid.shape
@@ -332,8 +358,39 @@ def inds2labels(s_flows_k,cfg,H,W):
     seg_labels += th.div(s_inds[...,1],cfg.stride0,rounding_mode="floor")*nW0
     seg_labels += th.div(s_inds[...,2],cfg.stride0,rounding_mode="floor")
 
+
+    # # -- info --
+    # print(seg_labels.shape)
+    # print(s_inds.shape)
+    # inds = s_inds
+    # # exit()
+    # print("-"*20)
+    # print("-"*20)
+    # print("-"*20)
+    # print(inds[0,0,H//2+1,29])
+    # print("-"*20)
+    # print(inds[0,0,H//2,29])
+    # print("-"*20)
+    # print(inds[0,0,H//2-1,29])
+    # print("-"*20)
+    # print(inds[0,0,H//2+2,29])
+
+
+    # print("-"*20)
+    # print("-"*20)
+    # print("-"*20)
+    # print(inds[0,0,H//2+6,29])
+    # print("-"*20)
+    # print(inds[0,0,H//2+7,29])
+    # print("-"*20)
+    # print(inds[0,0,H//2+5,29])
+    # print("-"*20)
+    # print(inds[0,0,H//2+8,29])
+    # print("-="*20)
+
+
     # -- fill invalid --
-    valid = th.logical_and(seg_labels<100000,seg_labels>-100000)
+    valid = th.logical_and(seg_labels<10000,seg_labels>-10000)
     S = seg_labels[th.where(valid)].max()
     seg_labels[th.where(~valid)] = S+1
 
@@ -350,15 +407,24 @@ def labels2masks(labels):
         masks[si] = labels==si
     return masks
 
+def ensure_size(img,tH,tW):
+    B = img.shape[0]
+    img = rearrange(img,'b t c h w -> (b t) c h w')
+    img = TF.resize(img,(tH,tW),InterpolationMode.NEAREST)
+    img = rearrange(img,'(b t) c h w -> b t c h w',b=B)
+    return img
+
 def main():
 
     # -- config --
     cfg = edict()
     cfg.seed = 123
-    cfg.dname = "bsd500"
+    # cfg.dset = "tr"
+    # cfg.dname = "bsd500"
     cfg.dset = "tr"
-    # cfg.dname = "set8"
+    cfg.dname = "iphone_sum2023"
     # cfg.dset = "val"
+    # cfg.dname = "set8"
     # cfg.isize = "540_540"
     # cfg.isize = "260_260"
     # cfg.isize = "256_256"
@@ -368,16 +434,22 @@ def main():
     # cfg.isize = None
     # cfg.isize = "400_400"
     # cfg.isize = "300_300"
-    cfg.vid_name = "sunflower"
-    cfg.vid_name = "12074"
+    # cfg.vid_name = "sunflower"
+    # cfg.vid_name = "hypersmooth"
+    cfg.vid_name = "quilt"
+    # cfg.vid_name = "12074"
     cfg.ntype = "g"
     cfg.sigma = .001
-    cfg.nframes = 1
+    cfg.nframes = 2
     cfg.flow = False
     cfg.full_ws = False
     cfg.wt = 0
-    cfg.stride0 = 8
-    cfg.ws = 15
+    # cfg.stride0 = 8
+    # cfg.ws = 15
+    cfg.stride0 = 10
+    cfg.ws = cfg.stride0*2-1
+    # cfg.ws = 11
+
     # cfg.ws = 21
     # cfg.stride0 = 3
     # cfg.ws = 3
@@ -386,10 +458,10 @@ def main():
     cfg.k = -1#cfg.ws*cfg.ws
     cfg.nls_k = 8
     cfg.ps = 1
-    cfg.M = 0.1
+    cfg.M = 0.3
     cfg.pooling_ksize = 1
-    cfg.softmax_weight = 20.
-    cfg.niters = 3
+    cfg.softmax_weight = 10.
+    cfg.niters = 5
 
     # -- run slic --
     vid,pooled,segs,seg_gt = run_exp(cfg)
@@ -413,12 +485,38 @@ def main():
             # seg_bt = draw_segmentation_masks(vid[bi,ti].cpu(),mask.cpu())
             seg.append(th.tensor(seg_bt))
     seg = th.stack(seg).view(B,T,F,H,W)
-    print(seg.shape)
+    tH,tW = 128,128
+    seg = ensure_size(seg,tH,tW)
+    vid = ensure_size(vid,tH,tW)
+    print("[slic] seg.shape: ",seg.shape)
+    vid_io.save_video(vid,"output/slic","clean")
     vid_io.save_video(seg,"output/slic","ex_n%d"%cfg.niters)
 
+    # -- mark grid --
+    vid[...,0,::cfg.stride0,::cfg.stride0] = 0
+    vid[...,1,::cfg.stride0,::cfg.stride0] = 0
+    vid[...,2,::cfg.stride0,::cfg.stride0] = 255.
+    tH,tW = 252,252
+    vid = vid[...,:2*cfg.stride0+1,:2*cfg.stride0+1]
+    # vid[...,-1,-1] = 1.
+    print(cfg.stride0)
+    print("[a] vid.shape: ",vid.shape)
+    vid = ensure_size(vid,tH,tW)
+    print("[b] vid.shape: ",vid.shape)
+    vid_io.save_video(vid,"output/slic","clean_marked")
+
+    # # -- save --
+    # H = vid.shape[-2]
+    # # print(seg.shape)
+    # vid_io.save_video(seg[:,[0],:,H//2+1:H//2+7,28:32],
+    #                   "output/slic","ex_n%d"%cfg.niters)
+
+    # -- pooled --
+    tH,tW = 128,128
     for ptype in pooled:
         print(pooled[ptype].type,pooled[ptype].shape,pooled[ptype][:,:,:3].max())
         vid = pooled[ptype][:,:,:3]
+        vid = ensure_size(vid,tH,tW)
         vid_io.save_video(vid,"output/slic_pooled/",ptype)
 
 

@@ -122,7 +122,9 @@ def search_deltas(vid0,vid1,fflow,bflow,loc0,grid,stride1,ws,ps,K=9,dist_type="l
     dmap -= dmap.min()
     dmap /= dmap.max()
     sign = -1 if dist_type == "l2" else 1
+    print("[viz] dist_type: ",dist_type)
     dmap = th.exp(sign*10*dmap)
+    # dmap = th.exp(sign*0.01*dmap)
     # # print(dmap)
     dmap -= dmap.min()
     dmap /= dmap.max()

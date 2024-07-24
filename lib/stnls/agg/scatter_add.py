@@ -103,7 +103,7 @@ class NonLocalScatterAddFunction(th.autograd.Function):
         # print(counts,counts.max())
         counts = counts.view((1,1,1,1,outH,outW))
         out_vid = out_vid# / (counts+eps)
-        assert th.all(counts>1e-3)
+        # assert th.all(counts>1e-3)
 
         # -- backward --
         ctx.save_for_backward(weights,flows,vid,counts)

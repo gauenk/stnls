@@ -23,7 +23,7 @@ __global__ void non_local_search_int_forward_kernel(
     const torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> flows,
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> dists,
     torch::PackedTensorAccessor32<int,7,torch::RestrictPtrTraits> inds,
-    int ws, int wt, int ps, int pt,
+    int ws, int wt, int ps, int pt, int ws_interior,
     int stride0, int stride1, int strideQ, int dilation,
     bool reflect_bounds, bool full_ws, int patch_offset,
     int nH, int nW, int nHW, int st_offset,
@@ -48,8 +48,6 @@ __global__ void non_local_search_int_forward_kernel(
   }
 
   // -- search window params --
-  int wsHalf = (ws-1)/2;
-  // int wsMax = stride1*(ws-1-wsHalf);
   int wsOff_h,wsOff_w;
   int W_t = 2*wt+1;
   int t_max;
@@ -81,6 +79,7 @@ __global__ void non_local_search_int_forward_kernel(
 
   // -- indexing --
   scalar_t dist;
+  int ws_og = ws;
 
   for (int q_index = 0; q_index < q_per_thread; q_index++){
 
@@ -102,6 +101,11 @@ __global__ void non_local_search_int_forward_kernel(
     // -- check bounds of pixel location --
     // check_bounds(valid_ref_patch,ref_patch,T,H,W);
     valid_ref_patch = true;
+
+    // -- half ws --
+    bool btm_right = (n_hi == (nH-1)) or (n_wi == (nW-1));
+    ws = btm_right ? ws_og : ws_interior;
+    int wsHalf = (ws-1)/2;
 
     // -- temporal search bounds --
     set_time_range(t_max, ref_patch[0], T, wt);
@@ -185,7 +189,8 @@ void non_local_search_int_forward_cuda(
     const torch::Tensor flows,
     torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, int stride1, int strideQ,
-    int dilation, int pt, bool reflect_bounds, bool full_ws,
+    int dilation, int pt, int ws_interior,
+    bool reflect_bounds, bool full_ws,
     int patch_offset, int off_Hq, int off_Wq, int dist_type){
 
    // -- derived quantities --
@@ -235,7 +240,7 @@ void non_local_search_int_forward_cuda(
             flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-            ws, wt, ps, pt, stride0, stride1, strideQ, dilation, 
+            ws, wt, ps, pt, ws_interior, stride0, stride1, strideQ, dilation, 
             reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
             st_offset, off_Hq, off_Wq, q_per_thread, ws_per_thread, wt_per_thread);
           }));
@@ -248,7 +253,7 @@ void non_local_search_int_forward_cuda(
             flows.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             inds.packed_accessor32<int,7,torch::RestrictPtrTraits>(),
-            ws, wt, ps, pt, stride0, stride1, strideQ, dilation, 
+            ws, wt, ps, pt, ws_interior, stride0, stride1, strideQ, dilation, 
             reflect_bounds, full_ws, patch_offset, nH, nW, nHW,
             st_offset, off_Hq, off_Wq, q_per_thread, ws_per_thread, wt_per_thread);
           }));

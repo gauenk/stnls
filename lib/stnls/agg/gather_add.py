@@ -92,7 +92,7 @@ class NonLocalGatherAddFunction(th.autograd.Function):
                 reflect_bounds, patch_offset, itype_int)
         eps = 1e-10
 
-        # -- normalize --
+        # -- normalize contributions from overlapping patches --
         counts = counts.view((1,1,1,1,outH,outW))
         out_vid = out_vid / (counts+eps)
         assert th.all(counts>1e-3)

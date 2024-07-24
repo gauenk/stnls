@@ -9,8 +9,8 @@ void non_local_search_int_forward_cuda(
     const torch::Tensor flows,
     torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, int stride1, int strideQ,
-    int dilation, int pt, bool reflect_bounds, bool full_ws,
-    int patch_offset, int off_Hq, int off_Wq, int dist_type);
+    int dilation, int pt, int ws_interior, bool reflect_bounds,
+    bool full_ws, int patch_offset, int off_Hq, int off_Wq, int dist_type);
 
 void non_local_search_bilin2d_forward_cuda(
     const torch::Tensor vid0, const torch::Tensor vid1,
@@ -58,7 +58,7 @@ void non_local_search_int_forward(
     const torch::Tensor vid0, const torch::Tensor vid1,
     const torch::Tensor flows, torch::Tensor dists, torch::Tensor inds,
     int ps, int k, int stride0, int stride1, int strideQ, int dilation, int pt,
-    bool reflect_bounds, bool full_ws, int patch_offset,
+    int ws_interior, bool reflect_bounds, bool full_ws, int patch_offset,
     int off_Hq, int off_Wq, int dist_type){
   CHECK_INPUT(vid0);
   CHECK_INPUT(vid1);
@@ -67,8 +67,8 @@ void non_local_search_int_forward(
   CHECK_INPUT(inds);
   non_local_search_int_forward_cuda(vid0, vid1, flows, dists, inds,
                                     ps, k, stride0, stride1, strideQ,
-                                    dilation, pt, reflect_bounds, full_ws,
-                                    patch_offset, off_Hq, off_Wq, dist_type);
+                                    dilation, pt, ws_interior, reflect_bounds,
+                                    full_ws, patch_offset, off_Hq, off_Wq, dist_type);
 }
 
 void non_local_search_bilin2d_forward(

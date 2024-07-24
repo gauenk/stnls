@@ -2,7 +2,6 @@
 
 Create Similar Images (fwd,bwd)
 
-
 """
 
 # -- python --

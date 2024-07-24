@@ -56,6 +56,8 @@ class PairedSearchFunction(th.autograd.Function):
         # flow = ensure_flow_shape(flow)
         B,HD,F,H,W = frame0.shape
         flow = flow.contiguous()
+        # print(frame0.shape,frame1.shape,flow.shape)
+        # exit()
         reflect_bounds_warning(reflect_bounds)
 
         # -- run [optionally batched] forward function --
@@ -138,6 +140,9 @@ class PairedSearch(th.nn.Module):
         self.normalize_bwd = normalize_bwd
         self.k_agg = k_agg
 
+        # print(self.ws,self.ps,self.k,
+        #       self.dist_type,self.stride0,self.stride1,self.itype,
+        #       self.full_ws,self.reflect_bounds)
 
     def paired_vids(self, vid0, vid1, flows, wt, skip_self=False):
         return _paired_vids(self.forward, vid0, vid1, flows, wt, skip_self)

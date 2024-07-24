@@ -145,8 +145,8 @@ class PairedRefine(th.nn.Module):
         self.k_agg = k_agg
 
 
-    def paired_vids(self, vid0, vid1, flows, wt, skip_self=False):
-        return _paired_vids(self.forward, vid0, vid1, flows, wt, skip_self)
+    def paired_vids(self, vid0, vid1, flows, wt, skip_self=False, check_time=True):
+        return _paired_vids(self.forward, vid0, vid1, flows, wt, skip_self, check_time)
 
     def forward(self, frame0, frame1, flow):
         assert self.ws > 0,"Must have nonzero spatial search window"

@@ -64,6 +64,7 @@ def forward(frame0, frame1, flow,
         stride1 = float(stride1)
 
     # -- run --
+    # print("[impl]: ",flow.shape)
     if itype == "int":
         fwd_fxn(frame0, frame1, flow, dists, inds,
                 ws, ps, stride0, stride1, dilation,

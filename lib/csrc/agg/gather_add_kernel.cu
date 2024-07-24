@@ -18,7 +18,7 @@ __global__ void gather_add_forward_kernel(
     torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> counts,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> in_vid,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
-    const torch::PackedTensorAccessor32<itype,5,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<itype,5,torch::RestrictPtrTraits> flows,
     int ps, int strideIn, int strideOut, int pt, int dilation, bool reflect_bounds,
     int patch_offset, int q_per_thread){
 
@@ -31,8 +31,8 @@ __global__ void gather_add_forward_kernel(
     int inW = in_vid.size(5);
     int outH = in_vid.size(4);
     int outW = in_vid.size(5);
-    int Q = inds.size(2);
-    int K = inds.size(3);
+    int Q = flows.size(2);
+    int K = flows.size(3);
 
     // -- batching --
     int query_start = q_per_thread*(threadIdx.x + blockDim.x*blockIdx.x);
@@ -65,7 +65,7 @@ __global__ void gather_add_forward_kernel(
   #pragma unroll
       get_pixel_loc(nl,qi,strideIn,nW,nHW,inH,inW);
       for (int _idx=0; _idx < 3; _idx++){
-        nl[_idx] = nl[_idx] + inds[ibatch][ihead][qi][ki][_idx];
+        nl[_idx] = nl[_idx] + flows[ibatch][ihead][qi][ki][_idx];
       }
 
       // -- check "inf" (but it won't be inf sometimes)  --
@@ -138,15 +138,15 @@ __global__ void gather_add_forward_kernel(
 void gather_add_forward_cuda(
     torch::Tensor out_vid, torch::Tensor counts,
     const torch::Tensor in_vid,
-    const torch::Tensor dists, const torch::Tensor inds,
+    const torch::Tensor dists, const torch::Tensor flows,
     int ps, int strideIn, int strideOut, int pt, int dilation,
     bool reflect_bounds, int patch_offset, bool itype_int){
 
   // -- unpack --
-  int B = inds.size(0);
-  int HD = inds.size(1);
-  int Q = inds.size(2);
-  int K = inds.size(3);
+  int B = flows.size(0);
+  int HD = flows.size(1);
+  int Q = flows.size(2);
+  int K = flows.size(3);
   int q_per_thread = 2;
 
   // -- kernel threads --
@@ -170,7 +170,7 @@ void gather_add_forward_cuda(
             counts.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
             in_vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-            inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+            flows.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
             ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset,
             q_per_thread);
         }));
@@ -182,7 +182,7 @@ void gather_add_forward_cuda(
             counts.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
             in_vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
             dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-            inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+            flows.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
             ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset,
             q_per_thread);
         }));
@@ -205,7 +205,7 @@ __global__ void gather_add_int_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> out_vid_grad,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
-    const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<int,5,torch::RestrictPtrTraits> flows,
     int ps, int strideIn, int strideOut, int pt, int dilation,
     bool reflect_bounds, int patch_offset, int q_per_thread){
 
@@ -248,7 +248,7 @@ __global__ void gather_add_int_backward_kernel(
 #pragma unroll
     get_pixel_loc<int>(nl,qi,strideIn,nW,nHW,inH,inW);
     for (int _idx=0; _idx < 3; _idx++){
-      nl[_idx] = nl[_idx] + inds[ibatch][ihead][qi][ki][_idx];
+      nl[_idx] = nl[_idx] + flows[ibatch][ihead][qi][ki][_idx];
     }
 
     // -- check "inf" (but it won't be inf sometimes)  --
@@ -321,7 +321,7 @@ __global__ void gather_add_int_backward_kernel(
 void gather_add_int_backward_cuda(
     torch::Tensor in_vid_grad, torch::Tensor dists_grad,
     const torch::Tensor out_vid_grad, const torch::Tensor vid,
-    const torch::Tensor dists, const torch::Tensor inds,
+    const torch::Tensor dists, const torch::Tensor flows,
     int ps, int strideIn, int strideOut, int pt, int dilation,
     bool reflect_bounds, int patch_offset){
 
@@ -353,7 +353,7 @@ void gather_add_int_backward_cuda(
         out_vid_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
+        flows.packed_accessor32<int,5,torch::RestrictPtrTraits>(),
         ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset,
         q_per_thread);
       }));
@@ -370,11 +370,11 @@ template <typename scalar_t>
 __global__ void gather_add_bilin2d_backward_kernel(
     torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> in_vid_grad,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists_grad,
-    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> inds_grad,
+    torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> flows_grad,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> out_vid_grad,
     const torch::PackedTensorAccessor32<scalar_t,6,torch::RestrictPtrTraits> vid,
     const torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> dists,
-    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> inds,
+    const torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> flows,
     int ps, int strideIn, int strideOut, int pt, int dilation,
     bool reflect_bounds, int patch_offset, int q_per_thread){
 
@@ -419,7 +419,7 @@ __global__ void gather_add_bilin2d_backward_kernel(
 #pragma unroll
     get_pixel_loc(nl,qi,strideIn,nW,nHW,inH,inW);
     for (int _idx=0; _idx < 3; _idx++){
-      nl[_idx] = nl[_idx] + inds[ibatch][ihead][qi][ki][_idx];
+      nl[_idx] = nl[_idx] + flows[ibatch][ihead][qi][ki][_idx];
     }
 
     // -- check "inf" (but it won't be inf sometimes)  --
@@ -505,8 +505,8 @@ __global__ void gather_add_bilin2d_backward_kernel(
       atomicAdd(&dists_grad[ibatch][ihead][qi][ki],acc_dists_grad);
 
       // -- write flows grad --
-      atomicAdd(&inds_grad[ibatch][ihead][qi][ki][1],weight*acc_igradH*signH);
-      atomicAdd(&inds_grad[ibatch][ihead][qi][ki][2],weight*acc_igradW*signW);
+      atomicAdd(&flows_grad[ibatch][ihead][qi][ki][1],weight*acc_igradH*signH);
+      atomicAdd(&flows_grad[ibatch][ihead][qi][ki][2],weight*acc_igradW*signW);
 
     }} // pi,pj
   } // qi
@@ -515,9 +515,9 @@ __global__ void gather_add_bilin2d_backward_kernel(
 
 void gather_add_bilin2d_backward_cuda(
     torch::Tensor in_vid_grad,
-    torch::Tensor dists_grad, torch::Tensor inds_grad,
+    torch::Tensor dists_grad, torch::Tensor flows_grad,
     const torch::Tensor out_vid_grad, const torch::Tensor vid,
-    const torch::Tensor dists, const torch::Tensor inds,
+    const torch::Tensor dists, const torch::Tensor flows,
     int ps, int strideIn, int strideOut, int pt, int dilation,
     bool reflect_bounds, int patch_offset){
 
@@ -546,11 +546,11 @@ void gather_add_bilin2d_backward_cuda(
     gather_add_bilin2d_backward_kernel<scalar_t><<<nblocks, nthreads>>>(
         in_vid_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         dists_grad.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        inds_grad.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        flows_grad.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         out_vid_grad.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         vid.packed_accessor32<scalar_t,6,torch::RestrictPtrTraits>(),
         dists.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-        inds.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+        flows.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
         ps, strideIn, strideOut, pt, dilation, reflect_bounds, patch_offset,
         q_per_thread);
       }));

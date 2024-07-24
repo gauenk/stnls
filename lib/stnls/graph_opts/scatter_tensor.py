@@ -17,6 +17,49 @@ from einops import rearrange
 # -- cpp cuda kernel --
 import stnls_cuda
 
+class scatter_tensor(th.autograd.Function):
+
+    @staticmethod
+    def forward(ctx,tensor,flows_k,labels,stride0,stride1,H,W,invalid=th.inf):
+        ctx_vars = {"tensor_shape":tensor.shape,"flows_k":flows_k,"labels":labels,
+                    "stride0":stride0,"stride1":stride1,"H":H,"W":W,"invalid":invalid}
+        for name,val in ctx_vars.items():
+            setattr(ctx,name,val)
+        return run(tensor,flows_k,labels,stride0,stride1,H,W,invalid)
+
+    @staticmethod
+    def backward(ctx, grad_scatter_tensor):
+        # -- unpack --
+        labels = ctx.labels
+        flows_k = ctx.flows_k
+        stride0 = ctx.stride0
+        device = grad_scatter_tensor.device
+        dtype = grad_scatter_tensor.dtype
+        H,W = ctx.H,ctx.W
+
+        # -- get shapes --
+        # print(ctx.tensor_shape,grad_scatter_tensor.shape,labels.shape)
+        B,HD,T,nH,nW,S = ctx.tensor_shape
+        Q = T*nH*nW # shape = (B,HD,Q,S,M)
+
+        # -- reshape --
+        tensor_grad = th.zeros((B,HD,Q,S,1),device=device,dtype=dtype)
+        grad_scatter_tensor = grad_scatter_tensor[...,None]
+        # grad_scatter_tensor = th.randn_like(grad_scatter_tensor)
+
+        # -- bwd --
+        # print(tensor_grad.shape,grad_scatter_tensor.shape,labels.shape,flows_k.shape)
+        stnls_cuda.scatter_tensor_backward(tensor_grad,grad_scatter_tensor,
+                                           labels,flows_k,stride0,H,W)
+        tensor_grad = tensor_grad[...,0].reshape(ctx.tensor_shape)
+        # print(tensor_grad)
+        # print(tensor_grad.norm())
+
+        return tensor_grad,None,None,None,None,None,None,None
+
+def apply(tensor,flows_k,labels,stride0,stride1,H,W,invalid=th.inf):
+    return scatter_tensor.apply(tensor,flows_k,labels,stride0,stride1,H,W,invalid)
+
 def run(tensor,flows_k,labels,stride0,stride1,H,W,invalid=th.inf):
 
     # -- unpack shapes --

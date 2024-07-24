@@ -13,7 +13,8 @@ void scatter_tensor_forward_cuda(torch::Tensor out_tensor,
 void scatter_tensor_backward_cuda(torch::Tensor in_tensor_grad,
                                   const torch::Tensor out_tensor_grad,
                                   const torch::Tensor labels,
-                                  const torch::Tensor flows_k, int stride0);
+                                  const torch::Tensor flows_k,
+                                  int stride0, int H, int W);
 
 // C++ interface
 
@@ -38,15 +39,17 @@ void scatter_tensor_forward(
 }
 
 void scatter_tensor_backward(
-    torch::Tensor out_tensor_grad,
-    const torch::Tensor in_tensor_grad,
+    torch::Tensor in_tensor_grad,
+    const torch::Tensor out_tensor_grad,
     const torch::Tensor labels,
-    const torch::Tensor flows_k, int stride0){
+    const torch::Tensor flows_k,
+    int stride0, int H, int W){
   CHECK_INPUT(in_tensor_grad);
   CHECK_INPUT(out_tensor_grad);
   CHECK_INPUT(labels);
   CHECK_INPUT(flows_k);
-  scatter_tensor_backward_cuda(in_tensor_grad,out_tensor_grad,labels,flows_k,stride0);
+  scatter_tensor_backward_cuda(in_tensor_grad,out_tensor_grad,labels,
+                               flows_k,stride0,H,W);
 }
 
 // python bindings

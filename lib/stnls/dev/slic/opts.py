@@ -4,7 +4,7 @@ import torch as th
 import stnls
 from einops import rearrange,repeat
 
-def graph_transpose_q2k(dists_k,flows_k,flows,ws,wt,stride0,H,W,full_ws):
+def graph_transpose_q2k(dists_k,flows_k,flows,ws,wt,stride0,H,W,full_ws,invalid=th.inf):
 
     # -- create scattering labels for graph transpose [aka *magic*] --
     names,labels = stnls.graph_opts.scatter_labels(flows,flows_k,ws,wt,
@@ -18,9 +18,9 @@ def graph_transpose_q2k(dists_k,flows_k,flows,ws,wt,stride0,H,W,full_ws):
 
     # -- scattering top-K=1 --
     scatter_weights = stnls.graph_opts.scatter_tensor(dists_k,flows_k,labels,
-                                               stride0,stride1,H,W)
+                                                stride0,stride1,H,W,invalid=invalid)
     scatter_flows_k = stnls.graph_opts.scatter_tensor(flows_k,flows_k,labels,
-                                               stride0,stride1,H,W)
+                                                stride0,stride1,H,W,invalid=invalid)
     scatter_labels = stnls.graph_opts.scatter_tensor(gather_labels,flows_k,labels,
                                               stride0,stride1,H,W,invalid=-th.inf)
     scatter_flows_k = -scatter_flows_k

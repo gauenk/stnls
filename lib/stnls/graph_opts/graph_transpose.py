@@ -39,18 +39,18 @@ def graph_transpose(D,F,L):
         scatter_dists,scatter_flows,scatter_labels = outs
 
         # -- top-k --
-        print(scatter_labels.shape,scatter_labels.max(),scatter_labels.min())
+        # print(scatter_labels.shape,scatter_labels.max(),scatter_labels.min())
         topk,K0 = stnls.agg.scatter_topk,-1
         s_dists,s_flows,s_labels = topk(scatter_dists,scatter_flows,
                                         scatter_labels,K0,descending=False)
 
-        print(s_labels.shape,s_labels.max(),s_labels.min())
+        # print(s_labels.shape,s_labels.max(),s_labels.min())
 
         # -- [transpose graph] keys to queries --
         dists_k,flows_k = run_scatter_k2q(s_dists,s_flows,s_labels,stride0,T,H,W)
-        print(_d)
-        print(dists_k)
-        print(_d.shape,dists_k.shape)
+        # print(_d)
+        # print(dists_k)
+        # print(_d.shape,dists_k.shape)
 
     pass
 

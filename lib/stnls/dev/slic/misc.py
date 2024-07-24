@@ -78,7 +78,7 @@ def run_cas(vid,ws,wt,ps,stride0,full_ws,M=0.5,
                                          self_action="anchor_self",
                                          full_ws=full_ws,itype="int")
     dists_k,flows_k = search(pooled,vid,flows)
-    print(flows_k[0,0,0,:2,:2])
+    # print(flows_k[0,0,0,:2,:2])
 
     # -- pool all neighbors --
 

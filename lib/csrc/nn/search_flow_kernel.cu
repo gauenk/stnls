@@ -98,9 +98,9 @@ void search_flow_forward_cuda(
   int T = fflow.size(1);
   int H = fflow.size(3);
   int W = fflow.size(4);
-  int W_t = 2*wt;
+  int W_t = min(2*wt+1,T);
   assert(W_t > 0);
-  assert(W_t == flows.size(2));
+  assert((W_t-1) == flows.size(2));
 
   // -- num 2 run --
   int nH = (H-1)/stride0+1;

@@ -23,7 +23,8 @@ from stnls.search.shared import normz_bwd
 def forward(vid0, vid1, flows,
             ws, wt, ps, k, stride0, stride1, strideQ,
             dist_type, dilation, pt, topk_mode, self_action,
-            reflect_bounds, full_ws, use_adj, off_Hq, off_Wq, itype):
+            ws_interior, reflect_bounds, full_ws, use_adj,
+            off_Hq, off_Wq, itype):
 
     # -- unpack --
     # itype = "int"
@@ -59,10 +60,12 @@ def forward(vid0, vid1, flows,
         inds = inds.int()
         stride1 = max(1,int(stride1))
         fwd_fxn = stnls_cuda.non_local_search_int_forward
-        strideQ = stride0 if strideQ is None else strideQ
+        if strideQ is None: strideQ = stride0
+        if ws_interior <= 0: ws_interior = ws
+        # print(ws,wt,ws_interior)
         fwd_fxn(vid0, vid1, flows, dists, inds,
                 ps, k, stride0, stride1, strideQ, dilation, pt,
-                reflect_bounds, full_ws, patch_offset,
+                ws_interior, reflect_bounds, full_ws, patch_offset,
                 off_Hq, off_Wq, dist_type_i)
     else:
         fwd_fxn = stnls_cuda.non_local_search_bilin2d_forward
@@ -71,6 +74,15 @@ def forward(vid0, vid1, flows,
                 ps, k, stride0, stride1, dilation, pt,
                 reflect_bounds, full_ws, patch_offset,
                 off_Hq, off_Wq, dist_type_i)
+
+    # -- invalidate them --
+    # valid = th.where(th.abs(inds[0,0,:,0,...,0])<1e3)
+    # print(inds[0,0,:,0,...,0][valid].unique())
+    # print(th.all(inds[0,0,:,0,...,0][valid] == 0))
+    # print(inds.shape)
+    # print(inds[0,0].reshape)
+    # print(th.where(inds[0,0,:,0,...,0][valid] == -1))
+    # exit()
 
     # -- anchor --
     menu = [None,"anchor","anchor_self","anchor_each","remove",]
@@ -114,6 +126,8 @@ def forward(vid0, vid1, flows,
         dists = rearrange(dists,'... wh ww -> ... (wh ww)')
         inds = rearrange(inds,'... wh ww d2or3 -> ... (wh ww) d2or3')
         dists,inds = stnls.nn.topk_each(dists,inds,k,descending,anchor_self=anchor_self)
+    elif topk_mode == "none":
+        assert k <= 0,"If topk_mode is 'none' then k must be <= 0"
     else:
         raise ValueError(f"Unknown topk_mode [{topk_mode}]")
 
@@ -174,8 +188,9 @@ def backward(ctx, grad_dists, grad_inds):
                 ctx.off_Hq, ctx.off_Wq, ctx.dist_type_i)
 
     # -- finalize shape --
-    grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')
-    grad_vid1 = rearrange(grad_vid1,'B H t c h w -> B t (H c) h w')
+    if ctx.in_dim == 5:
+        grad_vid0 = rearrange(grad_vid0,'B H t c h w -> B t (H c) h w')
+        grad_vid1 = rearrange(grad_vid1,'B H t c h w -> B t (H c) h w')
 
     # -- normz --
     if ctx.normalize_bwd:
