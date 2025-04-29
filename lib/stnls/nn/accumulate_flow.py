@@ -127,19 +127,24 @@ def run_pair(fflow,bflow,stride0=1,dtype=None,
 def extract_search_from_accumulated(fflow,bflow,wt,stride0):
     # -- setup --
     T = fflow.shape[1]
-    W_t = 2*wt+1
-    assert W_t <= T,"Search Window Must be at most half the number of frames."
+    W_t = min(2*wt+1,T)
+    # assert W_t <= T,"Search Window Must be at most half the number of frames."
     flows = []
     for ti in range(T):
         # -- bounds for ti --
         t_shift = min(0,ti - wt) + max(0,ti + wt - (T-1))
         t_max = min(T-1,ti + wt - t_shift)
+
         flows_t = []
         for si in range(1,W_t):
             # -- select adjacent frame --
             tj = ti + si
             tj = t_max - si if (tj > t_max) else tj
+            assert(tj>=0)
+            assert(tj<T)
             dt = tj - ti
+            # print(ti,tj,si,dt,-dt-1)
+            # assert(dt == si)
             flow_gt = fflow[:,ti,dt-1] if (ti < tj) else bflow[:,ti,-dt-1]
             flows_t.append(flow_gt[...,::stride0,::stride0])
         flows_t = th.stack(flows_t,1)

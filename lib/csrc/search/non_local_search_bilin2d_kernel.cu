@@ -94,7 +94,6 @@ __global__ void non_local_search_bilin2d_forward_kernel(
     qi = q_start + q_index;
     if (qi >= Q){ continue; }
 
-
     // -- pixel location from query index --
     get_pixel_loc<int>(ref_patch,qi,stride0,nW,nHW,qH,qW);
     n_hi = ref_patch[1] / stride0;

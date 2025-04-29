@@ -21,7 +21,7 @@ import stnls_cuda
 def init():
     return run
 
-def run(fflow,bflow,wt,stride0):
+def run(fflow,bflow,wt,stride0=1):
 
     # -- exec --
     if wt > 0:

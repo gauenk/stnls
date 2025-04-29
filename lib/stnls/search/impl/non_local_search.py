@@ -49,7 +49,9 @@ def forward(vid0, vid1, flows,
     dists,inds = allocate_pair(base_shape,device,vid0.dtype,idist_val,itype)
 
     # -- check flows --
-    assert flows.shape[3] in [W_t-1,W_t]
+    # print("flows.shape: ",flows.shape,W_t)
+    msg = "flows.shape: "+str(flows.shape)+" W_t: "+str(W_t)
+    assert flows.shape[3] in [W_t-1,W_t],msg
 
     # -- forward --
     if itype == "int":

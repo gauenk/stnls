@@ -32,7 +32,8 @@ __global__ void search_flow_forward_kernel(
   int nHW = nH*nW;
   int TnHW = T*nH*nW;
   int ref[3];
-  int W_t = 2*wt+1;
+  // int W_t = 2*wt+1;
+  int W_t = min(2*wt+1,T);
   int t_max;
 
   // -- get location --
@@ -267,7 +268,8 @@ void search_flow_backward_cuda(
   int nW = (W-1)/stride0+1;
   int nHW = nH*nW;
   int nRun = T*nH*nW;
-  int W_t = 2*wt;
+  // int W_t = 2*wt;
+  int W_t = min(2*wt+1,T);
 
   // -- kernel params --
   int locs_per_thread = 1;

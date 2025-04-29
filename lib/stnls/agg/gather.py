@@ -92,7 +92,7 @@ class non_local_gather(th.autograd.Function):
         HD_i = inds.shape[1]
         HD = max(HD_v,HD_i)
         wshape = weights.shape
-        stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=th.float32)
+        stack = th.zeros((B,HD,K,T,F,H,W),device=vid.device,dtype=vid.dtype)
         counts = th.zeros((B,HD,H,W),device=vid.device,dtype=th.int32)
         # print("B,HD,K,T,F,H,W: ",B,HD,K,T,F,H,W)
         # print("stack [weights.shape,inds.shape]: ",weights.shape,inds.shape)
@@ -183,6 +183,8 @@ class non_local_gather(th.autograd.Function):
         grad_stack = grad_stack.contiguous()
         if itype != "int": grad_inds = th.zeros_like(inds)
         else: grad_inds = th.zeros((1,)*5).to(inds.device).int()
+        # print(grad_inds.shape)
+        # exit()
 
         # print(grad_stack[0,0,0,0,:,:2,:2])
         # print(th.all(grad_stack==0))
@@ -260,7 +262,7 @@ class non_local_gather(th.autograd.Function):
 
 class NonLocalGather(th.nn.Module):
 
-    def __init__(self,ps,stride0,pt=1,dilation=1,
+    def __init__(self,ps=1,stride0=1,pt=1,dilation=1,
                  reflect_bounds=True,use_adj=False,itype="float"):
         super().__init__()
         _vars = ["ps","stride0","pt","reflect_bounds","dilation","use_adj","itype"]
@@ -294,7 +296,7 @@ def _apply(vid, weights, flows, ps=1, stride0=1, pt=1,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ps":3,"stride0":1,"pt":1,"reflect_bounds":True,
+    pairs = {"ps":1,"stride0":1,"pt":1,"reflect_bounds":True,
              "dilation":1, "use_adj":False,"itype":"float"}
     return extract_pairs(cfg,pairs,restrict=restrict)
 

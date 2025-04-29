@@ -32,7 +32,7 @@ class NonLocalSearchFunction(th.autograd.Function):
     @staticmethod
     def forward(ctx, vid0, vid1, flows,
                 ws, wt, ps, k, nheads=1,
-                stride0=4, stride1=1, strideQ=None,
+                stride0=1, stride1=1, strideQ=None,
                 dist_type="l2", dilation=1, pt=1, topk_mode="all",
                 self_action=None, ws_interior=0,
                 reflect_bounds=True, full_ws=True,
@@ -62,7 +62,10 @@ class NonLocalSearchFunction(th.autograd.Function):
 
         # -- manage forward shape --
         flow_ndim = flows.ndim
+        # print(nheads)
         flows = shape_flows(nheads,flows)
+        # print("flows.shape: ",flows.shape)
+        # exit()
         B,HD,T,W_t,_,fH,fW = flows.shape
 
         # -- sample flow  --
@@ -72,13 +75,11 @@ class NonLocalSearchFunction(th.autograd.Function):
         assert (fH == nH) and (fW == nW)
 
         # -- run [optionally batched] forward function --
-        dists,inds = forward(vid0, vid1, flows,
-                             ws, wt, ps, k,
-                             stride0, stride1, strideQ,
-                             dist_type, dilation, pt,
-                             topk_mode, self_action,
-                             ws_interior, reflect_bounds, full_ws, use_adj,
-                             off_Hq, off_Wq, itype)
+        dists,inds = forward(vid0, vid1, flows, ws, wt, ps, k,
+                             stride0, stride1, strideQ, dist_type,
+                             dilation, pt, topk_mode, self_action,
+                             ws_interior, reflect_bounds, full_ws,
+                             use_adj, off_Hq, off_Wq, itype)
 
         # -- setup ctx --
         dist_type_i = dist_type_select(dist_type)[0]
@@ -120,8 +121,8 @@ class NonLocalSearchFunction(th.autograd.Function):
 
 class NonLocalSearch(th.nn.Module):
 
-    def __init__(self, ws, wt, ps, k, nheads=1,
-                 stride0=4, stride1=1, dist_type="l2",
+    def __init__(self, ws, wt, ps=1, k=-1, nheads=1,
+                 stride0=1, stride1=1, dist_type="l2",
                  dilation=1, pt=1, self_action=None, topk_mode="all",
                  ws_interior=0, reflect_bounds=True, full_ws=True,
                  use_adj=False, normalize_bwd=False, k_agg=-1,
@@ -223,7 +224,7 @@ class NonLocalSearch(th.nn.Module):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def _apply(vid0, vid1, flows,
-           ws, wt, ps, k, nheads=1,
+           ws, wt, ps=1, k=-1, nheads=1,
            stride0=1, stride1=1, dist_type="l2",
            dilation=1, pt=1, self_action=None,
            topk_mode="all",ws_interior=0,
@@ -251,7 +252,7 @@ def _apply(vid0, vid1, flows,
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def extract_config(cfg,restrict=True):
-    pairs = {"ws":-1,"wt":-1,"ps":3,"k":10,
+    pairs = {"ws":-1,"wt":-1,"ps":1,"k":-1,
              "nheads":1,"dist_type":"l2",
              "stride0":1, "stride1":1, "dilation":1, "pt":1,
              "ws_interior":0,"reflect_bounds":True, "full_ws":True,

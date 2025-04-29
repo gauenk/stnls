@@ -5,8 +5,11 @@ import torch as th
 from einops import rearrange,repeat
 
 # -- numba --
-import numba
-from numba import njit,prange
+try:
+    import numba
+    from numba import njit,prange
+except:
+    pass
 
 # -- local --
 from .pads import comp_pads
@@ -63,71 +66,74 @@ def numba_query_launcher(index,qSearch,stride,t,h,w,device=None,dtype=None):
         raise ValueError("We need dtype or device not None.")
     return srch_inds
 
-@njit
-def numba_query_raster(srch_inds,index,qSearch,stride,t,h,w):
-    # hs = (h-1) // (stride-1) + 1
-    # ws = (w-1) // (stride-1) + 1
-    nh = int((h-1) // stride) + 1
-    nw = int((w-1) // stride) + 1
-    npf = nh*nw
-    hw = h*w
-    stride2 = stride**2
-    for raw_qi in prange(qSearch):
-
-        # -- ind -> ti --
-        # ind = stride2 * (qi + index)
-        # ti = ((qi * strid2) // hw) % t
-        qi = raw_qi + index
-        ti = qi // (nh*nw)
-        _qi = qi % (nh*nw)
-        # ind_f = (stride2*qi) % hw
-        # hi = (stride)*((stride*ind_f) // w)
-        hi = ((_qi // nw) * stride) % h
-        wi = ((_qi % nw) * stride) % w
-        # wi = ((stride-1)*ind_f) % w
-        # wi = (ind_f/stride) % w
-        # hi = (stride)*(ind_f // (stride*w))
-        # wi = (ind_f/stride) % w
-
-        # -- fill --
-        srch_inds[raw_qi,0] = ti
-        srch_inds[raw_qi,1] = hi
-        srch_inds[raw_qi,2] = wi
-
-
-@njit
-def numba_query_equal(srch_inds,index,qSearch,stride,t,h,w):
-    qSearchTotal_t = h*w//stride
-    stride_sr = np.sqrt(stride)
-    nT = qSearchTotal_t
-    wf = w*1.
-    # How to evenly distribution points in a grid? I.E. how to use "stride"
-    nX = np.sqrt((wf/h)*nT + (wf-h)**2/(4.*h**2)) - (wf-h)/(2.*h)
-    nX = int(nX)
-    start = index * qSearch
-    for qi in prange(qSearch):
-
-        # -- ind -> ti --
-        ind = qi + start
-        ti = ind // qSearchTotal_t
-        ind = ind %  qSearchTotal_t
-
-        # -- ind -> hi --
-        hi = stride_sr*(ind // nX)
-        hi = int(hi)
-        if hi >= h:
-            hi = h-1
-
-        # -- ind -> hi --
-        wi = stride_sr*(ind % nX)
-        wi = int(wi)
-        if wi >= w:
-            wi = w-1
-
-        # -- fill --
-        srch_inds[qi,0] = ti
-        srch_inds[qi,1] = hi
-        srch_inds[qi,2] = wi
+try:
+    @njit
+    def numba_query_raster(srch_inds,index,qSearch,stride,t,h,w):
+        # hs = (h-1) // (stride-1) + 1
+        # ws = (w-1) // (stride-1) + 1
+        nh = int((h-1) // stride) + 1
+        nw = int((w-1) // stride) + 1
+        npf = nh*nw
+        hw = h*w
+        stride2 = stride**2
+        for raw_qi in prange(qSearch):
+    
+            # -- ind -> ti --
+            # ind = stride2 * (qi + index)
+            # ti = ((qi * strid2) // hw) % t
+            qi = raw_qi + index
+            ti = qi // (nh*nw)
+            _qi = qi % (nh*nw)
+            # ind_f = (stride2*qi) % hw
+            # hi = (stride)*((stride*ind_f) // w)
+            hi = ((_qi // nw) * stride) % h
+            wi = ((_qi % nw) * stride) % w
+            # wi = ((stride-1)*ind_f) % w
+            # wi = (ind_f/stride) % w
+            # hi = (stride)*(ind_f // (stride*w))
+            # wi = (ind_f/stride) % w
+    
+            # -- fill --
+            srch_inds[raw_qi,0] = ti
+            srch_inds[raw_qi,1] = hi
+            srch_inds[raw_qi,2] = wi
+    
+    
+    @njit
+    def numba_query_equal(srch_inds,index,qSearch,stride,t,h,w):
+        qSearchTotal_t = h*w//stride
+        stride_sr = np.sqrt(stride)
+        nT = qSearchTotal_t
+        wf = w*1.
+        # How to evenly distribution points in a grid? I.E. how to use "stride"
+        nX = np.sqrt((wf/h)*nT + (wf-h)**2/(4.*h**2)) - (wf-h)/(2.*h)
+        nX = int(nX)
+        start = index * qSearch
+        for qi in prange(qSearch):
+    
+            # -- ind -> ti --
+            ind = qi + start
+            ti = ind // qSearchTotal_t
+            ind = ind %  qSearchTotal_t
+    
+            # -- ind -> hi --
+            hi = stride_sr*(ind // nX)
+            hi = int(hi)
+            if hi >= h:
+                hi = h-1
+    
+            # -- ind -> hi --
+            wi = stride_sr*(ind % nX)
+            wi = int(wi)
+            if wi >= w:
+                wi = w-1
+    
+            # -- fill --
+            srch_inds[qi,0] = ti
+            srch_inds[qi,1] = hi
+            srch_inds[qi,2] = wi
+except:
+    pass
 
 def get_3d_inds(inds,stride,t,h,w):
 

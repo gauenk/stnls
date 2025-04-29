@@ -30,7 +30,7 @@ def set_seed(seed):
     random.seed(seed)
 
 def pytest_generate_tests(metafunc):
-    test_lists = {"b":[1],"t":[10],"h":[128],"w":[128],"seed":[123],
+    test_lists = {"b":[1],"t":[2],"h":[128],"w":[128],"seed":[123],
                   "wt":[4],"stride0":[1]}
     for key,val in test_lists.items():
         if key in metafunc.fixturenames:
@@ -136,6 +136,8 @@ def test_fwd(seed,b,t,h,w,wt,stride0):
     max_tol = 1e-3
     sm_tol = 1e-2
     run_compare(flows_gt,flows_te,mean_tol,max_tol,sm_tol)
+    run_compare(flows_gt[0,:t-1,0],fflow_gt[0,:t-1],
+                mean_tol,max_tol,sm_tol)
 
 def test_bwd(seed,b,t,h,w,wt,stride0):
     """

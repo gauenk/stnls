@@ -54,7 +54,7 @@ weights = th.nn.functional.softmax(10*dists,-1)
 
 # -- aggregate --
 ps = 5 # patch size can change for stacking
-stack = stnls.tile.NonLocalGather(ps,stride0)
+stack = stnls.agg.NonLocalGather(ps,stride0)
 V_out = stack(v_vid,weights,inds)
 V_out = rearrange(V_out,'b hd k t f h w -> (b t) (hd f) k h w')
 proj_weights = th.randn((F,F,K,1,1),device=device)
